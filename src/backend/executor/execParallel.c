@@ -301,6 +301,7 @@ ExecParallelEstimate(PlanState *planstate, ExecParallelEstimateContext *e)
 								   e->pcxt);
 			break;
 		case T_CustomScanState:
+		case T_GraphScanState:
 			if (planstate->plan->parallel_aware)
 				ExecCustomScanEstimate((CustomScanState *) planstate,
 									   e->pcxt);
@@ -549,6 +550,7 @@ ExecParallelInitializeDSM(PlanState *planstate,
 										d->pcxt);
 			break;
 		case T_CustomScanState:
+		case T_GraphScanState:
 			if (planstate->plan->parallel_aware)
 				ExecCustomScanInitializeDSM((CustomScanState *) planstate,
 											d->pcxt);
@@ -1055,6 +1057,7 @@ ExecParallelReInitializeDSM(PlanState *planstate,
 				ExecAppendReInitializeDSM((AppendState *) planstate, pcxt);
 			break;
 		case T_CustomScanState:
+		case T_GraphScanState:
 			if (planstate->plan->parallel_aware)
 				ExecCustomScanReInitializeDSM((CustomScanState *) planstate,
 											  pcxt);
@@ -1446,6 +1449,7 @@ ExecParallelInitializeWorker(PlanState *planstate, ParallelWorkerContext *pwcxt)
 				ExecAppendInitializeWorker((AppendState *) planstate, pwcxt);
 			break;
 		case T_CustomScanState:
+		case T_GraphScanState:
 			if (planstate->plan->parallel_aware)
 				ExecCustomScanInitializeWorker((CustomScanState *) planstate,
 											   pwcxt);

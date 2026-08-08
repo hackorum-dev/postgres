@@ -18,15 +18,16 @@
 #include "access/genam.h"
 #include "access/htup_details.h"
 #include "access/table.h"
-#include "catalog/pg_propgraph_label.h"
+#include "catalog/pg_propgraph_element.h"
+#include "catalog/pg_propgraph_element_label.h"
 #include "catalog/pg_propgraph_property.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "optimizer/cost.h"
 #include "parser/parse_collate.h"
 #include "parser/parse_expr.h"
 #include "parser/parse_graphtable.h"
 #include "parser/parse_node.h"
-#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/relcache.h"
 #include "utils/syscache.h"
@@ -240,7 +241,7 @@ transformGraphElementPattern(ParseState *pstate, GraphElementPattern *gep)
 {
 	GraphTableParseState *gpstate = pstate->p_graph_table_pstate;
 
-	if (gep->quantifier)
+	if (!enable_native_graphtable && gep->quantifier)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("element pattern quantifier is not supported")));
@@ -368,6 +369,364 @@ transformPathPatternList(ParseState *pstate, List *path_pattern)
 }
 
 /*
+ * Collect label OIDs from a label expression (GraphLabelRef or BoolExpr of
+ * GraphLabelRef nodes) into a list.  Returns NIL if labelexpr is NULL.
+ */
+static List *
+collect_label_oids(Node *labelexpr)
+{
+	List	   *result = NIL;
+
+	if (labelexpr == NULL)
+		return NIL;
+
+	if (IsA(labelexpr, GraphLabelRef))
+	{
+		GraphLabelRef *lref = (GraphLabelRef *) labelexpr;
+
+		result = lappend_oid(result, lref->labelid);
+	}
+	else if (IsA(labelexpr, BoolExpr))
+	{
+		BoolExpr   *b = (BoolExpr *) labelexpr;
+		ListCell   *lc;
+
+		foreach(lc, b->args)
+		{
+			Node	   *arg = (Node *) lfirst(lc);
+
+			if (IsA(arg, GraphLabelRef))
+				result = lappend_oid(result,
+									 ((GraphLabelRef *) arg)->labelid);
+		}
+	}
+
+	return result;
+}
+
+/*
+ * Validate that no two element patterns in the same path have the same
+ * variable name with incompatible definitions.
+ *
+ * Cases:
+ * 1. Same variable, different element kinds (vertex vs edge) → error
+ * 2. Same variable, both vertex, different label expressions → error
+ * 3. Same variable, both vertex, compatible label expressions → allowed
+ */
+static void
+validate_element_variable_names(GraphPattern *pattern)
+{
+	List	   *path;
+	int			path_len;
+	int			i;
+
+	if (pattern == NULL ||
+		pattern->path_pattern_list == NIL)
+		return;
+
+	path = linitial(pattern->path_pattern_list);
+	if (path == NULL)
+		return;
+	path_len = list_length(path);
+
+	for (i = 0; i < path_len; i++)
+	{
+		GraphElementPattern *gep_i = (GraphElementPattern *)
+			list_nth(path, i);
+		int			j;
+
+		if (gep_i == NULL || gep_i->variable == NULL)
+			continue;
+
+		for (j = i + 1; j < path_len; j++)
+		{
+			GraphElementPattern *gep_j = (GraphElementPattern *)
+				list_nth(path, j);
+
+			if (gep_j == NULL || gep_j->variable == NULL)
+				continue;
+
+			if (strcmp(gep_i->variable, gep_j->variable) != 0)
+				continue;
+
+			/*
+			 * Same variable name.  Check if element pattern types differ
+			 * (vertex vs edge).
+			 */
+			if (gep_i->kind != gep_j->kind &&
+				!(IS_EDGE_PATTERN(gep_i->kind) &&
+				  IS_EDGE_PATTERN(gep_j->kind)))
+			{
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("element patterns with same variable "
+								"name \"%s\" but different element "
+								"pattern types", gep_i->variable)));
+			}
+
+			/*
+			 * Same kind (both vertex or both edge).  Check label expressions.
+			 * Error only if both have non-NULL label expressions that differ.
+			 */
+			if (gep_i->labelexpr != NULL && gep_j->labelexpr != NULL &&
+				!equal(gep_i->labelexpr, gep_j->labelexpr))
+			{
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("element patterns with same "
+								"variable name \"%s\" but "
+								"different label expressions "
+								"are not supported",
+								gep_i->variable)));
+			}
+		}
+	}
+}
+
+/*
+ * Validate that an edge variable appearing at multiple hop positions
+ * always connects the same pair of vertex variables.  For example, in
+ * (a)->[e]->(b)<-[e]-(c), the edge e appears twice connecting a→b and
+ * c→b, which requires e to connect three vertices — an impossibility.
+ */
+static void
+validate_edge_connectivity(GraphPattern *pattern)
+{
+	List	   *path;
+	int			path_len;
+	int			n_hops;
+
+	if (pattern == NULL ||
+		pattern->path_pattern_list == NIL)
+		return;
+
+	path = linitial(pattern->path_pattern_list);
+	if (path == NULL)
+		return;
+	path_len = list_length(path);
+	if (path_len < 4)			/* need at least (v)-[e]->(v)-[e]->(v) */
+		return;
+
+	n_hops = (path_len - 1) / 2;
+	{
+		int			hi;
+
+		for (hi = 0; hi < n_hops; hi++)
+		{
+			int			edge_pi = 2 * hi + 1;
+			GraphElementPattern *edge_gep = (GraphElementPattern *)
+				list_nth(path, edge_pi);
+			int			ji;
+
+			if (edge_gep == NULL || edge_gep->variable == NULL ||
+				!IS_EDGE_PATTERN(edge_gep->kind))
+				continue;
+
+			for (ji = hi + 1; ji < n_hops; ji++)
+			{
+				int			je_pi = 2 * ji + 1;
+				GraphElementPattern *je_gep = (GraphElementPattern *)
+					list_nth(path, je_pi);
+				int			src_pi_i;
+				int			dst_pi_i;
+				int			src_pi_j;
+				int			dst_pi_j;
+				GraphElementPattern *src_gep_i;
+				GraphElementPattern *dst_gep_i;
+				GraphElementPattern *src_gep_j;
+				GraphElementPattern *dst_gep_j;
+
+				if (je_gep == NULL || je_gep->variable == NULL ||
+					!IS_EDGE_PATTERN(je_gep->kind))
+					continue;
+
+				if (strcmp(edge_gep->variable, je_gep->variable) != 0)
+					continue;
+
+				/* Same edge variable at two hop positions */
+				src_pi_i = 2 * hi;
+				dst_pi_i = 2 * hi + 2;
+				src_pi_j = 2 * ji;
+				dst_pi_j = 2 * ji + 2;
+
+				src_gep_i = (GraphElementPattern *) list_nth(path, src_pi_i);
+				dst_gep_i = (GraphElementPattern *) list_nth(path, dst_pi_i);
+				src_gep_j = (GraphElementPattern *) list_nth(path, src_pi_j);
+				dst_gep_j = (GraphElementPattern *) list_nth(path, dst_pi_j);
+
+				/*
+				 * An edge variable connecting multiple hops must have the
+				 * same source and destination vertex variables in each hop.
+				 * If either side differs, the edge would need to connect more
+				 * than two distinct vertices.
+				 */
+				if ((src_gep_i->variable == NULL ||
+					 dst_gep_i->variable == NULL ||
+					 src_gep_j->variable == NULL ||
+					 dst_gep_j->variable == NULL) ||
+					strcmp(src_gep_i->variable, src_gep_j->variable) != 0 ||
+					strcmp(dst_gep_i->variable, dst_gep_j->variable) != 0)
+				{
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+							 errmsg("an edge cannot connect more than two "
+									"vertices even in a cyclic pattern")));
+				}
+			}
+		}
+	}
+}
+
+/*
+ * Check that each label used in an element pattern matches the element's
+ * kind (vertex or edge).  A label that only appears on vertex elements
+ * cannot be used in an edge pattern, and vice versa.
+ */
+static void
+validate_element_label_kinds(GraphPattern *pattern, Oid graph_oid)
+{
+	List	   *path;
+	int			path_len;
+	int			pi;
+
+	if (pattern == NULL ||
+		pattern->path_pattern_list == NIL)
+		return;
+
+	path = linitial(pattern->path_pattern_list);
+	if (path == NULL)
+		return;
+	path_len = list_length(path);
+
+	for (pi = 0; pi < path_len; pi++)
+	{
+		GraphElementPattern *gep = (GraphElementPattern *)
+			list_nth(path, pi);
+		List	   *label_oids;
+		ListCell   *lc;
+		char		elem_kind;
+		const char *kind_str;
+
+		if (gep == NULL || gep->labelexpr == NULL)
+			continue;
+
+		/*
+		 * Determine what kind this pattern element should be.
+		 */
+		if (gep->kind == VERTEX_PATTERN)
+		{
+			elem_kind = 'v';
+			kind_str = "vertex";
+		}
+		else if (IS_EDGE_PATTERN(gep->kind))
+		{
+			elem_kind = 'e';
+			kind_str = "edge";
+		}
+		else
+			continue;
+
+		label_oids = collect_label_oids(gep->labelexpr);
+		if (label_oids == NIL)
+			continue;
+
+		/*
+		 * For each label OID, scan pg_propgraph_element_label joined with
+		 * pg_propgraph_element to find what element kinds this label is
+		 * associated with.
+		 */
+		foreach(lc, label_oids)
+		{
+			Oid			labelid = lfirst_oid(lc);
+			Relation	el_label_rel;
+			SysScanDesc el_label_scan;
+			HeapTuple	el_label_tup;
+			bool		has_vertex = false;
+			bool		has_edge = false;
+
+			el_label_rel = table_open(PropgraphElementLabelRelationId,
+									  AccessShareLock);
+			el_label_scan = systable_beginscan(el_label_rel, InvalidOid,
+											   false, NULL, 0, NULL);
+
+			while (HeapTupleIsValid(el_label_tup =
+									systable_getnext(el_label_scan)))
+			{
+				Form_pg_propgraph_element_label el_form =
+					(Form_pg_propgraph_element_label) GETSTRUCT(el_label_tup);
+
+				if (el_form->pgellabelid != labelid)
+					continue;
+
+				/*
+				 * Look up the element to find its kind.
+				 */
+				{
+					HeapTuple	elem_tup;
+					Form_pg_propgraph_element elem_form;
+
+					elem_tup = SearchSysCache1(PROPGRAPHELOID,
+											   ObjectIdGetDatum(
+																el_form->pgelelid));
+					if (!HeapTupleIsValid(elem_tup))
+						continue;
+					elem_form = (Form_pg_propgraph_element)
+						GETSTRUCT(elem_tup);
+					if (elem_form->pgepgid == graph_oid)
+					{
+						if (elem_form->pgekind == 'v')
+							has_vertex = true;
+						else if (elem_form->pgekind == 'e')
+							has_edge = true;
+					}
+					ReleaseSysCache(elem_tup);
+				}
+
+				if (has_vertex && has_edge)
+					break;
+			}
+
+			systable_endscan(el_label_scan);
+			table_close(el_label_rel, AccessShareLock);
+
+			/*
+			 * If the label is not associated with the required kind, produce
+			 * the standard error.
+			 */
+			if ((elem_kind == 'v' && !has_vertex) ||
+				(elem_kind == 'e' && !has_edge))
+			{
+				const char *labelname;
+
+				labelname = get_propgraph_label_name(labelid);
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("no property graph element of type "
+								"\"%s\" has label \"%s\" associated "
+								"with it in property graph \"%s\"",
+								kind_str, labelname,
+								get_rel_name(graph_oid))));
+			}
+		}
+	}
+}
+
+/*
+ * Run all native-specific validations on a graph pattern.
+ * Called from transformGraphPattern when enable_native_graphtable is on.
+ */
+static void
+validate_native_graph_query(ParseState *pstate,
+							GraphPattern *pattern)
+{
+	GraphTableParseState *gpstate = pstate->p_graph_table_pstate;
+
+	validate_element_variable_names(pattern);
+	validate_edge_connectivity(pattern);
+	validate_element_label_kinds(pattern, gpstate->graphid);
+}
+
+/*
  * Transform a GraphPattern.
  *
  * A GraphPattern consists of a list of one or more path patterns and an
@@ -389,6 +748,9 @@ transformGraphPattern(ParseState *pstate, GraphPattern *graph_pattern)
 	graph_pattern->path_pattern_list = path_pattern_list;
 	graph_pattern->whereClause = transformExpr(pstate, graph_pattern->whereClause, EXPR_KIND_WHERE);
 	assign_expr_collations(pstate, graph_pattern->whereClause);
+
+	if (enable_native_graphtable)
+		validate_native_graph_query(pstate, graph_pattern);
 
 	return (Node *) graph_pattern;
 }

@@ -929,6 +929,29 @@ typedef struct ForeignScan
  */
 struct CustomScanMethods;
 
+/* ----------------
+ *	   GraphScan node
+ *
+ * Native property graph scan (SQL/PGQ).  scan.scanrelid refers to an
+ * RTE_GRAPH_TABLE entry; vertex/edge tables are determined at execution
+ * time from the graph_pattern and pg_propgraph_* catalogs.
+ * ----------------
+ */
+struct GraphPattern;
+
+typedef struct GraphScan
+{
+	Scan		scan;
+	/* OID of the property graph in pg_propgraph_element et al */
+	Oid			graph_oid;
+	/* graph pattern (vertex/edge element list) to traverse */
+	struct GraphPattern *graph_pattern;
+	/* execution mode: WALK, TRAIL, etc. (see PathMode) */
+	int			path_mode;
+	/* search algorithm: DFS, BFS, etc. (see SearchAlgorithm) */
+	int			search_algo;
+}			GraphScan;
+
 typedef struct CustomScan
 {
 	Scan		scan;
