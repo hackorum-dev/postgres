@@ -2258,6 +2258,21 @@ typedef struct CustomPath
 } CustomPath;
 
 /*
+ * GraphPath represents a property graph scan plan path.
+ *
+ * The graph pattern is carried in the path and eventually placed in the
+ * GraphScan plan node.
+ */
+typedef struct GraphPath
+{
+	Path		path;
+	/* OID of the property graph */
+	Oid			graph_oid;
+	/* The graph pattern to evaluate */
+	struct GraphPattern *graph_pattern;
+}			GraphPath;
+
+/*
  * AppendPath represents an Append plan, ie, successive execution of
  * several member plans.
  *

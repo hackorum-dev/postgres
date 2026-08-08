@@ -117,6 +117,8 @@ static void set_foreign_pathlist(PlannerInfo *root, RelOptInfo *rel,
 								 RangeTblEntry *rte);
 static void set_append_rel_size(PlannerInfo *root, RelOptInfo *rel,
 								Index rti, RangeTblEntry *rte);
+static void find_outer_var_varnos(Node *node, Index scanrelid,
+								  Relids *result);
 static void set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 									Index rti, RangeTblEntry *rte);
 static void set_grouped_rel_pathlist(PlannerInfo *root, RelOptInfo *rel);
@@ -149,6 +151,8 @@ static void set_result_pathlist(PlannerInfo *root, RelOptInfo *rel,
 								RangeTblEntry *rte);
 static void set_worktable_pathlist(PlannerInfo *root, RelOptInfo *rel,
 								   RangeTblEntry *rte);
+static void set_graph_pathlist(PlannerInfo *root, RelOptInfo *rel,
+							   RangeTblEntry *rte);
 static RelOptInfo *make_rel_from_joinlist(PlannerInfo *root, List *joinlist);
 static bool subquery_is_pushdown_safe(Query *subquery, Query *topquery,
 									  pushdown_safety_info *safetyInfo);
@@ -500,6 +504,14 @@ set_rel_size(PlannerInfo *root, RelOptInfo *rel,
 				/* Might as well just build the path immediately */
 				set_result_pathlist(root, rel, rte);
 				break;
+			case RTE_GRAPH_TABLE:
+				if (enable_native_graphtable)
+				{
+					set_plain_rel_size(root, rel, rte);
+					break;
+				}
+				elog(ERROR, "unexpected rtekind: %d", (int) rel->rtekind);
+				break;
 			default:
 				elog(ERROR, "unexpected rtekind: %d", (int) rel->rtekind);
 				break;
@@ -573,6 +585,14 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 				break;
 			case RTE_RESULT:
 				/* simple Result --- fully handled during set_rel_size */
+				break;
+			case RTE_GRAPH_TABLE:
+				if (enable_native_graphtable)
+				{
+					set_graph_pathlist(root, rel, rte);
+					break;
+				}
+				elog(ERROR, "unexpected rtekind: %d", (int) rel->rtekind);
 				break;
 			default:
 				elog(ERROR, "unexpected rtekind: %d", (int) rel->rtekind);
@@ -793,12 +813,14 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 			break;
 
 		case RTE_GRAPH_TABLE:
-
-			/*
-			 * Shouldn't happen since these are replaced by subquery RTEs when
-			 * rewriting queries.
-			 */
-			Assert(false);
+			if (enable_native_graphtable)
+			{
+				set_plain_rel_size(root, rel, rte);
+				break;
+			}
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("native graph table execution is disabled")));
 			return;
 
 		case RTE_GROUP:
@@ -3235,6 +3257,65 @@ set_worktable_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 	add_path(rel, create_worktablescan_path(root, rel, required_outer));
 }
 
+void
+set_graph_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
+{
+	GraphPath  *gpath = makeNode(GraphPath);
+	Relids		required_outer = NULL;
+
+	gpath->path.pathtype = T_GraphScan;
+	gpath->path.parent = rel;
+	gpath->path.pathtarget = rel->reltarget;
+	gpath->path.rows = rel->rows;
+	gpath->path.startup_cost = 0;
+	gpath->path.total_cost = rel->rows * cpu_tuple_cost;
+	gpath->path.pathkeys = NIL;
+	gpath->graph_oid = rte->relid;
+	gpath->graph_pattern = rte->graph_pattern;
+
+	/*
+	 * If the element WHERE clauses reference outer relations (LATERAL
+	 * references), create a parameterized path so the planner orders the
+	 * NestLoop correctly.
+	 */
+	if (rte->graph_pattern != NULL)
+	{
+		ListCell   *lc;
+
+		foreach(lc, rte->graph_pattern->path_pattern_list)
+		{
+			GraphElementPattern *gep;
+
+			if (!IsA(lfirst(lc), GraphElementPattern))
+				continue;
+			gep = (GraphElementPattern *) lfirst(lc);
+
+			if (gep->whereClause)
+				find_outer_var_varnos(gep->whereClause, rel->relid, &required_outer);
+			if (gep->subexpr)
+			{
+				ListCell   *slc;
+
+				foreach(slc, gep->subexpr)
+					find_outer_var_varnos((Node *) lfirst(slc), rel->relid, &required_outer);
+			}
+		}
+		if (rte->graph_pattern->whereClause)
+			find_outer_var_varnos(rte->graph_pattern->whereClause, rel->relid, &required_outer);
+	}
+
+	if (!bms_is_empty(required_outer))
+	{
+		ParamPathInfo *param_info;
+
+		param_info = get_baserel_parampathinfo(root, rel, required_outer);
+		gpath->path.param_info = param_info;
+		gpath->path.rows = param_info->ppi_rows;
+	}
+
+	add_path(rel, (Path *) gpath);
+}
+
 /*
  * generate_gather_paths
  *		Generate parallel access paths for a relation by pushing a Gather or
@@ -5148,4 +5229,74 @@ generate_partitionwise_join_paths(PlannerInfo *root, RelOptInfo *rel)
 	/* Build additional paths for this rel from child-join paths. */
 	add_paths_to_append_rel(root, rel, live_children);
 	list_free(live_children);
+}
+
+/*
+ * Walk an expression tree and collect the varnos of any Var nodes
+ * that reference a relation other than the scan's own relation.
+ * This is used to detect LATERAL references in graph element WHERE
+ * clauses for proper parameterization.
+ */
+static void
+find_outer_var_varnos(Node *node, Index scanrelid, Relids *result)
+{
+	if (node == NULL)
+		return;
+
+	if (IsA(node, Var))
+	{
+		Var		   *var = (Var *) node;
+
+		if (var->varno > 0 && var->varno != scanrelid &&
+			!bms_is_member(var->varno, *result))
+			*result = bms_add_member(*result, var->varno);
+		return;
+	}
+
+	if (IsA(node, OpExpr))
+	{
+		OpExpr	   *op = (OpExpr *) node;
+		ListCell   *lc;
+
+		foreach(lc, op->args)
+			find_outer_var_varnos((Node *) lfirst(lc), scanrelid, result);
+	}
+	else if (IsA(node, BoolExpr))
+	{
+		BoolExpr   *b = (BoolExpr *) node;
+		ListCell   *lc;
+
+		foreach(lc, b->args)
+			find_outer_var_varnos((Node *) lfirst(lc), scanrelid, result);
+	}
+	else if (IsA(node, RelabelType))
+		find_outer_var_varnos((Node *) ((RelabelType *) node)->arg,
+							  scanrelid, result);
+	else if (IsA(node, CoerceViaIO))
+		find_outer_var_varnos((Node *) ((CoerceViaIO *) node)->arg,
+							  scanrelid, result);
+	else if (IsA(node, FuncExpr))
+	{
+		FuncExpr   *f = (FuncExpr *) node;
+		ListCell   *lc;
+
+		foreach(lc, f->args)
+			find_outer_var_varnos((Node *) lfirst(lc), scanrelid, result);
+	}
+	else if (IsA(node, ScalarArrayOpExpr))
+	{
+		ScalarArrayOpExpr *s = (ScalarArrayOpExpr *) node;
+		ListCell   *lc;
+
+		foreach(lc, s->args)
+			find_outer_var_varnos((Node *) lfirst(lc), scanrelid, result);
+	}
+	else if (IsA(node, NullIfExpr))
+	{
+		NullIfExpr *n = (NullIfExpr *) node;
+		ListCell   *lc;
+
+		foreach(lc, n->args)
+			find_outer_var_varnos((Node *) lfirst(lc), scanrelid, result);
+	}
 }

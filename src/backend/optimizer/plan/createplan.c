@@ -37,7 +37,6 @@
 #include "optimizer/restrictinfo.h"
 #include "optimizer/subselect.h"
 #include "optimizer/tlist.h"
-#include "parser/parse_clause.h"
 #include "parser/parsetree.h"
 #include "partitioning/partprune.h"
 #include "tcop/tcopprot.h"
@@ -157,6 +156,9 @@ static ForeignScan *create_foreignscan_plan(PlannerInfo *root, ForeignPath *best
 static CustomScan *create_customscan_plan(PlannerInfo *root,
 										  CustomPath *best_path,
 										  List *tlist, List *scan_clauses);
+static Plan *create_graphscan_plan(PlannerInfo *root,
+								   GraphPath * best_path,
+								   List *tlist, List *scan_clauses);
 static NestLoop *create_nestloop_plan(PlannerInfo *root, NestPath *best_path);
 static MergeJoin *create_mergejoin_plan(PlannerInfo *root, MergePath *best_path);
 static HashJoin *create_hashjoin_plan(PlannerInfo *root, HashPath *best_path);
@@ -418,6 +420,7 @@ create_plan_recurse(PlannerInfo *root, Path *best_path, int flags)
 		case T_NamedTuplestoreScan:
 		case T_ForeignScan:
 		case T_CustomScan:
+		case T_GraphScan:
 			plan = create_scan_plan(root, best_path, flags);
 			break;
 		case T_HashJoin:
@@ -793,6 +796,13 @@ create_scan_plan(PlannerInfo *root, Path *best_path, int flags)
 												   (CustomPath *) best_path,
 												   tlist,
 												   scan_clauses);
+			break;
+
+		case T_GraphScan:
+			plan = (Plan *) create_graphscan_plan(root,
+												  (GraphPath *) best_path,
+												  tlist,
+												  scan_clauses);
 			break;
 
 		default:
@@ -4182,6 +4192,233 @@ create_customscan_plan(PlannerInfo *root, CustomPath *best_path,
 	}
 
 	return cplan;
+}
+
+/*
+ * Helpers for LATERAL reference handling in graph scans.
+ */
+static bool contains_outer_var(Node *node, Index scanrelid);
+static void extract_graph_outer_quals(GraphPattern *pattern,
+									  Index scanrelid,
+									  List **extra_quals);
+
+/* ----------------------------------------------------------------
+ *	create_graphscan_plan
+ *
+ *		Transform a GraphPath into a GraphScan plan node.
+ * ----------------------------------------------------------------
+ */
+static Plan *
+create_graphscan_plan(PlannerInfo *root, GraphPath * best_path,
+					  List *tlist, List *scan_clauses)
+{
+	GraphScan  *scan;
+	Scan	   *scan_node;
+
+	scan = makeNode(GraphScan);
+	scan_node = &scan->scan;
+
+	/* Copy cost info from Path to Plan */
+	copy_generic_path_info(&scan_node->plan, &best_path->path);
+
+	/* Set target list and qual, unwrapping RestrictInfo nodes */
+	scan_node->plan.targetlist = tlist;
+	{
+		List	   *new_qual = NIL;
+		ListCell   *lc;
+
+		foreach(lc, scan_clauses)
+		{
+			Node	   *clause = (Node *) lfirst(lc);
+
+			while (clause != NULL && IsA(clause, RestrictInfo))
+				clause = (Node *) ((RestrictInfo *) clause)->clause;
+			if (clause)
+				new_qual = lappend(new_qual, clause);
+		}
+		scan_node->plan.qual = new_qual;
+	}
+	scan_node->plan.lefttree = NULL;
+	scan_node->plan.righttree = NULL;
+
+	/*
+	 * Replace bare Var references in the target list with the actual column
+	 * expressions from graph_table_columns.  This ensures that function
+	 * calls, coercions, and other wrappers around property references (e.g.,
+	 * upper(a.vname), a.vname COLLATE "C") are evaluated by the GraphScan's
+	 * projection (ExecProject) rather than being silently stripped when we
+	 * only resolve raw property values.
+	 */
+	{
+		RangeTblEntry *rte = root->simple_rte_array[
+													best_path->path.parent->relid];
+		List	   *gtcols = rte->graph_table_columns;
+		ListCell   *lc;
+
+		foreach(lc, scan_node->plan.targetlist)
+		{
+			TargetEntry *te = (TargetEntry *) lfirst(lc);
+
+			if (IsA(te->expr, Var))
+			{
+				Var		   *var = (Var *) te->expr;
+
+				if (var->varno == scan_node->scanrelid &&
+					var->varattno > 0 &&
+					var->varattno <= list_length(gtcols))
+				{
+					TargetEntry *gte = (TargetEntry *)
+						list_nth(gtcols, var->varattno - 1);
+
+					te->expr = (Expr *) copyObject(gte->expr);
+				}
+			}
+		}
+	}
+
+	/* Copy graph-specific fields */
+	scan->graph_oid = best_path->graph_oid;
+	scan->graph_pattern = best_path->graph_pattern;
+	scan->path_mode = PATH_MODE_WALK;
+	scan->search_algo = SEARCH_DFS;
+
+	/* scanrelid points to the RTE_GRAPH_TABLE entry */
+	scan_node->scanrelid = best_path->path.parent->relid;
+
+	/*
+	 * Extract conditions from element-level WHERE clauses that reference
+	 * outer relations (LATERAL references) and add them to the plan's qual.
+	 * This ensures they go through fix_scan_expr in setrefs.c (which converts
+	 * outer Vars to OUTER_VAR) and are evaluated via ExecQual in the NestLoop
+	 * context where ecxt_outertuple is set correctly.
+	 */
+	{
+		List	   *extra_quals = NIL;
+
+		if (scan->graph_pattern != NULL)
+			extract_graph_outer_quals(scan->graph_pattern,
+									  scan_node->scanrelid,
+									  &extra_quals);
+		if (extra_quals != NIL)
+			scan_node->plan.qual =
+				list_concat(scan_node->plan.qual, extra_quals);
+	}
+
+	return (Plan *) scan;
+}
+
+/*
+ * Check whether an expression tree contains a Var node referencing
+ * a relation other than the scan's own relation (i.e. a LATERAL
+ * outer reference).
+ */
+static bool
+contains_outer_var(Node *node, Index scanrelid)
+{
+	if (node == NULL)
+		return false;
+
+	if (IsA(node, Var))
+	{
+		Var		   *var = (Var *) node;
+
+		return (var->varno > 0 && var->varno != scanrelid);
+	}
+
+	if (IsA(node, OpExpr))
+	{
+		OpExpr	   *op = (OpExpr *) node;
+		ListCell   *lc;
+
+		foreach(lc, op->args)
+			if (contains_outer_var((Node *) lfirst(lc), scanrelid))
+			return true;
+		return false;
+	}
+	if (IsA(node, BoolExpr))
+	{
+		BoolExpr   *b = (BoolExpr *) node;
+		ListCell   *lc;
+
+		foreach(lc, b->args)
+			if (contains_outer_var((Node *) lfirst(lc), scanrelid))
+			return true;
+		return false;
+	}
+	if (IsA(node, RelabelType))
+		return contains_outer_var((Node *) ((RelabelType *) node)->arg,
+								  scanrelid);
+	if (IsA(node, CoerceViaIO))
+		return contains_outer_var((Node *) ((CoerceViaIO *) node)->arg,
+								  scanrelid);
+	if (IsA(node, FuncExpr))
+	{
+		FuncExpr   *f = (FuncExpr *) node;
+		ListCell   *lc;
+
+		foreach(lc, f->args)
+			if (contains_outer_var((Node *) lfirst(lc), scanrelid))
+			return true;
+		return false;
+	}
+	if (IsA(node, ScalarArrayOpExpr))
+	{
+		ScalarArrayOpExpr *s = (ScalarArrayOpExpr *) node;
+		ListCell   *lc;
+
+		foreach(lc, s->args)
+			if (contains_outer_var((Node *) lfirst(lc), scanrelid))
+			return true;
+		return false;
+	}
+	if (IsA(node, NullIfExpr))
+	{
+		NullIfExpr *n = (NullIfExpr *) node;
+		ListCell   *lc;
+
+		foreach(lc, n->args)
+			if (contains_outer_var((Node *) lfirst(lc), scanrelid))
+			return true;
+		return false;
+	}
+	return false;
+}
+
+/*
+ * Walk the graph pattern and extract all element-level WHERE clause
+ * expressions that reference outer relations.  These are added to
+ * the plan's qual for proper LATERAL join handling.
+ */
+static void
+extract_graph_outer_quals(GraphPattern *pattern, Index scanrelid,
+						  List **extra_quals)
+{
+	ListCell   *lc;
+
+	foreach(lc, pattern->path_pattern_list)
+	{
+		GraphElementPattern *gep;
+
+		if (!IsA(lfirst(lc), GraphElementPattern))
+			continue;
+		gep = (GraphElementPattern *) lfirst(lc);
+
+		if (gep->whereClause &&
+			contains_outer_var(gep->whereClause, scanrelid))
+			*extra_quals = lappend(*extra_quals, gep->whereClause);
+		if (gep->subexpr)
+		{
+			ListCell   *slc;
+
+			foreach(slc, gep->subexpr)
+			{
+				Node	   *sub = (Node *) lfirst(slc);
+
+				if (contains_outer_var(sub, scanrelid))
+					*extra_quals = lappend(*extra_quals, sub);
+			}
+		}
+	}
 }
 
 

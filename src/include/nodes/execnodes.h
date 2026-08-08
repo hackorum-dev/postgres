@@ -2104,6 +2104,233 @@ typedef struct ForeignScanState
 } ForeignScanState;
 
 /* ----------------
+ *	 GraphScanState information
+ *
+ *		GraphScan nodes are used to execute property graph scans (SQL/PGQ).
+ * ----------------
+ */
+
+/* Direction for edge traversal */
+typedef enum EdgeDirection
+{
+	GRAPH_DIR_OUTGOING = 0,		/* -(e)-> or -> */
+	GRAPH_DIR_INCOMING,			/* <-(e)- or <- */
+	GRAPH_DIR_UNDIRECTED		/* -(e)- */
+}			EdgeDirection;
+
+/* Execution modes for graph path traversal */
+typedef enum PathMode
+{
+	PATH_MODE_WALK = 0,			/* repeated vertices and edges allowed */
+	PATH_MODE_TRAIL,			/* no repeated edges allowed */
+	PATH_MODE_ACYCLIC,			/* no repeated vertices allowed */
+	PATH_MODE_SIMPLE			/* no repeated vertices except start=end */
+}			PathMode;
+
+/* Search algorithms for graph traversal */
+typedef enum SearchAlgorithm
+{
+	SEARCH_DFS = 0,				/* Depth-First Search */
+	SEARCH_BFS,					/* Breadth-First Search */
+	SEARCH_BIDIRECTIONAL,		/* Dual-ended BFS */
+}			SearchAlgorithm;
+
+/* Per-element metadata built from pg_propgraph_element during init */
+typedef struct GraphElementRelInfo
+{
+	Oid			element_oid;	/* pg_propgraph_element OID */
+	Oid			table_oid;		/* underlying heap relation OID */
+	char		element_kind;	/* 'v' for vertex, 'e' for edge */
+	Relation	heap_rel;		/* opened heap relation handle */
+	TupleDesc	tupdesc;		/* table tuple descriptor */
+
+	/*
+	 * Foreign key attribute mappings for edges.
+	 */
+	int			nsrc_fk_attnums;	/* number of source FK columns */
+	AttrNumber *src_fk_attnums; /* array of source FK attnums */
+	int			ndst_fk_attnums;	/* number of destination FK columns */
+	AttrNumber *dst_fk_attnums; /* array of destination FK attnums */
+
+	/* Vertex element OIDs that this edge connects */
+	Oid			src_vertex_elemid;	/* element OID of source vertex */
+	Oid			dest_vertex_elemid; /* element OID of destination vertex */
+
+	/* Element key: primary key attnums for vertices */
+	int			nkey_attnums;
+	AttrNumber *key_attnums;
+
+	/*
+	 * Label OIDs that this element belongs to (from
+	 * pg_propgraph_element_label)
+	 */
+	int			nlabels;
+	Oid			label_oids[32];
+}			GraphElementRelInfo;
+
+/*
+ * HopFrame - state for one hop in a multi-hop graph traversal.
+ *
+ * A hop moves from one vertex to another via edges.  Each hop has its own
+ * edge scan state, allowing independent iteration.  Multi-hop queries are
+ * chains of hop frames.
+ */
+typedef struct GraphHopFrame
+{
+	/* Edge scan state for this hop */
+	struct TableScanDescData *edge_scan;	/* active heap scan on edge table */
+	TupleTableSlot *edge_slot;	/* current edge tuple */
+	int			edge_table_index;	/* which edge catalog table we're scanning */
+	int			scan_pass;		/* 0=outgoing, 1=incoming (undirected) */
+
+	/* Source vertex: what edges are scanned FROM */
+	int			nfrom;			/* number of key columns */
+	Datum	   *from_vertex_values; /* PK values of source vertex */
+	bool	   *from_vertex_nulls;	/* null flags */
+	TupleTableSlot *from_vertex_slot;	/* source vertex tuple */
+	Oid			from_vertex_elemid; /* element_oid of the source vertex's
+									 * catalog element */
+
+	/* Current destination vertex (matched by the current edge) */
+	TupleTableSlot *to_vertex_slot; /* matched destination vertex tuple */
+	Oid			to_vertex_elemid;	/* element_oid of the destination vertex's
+									 * catalog element */
+	int			nto;			/* number of key columns */
+	Datum	   *to_vertex_values;	/* PK values of destination vertex */
+	bool	   *to_vertex_nulls;	/* null flags */
+
+	/*
+	 * For undirected scans: TID and edge catalog index of an edge already
+	 * accepted on pass 0 (outgoing).  On pass 1 (incoming), skip edges from
+	 * the same table whose TID matches, to avoid reporting the same self-loop
+	 * edge twice.
+	 */
+	ItemPointerData undirected_seen_tid;
+	int			undirected_seen_edge_idx;
+	bool		undirected_has_seen;
+
+	/*
+	 * VLE (Variable-Length Edge): DFS exploration stack for hops with a
+	 * quantifier {m,n}.  When no quantifier is present (implicit {1,1}),
+	 * vle_lower = vle_upper = 1 and the stack has capacity 2.
+	 *
+	 * Stack frames are indexed by depth (0 = source, upper = deepest).
+	 * Each frame stores the vertex identity and edge-scan resume position.
+	 * vle_stack_top is -1 when the stack is empty.
+	 */
+	bool		vle_active;			/* DFS exploration in progress */
+	int			vle_lower;			/* lower bound (1 if no quantifier) */
+	int			vle_upper;			/* upper bound (1 if no quantifier) */
+	int			vle_stack_top;		/* current stack top (-1 = empty) */
+	int			vle_stack_capacity;	/* allocated frames = vle_upper + 1 */
+	Oid		   *vle_stack_elemid;	/* element_oid per depth level */
+	int		   *vle_stack_nkeys;	/* number of key columns */
+	Datum	  **vle_stack_values;	/* PK values per depth level */
+	bool	  **vle_stack_nulls;	/* null flags per depth level */
+	int		   *vle_stack_table_idx;	/* edge table index for resume */
+	int		   *vle_stack_scan_pass;	/* scan pass for resume */
+	struct TableScanDescData **vle_stack_edge_scan;	/* own edge scan per frame */
+	TupleTableSlot **vle_stack_edge_slot;	/* own edge slot per frame */
+}			GraphHopFrame;
+
+typedef struct GraphScanState
+{
+	ScanState	ss;				/* its first field is NodeTag */
+	PathMode	path_mode;
+	SearchAlgorithm search_algo;
+
+	/* Start vertex state: how we fetch the initial vertex */
+	int			n_start_keys;	/* number of key columns */
+	Datum	   *start_vertex_values;	/* PK values of current start vertex */
+	bool	   *start_vertex_nulls; /* null flags */
+	int			start_table_index;	/* which vertex table for start */
+	TupleTableSlot *start_vertex_slot;	/* current start vertex tuple */
+	struct TableScanDescData *start_scan;	/* heap scan on start vertex table */
+
+	/* The hop chain: one GraphHopFrame per traversal */
+	GraphHopFrame *hops;
+	int			n_hops;			/* number of traversals */
+	int			current_hop;	/* active hop (-1 = fetching start vertex,
+								 * n_hops = done) */
+
+	/* Compiled expression states for WHERE clauses on elements */
+	ExprState **element_quals;	/* array of ExprState* per pattern element */
+	Node	   *where_clause;	/* raw outer GraphPattern WHERE clause (NULL
+								 * if none) */
+
+	/* Property graph OID */
+	Oid			graph_oid;
+
+	/* Catalog & runtime schema metadata */
+	int			num_elements;	/* total catalog elements in property graph */
+	GraphElementRelInfo *element_info;	/* array of opened physical relations */
+
+	/* Number of element patterns in the graph pattern's first path pattern */
+	int			n_pattern_elems;
+
+	/* Column mapping for projection */
+	int			ncols;
+	int		   *col_elem_index; /* pattern element index (-1 if constant) */
+	bool	   *col_is_const;	/* true if column is a constant */
+	Datum	   *col_const_value;	/* constant value (if col_is_const) */
+	bool	   *col_const_null; /* true if constant is NULL */
+	char	  **col_propname;	/* property name (NULL if not a graph prop) */
+	Oid		   *col_propid;		/* property OID for runtime resolution */
+	bool	   *col_prop_unsafe;	/* true if property not on ALL candidates */
+
+	/*
+	 * Cached slot pointers for column projection: slot_for_elem[pi] points to
+	 * the TupleTableSlot holding the tuple for pattern element pi.  Built
+	 * during init and updated during execution.
+	 */
+	TupleTableSlot **slot_for_elem;
+	int			num_pi;			/* number of pattern elements */
+
+	/*
+	 * Compiled column expressions from graph_table_columns. For columns that
+	 * need expression evaluation (e.g., FuncExpr wrapping a
+	 * GraphPropertyRef), we compile an ExprState that reads from the element
+	 * slot via ecxt_outertuple.  If col_exprs[ci] is NULL, the column is
+	 * handled by fill_one_slot_attr.
+	 */
+	ExprState **col_exprs;		/* array of ExprState* per scan column
+								 * (graph_table_columns index) */
+	int		   *col_expr_elem_index;	/* which pattern element index each
+										 * col_expr reads from */
+
+	/*
+	 * Shared-variable tracking: when the same variable name appears at
+	 * multiple pattern element positions (e.g., (a)->(b)->(a)), the DFS must
+	 * enforce that the same physical row is used at every occurrence. For
+	 * each pattern element index that shares a variable, we store a group id
+	 * (-1 if unique). Comparison data (PK values for vertices, edge identity)
+	 * are stored per group.
+	 */
+	int		   *samevar_group;	/* per pattern-element index: group id, or -1 */
+	int			nsamevar_groups;	/* number of same-variable groups */
+
+	/*
+	 * Per-group tracking: indexed by samevar_group[id]. The first occurrence
+	 * (lowest pi) stores the authoritative values; later occurrences compare
+	 * against them.
+	 */
+	int		   *samevar_first_pi;	/* first pattern element index in group */
+	char	   *samevar_elem_kind;	/* 'v' for vertex, 'e' for edge */
+	int		   *samevar_nkeys;	/* number of key columns */
+	Datum	  **samevar_key_values; /* stored PK values from first occurrence */
+	bool	  **samevar_key_nulls;	/* null flags for PK values */
+	ItemPointerData *samevar_tid;	/* for edges: TID of first occurrence */
+
+	/* Per-query memory context */
+	MemoryContext graph_cxt;
+
+	/* DFS safety counter */
+	long		scan_attempts;
+
+	bool		is_initialized;
+}			GraphScanState;
+
+/* ----------------
  *	 CustomScanState information
  *
  *		CustomScan nodes are used to execute custom code within executor.
@@ -2111,7 +2338,7 @@ typedef struct ForeignScanState
  * Core code must avoid assuming that the CustomScanState is only as large as
  * the structure declared here; providers are allowed to make it the first
  * element in a larger structure, and typically would need to do so.  The
- * struct is actually allocated by the CreateCustomScanState method associated
+ * struct is actually created by the CreateCustomScanState method associated
  * with the plan node.  Any additional fields can be initialized there, or in
  * the BeginCustomScan method.
  * ----------------

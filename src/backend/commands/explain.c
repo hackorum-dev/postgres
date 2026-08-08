@@ -1218,6 +1218,9 @@ ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used)
 			*rels_used = bms_add_members(*rels_used,
 										 ((CustomScan *) plan)->custom_relids);
 			break;
+		case T_GraphScan:
+			/* GraphScan scans a property graph, no specific relids */
+			break;
 		case T_ModifyTable:
 			*rels_used = bms_add_member(*rels_used,
 										((ModifyTable *) plan)->nominalRelation);
@@ -1525,6 +1528,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			else
 				pname = sname;
 			break;
+		case T_GraphScan:
+			pname = sname = "Graph Scan";
+			break;
 		case T_Material:
 			pname = sname = "Materialize";
 			break;
@@ -1682,6 +1688,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 		case T_ForeignScan:
 		case T_CustomScan:
+		case T_GraphScan:
 			if (((Scan *) plan)->scanrelid > 0)
 				ExplainScanTarget((Scan *) plan, es);
 			break;
@@ -2171,6 +2178,14 @@ ExplainNode(PlanState *planstate, List *ancestors,
 					css->methods->ExplainCustomScan(css, ancestors, es);
 			}
 			break;
+		case T_GraphScan:
+			{
+				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+				if (plan->qual)
+					show_instrumentation_count("Rows Removed by Filter", 1,
+											   planstate, es);
+			}
+			break;
 		case T_NestLoop:
 			show_upper_qual(((NestLoop *) plan)->join.joinqual,
 							"Join Filter", planstate, ancestors, es);
@@ -2423,6 +2438,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_CustomScan:
 			ExplainCustomChildren((CustomScanState *) planstate,
 								  ancestors, es);
+			break;
+		case T_GraphScan:
+			/* GraphScan has no custom children to display */
 			break;
 		default:
 			break;
