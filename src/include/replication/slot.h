@@ -321,6 +321,7 @@ ReplicationSlotSetInactiveSince(ReplicationSlot *s, TimestampTz ts,
  */
 extern PGDLLIMPORT ReplicationSlotCtlData *ReplicationSlotCtl;
 extern PGDLLIMPORT ReplicationSlot *MyReplicationSlot;
+extern PGDLLIMPORT SubTransactionId MyReplicationSlotSubid;
 
 /* GUCs */
 extern PGDLLIMPORT int max_replication_slots;
