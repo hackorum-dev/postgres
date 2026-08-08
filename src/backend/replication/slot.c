@@ -40,6 +40,7 @@
 #include <sys/stat.h>
 
 #include "access/transam.h"
+#include "access/xact.h"
 #include "access/xlog_internal.h"
 #include "access/xlogrecovery.h"
 #include "common/file_utils.h"
@@ -156,6 +157,9 @@ const ShmemCallbacks ReplicationSlotsShmemCallbacks = {
 
 /* My backend's replication slot in the shared memory array */
 ReplicationSlot *MyReplicationSlot = NULL;
+
+/* Subtransaction ID in which MyReplicationSlot was acquired */
+SubTransactionId MyReplicationSlotSubid = InvalidSubTransactionId;
 
 /* GUC variables */
 int			max_replication_slots = 10; /* the maximum number of replication
@@ -519,6 +523,7 @@ ReplicationSlotCreate(const char *name, bool db_specific,
 	slot->active_proc = MyProcNumber;
 	SpinLockRelease(&slot->mutex);
 	MyReplicationSlot = slot;
+	MyReplicationSlotSubid = GetCurrentSubTransactionId();
 
 	LWLockRelease(ReplicationSlotControlLock);
 
@@ -724,6 +729,7 @@ retry:
 
 	/* We made this slot active, so it's ours now. */
 	MyReplicationSlot = s;
+	MyReplicationSlotSubid = GetCurrentSubTransactionId();
 
 	/*
 	 * We need to check for invalidation after making the slot ours to avoid
@@ -829,6 +835,7 @@ ReplicationSlotRelease(void)
 			ReplicationSlotSetInactiveSince(slot, now, true);
 
 		MyReplicationSlot = NULL;
+		MyReplicationSlotSubid = InvalidSubTransactionId;
 	}
 
 	/* might not have been set when we've been a plain slot */
@@ -1042,6 +1049,7 @@ ReplicationSlotDropAcquired(bool try_disable)
 
 	/* slot isn't acquired anymore */
 	MyReplicationSlot = NULL;
+	MyReplicationSlotSubid = InvalidSubTransactionId;
 
 	ReplicationSlotDropPtr(slot);
 
