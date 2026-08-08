@@ -25,6 +25,7 @@
 #include "catalog/pg_propgraph_property.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "optimizer/cost.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/optimizer.h"
 #include "parser/analyze.h"
@@ -105,6 +106,10 @@ static Node *get_element_property_expr(Oid elemoid, Oid propoid, int rtindex);
 /*
  * Convert GRAPH_TABLE clause into a subquery using relational
  * operators.
+ *
+ * If enable_native_graphtable is true (the default), the rewriting is
+ * bypassed and the RTE_GRAPH_TABLE is left intact for the native
+ * graph executor to process.
  */
 Query *
 rewriteGraphTable(Query *parsetree, int rt_index)
@@ -115,6 +120,10 @@ rewriteGraphTable(Query *parsetree, int rt_index)
 	List	   *pathqueries = NIL;
 
 	rte = rt_fetch(rt_index, parsetree->rtable);
+
+	/* Native mode: leave RTE_GRAPH_TABLE intact for the planner */
+	if (enable_native_graphtable)
+		return parsetree;
 
 	Assert(list_length(rte->graph_pattern->path_pattern_list) == 1);
 

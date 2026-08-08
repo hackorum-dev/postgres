@@ -1654,8 +1654,7 @@ pull_up_simple_subquery(PlannerInfo *root, Node *jtnode, RangeTblEntry *rte,
 					/* these can't contain any lateral references */
 					break;
 				case RTE_GRAPH_TABLE:
-					/* shouldn't happen here */
-					Assert(false);
+					child_rte->lateral = true;
 					break;
 			}
 		}
@@ -2723,8 +2722,7 @@ replace_vars_in_jointree(Node *jtnode,
 						Assert(false);
 						break;
 					case RTE_GRAPH_TABLE:
-						/* shouldn't happen here */
-						Assert(false);
+						/* graph tables are always LATERAL */
 						break;
 				}
 			}

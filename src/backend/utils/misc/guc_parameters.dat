@@ -968,6 +968,13 @@
   boot_val => 'true',
 },
 
+{ name => 'enable_native_graphtable', type => 'bool', context => 'PGC_USERSET', group => 'QUERY_TUNING_METHOD',
+  short_desc => 'Enables the native graph table executor.',
+  flags => 'GUC_EXPLAIN',
+  variable => 'enable_native_graphtable',
+  boot_val => 'true',
+},
+
 { name => 'enable_nestloop', type => 'bool', context => 'PGC_USERSET', group => 'QUERY_TUNING_METHOD',
   short_desc => 'Enables the planner\'s use of nested-loop join plans.',
   flags => 'GUC_EXPLAIN',
@@ -2189,6 +2196,15 @@
   boot_val => '2',
   min => '0',
   max => 'MAX_BACKENDS',
+},
+
+{ name => 'max_vle_stack_depth', type => 'int', context => 'PGC_USERSET', group => 'QUERY_TUNING_METHOD',
+  short_desc => 'Sets the maximum stack depth for variable-length edge graph traversals.',
+  long_desc => 'Limits the recursion depth for VLE (variable-length edge) queries in native graph scans to prevent runaway execution.',
+  variable => 'max_vle_stack_depth',
+  boot_val => '1000',
+  min => '1',
+  max => '1000000',
 },
 
 { name => 'max_wal_senders', type => 'int', context => 'PGC_POSTMASTER', group => 'REPLICATION_SENDING',

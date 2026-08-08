@@ -2662,6 +2662,7 @@ finalize_plan(PlannerInfo *root, Plan *plan,
 			break;
 
 		case T_SeqScan:
+		case T_GraphScan:
 			context.paramids = bms_add_members(context.paramids, scan_params);
 			break;
 
