@@ -3742,6 +3742,13 @@ my_shmem_init(void *arg)
       lock (ShmemIndexLock), which prevents the race condition of two backends
       trying to initialize the memory area at the same time.
      </para>
+     <para>
+      If the call fails while creating the areas, their names are removed from
+      the shared memory index and the associated backend-local handles are
+      cleared, so that no backend can use memory that was not fully
+      initialized.  The allocation itself cannot be reclaimed, however, and
+      reduces the space available to a later attempt.
+     </para>
     </sect3>
 
     <sect3 id="xfunc-shared-addin-dynamic">

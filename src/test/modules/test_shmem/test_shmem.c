@@ -40,6 +40,7 @@ static TestShmemData *TestShmem;
 static bool attached_or_initialized = false;
 static int	test_shmem_area_size = sizeof(TestShmemData);
 static bool test_shmem_after_startup = false;
+static int	test_shmem_extra_size = 0;
 static char test_shmem_area_name[64] = "test_shmem area";
 
 static void test_shmem_request(void *arg);
@@ -67,6 +68,9 @@ test_shmem_request(void *arg)
 	ShmemRequestStruct(.name = test_shmem_area_name,
 					   .size = test_shmem_area_size,
 					   .ptr = (void **) &TestShmem);
+	if (test_shmem_extra_size > 0)
+		ShmemRequestStruct(.name = "test_shmem extra area",
+						   .size = test_shmem_extra_size);
 
 	if (test_shmem_after_startup)
 		INJECTION_POINT("test-shmem-request", NULL);
@@ -76,6 +80,8 @@ static void
 test_shmem_init(void *arg)
 {
 	elog(LOG, "init callback called");
+	if (test_shmem_after_startup)
+		INJECTION_POINT("test-shmem-init", NULL);
 	if (TestShmem->initialized)
 		elog(ERROR, "shmem area already initialized");
 	TestShmem->initialized = true;
@@ -112,6 +118,14 @@ _PG_init(void)
 							PGC_USERSET,
 							GUC_UNIT_BYTE,
 							NULL, NULL, NULL);
+	DefineCustomIntVariable("test_shmem.extra_size",
+							"Size of an additional area in the same request.",
+							NULL,
+							&test_shmem_extra_size,
+							0, 0, INT_MAX,
+							PGC_USERSET,
+							GUC_UNIT_BYTE,
+							NULL, NULL, NULL);
 	MarkGUCPrefixReserved("test_shmem");
 	RegisterShmemCallbacks(&TestShmemCallbacks);
 }
@@ -121,8 +135,16 @@ Datum
 test_shmem_register(PG_FUNCTION_ARGS)
 {
 	test_shmem_after_startup = true;
+	attached_or_initialized = false;
 	RegisterShmemCallbacks(&TestShmemCallbacks);
 	PG_RETURN_VOID();
+}
+
+PG_FUNCTION_INFO_V1(test_shmem_area_is_null);
+Datum
+test_shmem_area_is_null(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_BOOL(TestShmem == NULL);
 }
 
 PG_FUNCTION_INFO_V1(get_test_shmem_attach_count);

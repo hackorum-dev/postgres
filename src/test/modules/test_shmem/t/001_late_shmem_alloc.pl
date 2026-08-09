@@ -69,6 +69,54 @@ is(scalar @failures, 2, "allocation failure is reported on both attempts");
 unlike($stderr, qr/server closed the connection/,
 	"allocation failure does not crash the retry");
 
+
+# A partly allocated batch is rolled back from ShmemIndex, although its bytes
+# cannot be reclaimed.  The same names can therefore be used by a smaller
+# retry, and the failed attempt leaves no usable local handle.
+my $result = $node->safe_psql("postgres", q[
+LOAD 'test_shmem';
+SET test_shmem.area_size = '1kB';
+SET test_shmem.extra_size = '1GB';
+DO $$ BEGIN PERFORM test_shmem_register(); EXCEPTION WHEN others THEN END $$;
+SELECT test_shmem_area_is_null(),
+			 (SELECT count(*)
+					FROM pg_shmem_allocations
+				 WHERE name IN ('test_shmem area 1024', 'test_shmem extra area'));]);
+is($result, "t|0", "partial allocation is hidden and its names are reusable");
+
+$result = $node->safe_psql("postgres", q[
+LOAD 'test_shmem';
+SET test_shmem.area_size = '1kB';
+DO $$ BEGIN PERFORM test_shmem_register(); END $$;
+SELECT get_test_shmem_attach_count();]);
+is($result, '0', "a smaller request can reuse a rolled-back name");
+
+SKIP:
+{
+	skip "injection points not supported by this build", 2
+	  if $ENV{enable_injection_points} ne 'yes';
+
+	$node->safe_psql("postgres", "CREATE EXTENSION IF NOT EXISTS injection_points;");
+	$result = $node->safe_psql("postgres", q[
+LOAD 'test_shmem';
+DO $$ BEGIN PERFORM injection_points_attach('test-shmem-init', 'error'); END $$;
+SET test_shmem.area_size = '2kB';
+DO $$ BEGIN PERFORM test_shmem_register(); EXCEPTION WHEN others THEN END $$;
+SELECT test_shmem_area_is_null(),
+			 (SELECT count(*)
+					FROM pg_shmem_allocations
+				 WHERE name = 'test_shmem area 2048');]);
+	is($result, "t|0", "an init callback failure is rolled back");
+	$node->safe_psql("postgres",
+		"SELECT injection_points_detach('test-shmem-init');");
+	$result = $node->safe_psql("postgres", q[
+LOAD 'test_shmem';
+SET test_shmem.area_size = '2kB';
+DO $$ BEGIN PERFORM test_shmem_register(); END $$;
+SELECT get_test_shmem_attach_count();]);
+	is($result, '0', "a name is reusable after an init callback failure");
+}
+
 # Check that the attach counter is incremented on a new connection
 my $attach_count1 =
   $node->safe_psql("postgres", "SELECT get_test_shmem_attach_count();");

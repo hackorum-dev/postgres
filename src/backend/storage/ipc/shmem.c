@@ -214,6 +214,14 @@ enum shmem_request_state
 static enum shmem_request_state shmem_request_state = SRS_INITIAL;
 
 /*
+ * True while an after-startup registration is creating its areas, that is,
+ * between the point where the first ShmemIndex entry is made and the point
+ * where the init_fn callback returns.  Until then the areas hold garbage, so
+ * an error in that window has to undo them.
+ */
+static bool late_shmem_init_in_progress = false;
+
+/*
  * This is the first data structure stored in the shared memory segment, at
  * the offset that PGShmemHeader->content_offset points to.  Allocations by
  * ShmemAlloc() are carved out of the space after this.
@@ -276,6 +284,7 @@ static bool firstNumaTouch = true;
 static void CallShmemCallbacksAfterStartup(const ShmemCallbacks *callbacks);
 static void CallShmemCallbacksAfterStartupInternal(const ShmemCallbacks *callbacks);
 static void DiscardPendingShmemRequests(void);
+static void RollbackLateShmemInit(void);
 static void InitShmemIndexEntry(ShmemRequest *request);
 static bool AttachShmemIndexEntry(ShmemRequest *request, bool missing_ok);
 
@@ -912,7 +921,10 @@ CallShmemCallbacksAfterStartup(const ShmemCallbacks *callbacks)
 	}
 	PG_FINALLY();
 	{
+		if (late_shmem_init_in_progress)
+			RollbackLateShmemInit();
 		DiscardPendingShmemRequests();
+		late_shmem_init_in_progress = false;
 		shmem_request_state = SRS_DONE;
 	}
 	PG_END_TRY();
@@ -923,7 +935,6 @@ CallShmemCallbacksAfterStartupInternal(const ShmemCallbacks *callbacks)
 {
 	bool		found_any;
 	bool		notfound_any;
-
 
 	/*
 	 * Call the request callback first.  The callback makes ShmemRequest*()
@@ -963,6 +974,8 @@ CallShmemCallbacksAfterStartupInternal(const ShmemCallbacks *callbacks)
 	if (found_any && notfound_any)
 		elog(ERROR, "some of the requested shmem areas have already been initialized");
 
+	late_shmem_init_in_progress = !found_any;
+
 	/*
 	 * Allocate or attach all the shmem areas requested by the request_fn
 	 * callback.
@@ -973,7 +986,6 @@ CallShmemCallbacksAfterStartupInternal(const ShmemCallbacks *callbacks)
 			AttachShmemIndexEntry(request, false);
 		else
 			InitShmemIndexEntry(request);
-
 	}
 
 	/* Finish by calling the appropriate subsystem-specific callback */
@@ -988,7 +1000,54 @@ CallShmemCallbacksAfterStartupInternal(const ShmemCallbacks *callbacks)
 			callbacks->init_fn(callbacks->opaque_arg);
 	}
 
+	late_shmem_init_in_progress = false;
 	LWLockRelease(ShmemIndexLock);
+}
+
+/*
+ * Undo the visible parts of an initialization that did not finish.  The
+ * shared memory itself cannot be reclaimed, but removing the index entries
+ * prevents another backend from attaching to it and makes the names usable
+ * by a later attempt.
+ *
+ * This is called only on the create path, while ShmemIndexLock is still held,
+ * so any matching entries were inserted by this attempt.
+ */
+static void
+RollbackLateShmemInit(void)
+{
+	Assert(LWLockHeldByMe(ShmemIndexLock));
+
+	foreach_ptr(ShmemRequest, request, pending_shmem_requests)
+	{
+		if (hash_search(ShmemIndex, request->options->name,
+						HASH_REMOVE, NULL) == NULL)
+			continue;
+
+		switch (request->kind)
+		{
+			case SHMEM_KIND_STRUCT:
+				if (request->options->ptr)
+					*(request->options->ptr) = NULL;
+				break;
+			case SHMEM_KIND_HASH:
+				{
+					ShmemHashOpts *options = (ShmemHashOpts *) request->options;
+
+					if (options->ptr)
+						*(options->ptr) = NULL;
+					break;
+				}
+			case SHMEM_KIND_SLRU:
+				{
+					SlruOpts   *options = (SlruOpts *) request->options;
+
+					if (options->desc)
+						options->desc->shared = NULL;
+					break;
+				}
+		}
+	}
 }
 
 /* Release the requests accumulated by a request_fn callback. */
