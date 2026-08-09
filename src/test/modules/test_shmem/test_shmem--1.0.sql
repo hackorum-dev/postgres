@@ -8,7 +8,7 @@ CREATE FUNCTION get_test_shmem_attach_count()
 RETURNS pg_catalog.int4 STRICT
 AS 'MODULE_PATHNAME' LANGUAGE C;
 
-CREATE FUNCTION test_shmem_register()
+CREATE FUNCTION test_shmem_register(pg_catalog.bool DEFAULT false)
 RETURNS pg_catalog.void STRICT
 AS 'MODULE_PATHNAME' LANGUAGE C;
 

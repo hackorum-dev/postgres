@@ -117,6 +117,17 @@ SELECT get_test_shmem_attach_count();]);
 	is($result, '0', "a name is reusable after an init callback failure");
 }
 
+
+my (undef, undef, $legacy_stderr) = $node->psql(
+	"postgres", q[
+LOAD 'test_shmem';
+SET test_shmem.area_size = '3kB';
+SELECT test_shmem_register(true);],
+	timeout => $PostgreSQL::Test::Utils::timeout_default);
+like($legacy_stderr,
+	qr/cannot call ShmemInitStruct\(\) from a shmem init or attach callback/,
+	"legacy allocation from an init callback is rejected");
+
 # Check that the attach counter is incremented on a new connection
 my $attach_count1 =
   $node->safe_psql("postgres", "SELECT get_test_shmem_attach_count();");

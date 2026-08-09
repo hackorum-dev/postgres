@@ -3749,6 +3749,13 @@ my_shmem_init(void *arg)
       initialized.  The allocation itself cannot be reclaimed, however, and
       reduces the space available to a later attempt.
      </para>
+     <para>
+      When the callbacks are run after startup, the legacy
+      <function>ShmemInitStruct()</function> and
+      <function>ShmemInitHash()</function> functions cannot be called from
+      <function>init_fn</function> or <function>attach_fn</function>.  Request
+      all areas from <function>request_fn</function> instead.
+     </para>
     </sect3>
 
     <sect3 id="xfunc-shared-addin-dynamic">

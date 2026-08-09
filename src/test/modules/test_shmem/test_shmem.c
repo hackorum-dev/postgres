@@ -41,6 +41,7 @@ static bool attached_or_initialized = false;
 static int	test_shmem_area_size = sizeof(TestShmemData);
 static bool test_shmem_after_startup = false;
 static int	test_shmem_extra_size = 0;
+static bool test_shmem_legacy_init = false;
 static char test_shmem_area_name[64] = "test_shmem area";
 
 static void test_shmem_request(void *arg);
@@ -82,6 +83,12 @@ test_shmem_init(void *arg)
 	elog(LOG, "init callback called");
 	if (test_shmem_after_startup)
 		INJECTION_POINT("test-shmem-init", NULL);
+	if (test_shmem_legacy_init)
+	{
+		bool		found;
+
+		(void) ShmemInitStruct("test_shmem legacy area", 1024, &found);
+	}
 	if (TestShmem->initialized)
 		elog(ERROR, "shmem area already initialized");
 	TestShmem->initialized = true;
@@ -134,6 +141,7 @@ PG_FUNCTION_INFO_V1(test_shmem_register);
 Datum
 test_shmem_register(PG_FUNCTION_ARGS)
 {
+	test_shmem_legacy_init = PG_NARGS() > 0 && PG_GETARG_BOOL(0);
 	test_shmem_after_startup = true;
 	attached_or_initialized = false;
 	RegisterShmemCallbacks(&TestShmemCallbacks);

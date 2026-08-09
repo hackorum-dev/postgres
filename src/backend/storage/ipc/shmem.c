@@ -1106,6 +1106,10 @@ ShmemInitStruct(const char *name, Size size, bool *foundPtr)
 	};
 	ShmemRequest request = {&options, SHMEM_KIND_STRUCT};
 
+	if (shmem_request_state == SRS_ATTACHING ||
+		shmem_request_state == SRS_AFTER_STARTUP_ATTACH_OR_INIT)
+		elog(ERROR, "cannot call ShmemInitStruct() from a shmem init or attach callback");
+
 	Assert(shmem_request_state == SRS_DONE ||
 		   shmem_request_state == SRS_INITIALIZING ||
 		   shmem_request_state == SRS_REQUESTING);
