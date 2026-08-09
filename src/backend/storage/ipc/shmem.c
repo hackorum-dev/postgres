@@ -274,6 +274,8 @@ typedef struct
 static bool firstNumaTouch = true;
 
 static void CallShmemCallbacksAfterStartup(const ShmemCallbacks *callbacks);
+static void CallShmemCallbacksAfterStartupInternal(const ShmemCallbacks *callbacks);
+static void DiscardPendingShmemRequests(void);
 static void InitShmemIndexEntry(ShmemRequest *request);
 static bool AttachShmemIndexEntry(ShmemRequest *request, bool missing_ok);
 
@@ -336,6 +338,7 @@ void
 ShmemRequestInternal(ShmemStructOpts *options, ShmemRequestKind kind)
 {
 	ShmemRequest *request;
+	MemoryContext oldcontext;
 
 	/* Check the options */
 	if (options->name == NULL)
@@ -373,11 +376,13 @@ ShmemRequestInternal(ShmemStructOpts *options, ShmemRequestKind kind)
 							options->name)));
 	}
 
-	/* Request looks valid, remember it */
+	/* Keep the requests and list cells alive until we explicitly free them. */
+	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 	request = palloc(sizeof(ShmemRequest));
 	request->options = options;
 	request->kind = kind;
 	pending_shmem_requests = lappend(pending_shmem_requests, request);
+	MemoryContextSwitchTo(oldcontext);
 }
 
 /*
@@ -897,11 +902,28 @@ RegisterShmemCallbacks(const ShmemCallbacks *callbacks)
 static void
 CallShmemCallbacksAfterStartup(const ShmemCallbacks *callbacks)
 {
+	Assert(shmem_request_state == SRS_DONE);
+	Assert(pending_shmem_requests == NIL);
+
+	shmem_request_state = SRS_REQUESTING;
+	PG_TRY();
+	{
+		CallShmemCallbacksAfterStartupInternal(callbacks);
+	}
+	PG_FINALLY();
+	{
+		DiscardPendingShmemRequests();
+		shmem_request_state = SRS_DONE;
+	}
+	PG_END_TRY();
+}
+
+static void
+CallShmemCallbacksAfterStartupInternal(const ShmemCallbacks *callbacks)
+{
 	bool		found_any;
 	bool		notfound_any;
 
-	Assert(shmem_request_state == SRS_DONE);
-	shmem_request_state = SRS_REQUESTING;
 
 	/*
 	 * Call the request callback first.  The callback makes ShmemRequest*()
@@ -914,7 +936,6 @@ CallShmemCallbacksAfterStartup(const ShmemCallbacks *callbacks)
 
 	if (pending_shmem_requests == NIL)
 	{
-		shmem_request_state = SRS_DONE;
 		return;
 	}
 
@@ -953,10 +974,7 @@ CallShmemCallbacksAfterStartup(const ShmemCallbacks *callbacks)
 		else
 			InitShmemIndexEntry(request);
 
-		pfree(request->options);
 	}
-	list_free_deep(pending_shmem_requests);
-	pending_shmem_requests = NIL;
 
 	/* Finish by calling the appropriate subsystem-specific callback */
 	if (found_any)
@@ -971,7 +989,16 @@ CallShmemCallbacksAfterStartup(const ShmemCallbacks *callbacks)
 	}
 
 	LWLockRelease(ShmemIndexLock);
-	shmem_request_state = SRS_DONE;
+}
+
+/* Release the requests accumulated by a request_fn callback. */
+static void
+DiscardPendingShmemRequests(void)
+{
+	foreach_ptr(ShmemRequest, request, pending_shmem_requests)
+		pfree(request->options);
+	list_free_deep(pending_shmem_requests);
+	pending_shmem_requests = NIL;
 }
 
 /*

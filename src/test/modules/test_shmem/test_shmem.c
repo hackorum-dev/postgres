@@ -17,9 +17,13 @@
 
 #include "postgres.h"
 
+#include <limits.h>
+
 #include "fmgr.h"
 #include "miscadmin.h"
 #include "storage/shmem.h"
+#include "utils/guc.h"
+#include "utils/injection_point.h"
 
 
 PG_MODULE_MAGIC;
@@ -34,6 +38,9 @@ typedef struct TestShmemData
 static TestShmemData *TestShmem;
 
 static bool attached_or_initialized = false;
+static int	test_shmem_area_size = sizeof(TestShmemData);
+static bool test_shmem_after_startup = false;
+static char test_shmem_area_name[64] = "test_shmem area";
 
 static void test_shmem_request(void *arg);
 static void test_shmem_init(void *arg);
@@ -51,9 +58,18 @@ test_shmem_request(void *arg)
 {
 	elog(LOG, "test_shmem_request callback called");
 
-	ShmemRequestStruct(.name = "test_shmem area",
-					   .size = sizeof(TestShmemData),
+	if (test_shmem_area_size == sizeof(TestShmemData))
+		strcpy(test_shmem_area_name, "test_shmem area");
+	else
+		snprintf(test_shmem_area_name, sizeof(test_shmem_area_name),
+				 "test_shmem area %d", test_shmem_area_size);
+
+	ShmemRequestStruct(.name = test_shmem_area_name,
+					   .size = test_shmem_area_size,
 					   .ptr = (void **) &TestShmem);
+
+	if (test_shmem_after_startup)
+		INJECTION_POINT("test-shmem-request", NULL);
 }
 
 static void
@@ -86,7 +102,27 @@ void
 _PG_init(void)
 {
 	elog(LOG, "test_shmem module's _PG_init called");
+
+	DefineCustomIntVariable("test_shmem.area_size",
+							"Size of the shmem area to request.",
+							NULL,
+							&test_shmem_area_size,
+							sizeof(TestShmemData),
+							sizeof(TestShmemData), INT_MAX,
+							PGC_USERSET,
+							GUC_UNIT_BYTE,
+							NULL, NULL, NULL);
+	MarkGUCPrefixReserved("test_shmem");
 	RegisterShmemCallbacks(&TestShmemCallbacks);
+}
+
+PG_FUNCTION_INFO_V1(test_shmem_register);
+Datum
+test_shmem_register(PG_FUNCTION_ARGS)
+{
+	test_shmem_after_startup = true;
+	RegisterShmemCallbacks(&TestShmemCallbacks);
+	PG_RETURN_VOID();
 }
 
 PG_FUNCTION_INFO_V1(get_test_shmem_attach_count);
