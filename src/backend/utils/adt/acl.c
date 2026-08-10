@@ -98,6 +98,8 @@ static void check_acl(const Acl *acl);
 static const char *aclparse(const char *s, AclItem *aip, Node *escontext);
 static bool aclitem_match(const AclItem *a1, const AclItem *a2);
 static int	aclitemComparator(const void *arg1, const void *arg2);
+static AclMode aclmask_direct(const Acl *acl, Oid roleid, Oid ownerId,
+							  AclMode mask, AclMaskHow how);
 static void check_circularity(const Acl *old_acl, const AclItem *mod_aip,
 							  Oid ownerId);
 static Acl *recursive_revoke(Acl *acl, Oid grantee, AclMode revoke_privs,
@@ -1297,12 +1299,16 @@ cc_restart:
 		}
 	}
 
-	/* Now we can compute grantor's independently-derived privileges */
-	own_privs = aclmask(acl,
-						mod_aip->ai_grantor,
-						ownerId,
-						ACL_GRANT_OPTION_FOR(ACLITEM_GET_GOPTIONS(*mod_aip)),
-						ACLMASK_ALL);
+	/*
+	 * Now we can compute grantor's independently-derived privileges.
+	 * We use aclmask_direct here to filter-out inherited priviledges, so
+	 * this check remains true after role beign revoked from other role.
+	 */
+	own_privs = aclmask_direct(acl,
+							   mod_aip->ai_grantor,
+							   ownerId,
+							   ACL_GRANT_OPTION_FOR(ACLITEM_GET_GOPTIONS(*mod_aip)),
+							   ACLMASK_ALL);
 	own_privs = ACL_OPTION_TO_PRIVS(own_privs);
 
 	if ((ACLITEM_GET_GOPTIONS(*mod_aip) & ~own_privs) != 0)
