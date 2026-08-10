@@ -43,20 +43,19 @@ static void *ShmemHashAlloc(Size size, void *alloc_arg);
 void
 ShmemRequestHashWithOpts(const ShmemHashOpts *options)
 {
-	ShmemHashOpts *options_copy;
+	ShmemHashOpts options_copy;
 
 	Assert(options->name != NULL);
 
-	options_copy = MemoryContextAlloc(TopMemoryContext,
-									  sizeof(ShmemHashOpts));
-	memcpy(options_copy, options, sizeof(ShmemHashOpts));
+	memcpy(&options_copy, options, sizeof(ShmemHashOpts));
 
 	/* Set options for the fixed-size area holding the hash table */
-	options_copy->base.name = options->name;
-	options_copy->base.size = hash_estimate_size(options_copy->nelems,
-												 options_copy->hash_info.entrysize);
+	options_copy.base.name = options->name;
+	options_copy.base.size = hash_estimate_size(options_copy.nelems,
+											options_copy.hash_info.entrysize);
 
-	ShmemRequestInternal(&options_copy->base, SHMEM_KIND_HASH);
+	ShmemRequestInternal(&options_copy.base, sizeof(ShmemHashOpts),
+						 SHMEM_KIND_HASH);
 }
 
 void

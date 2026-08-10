@@ -142,6 +142,8 @@
 #include "storage/shmem_internal.h"
 #include "storage/spin.h"
 #include "utils/builtins.h"
+#include "utils/injection_point.h"
+#include "utils/memutils.h"
 #include "utils/tuplestore.h"
 
 /*
@@ -167,6 +169,7 @@ typedef struct
 } ShmemRequest;
 
 static List *pending_shmem_requests;
+static MemoryContext pending_shmem_requests_context;
 
 /*
  * Per-process state machine, for sanity checking that we do things in the
@@ -314,28 +317,23 @@ Datum		pg_numa_available(PG_FUNCTION_ARGS);
 void
 ShmemRequestStructWithOpts(const ShmemStructOpts *options)
 {
-	ShmemStructOpts *options_copy;
-
-	options_copy = MemoryContextAlloc(TopMemoryContext,
-									  sizeof(ShmemStructOpts));
-	memcpy(options_copy, options, sizeof(ShmemStructOpts));
-
-	ShmemRequestInternal(options_copy, SHMEM_KIND_STRUCT);
+	ShmemRequestInternal(options, sizeof(ShmemStructOpts), SHMEM_KIND_STRUCT);
 }
 
 /*
  * Internal workhorse of ShmemRequestStruct() and ShmemRequestHash().
  *
- * Note: Unlike in the public ShmemRequestStruct() and ShmemRequestHash()
- * functions, 'options' is *not* copied.  It must be allocated in
- * TopMemoryContext by the caller, and will be freed after the init/attach
- * callbacks have been called.  This allows ShmemRequestHash() to pass a
- * pointer to the extended ShmemHashOpts struct instead.
+ * 'options_size' can be larger than ShmemStructOpts, allowing callers such as
+ * ShmemRequestHash() to pass an extended options structure.  ShmemStructOpts
+ * must be its first member.
  */
 void
-ShmemRequestInternal(ShmemStructOpts *options, ShmemRequestKind kind)
+ShmemRequestInternal(const ShmemStructOpts *options, Size options_size,
+					 ShmemRequestKind kind)
 {
 	ShmemRequest *request;
+	ShmemStructOpts *options_copy;
+	MemoryContext oldcontext;
 
 	/* Check the options */
 	if (options->name == NULL)
@@ -374,10 +372,14 @@ ShmemRequestInternal(ShmemStructOpts *options, ShmemRequestKind kind)
 	}
 
 	/* Request looks valid, remember it */
+	oldcontext = MemoryContextSwitchTo(pending_shmem_requests_context);
+	options_copy = palloc(options_size);
+	memcpy(options_copy, options, options_size);
 	request = palloc(sizeof(ShmemRequest));
-	request->options = options;
+	request->options = options_copy;
 	request->kind = kind;
 	pending_shmem_requests = lappend(pending_shmem_requests, request);
+	MemoryContextSwitchTo(oldcontext);
 }
 
 /*
@@ -433,11 +435,10 @@ ShmemInitRequested(void)
 	 * so no need for locking.
 	 */
 	foreach_ptr(ShmemRequest, request, pending_shmem_requests)
-	{
 		InitShmemIndexEntry(request);
-		pfree(request->options);
-	}
-	list_free_deep(pending_shmem_requests);
+
+	MemoryContextDelete(pending_shmem_requests_context);
+	pending_shmem_requests_context = NULL;
 	pending_shmem_requests = NIL;
 
 	/*
@@ -476,11 +477,10 @@ ShmemAttachRequested(void)
 	 * Attach to all the requested memory areas.
 	 */
 	foreach_ptr(ShmemRequest, request, pending_shmem_requests)
-	{
 		AttachShmemIndexEntry(request, false);
-		pfree(request->options);
-	}
-	list_free_deep(pending_shmem_requests);
+
+	MemoryContextDelete(pending_shmem_requests_context);
+	pending_shmem_requests_context = NULL;
 	pending_shmem_requests = NIL;
 
 	/* Call attach callbacks */
@@ -744,7 +744,12 @@ ResetShmemAllocator(void)
 	Assert(!IsUnderPostmaster);
 	shmem_request_state = SRS_INITIAL;
 
-	pending_shmem_requests = NIL;
+	if (pending_shmem_requests_context != NULL)
+	{
+		MemoryContextDelete(pending_shmem_requests_context);
+		pending_shmem_requests_context = NULL;
+		pending_shmem_requests = NIL;
+	}
 
 	/*
 	 * Note that we don't clear the registered callbacks.  We will need to
@@ -901,77 +906,83 @@ CallShmemCallbacksAfterStartup(const ShmemCallbacks *callbacks)
 	bool		notfound_any;
 
 	Assert(shmem_request_state == SRS_DONE);
+	Assert(pending_shmem_requests == NIL);
+	Assert(pending_shmem_requests_context == NULL);
+	pending_shmem_requests_context =
+		AllocSetContextCreate(TopMemoryContext,
+						  "Pending shmem requests",
+						  ALLOCSET_SMALL_SIZES);
 	shmem_request_state = SRS_REQUESTING;
 
-	/*
-	 * Call the request callback first.  The callback makes ShmemRequest*()
-	 * calls for each shmem area, adding them to pending_shmem_requests.
-	 */
-	Assert(pending_shmem_requests == NIL);
-	if (callbacks->request_fn)
-		callbacks->request_fn(callbacks->opaque_arg);
-	shmem_request_state = SRS_AFTER_STARTUP_ATTACH_OR_INIT;
-
-	if (pending_shmem_requests == NIL)
+	PG_TRY();
 	{
+		/*
+		 * Call the request callback first.  The callback makes ShmemRequest*()
+		 * calls for each shmem area, adding them to pending_shmem_requests.
+		 */
+		if (callbacks->request_fn)
+			callbacks->request_fn(callbacks->opaque_arg);
+		INJECTION_POINT("shmem-after-startup-request", NULL);
+		shmem_request_state = SRS_AFTER_STARTUP_ATTACH_OR_INIT;
+
+		if (pending_shmem_requests != NIL)
+		{
+			/*
+			 * Hold ShmemIndexLock while we allocate all the shmem entries and
+			 * run all the initializers.
+			 */
+			LWLockAcquire(ShmemIndexLock, LW_EXCLUSIVE);
+
+			/*
+			 * Check if the requested shared memory areas have already been
+			 * initialized.  We assume all the areas requested by the request
+			 * callback to form a coherent unit such that they're all already
+			 * initialized or none.  Otherwise it would be ambiguous which
+			 * callback, init or attach, to callback afterwards.
+			 */
+			found_any = notfound_any = false;
+			foreach_ptr(ShmemRequest, request, pending_shmem_requests)
+			{
+				if (hash_search(ShmemIndex, request->options->name, HASH_FIND, NULL))
+					found_any = true;
+				else
+					notfound_any = true;
+			}
+			if (found_any && notfound_any)
+				elog(ERROR, "some of the requested shmem areas have already been initialized");
+
+			/* Allocate or attach all the requested shmem areas. */
+			foreach_ptr(ShmemRequest, request, pending_shmem_requests)
+			{
+				if (found_any)
+					AttachShmemIndexEntry(request, false);
+				else
+					InitShmemIndexEntry(request);
+			}
+
+			/* Finish by calling the appropriate subsystem-specific callback. */
+			if (found_any)
+			{
+				if (callbacks->attach_fn)
+					callbacks->attach_fn(callbacks->opaque_arg);
+			}
+			else
+			{
+				if (callbacks->init_fn)
+					callbacks->init_fn(callbacks->opaque_arg);
+			}
+
+			LWLockRelease(ShmemIndexLock);
+		}
+	}
+	PG_FINALLY();
+	{
+		MemoryContextDelete(pending_shmem_requests_context);
+		pending_shmem_requests_context = NULL;
+		pending_shmem_requests = NIL;
 		shmem_request_state = SRS_DONE;
-		return;
 	}
-
-	/*
-	 * Hold ShmemIndexLock while we allocate all the shmem entries and run all
-	 * the initializers.
-	 */
-	LWLockAcquire(ShmemIndexLock, LW_EXCLUSIVE);
-
-	/*
-	 * Check if the requested shared memory areas have already been
-	 * initialized.  We assume all the areas requested by the request callback
-	 * to form a coherent unit such that they're all already initialized or
-	 * none.  Otherwise it would be ambiguous which callback, init or attach,
-	 * to callback afterwards.
-	 */
-	found_any = notfound_any = false;
-	foreach_ptr(ShmemRequest, request, pending_shmem_requests)
-	{
-		if (hash_search(ShmemIndex, request->options->name, HASH_FIND, NULL))
-			found_any = true;
-		else
-			notfound_any = true;
-	}
-	if (found_any && notfound_any)
-		elog(ERROR, "some of the requested shmem areas have already been initialized");
-
-	/*
-	 * Allocate or attach all the shmem areas requested by the request_fn
-	 * callback.
-	 */
-	foreach_ptr(ShmemRequest, request, pending_shmem_requests)
-	{
-		if (found_any)
-			AttachShmemIndexEntry(request, false);
-		else
-			InitShmemIndexEntry(request);
-
-		pfree(request->options);
-	}
-	list_free_deep(pending_shmem_requests);
-	pending_shmem_requests = NIL;
-
-	/* Finish by calling the appropriate subsystem-specific callback */
-	if (found_any)
-	{
-		if (callbacks->attach_fn)
-			callbacks->attach_fn(callbacks->opaque_arg);
-	}
-	else
-	{
-		if (callbacks->init_fn)
-			callbacks->init_fn(callbacks->opaque_arg);
-	}
-
-	LWLockRelease(ShmemIndexLock);
-	shmem_request_state = SRS_DONE;
+	PG_END_TRY();
 }
 
 /*
@@ -983,6 +994,12 @@ ShmemCallRequestCallbacks(void)
 	ListCell   *lc;
 
 	Assert(shmem_request_state == SRS_INITIAL);
+	Assert(pending_shmem_requests == NIL);
+	Assert(pending_shmem_requests_context == NULL);
+	pending_shmem_requests_context =
+		AllocSetContextCreate(TopMemoryContext,
+						  "Pending shmem requests",
+						  ALLOCSET_SMALL_SIZES);
 	shmem_request_state = SRS_REQUESTING;
 
 	foreach(lc, registered_shmem_callbacks)

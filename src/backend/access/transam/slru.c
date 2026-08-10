@@ -245,21 +245,21 @@ SimpleLruAutotuneBuffers(int divisor, int max)
 void
 SimpleLruRequestWithOpts(const SlruOpts *options)
 {
-	SlruOpts   *options_copy;
+	SlruOpts	options_copy;
 
 	Assert(options->name != NULL);
 	Assert(options->nslots > 0);
 	Assert(options->PagePrecedes != NULL);
 	Assert(options->errdetail_for_io_error != NULL);
 
-	options_copy = MemoryContextAlloc(TopMemoryContext,
-									  sizeof(SlruOpts));
-	memcpy(options_copy, options, sizeof(SlruOpts));
+	memcpy(&options_copy, options, sizeof(SlruOpts));
 
-	options_copy->base.name = options->name;
-	options_copy->base.size = SimpleLruShmemSize(options_copy->nslots, options_copy->nlsns);
+	options_copy.base.name = options->name;
+	options_copy.base.size = SimpleLruShmemSize(options_copy.nslots,
+											 options_copy.nlsns);
 
-	ShmemRequestInternal(&options_copy->base, SHMEM_KIND_SLRU);
+	ShmemRequestInternal(&options_copy.base, sizeof(SlruOpts),
+						 SHMEM_KIND_SLRU);
 }
 
 /* Initialize locks and shared memory area */

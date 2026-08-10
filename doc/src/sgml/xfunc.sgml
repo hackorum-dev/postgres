@@ -3742,6 +3742,13 @@ my_shmem_init(void *arg)
       lock (ShmemIndexLock), which prevents the race condition of two backends
       trying to initialize the memory area at the same time.
      </para>
+     <para>
+        If after-startup initialization fails, any areas allocated before the
+        error remain in the shared memory index.  A later backend can therefore
+        find them even though <function>init_fn</function> did not complete.
+        Subsystems must detect that case and not use incompletely initialized
+        shared state.
+     </para>
     </sect3>
 
     <sect3 id="xfunc-shared-addin-dynamic">

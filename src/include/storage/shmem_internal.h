@@ -34,7 +34,8 @@ extern void AttachShmemAllocator(PGShmemHeader *seghdr);
 #endif
 extern void ResetShmemAllocator(void);
 
-extern void ShmemRequestInternal(ShmemStructOpts *options, ShmemRequestKind kind);
+extern void ShmemRequestInternal(const ShmemStructOpts *options,
+								 Size options_size, ShmemRequestKind kind);
 
 extern size_t ShmemGetRequestedSize(void);
 extern void ShmemInitRequested(void);
