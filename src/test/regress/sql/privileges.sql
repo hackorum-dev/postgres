@@ -17,6 +17,9 @@ DROP ROLE IF EXISTS regress_priv_user4;
 DROP ROLE IF EXISTS regress_priv_user5;
 DROP ROLE IF EXISTS regress_priv_user6;
 DROP ROLE IF EXISTS regress_priv_user7;
+DROP ROLE IF EXISTS regress_priv_circ_r1;
+DROP ROLE IF EXISTS regress_priv_circ_r2;
+DROP ROLE IF EXISTS regress_priv_circ_r3;
 
 SELECT lo_unlink(oid) FROM pg_largeobject_metadata WHERE oid >= 1000 AND oid < 3000 ORDER BY oid;
 
@@ -1277,6 +1280,32 @@ SELECT has_table_privilege('regress_priv_user2', 'atest4', 'SELECT'); -- true
 SELECT has_table_privilege('regress_priv_user3', 'atest4', 'SELECT'); -- false
 
 SELECT has_table_privilege('regress_priv_user1', 'atest4', 'SELECT WITH GRANT OPTION'); -- true
+
+-- A grant option held only indirectly (via role membership) must not be
+-- grantable back to the grantor, else revoking the membership leaves a
+-- circular grant that pg_dump/pg_restore cannot reproduce.
+RESET SESSION AUTHORIZATION;
+CREATE ROLE regress_priv_circ_r1 LOGIN;
+CREATE ROLE regress_priv_circ_r2 LOGIN;
+CREATE ROLE regress_priv_circ_r3;
+GRANT regress_priv_circ_r3 TO regress_priv_circ_r2;
+GRANT CREATE ON SCHEMA public TO regress_priv_circ_r1;
+
+SET ROLE regress_priv_circ_r1;
+CREATE VIEW regress_priv_circ_v AS SELECT;
+GRANT SELECT ON regress_priv_circ_v TO regress_priv_circ_r2 WITH GRANT OPTION;
+GRANT SELECT ON regress_priv_circ_v TO regress_priv_circ_r3 WITH GRANT OPTION;
+
+SET ROLE regress_priv_circ_r2;
+-- r2 only inherits the grant option from r3, so it may not grant it to itself
+GRANT SELECT ON regress_priv_circ_v TO regress_priv_circ_r2 WITH GRANT OPTION; -- fail
+
+RESET ROLE;
+DROP VIEW regress_priv_circ_v;
+REVOKE CREATE ON SCHEMA public FROM regress_priv_circ_r1;
+DROP ROLE regress_priv_circ_r1;
+DROP ROLE regress_priv_circ_r2;
+DROP ROLE regress_priv_circ_r3;
 
 
 -- security-restricted operations
