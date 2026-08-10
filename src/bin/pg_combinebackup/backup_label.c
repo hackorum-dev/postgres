@@ -17,7 +17,7 @@
 #include "backup_label.h"
 #include "common/file_perm.h"
 #include "common/logging.h"
-#include "write_manifest.h"
+#include "fe_utils/write_manifest.h"
 
 static int	get_eol_offset(StringInfo buf);
 static bool line_starts_with(char *s, char *e, char *match, char **sout);
