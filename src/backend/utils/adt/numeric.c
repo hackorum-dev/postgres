@@ -494,6 +494,65 @@ static void dump_var(const char *str, NumericVar *var);
 	(weight) <= NUMERIC_SHORT_WEIGHT_MAX && \
 	(weight) >= NUMERIC_SHORT_WEIGHT_MIN)
 
+#define NUMERIC_LOCAL_DATASZ	(VARATT_SHORT_MAX - VARHDRSZ_SHORT)
+
+typedef union NumericLocalBuf
+{
+	struct NumericData num;
+	char		data[VARHDRSZ + NUMERIC_LOCAL_DATASZ];
+} NumericLocalBuf;
+
+/*
+ * Return a four-byte-header Numeric for X, using *buf when possible.  Sets
+ * *needfree if the result is a palloc'd detoasted copy.  Callers that must
+ * not leak memory, such as the comparison functions, pfree it.  The others use
+ * DatumGetNumericLocal() below and leave the copy to the caller's memory
+ * context.
+ */
+static inline Numeric
+numeric_unpack_local(Datum X, NumericLocalBuf *buf, bool *needfree)
+{
+	varlena    *attr = (varlena *) DatumGetPointer(X);
+
+	*needfree = false;
+
+	/*
+	 * VARATT_IS_SHORT() is true for external TOAST pointers too, for which
+	 * VARSIZE_SHORT() returns 0.  Exclude them here so that they reach the
+	 * detoasting path below instead of the copy.
+	 */
+	if (VARATT_IS_SHORT(attr) && !VARATT_IS_EXTERNAL(attr))
+	{
+		Size		data_size = VARSIZE_SHORT(attr) - VARHDRSZ_SHORT;
+
+		SET_VARSIZE(&buf->num, data_size + VARHDRSZ);
+		memcpy(VARDATA(&buf->num), VARDATA_SHORT(attr), data_size);
+		return &buf->num;
+	}
+	else if (likely(!VARATT_IS_EXTENDED(attr)))
+		return (Numeric) attr;
+
+	/* compressed or out-of-line */
+	*needfree = true;
+	return DatumGetNumeric(X);
+}
+
+/*
+ * DatumGetNumeric() that unpacks a short-header value into *buf instead of
+ * palloc'ing a copy.  The result may point into *buf, so it must not be
+ * returned or kept beyond the caller's frame.
+ */
+static inline Numeric
+DatumGetNumericLocal(Datum X, NumericLocalBuf *buf)
+{
+	bool		needfree;
+
+	return numeric_unpack_local(X, buf, &needfree);
+}
+
+#define PG_GETARG_NUMERIC_LOCAL(n, buf) \
+	DatumGetNumericLocal(PG_GETARG_DATUM(n), (buf))
+
 static void alloc_var(NumericVar *var, int ndigits);
 static void free_var(NumericVar *var);
 static void zero_var(NumericVar *var);
@@ -2273,30 +2332,42 @@ numeric_abbrev_abort(int memtupcount, SortSupport ssup)
 }
 
 /*
- * Non-fmgr interface to the comparison routine to allow sortsupport to elide
- * the fmgr call.  The saving here is small given how slow numeric comparisons
- * are, but it is a required part of the sort support API when abbreviations
- * are performed.
- *
- * Two palloc/pfree cycles could be saved here by using persistent buffers for
- * aligning short-varlena inputs, but this has not so far been considered to
- * be worth the effort.
+ * Compare two numeric Datums without palloc'ing short-header inputs; see
+ * numeric_unpack_local().  This is the body of numeric_fast_cmp() and of all
+ * the fmgr-callable comparison functions below; it is forced inline so that
+ * each of them stays a single call into cmp_numerics().
  */
-static int
-numeric_fast_cmp(Datum x, Datum y, SortSupport ssup)
+static pg_always_inline int
+cmp_numeric_datums(Datum x, Datum y)
 {
-	Numeric		nx = DatumGetNumeric(x);
-	Numeric		ny = DatumGetNumeric(y);
+	NumericLocalBuf bufx;
+	NumericLocalBuf bufy;
+	bool		freex;
+	bool		freey;
+	Numeric		nx = numeric_unpack_local(x, &bufx, &freex);
+	Numeric		ny = numeric_unpack_local(y, &bufy, &freey);
 	int			result;
 
 	result = cmp_numerics(nx, ny);
 
-	if (nx != DatumGetPointer(x))
+	if (unlikely(freex))
 		pfree(nx);
-	if (ny != DatumGetPointer(y))
+	if (unlikely(freey))
 		pfree(ny);
 
 	return result;
+}
+
+/*
+ * Non-fmgr interface to the comparison routine to allow sortsupport to elide
+ * the fmgr call.  The saving here is small given how slow numeric comparisons
+ * are, but it is a required part of the sort support API when abbreviations
+ * are performed.
+ */
+static int
+numeric_fast_cmp(Datum x, Datum y, SortSupport ssup)
+{
+	return cmp_numeric_datums(x, y);
 }
 
 /*
@@ -2418,107 +2489,51 @@ numeric_abbrev_convert_var(const NumericVar *var, NumericSortSupport *nss)
 Datum
 numeric_cmp(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
-	int			result;
-
-	result = cmp_numerics(num1, num2);
-
-	PG_FREE_IF_COPY(num1, 0);
-	PG_FREE_IF_COPY(num2, 1);
-
-	PG_RETURN_INT32(result);
+	PG_RETURN_INT32(cmp_numeric_datums(PG_GETARG_DATUM(0),
+									   PG_GETARG_DATUM(1)));
 }
 
 
 Datum
 numeric_eq(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
-	bool		result;
-
-	result = cmp_numerics(num1, num2) == 0;
-
-	PG_FREE_IF_COPY(num1, 0);
-	PG_FREE_IF_COPY(num2, 1);
-
-	PG_RETURN_BOOL(result);
+	PG_RETURN_BOOL(cmp_numeric_datums(PG_GETARG_DATUM(0),
+									  PG_GETARG_DATUM(1)) == 0);
 }
 
 Datum
 numeric_ne(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
-	bool		result;
-
-	result = cmp_numerics(num1, num2) != 0;
-
-	PG_FREE_IF_COPY(num1, 0);
-	PG_FREE_IF_COPY(num2, 1);
-
-	PG_RETURN_BOOL(result);
+	PG_RETURN_BOOL(cmp_numeric_datums(PG_GETARG_DATUM(0),
+									  PG_GETARG_DATUM(1)) != 0);
 }
 
 Datum
 numeric_gt(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
-	bool		result;
-
-	result = cmp_numerics(num1, num2) > 0;
-
-	PG_FREE_IF_COPY(num1, 0);
-	PG_FREE_IF_COPY(num2, 1);
-
-	PG_RETURN_BOOL(result);
+	PG_RETURN_BOOL(cmp_numeric_datums(PG_GETARG_DATUM(0),
+									  PG_GETARG_DATUM(1)) > 0);
 }
 
 Datum
 numeric_ge(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
-	bool		result;
-
-	result = cmp_numerics(num1, num2) >= 0;
-
-	PG_FREE_IF_COPY(num1, 0);
-	PG_FREE_IF_COPY(num2, 1);
-
-	PG_RETURN_BOOL(result);
+	PG_RETURN_BOOL(cmp_numeric_datums(PG_GETARG_DATUM(0),
+									  PG_GETARG_DATUM(1)) >= 0);
 }
 
 Datum
 numeric_lt(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
-	bool		result;
-
-	result = cmp_numerics(num1, num2) < 0;
-
-	PG_FREE_IF_COPY(num1, 0);
-	PG_FREE_IF_COPY(num2, 1);
-
-	PG_RETURN_BOOL(result);
+	PG_RETURN_BOOL(cmp_numeric_datums(PG_GETARG_DATUM(0),
+									  PG_GETARG_DATUM(1)) < 0);
 }
 
 Datum
 numeric_le(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
-	bool		result;
-
-	result = cmp_numerics(num1, num2) <= 0;
-
-	PG_FREE_IF_COPY(num1, 0);
-	PG_FREE_IF_COPY(num2, 1);
-
-	PG_RETURN_BOOL(result);
+	PG_RETURN_BOOL(cmp_numeric_datums(PG_GETARG_DATUM(0),
+									  PG_GETARG_DATUM(1)) <= 0);
 }
 
 static int
@@ -2716,7 +2731,8 @@ in_range_numeric_numeric(PG_FUNCTION_ARGS)
 Datum
 hash_numeric(PG_FUNCTION_ARGS)
 {
-	Numeric		key = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		key = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	uint32		digit_hash;
 	uint32		result;
 	int			weight;
@@ -2797,7 +2813,8 @@ hash_numeric(PG_FUNCTION_ARGS)
 Datum
 hash_numeric_extended(PG_FUNCTION_ARGS)
 {
-	Numeric		key = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		key = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	uint64		seed = PG_GETARG_INT64(1);
 	uint64		digit_hash;
 	uint64		result;
