@@ -6,12 +6,17 @@
 # all processes.  In this test, the updates from the startup process
 # and the checkpointer (which triggers non-startup code paths) are
 # both checked.
+#
+# The same setup is also used to check that a standby refuses read-only
+# connections until replay has reached minRecoveryPoint after the postmaster
+# has performed a crash reset.
 
 use strict;
 use warnings FATAL => 'all';
 use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
+use Time::HiRes qw(usleep);
 
 # Find the largest LSN in the set of pages part of the given relation
 # file.  This is used for offline checks of page consistency.  The LSN
@@ -63,13 +68,24 @@ $primary->start;
 $primary->backup('bkp');
 my $standby = PostgreSQL::Test::Cluster->new('standby');
 $standby->init_from_backup($primary, 'bkp', has_streaming => 1);
+
+# restart_after_crash has to be turned back on, since Cluster->init disables
+# it and the crash reset checked below depends on it.  A long checkpoint
+# timeout keeps a restartpoint from advancing the control file's redo pointer
+# before then; the explicit CHECKPOINT issued later still forces one.
+$standby->append_conf('postgresql.conf', <<EOF);
+restart_after_crash = on
+checkpoint_timeout = 1h
+EOF
+
 $standby->start;
 
 # Create base table whose data consistency is checked.
+my $rows = 10000;
 $primary->safe_psql(
 	'postgres', "
 CREATE TABLE test1 (a int) WITH (fillfactor = 10);
-INSERT INTO test1 SELECT generate_series(1, 10000);");
+INSERT INTO test1 SELECT generate_series(1, $rows);");
 
 # Take a checkpoint and enforce post-checkpoint full page writes
 # which makes the startup process replay those pages, updating
@@ -99,6 +115,104 @@ my $relfilenode = $primary->safe_psql('postgres',
 	"SELECT pg_relation_filepath('test1'::regclass);");
 
 # Wait for last record to have been replayed on the standby.
+$primary->wait_for_catchup($standby);
+
+# ----------------------------------------------------------------------------
+# Check that a crash reset does not let the standby accept connections early.
+#
+# No restartpoint has run yet, so the control file's redo pointer is still the
+# one taken by the base backup, while minRecoveryPoint has followed the pages
+# the standby has been evicting.  That gap is what a replacement startup
+# process has to replay again before connections may be accepted.
+# ----------------------------------------------------------------------------
+my ($min_recovery_point, $redo_ptr, $gap) = split /\|/, $standby->safe_psql(
+	'postgres', q{
+SELECT (SELECT min_recovery_end_lsn FROM pg_control_recovery()),
+       (SELECT redo_lsn FROM pg_control_checkpoint()),
+       (SELECT min_recovery_end_lsn FROM pg_control_recovery()) -
+       (SELECT redo_lsn FROM pg_control_checkpoint())});
+
+note "minRecoveryPoint $min_recovery_point, redo pointer $redo_ptr, "
+  . "gap $gap bytes";
+
+cmp_ok($gap, '>', 0,
+	"minRecoveryPoint is ahead of the redo pointer in the control file");
+
+# recovery_min_apply_delay makes the check below reliable rather than
+# timing-dependent.  recoveryApplyDelay() does not apply the delay until
+# consistency has been reached, so a correct standby ignores it and replays to
+# minRecoveryPoint at full speed, whereas one that wrongly believes it is
+# already consistent honours it and stops well short.
+$standby->append_conf('postgresql.conf', 'recovery_min_apply_delay = 1h');
+$standby->reload;
+
+my $log_offset = -s $standby->logfile;
+
+# Kill a live backend, which forces the crash reset and with it a replacement
+# startup process.
+my $victim = $standby->background_psql('postgres');
+my $victim_pid = $victim->query_safe('SELECT pg_backend_pid()');
+chomp $victim_pid;
+
+PostgreSQL::Test::Utils::system_log('pg_ctl', 'kill', 'KILL', $victim_pid);
+
+# The backend is gone, so psql exits with an error of its own; ignore it.
+eval { $victim->quit };
+
+# Once replay has restarted, the standby must not accept a connection until
+# replay has reached minRecoveryPoint again.
+$standby->wait_for_log(qr/redo starts at/, $log_offset);
+
+my ($replay_lsn, $past_min_recovery_point, $behind);
+
+my $deadline = time() + $PostgreSQL::Test::Utils::timeout_default;
+while (time() < $deadline)
+{
+	my ($rc, $stdout, $stderr) = $standby->psql(
+		'postgres', qq{
+SELECT pg_last_wal_replay_lsn(),
+       pg_last_wal_replay_lsn() >= '$min_recovery_point'::pg_lsn,
+       '$min_recovery_point'::pg_lsn - pg_last_wal_replay_lsn()},
+		on_error_stop => 0);
+
+	if ($rc == 0 && $stdout ne '')
+	{
+		($replay_lsn, $past_min_recovery_point, $behind) = split /\|/,
+		  $stdout;
+		last;
+	}
+
+	usleep(100_000);
+}
+
+ok(defined $replay_lsn,
+	"standby accepted a read-only connection after the crash reset")
+  or BAIL_OUT("standby never accepted a connection after the crash reset");
+
+note "first post-crash connection: replay $replay_lsn, "
+  . "minRecoveryPoint $min_recovery_point, $behind bytes short";
+
+is($past_min_recovery_point, 't',
+	"standby replayed up to minRecoveryPoint ($min_recovery_point) before "
+	  . "accepting connections (replay was at $replay_lsn, $behind bytes short)"
+);
+
+# Ask the same connection for data.  Only the column value is ever updated, so
+# the row count is invariant; a standby that opened early answers from pages
+# replay has not caught up with, and reports either a short count or no table
+# at all, since its snapshot predates the transaction that created it.
+my ($count_rc, $count, $count_err) =
+  $standby->psql('postgres', 'SELECT count(*) FROM test1',
+	on_error_stop => 0);
+chomp($count, $count_err);
+$count = "query failed: $count_err" if $count_err ne '';
+
+is($count, $rows,
+	"standby served correct data to its first post-crash connection");
+
+# Let replay run at full speed again for the rest of the test.
+$standby->append_conf('postgresql.conf', 'recovery_min_apply_delay = 0');
+$standby->reload;
 $primary->wait_for_catchup($standby);
 
 # Issue a restart point on the standby now, which makes the checkpointer
