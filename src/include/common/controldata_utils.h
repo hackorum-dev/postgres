@@ -17,5 +17,6 @@ extern ControlFileData *get_controlfile_by_exact_path(const char *ControlFilePat
 													  bool *crc_ok_p);
 extern void update_controlfile(const char *DataDir,
 							   ControlFileData *ControlFile, bool do_sync);
+extern const char *get_checksum_state_string(uint32 state);
 
 #endif							/* COMMON_CONTROLDATA_UTILS_H */

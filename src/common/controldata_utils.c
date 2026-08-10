@@ -282,3 +282,22 @@ update_controlfile(const char *DataDir,
 #endif
 	}
 }
+
+const char *
+get_checksum_state_string(uint32 state)
+{
+	switch (state)
+	{
+		case PG_DATA_CHECKSUM_VERSION:
+			return "on";
+		case PG_DATA_CHECKSUM_INPROGRESS_OFF:
+			return "inprogress-off";
+		case PG_DATA_CHECKSUM_INPROGRESS_ON:
+			return "inprogress-on";
+		case PG_DATA_CHECKSUM_OFF:
+			return "off";
+	}
+
+	Assert(false);
+	return "?";
+}

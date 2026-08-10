@@ -18,6 +18,7 @@
 #include "access/xlog.h"
 #include "access/xlog_internal.h"
 #include "catalog/pg_control.h"
+#include "common/controldata_utils.h"
 #include "storage/checksum.h"
 #include "utils/guc.h"
 #include "utils/timestamp.h"
@@ -53,25 +54,6 @@ get_wal_level_string(int wal_level)
 	}
 
 	return wal_level_str;
-}
-
-const char *
-get_checksum_state_string(uint32 state)
-{
-	switch (state)
-	{
-		case PG_DATA_CHECKSUM_VERSION:
-			return "on";
-		case PG_DATA_CHECKSUM_INPROGRESS_OFF:
-			return "inprogress-off";
-		case PG_DATA_CHECKSUM_INPROGRESS_ON:
-			return "inprogress-on";
-		case PG_DATA_CHECKSUM_OFF:
-			return "off";
-	}
-
-	Assert(false);
-	return "?";
 }
 
 void
