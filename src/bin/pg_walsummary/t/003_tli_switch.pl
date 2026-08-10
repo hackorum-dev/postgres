@@ -80,11 +80,22 @@ $node2->poll_query_until('postgres', "SELECT pg_is_in_recovery() = 'f';");
 # on timeline 1, but since all we did is CREATE TABLE dummy (), it wasn't full.
 # We're now running on timeline 2, and pg_switch_wal() fills up the rest of the
 # segment.  So the full segment should get archived on timeline 2, but not on
-# timeline 1. We do a CHECKPOINT here to make sure that the summarizer tries
-# to progress.
+# timeline 1.
+#
+# However, we need to make sure that we fill up the current WAL segment *after*
+# node2 completes the asynchronous checkpoint triggered by promotion. If we do,
+# the segment containing the XLOG_CHECKPOINT_REDO record from the promotion
+# checkpoint is guaranteed to be archived, enabling node3 to generate a summary
+# file on timeline 2. If we don't, there won't be anything to ensure that the
+# segment containing the XLOG_CHECKPOINT_REDO record ever fills up,
+# so it will never be archived, node3 won't see it, and the test will hang.
+# The easiest way to make sure that the right thing happens is to run another
+# CHECKPOINT command before switching WAL segments. That will wait until the
+# preceding checkpoint finishes, if it is still in progress, and then run
+# another one, which won't hurt anything.
 $node2->safe_psql('postgres', <<EOM);
-SELECT pg_switch_wal();
 CHECKPOINT;
+SELECT pg_switch_wal();
 EOM
 
 # Wait until replay has reached TLI 2 on node3, and then start the WAL
