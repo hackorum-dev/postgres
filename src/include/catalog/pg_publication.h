@@ -192,6 +192,7 @@ extern List *GetPubPartitionOptionRelations(List *result,
 											Oid relid);
 extern Oid	GetTopMostAncestorInPublication(Oid puboid, List *ancestors,
 											int *ancestor_level);
+extern bool CheckPublicationRelEntry(Oid pubid, Oid relid, bool *is_except);
 
 extern bool is_publishable_relation(Relation rel);
 extern bool is_schema_publication(Oid pubid);

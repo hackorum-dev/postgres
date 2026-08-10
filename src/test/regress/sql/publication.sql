@@ -125,6 +125,9 @@ CREATE PUBLICATION testpub_foralltables_excepttable1 FOR ALL TABLES EXCEPT (TABL
 \d testpub_tbl1
 -- fail - first table in the EXCEPT list should use TABLE keyword
 CREATE PUBLICATION testpub_foralltables_excepttable2 FOR ALL TABLES EXCEPT (testpub_tbl1, testpub_tbl2);
+-- fail - EXCEPT is not allowed for FOR TABLE publications
+CREATE PUBLICATION testpub_except_err
+    FOR TABLE testpub_tbl1, testpub_tbl2 EXCEPT (TABLE testpub_tbl3);
 
 ---------------------------------------------
 -- SET ALL TABLES/SEQUENCES
@@ -222,7 +225,119 @@ RESET client_min_messages;
 DROP TABLE testpub_root, testpub_part1, tab_main;
 DROP PUBLICATION testpub8;
 
---- Tests for publications with SEQUENCES
+---------------------------------------------
+-- EXCEPT tests for TABLES IN SCHEMA
+---------------------------------------------
+SET client_min_messages = 'ERROR';
+-- Create tables in pub_test for these tests
+CREATE TABLE pub_test.testpub_tbl_s1 (a int primary key, b text);
+CREATE TABLE pub_test.testpub_tbl_s2 (x int primary key, y text);
+-- Create same-named tables in public to verify unqualified EXCEPT entries
+-- are qualified with the named schema, not public
+CREATE TABLE testpub_nopk (foo int, bar int);
+CREATE TABLE testpub_tbl_s1 (a int primary key, b text);
+
+-- Basic: exclude one table from a schema publication
+CREATE PUBLICATION testpub_schema_except1
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1);
+\dRp+ testpub_schema_except1
+
+-- Exclude multiple tables using unqualified names; same-named tables exist in
+-- public to confirm unqualified names resolve to pub_test, not public
+CREATE PUBLICATION testpub_schema_except2
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE testpub_nopk, testpub_tbl_s1);
+\dRp+ testpub_schema_except2
+
+-- fail: EXCEPT table belongs to a different schema
+CREATE PUBLICATION testpub_except_wrongschema
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE public.testpub_tbl1);
+
+-- fail: cross-schema EXCEPT not allowed; each EXCEPT is bound to its immediate schema
+CREATE PUBLICATION testpub_except_crossschema
+    FOR TABLES IN SCHEMA pub_test, public EXCEPT (TABLE pub_test.testpub_tbl_s1, public.testpub_tbl1);
+
+-- Multiple schemas each with their own EXCEPT clause
+CREATE PUBLICATION testpub_schema_except_multi
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1),
+                  public EXCEPT (TABLE testpub_tbl1);
+\dRp+ testpub_schema_except_multi
+
+-- fail: same schema repeated with same EXCEPT clauses
+CREATE PUBLICATION testpub_schema_except_conflict
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1),
+                  pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1);
+
+-- fail: same schema repeated with conflicting or no EXCEPT clauses
+CREATE PUBLICATION testpub_schema_except_conflict2
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1),
+                  pub_test EXCEPT (TABLE pub_test.testpub_tbl_s2),
+                  pub_test;
+
+-- ALTER TABLE ... SET SCHEMA on a table excluded by a schema publication:
+-- the schema-scoped exclusion is no longer meaningful once the table moves
+-- out of its schema, so the exclusion is auto-removed.
+CREATE PUBLICATION testpub_schema_except_setsch
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s2);
+\dRp+ testpub_schema_except_setsch
+ALTER TABLE pub_test.testpub_tbl_s2 SET SCHEMA public;
+\dRp+ testpub_schema_except_setsch
+DROP PUBLICATION testpub_schema_except_setsch;
+-- Restore for further tests
+ALTER TABLE public.testpub_tbl_s2 SET SCHEMA pub_test;
+
+-- fail: table appears in both the explicit table list and the EXCEPT clause
+CREATE PUBLICATION testpub_except_conflict
+    FOR TABLE pub_test.testpub_tbl_s1, TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1);
+
+-- fail: nonexistent table in EXCEPT clause
+CREATE PUBLICATION testpub_except_norel
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.nonexistent_table);
+
+-- fail: partition cannot appear in EXCEPT clause; only root tables are allowed
+CREATE TABLE pub_test.testpub_parted_s (a int) PARTITION BY LIST (a);
+CREATE TABLE pub_test.testpub_part_s PARTITION OF pub_test.testpub_parted_s FOR VALUES IN (1);
+CREATE PUBLICATION testpub_except_partition
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_part_s);
+
+-- fail: TABLE keyword is required for the first entry in the EXCEPT clause
+CREATE PUBLICATION testpub_except_nokw
+    FOR TABLES IN SCHEMA pub_test EXCEPT (testpub_nopk);
+
+-- Check that a table excluded from a schema publication is reported only as
+-- excluded and not as published.
+\d pub_test.testpub_nopk
+
+-- fail: ADD TABLE for a partition is rejected when a partition ancestor
+-- is currently in the publication's EXCEPT list.
+CREATE PUBLICATION testpub_except_ancestor
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_parted_s);
+ALTER PUBLICATION testpub_except_ancestor ADD TABLE pub_test.testpub_part_s;
+DROP PUBLICATION testpub_except_ancestor;
+
+-- fail: same contradiction (explicit partition + EXCEPT-ed ancestor), but
+-- given in a single statement instead of two separate ones
+CREATE PUBLICATION testpub_except_ancestor_same_create
+    FOR TABLE pub_test.testpub_part_s,
+       TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_parted_s);
+
+-- fail: same contradiction as above, but the partition lives in a different
+-- schema (public) than its EXCEPT-ed root (pub_test)
+CREATE TABLE public.testpub_part_s2 PARTITION OF pub_test.testpub_parted_s FOR VALUES IN (2);
+CREATE PUBLICATION testpub_except_ancestor_cross_schema
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_parted_s),
+       TABLE public.testpub_part_s2;
+DROP TABLE public.testpub_part_s2;
+
+-- Cleanup
+RESET client_min_messages;
+DROP TABLE pub_test.testpub_tbl_s1, pub_test.testpub_tbl_s2;
+DROP TABLE pub_test.testpub_parted_s CASCADE;
+DROP TABLE testpub_nopk, testpub_tbl_s1;
+DROP PUBLICATION testpub_schema_except1, testpub_schema_except2, testpub_schema_except_multi;
+
+---------------------------------------------
+-- Tests for publications with SEQUENCES
+---------------------------------------------
 CREATE SEQUENCE regress_pub_seq0;
 CREATE SEQUENCE pub_test.regress_pub_seq1;
 
@@ -1194,6 +1309,38 @@ ALTER PUBLICATION testpub1_forschema SET TABLES IN SCHEMA pub_test1, pub_test1;
 ALTER PUBLICATION testpub1_forschema ADD TABLES IN SCHEMA foo (a, b);
 ALTER PUBLICATION testpub1_forschema ADD TABLES IN SCHEMA foo, bar (a, b);
 
+-- EXCEPT clause with CURRENT_SCHEMA: cross-schema entry must be rejected
+SET search_path = pub_test1;
+-- qualified name from wrong schema -> error
+CREATE PUBLICATION testpub_cursch_except FOR TABLES IN SCHEMA CURRENT_SCHEMA EXCEPT (TABLE pub_test2.tbl1);
+-- unqualified name implicitly qualified with current schema (pub_test1.tbl)
+SET client_min_messages = 'ERROR';
+CREATE PUBLICATION testpub_cursch_except FOR TABLES IN SCHEMA CURRENT_SCHEMA EXCEPT (TABLE tbl);
+RESET client_min_messages;
+\dRp+ testpub_cursch_except
+DROP PUBLICATION testpub_cursch_except;
+
+-- succeeds: CURRENT_SCHEMA and pub_test1 (same schema)
+SET client_min_messages = 'ERROR';
+CREATE PUBLICATION testpub_cursch_named_same
+    FOR TABLES IN SCHEMA CURRENT_SCHEMA, pub_test1;
+RESET client_min_messages;
+\dRp+ testpub_cursch_named_same
+DROP PUBLICATION testpub_cursch_named_same;
+
+-- fail: CURRENT_SCHEMA and pub_test1 (same schema) have
+-- conflicting EXCEPT clauses
+CREATE PUBLICATION testpub_cursch_named_conflict
+    FOR TABLES IN SCHEMA CURRENT_SCHEMA EXCEPT (TABLE tbl),
+                  pub_test1 EXCEPT (TABLE tbl1);
+
+-- fail: two CURRENT_SCHEMA mentions with conflicting EXCEPT clauses
+CREATE PUBLICATION testpub_cursch_cursch_conflict
+    FOR TABLES IN SCHEMA CURRENT_SCHEMA EXCEPT (TABLE tbl),
+                  CURRENT_SCHEMA EXCEPT (TABLE tbl1);
+
+RESET search_path;
+
 -- cleanup pub_test1 schema for invalidation tests
 ALTER PUBLICATION testpub2_forschema DROP TABLES IN SCHEMA pub_test1;
 DROP PUBLICATION testpub3_forschema, testpub4_forschema, testpub5_forschema, testpub6_forschema, testpub_fortable;
@@ -1448,6 +1595,7 @@ DROP ROLE regress_publication_user_dummy;
 -- Test pg_get_publication_tables(text[], oid) function
 CREATE SCHEMA gpt_test_sch;
 CREATE TABLE gpt_test_sch.tbl_sch (id int);
+CREATE TABLE gpt_test_sch.tbl_sch2 (id int);
 CREATE TABLE tbl_normal (id int);
 CREATE TABLE tbl_parent (id1 int, id2 int, id3 int) PARTITION BY RANGE (id1);
 CREATE TABLE tbl_part1 PARTITION OF tbl_parent FOR VALUES FROM (1) TO (10);
@@ -1459,6 +1607,7 @@ CREATE PUBLICATION pub_all_no_viaroot FOR ALL TABLES WITH (publish_via_partition
 CREATE PUBLICATION pub_all_except FOR ALL TABLES EXCEPT (TABLE tbl_parent, gpt_test_sch.tbl_sch) WITH (publish_via_partition_root = true);
 CREATE PUBLICATION pub_all_except_no_viaroot FOR ALL TABLES EXCEPT (TABLE tbl_parent, gpt_test_sch.tbl_sch) WITH (publish_via_partition_root = false);
 CREATE PUBLICATION pub_schema FOR TABLES IN SCHEMA gpt_test_sch;
+CREATE PUBLICATION pub_schema_except FOR TABLES IN SCHEMA gpt_test_sch EXCEPT (TABLE gpt_test_sch.tbl_sch);
 CREATE PUBLICATION pub_normal FOR TABLE tbl_normal WHERE (id < 10);
 CREATE PUBLICATION pub_part_leaf FOR TABLE tbl_part1 WITH (publish_via_partition_root = false);
 CREATE PUBLICATION pub_part_parent FOR TABLE tbl_parent (id1, id2) WHERE (id1 = 10) WITH (publish_via_partition_root = true);
@@ -1515,6 +1664,32 @@ SELECT * FROM test_gpt(ARRAY['pub_all_except_no_viaroot'], 'gpt_test_sch.tbl_sch
 SELECT * FROM test_gpt(ARRAY['pub_all_except_no_viaroot'], 'tbl_parent'); -- no result (excluded)
 SELECT * FROM test_gpt(ARRAY['pub_all_except_no_viaroot'], 'tbl_part1'); -- no result
 
+-- test for EXCEPT clause with schema publication
+SELECT * FROM test_gpt(ARRAY['pub_schema_except'], 'gpt_test_sch.tbl_sch'); -- no result (excluded)
+SELECT * FROM test_gpt(ARRAY['pub_schema_except'], 'gpt_test_sch.tbl_sch2'); -- one row (included via schema)
+
+-- test for EXCEPT clause with schema publication, where the excluded root's
+-- partition lives in a different schema that is separately, fully included
+-- (no EXCEPT) in the same publication.  The root's exclusion must cascade to
+-- the partition regardless of the partition's own schema membership.
+CREATE SCHEMA gpt_cross_sch1;
+CREATE SCHEMA gpt_cross_sch2;
+CREATE TABLE gpt_cross_sch1.croot (id int) PARTITION BY RANGE (id);
+CREATE TABLE gpt_cross_sch2.cpart1 PARTITION OF gpt_cross_sch1.croot FOR VALUES FROM (1) TO (10);
+
+SET client_min_messages = 'ERROR';
+CREATE PUBLICATION pub_cross_schema_except FOR TABLES IN SCHEMA gpt_cross_sch1 EXCEPT (TABLE gpt_cross_sch1.croot), TABLES IN SCHEMA gpt_cross_sch2;
+RESET client_min_messages;
+
+SELECT * FROM test_gpt(ARRAY['pub_cross_schema_except'], 'gpt_cross_sch1.croot'); -- no result (excluded)
+-- no result (excluded via cascading root exclusion, even though cpart1's own
+-- schema gpt_cross_sch2 is separately, fully included with no EXCEPT)
+SELECT * FROM test_gpt(ARRAY['pub_cross_schema_except'], 'gpt_cross_sch2.cpart1');
+
+DROP PUBLICATION pub_cross_schema_except;
+DROP TABLE gpt_cross_sch2.cpart1, gpt_cross_sch1.croot;
+DROP SCHEMA gpt_cross_sch1, gpt_cross_sch2;
+
 -- two rows with different row filter
 SELECT * FROM test_gpt(ARRAY['pub_all', 'pub_normal'], 'tbl_normal');
 
@@ -1543,6 +1718,7 @@ DROP PUBLICATION pub_all_no_viaroot;
 DROP PUBLICATION pub_all_except;
 DROP PUBLICATION pub_all_except_no_viaroot;
 DROP PUBLICATION pub_schema;
+DROP PUBLICATION pub_schema_except;
 DROP PUBLICATION pub_normal;
 DROP PUBLICATION pub_part_leaf;
 DROP PUBLICATION pub_part_parent;

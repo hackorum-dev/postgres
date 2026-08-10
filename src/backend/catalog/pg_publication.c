@@ -54,7 +54,7 @@ typedef struct
  * error if not.
  */
 static void
-check_publication_add_relation(PublicationRelInfo *pri)
+check_publication_add_relation(PublicationRelInfo *pri, Oid pubid)
 {
 	Relation	targetrel = pri->relation;
 	const char *relname;
@@ -71,12 +71,51 @@ check_publication_add_relation(PublicationRelInfo *pri)
 		errormsg = gettext_noop("cannot add relation \"%s\" to publication");
 	}
 
-	/* If in EXCEPT clause, must be root partitioned table */
-	if (pri->except && targetrel->rd_rel->relispartition)
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg(errormsg, relname),
-				 errdetail("This operation is not supported for individual partitions.")));
+	/*
+	 * A partition cannot be added to a publication if its partition root is
+	 * excluded by the publication. We follow the rule that excluding a
+	 * partition root means that the entire partition tree is excluded. Thus,
+	 * check whether the root is in the EXCEPT clause and reject adding the
+	 * individual partition to the publication.
+	 */
+	if (targetrel->rd_rel->relispartition)
+	{
+		List	   *ancestors;
+
+		if (pri->except)
+		{
+			/* If in EXCEPT clause, must be root partitioned table */
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg(errormsg, relname),
+					 errdetail("This operation is not supported for individual partitions.")));
+		}
+
+		/*
+		 * ancestors is NIL for a partition with a pending DETACH
+		 * CONCURRENTLY, in which case there is no root to check.
+		 */
+		ancestors = get_partition_ancestors(RelationGetRelid(targetrel));
+		if (ancestors != NIL)
+		{
+			Oid			root = llast_oid(ancestors);
+			bool		root_except;
+
+			if (CheckPublicationRelEntry(pubid, root, &root_except) && root_except)
+				ereport(ERROR,
+						errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("cannot add partition \"%s\" to publication \"%s\"",
+							   RelationGetQualifiedRelationName(targetrel),
+							   get_publication_name(pubid, false)),
+						errdetail("Partition root \"%s\" is named in the publication's EXCEPT clause for schema \"%s\".",
+								  quote_qualified_identifier(get_namespace_name(get_rel_namespace(root)),
+															 get_rel_name(root)),
+								  get_namespace_name(get_rel_namespace(root))),
+						errhint("Change the EXCEPT clause using ALTER PUBLICATION ... SET TABLES IN SCHEMA ... EXCEPT."));
+		}
+
+		list_free(ancestors);
+	}
 
 	/* Must be a regular or partitioned table */
 	if (RelationGetForm(targetrel)->relkind != RELKIND_RELATION &&
@@ -320,8 +359,7 @@ is_schema_publication(Oid pubid)
 }
 
 /*
- * Returns true if the publication has explicitly included relation (i.e.,
- * not marked as EXCEPT).
+ * Returns true if the publication has a FOR TABLE clause.
  */
 bool
 is_table_publication(Oid pubid)
@@ -341,25 +379,50 @@ is_table_publication(Oid pubid)
 	scan = systable_beginscan(pubrelsrel,
 							  PublicationRelPrpubidIndexId,
 							  true, NULL, 1, &scankey);
-	tup = systable_getnext(scan);
-	if (HeapTupleIsValid(tup))
+
+	/*
+	 * A publication can have both explicitly included (prexcept = false) and
+	 * EXCEPT (prexcept = true) rows for the same pubid. For example:
+	 *
+	 * CREATE PUBLICATION pub1 FOR TABLE s1.t1, TABLES IN SCHEMA s2 EXCEPT
+	 * (TABLE s2.t1);
+	 *
+	 * Scan until we find an explicitly included row.
+	 */
+	while (HeapTupleIsValid(tup = systable_getnext(scan)))
 	{
-		Form_pg_publication_rel pubrel;
-
-		pubrel = (Form_pg_publication_rel) GETSTRUCT(tup);
-
-		/*
-		 * For any publication, pg_publication_rel contains either only EXCEPT
-		 * entries or only explicitly included tables. Therefore, examining
-		 * the first tuple is sufficient to determine table inclusion.
-		 */
-		result = !pubrel->prexcept;
+		if (!((Form_pg_publication_rel) GETSTRUCT(tup))->prexcept)
+		{
+			result = true;
+			break;
+		}
 	}
 
 	systable_endscan(scan);
 	table_close(pubrelsrel, AccessShareLock);
 
 	return result;
+}
+
+/*
+ * Check whether a pg_publication_rel row exists for (pubid, relid); if so,
+ * set *is_except to its prexcept flag.
+ */
+bool
+CheckPublicationRelEntry(Oid pubid, Oid relid, bool *is_except)
+{
+	HeapTuple	tup;
+
+	tup = SearchSysCache2(PUBLICATIONRELMAP,
+						  ObjectIdGetDatum(relid),
+						  ObjectIdGetDatum(pubid));
+	if (!HeapTupleIsValid(tup))
+		return false;
+
+	*is_except = ((Form_pg_publication_rel) GETSTRUCT(tup))->prexcept;
+	ReleaseSysCache(tup);
+
+	return true;
 }
 
 /*
@@ -457,11 +520,26 @@ GetPubPartitionOptionRelations(List *result, PublicationPartOpt pub_partopt,
  * ancestor is at the end of the list.
  */
 Oid
-GetTopMostAncestorInPublication(Oid puboid, List *ancestors, int *ancestor_level)
+GetTopMostAncestorInPublication(Oid puboid, List *ancestors,
+								int *ancestor_level)
 {
 	ListCell   *lc;
 	Oid			topmost_relid = InvalidOid;
 	int			level = 0;
+	bool		root_except;
+
+	if (ancestors == NIL)
+		return InvalidOid;
+
+	/*
+	 * If the partition root is excluded from this publication via an EXCEPT
+	 * clause, the partition is not published through this publication, so
+	 * return InvalidOid.  Since only partition roots can appear in an EXCEPT
+	 * clause, the root is the only ancestor worth a catalog lookup.
+	 */
+	if (CheckPublicationRelEntry(puboid, llast_oid(ancestors), &root_except) &&
+		root_except)
+		return InvalidOid;
 
 	/*
 	 * Find the "topmost" ancestor that is in this publication.
@@ -548,6 +626,7 @@ publication_add_relation(Oid pubid, PublicationRelInfo *pri,
 	List	   *relids = NIL;
 	int			i;
 	bool		inval_except_table;
+	bool		is_except;
 
 	rel = table_open(PublicationRelRelationId, RowExclusiveLock);
 
@@ -556,21 +635,30 @@ publication_add_relation(Oid pubid, PublicationRelInfo *pri,
 	 * duplicates, it's here just to provide nicer error message in common
 	 * case. The real protection is the unique key on the catalog.
 	 */
-	if (SearchSysCacheExists2(PUBLICATIONRELMAP, ObjectIdGetDatum(relid),
-							  ObjectIdGetDatum(pubid)))
+	if (CheckPublicationRelEntry(pubid, relid, &is_except))
 	{
 		table_close(rel, RowExclusiveLock);
 
 		if (if_not_exists)
 			return InvalidObjectAddress;
 
-		ereport(ERROR,
-				(errcode(ERRCODE_DUPLICATE_OBJECT),
-				 errmsg("relation \"%s\" is already a member of publication \"%s\"",
-						RelationGetRelationName(targetrel), pub->name)));
+		if (is_except)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("cannot add table \"%s\" to publication \"%s\"",
+							RelationGetQualifiedRelationName(targetrel),
+							pub->name),
+					 errdetail("The table is named in the publication's EXCEPT clause for schema \"%s\".",
+							   get_namespace_name(RelationGetNamespace(targetrel))),
+					 errhint("Change the EXCEPT clause using ALTER PUBLICATION ... SET TABLES IN SCHEMA ... EXCEPT.")));
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("relation \"%s\" is already a member of publication \"%s\"",
+							RelationGetRelationName(targetrel), pub->name)));
 	}
 
-	check_publication_add_relation(pri);
+	check_publication_add_relation(pri, pubid);
 
 	/* Validate and translate column names into a Bitmapset of attnums. */
 	attnums = pub_collist_validate(pri->relation, pri->columns);
@@ -996,12 +1084,13 @@ GetIncludedPublicationRelations(Oid pubid, PublicationPartOpt pub_partopt)
  * Gets list of table oids that were specified in the EXCEPT clause for a
  * publication.
  *
- * This should only be used FOR ALL TABLES publications.
+ * This is used for FOR ALL TABLES and FOR TABLES IN SCHEMA publications,
+ * both of which support EXCEPT TABLE.
  */
 List *
 GetExcludedPublicationTables(Oid pubid, PublicationPartOpt pub_partopt)
 {
-	Assert(GetPublication(pubid)->alltables);
+	Assert(GetPublication(pubid)->alltables || is_schema_publication(pubid));
 
 	return get_publication_relations(pubid, pub_partopt, true);
 }
@@ -1246,14 +1335,19 @@ GetSchemaPublicationRelations(Oid schemaid, PublicationPartOpt pub_partopt)
 
 /*
  * Gets the list of all relations published by FOR TABLES IN SCHEMA
- * publication.
+ * publication, excluding any tables listed in EXCEPT clauses.
  */
 List *
 GetAllSchemaPublicationRelations(Oid pubid, PublicationPartOpt pub_partopt)
 {
 	List	   *result = NIL;
 	List	   *pubschemalist = GetPublicationSchemas(pubid);
+	List	   *except_relids = NIL;
 	ListCell   *cell;
+
+	/* get the list of tables excluded via EXCEPT TABLE for this publication */
+	if (pubschemalist != NIL)
+		except_relids = GetExcludedPublicationTables(pubid, pub_partopt);
 
 	foreach(cell, pubschemalist)
 	{
@@ -1261,7 +1355,43 @@ GetAllSchemaPublicationRelations(Oid pubid, PublicationPartOpt pub_partopt)
 		List	   *schemaRels = NIL;
 
 		schemaRels = GetSchemaPublicationRelations(schemaid, pub_partopt);
-		result = list_concat(result, schemaRels);
+
+		if (except_relids != NIL)
+		{
+			/* filter out any tables that appear in the EXCEPT list */
+			foreach_oid(relid, schemaRels)
+			{
+				bool		excluded = list_member_oid(except_relids, relid);
+
+				/*
+				 * A partition whose root is excluded from the publication is
+				 * also excluded, even if the partition itself lives in a
+				 * different (included) schema.  Only the topmost root of a
+				 * partition hierarchy can ever appear in EXCEPT (see
+				 * check_publication_add_relation()), so it's enough to check
+				 * the last element of the ancestors list, rather than walking
+				 * the whole chain.
+				 */
+				if (!excluded && get_rel_relispartition(relid))
+				{
+					List	   *ancestors = get_partition_ancestors(relid);
+
+					if (ancestors != NIL)
+					{
+						excluded = list_member_oid(except_relids,
+												   llast_oid(ancestors));
+						list_free(ancestors);
+					}
+				}
+
+				if (!excluded)
+					result = lappend_oid(result, relid);
+			}
+
+			list_free(schemaRels);
+		}
+		else
+			result = list_concat(result, schemaRels);
 	}
 
 	return result;
@@ -1338,6 +1468,7 @@ is_table_publishable_in_publication(Oid relid, Publication *pub)
 {
 	bool		relispartition;
 	List	   *ancestors = NIL;
+	bool		is_except;
 
 	/*
 	 * For non-pubviaroot publications, a partitioned table is never the
@@ -1385,6 +1516,10 @@ is_table_publishable_in_publication(Oid relid, Publication *pub)
 	 */
 
 	/*
+	 * If the partition root is excluded via the EXCEPT clause, the partition
+	 * is never considered to be published through this publication.  Check
+	 * this before checking whether an ancestor is published.
+	 *
 	 * If an ancestor is published, the partition's status depends on
 	 * publish_via_partition_root value.
 	 *
@@ -1394,20 +1529,38 @@ is_table_publishable_in_publication(Oid relid, Publication *pub)
 	 * If it's false, the partition is covered by its ancestor's presence in
 	 * the publication, it should be included (return true).
 	 */
-	if (relispartition &&
-		OidIsValid(GetTopMostAncestorInPublication(pub->oid, ancestors, NULL)))
-		return !pub->pubviaroot;
+	if (relispartition)
+	{
+		/*
+		 * ancestors can be NIL for a partition whose DETACH ... CONCURRENTLY
+		 * is pending, in which case there is no ancestor to check.
+		 */
+		if (ancestors != NIL &&
+			CheckPublicationRelEntry(pub->oid, llast_oid(ancestors), &is_except) &&
+			is_except)
+			return false;
+
+		if (OidIsValid(GetTopMostAncestorInPublication(pub->oid, ancestors, NULL)))
+			return !pub->pubviaroot;
+	}
 
 	/*
 	 * Check whether the table is explicitly published via pg_publication_rel
 	 * or pg_publication_namespace.
+	 *
+	 * A pg_publication_rel row with prexcept=true means the table is
+	 * explicitly excluded via EXCEPT and must not be reported as published,
+	 * even if its schema is otherwise included.  A row with prexcept=false
+	 * means it is explicitly included.  If no pg_publication_rel row exists,
+	 * the table is published iff its schema appears in
+	 * pg_publication_namespace.
 	 */
-	return (SearchSysCacheExists2(PUBLICATIONRELMAP,
-								  ObjectIdGetDatum(relid),
-								  ObjectIdGetDatum(pub->oid)) ||
-			SearchSysCacheExists2(PUBLICATIONNAMESPACEMAP,
-								  ObjectIdGetDatum(get_rel_namespace(relid)),
-								  ObjectIdGetDatum(pub->oid)));
+	if (CheckPublicationRelEntry(pub->oid, relid, &is_except))
+		return !is_except;
+	else
+		return SearchSysCacheExists2(PUBLICATIONNAMESPACEMAP,
+									 ObjectIdGetDatum(get_rel_namespace(relid)),
+									 ObjectIdGetDatum(pub->oid));
 }
 
 /*
