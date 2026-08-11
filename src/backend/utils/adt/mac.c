@@ -35,6 +35,51 @@ static int	macaddr_cmp_internal(macaddr *a1, macaddr *a2);
 static int	macaddr_fast_cmp(Datum x, Datum y, SortSupport ssup);
 static bool macaddr_abbrev_abort(int memtupcount, SortSupport ssup);
 static Datum macaddr_abbrev_convert(Datum original, SortSupport ssup);
+static bool macaddr_parse_octets(const char *str, char separator, long *octets);
+
+/*
+ *	Parse the six octets of one of the separator-based notations.
+ *
+ *	strtol() accepts the same field syntax as the %x conversions this
+ *	replaces, but has defined behavior when a field is out of range: it
+ *	yields the exact value whenever that fits in a long, and LONG_MIN or
+ *	LONG_MAX otherwise.  Either way the caller's 0..255 range check
+ *	rejects the field, so no errno test is needed here.  One divergence:
+ *	strtol() stops at the "0" of a bare "0x" with no hex digit after it,
+ *	which glibc's sscanf read as zero (that varied across platforms).
+ *
+ *	Returns true if str matched this notation, false if it did not, in
+ *	which case the caller falls through to the remaining notations.
+ */
+static bool
+macaddr_parse_octets(const char *str, char separator, long *octets)
+{
+	const char *ptr = str;
+	int			i;
+
+	for (i = 0; i < 6; i++)
+	{
+		char	   *endptr;
+
+		octets[i] = strtol(ptr, &endptr, 16);
+		if (endptr == ptr)
+			return false;		/* no digits where an octet was expected */
+		ptr = endptr;
+
+		if (i < 5)
+		{
+			if (*ptr != separator)
+				return false;
+			ptr++;
+		}
+	}
+
+	/* trailing whitespace is accepted, anything else is garbage */
+	while (isspace((unsigned char) *ptr))
+		ptr++;
+
+	return (*ptr == '\0');
+}
 
 /*
  *	MAC address reader.  Accepts several common notations.
@@ -46,6 +91,7 @@ macaddr_in(PG_FUNCTION_ARGS)
 	char	   *str = PG_GETARG_CSTRING(0);
 	Node	   *escontext = fcinfo->context;
 	macaddr    *result;
+	long		octets[6];
 	int			a,
 				b,
 				c,
@@ -55,49 +101,57 @@ macaddr_in(PG_FUNCTION_ARGS)
 	char		junk[2];
 	int			count;
 
-	/* %1s matches iff there is trailing non-whitespace garbage */
+	if (!macaddr_parse_octets(str, ':', octets) &&
+		!macaddr_parse_octets(str, '-', octets))
+	{
+		/* %1s matches iff there is trailing non-whitespace garbage */
 
-	count = sscanf(str, "%x:%x:%x:%x:%x:%x%1s",
-				   &a, &b, &c, &d, &e, &f, junk);
-	if (count != 6)
-		count = sscanf(str, "%x-%x-%x-%x-%x-%x%1s",
-					   &a, &b, &c, &d, &e, &f, junk);
-	if (count != 6)
 		count = sscanf(str, "%2x%2x%2x:%2x%2x%2x%1s",
 					   &a, &b, &c, &d, &e, &f, junk);
-	if (count != 6)
-		count = sscanf(str, "%2x%2x%2x-%2x%2x%2x%1s",
-					   &a, &b, &c, &d, &e, &f, junk);
-	if (count != 6)
-		count = sscanf(str, "%2x%2x.%2x%2x.%2x%2x%1s",
-					   &a, &b, &c, &d, &e, &f, junk);
-	if (count != 6)
-		count = sscanf(str, "%2x%2x-%2x%2x-%2x%2x%1s",
-					   &a, &b, &c, &d, &e, &f, junk);
-	if (count != 6)
-		count = sscanf(str, "%2x%2x%2x%2x%2x%2x%1s",
-					   &a, &b, &c, &d, &e, &f, junk);
-	if (count != 6)
-		ereturn(escontext, (Datum) 0,
-				(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
-				 errmsg("invalid input syntax for type %s: \"%s\"", "macaddr",
-						str)));
+		if (count != 6)
+			count = sscanf(str, "%2x%2x%2x-%2x%2x%2x%1s",
+						   &a, &b, &c, &d, &e, &f, junk);
+		if (count != 6)
+			count = sscanf(str, "%2x%2x.%2x%2x.%2x%2x%1s",
+						   &a, &b, &c, &d, &e, &f, junk);
+		if (count != 6)
+			count = sscanf(str, "%2x%2x-%2x%2x-%2x%2x%1s",
+						   &a, &b, &c, &d, &e, &f, junk);
+		if (count != 6)
+			count = sscanf(str, "%2x%2x%2x%2x%2x%2x%1s",
+						   &a, &b, &c, &d, &e, &f, junk);
+		if (count != 6)
+			ereturn(escontext, (Datum) 0,
+					(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+					 errmsg("invalid input syntax for type %s: \"%s\"", "macaddr",
+							str)));
 
-	if ((a < 0) || (a > 255) || (b < 0) || (b > 255) ||
-		(c < 0) || (c > 255) || (d < 0) || (d > 255) ||
-		(e < 0) || (e > 255) || (f < 0) || (f > 255))
+		octets[0] = a;
+		octets[1] = b;
+		octets[2] = c;
+		octets[3] = d;
+		octets[4] = e;
+		octets[5] = f;
+	}
+
+	if ((octets[0] < 0) || (octets[0] > 255) ||
+		(octets[1] < 0) || (octets[1] > 255) ||
+		(octets[2] < 0) || (octets[2] > 255) ||
+		(octets[3] < 0) || (octets[3] > 255) ||
+		(octets[4] < 0) || (octets[4] > 255) ||
+		(octets[5] < 0) || (octets[5] > 255))
 		ereturn(escontext, (Datum) 0,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("invalid octet value in \"macaddr\" value: \"%s\"", str)));
 
 	result = palloc_object(macaddr);
 
-	result->a = a;
-	result->b = b;
-	result->c = c;
-	result->d = d;
-	result->e = e;
-	result->f = f;
+	result->a = octets[0];
+	result->b = octets[1];
+	result->c = octets[2];
+	result->d = octets[3];
+	result->e = octets[4];
+	result->f = octets[5];
 
 	PG_RETURN_MACADDR_P(result);
 }
