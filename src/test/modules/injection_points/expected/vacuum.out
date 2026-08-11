@@ -79,9 +79,38 @@ NOTICE:  notice triggered for injection point vacuum-truncate-enabled
 NOTICE:  notice triggered for injection point vacuum-index-cleanup-auto
 NOTICE:  notice triggered for injection point vacuum-truncate-enabled
 RESET vacuum_truncate;
+-- TOAST table inherits main table's resolved values
+CREATE TABLE vac_tab_toast_inherit(i int, j text STORAGE EXTERNAL) WITH
+  (autovacuum_enabled=false,
+   vacuum_index_cleanup=false,
+   autovacuum_vacuum_insert_threshold=1,
+   autovacuum_vacuum_insert_scale_factor=0,
+   vacuum_truncate=false, toast.vacuum_truncate=true);
+VACUUM vac_tab_toast_inherit;
+NOTICE:  notice triggered for injection point vacuum-index-cleanup-disabled
+NOTICE:  notice triggered for injection point vacuum-truncate-disabled
+NOTICE:  notice triggered for injection point vacuum-index-cleanup-disabled
+NOTICE:  notice triggered for injection point vacuum-truncate-enabled
+INSERT INTO vac_tab_toast_inherit
+  VALUES (1, repeat('a', 10000)), (2, repeat('b', 10000));
+SELECT pg_stat_force_next_flush();
+ pg_stat_force_next_flush 
+--------------------------
+ 
+(1 row)
+
+SELECT s.vacuum_insert_score > 1 AS over
+  FROM pg_class c, pg_stat_autovacuum_scores s
+  WHERE s.relid = c.reltoastrelid AND c.relname = 'vac_tab_toast_inherit';
+ over 
+------
+ t
+(1 row)
+
 DROP TABLE vac_tab_auto;
 DROP TABLE vac_tab_on_toast_off;
 DROP TABLE vac_tab_off_toast_on;
+DROP TABLE vac_tab_toast_inherit;
 -- Cleanup
 SELECT injection_points_detach('vacuum-index-cleanup-auto');
  injection_points_detach 
