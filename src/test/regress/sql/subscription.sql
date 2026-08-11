@@ -279,6 +279,10 @@ BEGIN;
 DROP SUBSCRIPTION regress_testsub;
 COMMIT;
 
+SELECT count(*) = 0 AS no_subscription_comments
+FROM pg_description
+WHERE classoid = 'pg_subscription'::regclass;
+
 DROP SUBSCRIPTION IF EXISTS regress_testsub;
 DROP SUBSCRIPTION regress_testsub;  -- fail
 

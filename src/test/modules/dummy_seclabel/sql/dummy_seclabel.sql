@@ -112,8 +112,15 @@ DROP EVENT TRIGGER always_start, always_end, always_drop, always_rewrite;
 DROP VIEW dummy_seclabel_view1;
 DROP TABLE dummy_seclabel_tbl1, dummy_seclabel_tbl2;
 
+-- Check that dropping objects removes their security labels.
 DROP SUBSCRIPTION dummy_sub;
+SELECT count(*) = 0 AS no_subscription_labels
+FROM pg_shseclabel
+WHERE classoid = 'pg_subscription'::regclass;
 DROP PUBLICATION dummy_pub;
+SELECT count(*) = 0 AS no_publication_labels
+FROM pg_seclabel
+WHERE classoid = 'pg_publication'::regclass;
 
 DROP ROLE regress_dummy_seclabel_user1;
 DROP ROLE regress_dummy_seclabel_user2;
