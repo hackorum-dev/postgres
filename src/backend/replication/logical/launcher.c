@@ -67,7 +67,8 @@ typedef struct LogicalRepCtxStruct
 	dshash_table_handle last_start_dsh;
 
 	/* Background workers. */
-	LogicalRepWorker workers[FLEXIBLE_ARRAY_MEMBER];
+	int		nworkers;
+	LogicalRepWorker workers[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(nworkers);
 } LogicalRepCtxStruct;
 
 static LogicalRepCtxStruct *LogicalRepCtx;
@@ -278,7 +279,7 @@ logicalrep_worker_find(LogicalRepWorkerType wtype, Oid subid, Oid relid,
 	Assert(LWLockHeldByMe(LogicalRepWorkerLock));
 
 	/* Search for an attached worker that matches the specified criteria. */
-	for (i = 0; i < max_logical_replication_workers; i++)
+	for (i = 0; i < LogicalRepCtx->nworkers; i++)
 	{
 		LogicalRepWorker *w = &LogicalRepCtx->workers[i];
 
@@ -313,7 +314,7 @@ logicalrep_workers_find(Oid subid, bool only_running, bool acquire_lock)
 	Assert(LWLockHeldByMe(LogicalRepWorkerLock));
 
 	/* Search for attached worker for a given subscription id. */
-	for (i = 0; i < max_logical_replication_workers; i++)
+	for (i = 0; i < LogicalRepCtx->nworkers; i++)
 	{
 		LogicalRepWorker *w = &LogicalRepCtx->workers[i];
 
@@ -382,7 +383,7 @@ logicalrep_worker_launch(LogicalRepWorkerType wtype,
 
 retry:
 	/* Find unused worker slot. */
-	for (i = 0; i < max_logical_replication_workers; i++)
+	for (i = 0; i < LogicalRepCtx->nworkers; i++)
 	{
 		LogicalRepWorker *w = &LogicalRepCtx->workers[i];
 
@@ -407,7 +408,7 @@ retry:
 	{
 		bool		did_cleanup = false;
 
-		for (i = 0; i < max_logical_replication_workers; i++)
+		for (i = 0; i < LogicalRepCtx->nworkers; i++)
 		{
 			LogicalRepWorker *w = &LogicalRepCtx->workers[i];
 
@@ -699,7 +700,7 @@ logicalrep_pa_worker_stop(ParallelApplyWorkerInfo *winfo)
 	slot_no = winfo->shared->logicalrep_worker_slot_no;
 	SpinLockRelease(&winfo->shared->mutex);
 
-	Assert(slot_no >= 0 && slot_no < max_logical_replication_workers);
+	Assert(slot_no >= 0 && slot_no < LogicalRepCtx->nworkers);
 
 	/*
 	 * Detach from the error_mq_handle for the parallel apply worker before
@@ -771,7 +772,7 @@ logicalrep_worker_attach(int slot)
 	/* Block concurrent access. */
 	LWLockAcquire(LogicalRepWorkerLock, LW_EXCLUSIVE);
 
-	Assert(slot >= 0 && slot < max_logical_replication_workers);
+	Assert(slot >= 0 && slot < LogicalRepCtx->nworkers);
 	MyLogicalRepWorker = &LogicalRepCtx->workers[slot];
 
 	if (!MyLogicalRepWorker->in_use)
@@ -944,7 +945,7 @@ logicalrep_sync_worker_count(Oid subid)
 	Assert(LWLockHeldByMe(LogicalRepWorkerLock));
 
 	/* Search for attached worker for a given subscription id. */
-	for (i = 0; i < max_logical_replication_workers; i++)
+	for (i = 0; i < LogicalRepCtx->nworkers; i++)
 	{
 		LogicalRepWorker *w = &LogicalRepCtx->workers[i];
 
@@ -971,7 +972,7 @@ logicalrep_pa_worker_count(Oid subid)
 	 * Scan all attached parallel apply workers, only counting those which
 	 * have the given subscription id.
 	 */
-	for (i = 0; i < max_logical_replication_workers; i++)
+	for (i = 0; i < LogicalRepCtx->nworkers; i++)
 	{
 		LogicalRepWorker *w = &LogicalRepCtx->workers[i];
 
@@ -1051,9 +1052,10 @@ ApplyLauncherShmemInit(void *arg)
 
 	LogicalRepCtx->last_start_dsa = DSA_HANDLE_INVALID;
 	LogicalRepCtx->last_start_dsh = DSHASH_HANDLE_INVALID;
+	LogicalRepCtx->nworkers = max_logical_replication_workers;
 
 	/* Initialize memory and spin locks for each worker slot. */
-	for (slot = 0; slot < max_logical_replication_workers; slot++)
+	for (slot = 0; slot < LogicalRepCtx->nworkers; slot++)
 	{
 		LogicalRepWorker *worker = &LogicalRepCtx->workers[slot];
 
@@ -1669,7 +1671,7 @@ GetLeaderApplyWorkerPid(pid_t pid)
 
 	LWLockAcquire(LogicalRepWorkerLock, LW_SHARED);
 
-	for (i = 0; i < max_logical_replication_workers; i++)
+	for (i = 0; i < LogicalRepCtx->nworkers; i++)
 	{
 		LogicalRepWorker *w = &LogicalRepCtx->workers[i];
 
@@ -1701,7 +1703,7 @@ pg_stat_get_subscription(PG_FUNCTION_ARGS)
 	/* Make sure we get consistent view of the workers. */
 	LWLockAcquire(LogicalRepWorkerLock, LW_SHARED);
 
-	for (i = 0; i < max_logical_replication_workers; i++)
+	for (i = 0; i < LogicalRepCtx->nworkers; i++)
 	{
 		/* for each row */
 		Datum		values[PG_STAT_GET_SUBSCRIPTION_COLS] = {0};
