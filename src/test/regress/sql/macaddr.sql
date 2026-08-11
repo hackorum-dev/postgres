@@ -14,6 +14,23 @@ INSERT INTO macaddr_data VALUES (7, '08002b010203');
 INSERT INTO macaddr_data VALUES (8, '0800:2b01:0203'); -- invalid
 INSERT INTO macaddr_data VALUES (9, 'not even close'); -- invalid
 
+-- Overlong hex fields must be rejected, not silently wrapped (bug #19583)
+SELECT '100000001:0:0:0:0:0'::macaddr;
+SELECT '100000001-0-0-0-0-0'::macaddr;
+SELECT '-ffffff01:0:0:0:0:0'::macaddr;
+SELECT 'ffffffffffffffffff:0:0:0:0:0'::macaddr;  -- wider than any long
+-- while the leniency inherited from sscanf's %x conversion is preserved
+SELECT '001:00:2b:01:02:03'::macaddr;
+SELECT '0x1:00:2b:01:02:03'::macaddr;
+SELECT '+f:00:2b:01:02:03'::macaddr;
+SELECT 'aa: bb:cc:dd:ee:ff'::macaddr;
+SELECT '08:00:2b:01:02:03  '::macaddr;
+-- but a bare '0x' field with no hex digit is not valid
+SELECT '0x:00:2b:01:02:03'::macaddr;
+-- an octet that fits the field width but is out of range is still caught
+SELECT '1ff:0:0:0:0:0'::macaddr;
+SELECT '-f:0:0:0:0:0'::macaddr;
+
 INSERT INTO macaddr_data VALUES (10, '08:00:2b:01:02:04');
 INSERT INTO macaddr_data VALUES (11, '08:00:2b:01:02:02');
 INSERT INTO macaddr_data VALUES (12, '08:00:2a:01:02:03');
@@ -47,3 +64,6 @@ SELECT pg_input_is_valid('08:00:2b:01:02:ZZ', 'macaddr');
 SELECT * FROM pg_input_error_info('08:00:2b:01:02:ZZ', 'macaddr');
 SELECT pg_input_is_valid('08:00:2b:01:02:', 'macaddr');
 SELECT * FROM pg_input_error_info('08:00:2b:01:02:', 'macaddr');
+-- overlong hex field (bug #19583)
+SELECT pg_input_is_valid('100000001:0:0:0:0:0', 'macaddr');
+SELECT * FROM pg_input_error_info('100000001:0:0:0:0:0', 'macaddr');
