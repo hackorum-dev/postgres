@@ -533,6 +533,56 @@ psql_fails_like(
 	qr/COPY in a pipeline is not supported, aborting connection/,
 	'\copy to in pipeline: fails');
 
+# Test that psql counts every COPY FROM STDIN in a query string when it has
+# to scan the string itself (as for -c).  A COPY that is not the first
+# sub-command must still be recognized, otherwise psql treats the server's
+# COPY_IN response as unexpected and aborts the connection.
+$node->safe_psql('postgres', 'CREATE TABLE copy_stdin_count (a int)');
+
+my @copy_stdin_cases = (
+	{
+		name => 'single COPY FROM STDIN',
+		sql => 'COPY copy_stdin_count FROM STDIN',
+		data => "10\n20\n\\.\n",
+		rows => 2,
+	},
+	{
+		name => 'COPY FROM STDIN after another command',
+		sql => 'SELECT 1; COPY copy_stdin_count FROM STDIN',
+		data => "30\n40\n\\.\n",
+		rows => 2,
+	},
+	{
+		name => 'two COPY FROM STDIN in one string',
+		sql => 'COPY copy_stdin_count FROM STDIN; COPY copy_stdin_count FROM STDIN',
+		data => "50\n\\.\n60\n\\.\n",
+		rows => 2,
+	});
+
+foreach my $c (@copy_stdin_cases)
+{
+	$node->safe_psql('postgres', 'TRUNCATE copy_stdin_count');
+
+	my ($stdout, $stderr) = ('', '');
+	my $ret = IPC::Run::run(
+		[
+			'psql', '-X', '-v' => 'ON_ERROR_STOP=1',
+			'-d' => $node->connstr('postgres'),
+			'-c' => $c->{sql}
+		],
+		'<' => \$c->{data},
+		'>' => \$stdout,
+		'2>' => \$stderr);
+
+	ok($ret, "$c->{name}: psql exits 0");
+	unlike($stderr, qr/unexpected COPY_IN result/,
+		"$c->{name}: connection not aborted");
+
+	my $count =
+	  $node->safe_psql('postgres', 'SELECT count(*) FROM copy_stdin_count');
+	is($count, $c->{rows}, "$c->{name}: all rows loaded");
+}
+
 psql_fails_like(
 	$node,
 	qq{\\restrict test
