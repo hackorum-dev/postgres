@@ -588,17 +588,10 @@ tzloadbody(char const *name, char *canonname, struct state *sp, bool doextend,
 int
 tzload(char const *name, char *canonname, struct state *sp, bool doextend)
 {
-	union local_storage *lsp = malloc(sizeof *lsp);
+	union local_storage ls;
+	union local_storage *lsp = &ls;
 
-	if (!lsp)
-		return errno;
-	else
-	{
-		int			err = tzloadbody(name, canonname, sp, doextend, lsp);
-
-		free(lsp);
-		return err;
-	}
+	return tzloadbody(name, canonname, sp, doextend, lsp);
 }
 
 static bool
