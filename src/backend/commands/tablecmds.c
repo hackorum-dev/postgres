@@ -212,6 +212,7 @@ typedef struct AlteredTableInfo
 	List	   *changedStatisticsOids;	/* OIDs of statistics to rebuild */
 	List	   *changedStatisticsDefs;	/* string definitions of same */
 	List	   *changedStatisticsOwners;	/* owners of same */
+	List	   *changedStatisticsTargets;	/* stxstattarget of same, or -1 */
 } AlteredTableInfo;
 
 /* Struct describing one new constraint to check in Phase 3 scan */
@@ -701,8 +702,8 @@ static void RememberStatisticsForRebuilding(Oid stxoid, AlteredTableInfo *tab);
 static void ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab,
 								   LOCKMODE lockmode);
 static void ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, Oid ownerId,
-								 char *cmd, List **wqueue, LOCKMODE lockmode,
-								 bool rewrite);
+								 int stxstattarget, char *cmd, List **wqueue,
+								 LOCKMODE lockmode, bool rewrite);
 static void RebuildConstraintComment(AlteredTableInfo *tab, AlterTablePass pass,
 									 Oid objid, Relation rel, List *domname,
 									 const char *conname);
@@ -16135,6 +16136,8 @@ RememberStatisticsForRebuilding(Oid stxoid, AlteredTableInfo *tab)
 		char	   *defstring = pg_get_statisticsobjdef_string(stxoid);
 		HeapTuple	tup;
 		Form_pg_statistic_ext statext;
+		Datum		target;
+		bool		targetisnull;
 
 		tup = SearchSysCache1(STATEXTOID, ObjectIdGetDatum(stxoid));
 
@@ -16143,6 +16146,10 @@ RememberStatisticsForRebuilding(Oid stxoid, AlteredTableInfo *tab)
 
 		statext = (Form_pg_statistic_ext) GETSTRUCT(tup);
 
+		target = SysCacheGetAttr(STATEXTOID, tup,
+								 Anum_pg_statistic_ext_stxstattarget,
+								 &targetisnull);
+
 		tab->changedStatisticsOids = lappend_oid(tab->changedStatisticsOids,
 												 stxoid);
 		tab->changedStatisticsDefs = lappend(tab->changedStatisticsDefs,
@@ -16150,6 +16157,10 @@ RememberStatisticsForRebuilding(Oid stxoid, AlteredTableInfo *tab)
 
 		tab->changedStatisticsOwners = lappend_oid(tab->changedStatisticsOwners,
 												   statext->stxowner);
+
+		tab->changedStatisticsTargets =
+			lappend_int(tab->changedStatisticsTargets,
+						targetisnull ? -1 : (int) DatumGetInt16(target));
 
 		ReleaseSysCache(tup);
 	}
@@ -16170,6 +16181,7 @@ ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab, LOCKMODE lockmode)
 	ListCell   *def_item;
 	ListCell   *oid_item;
 	ListCell   *owner_item;
+	ListCell   *target_item;
 
 	/*
 	 * Collect all the constraints and indexes to drop so we can process them
@@ -16243,7 +16255,7 @@ ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab, LOCKMODE lockmode)
 		if (relid != tab->relid)
 			LockRelationOid(relid, AccessExclusiveLock);
 
-		ATPostAlterTypeParse(oldId, relid, confrelid, InvalidOid,
+		ATPostAlterTypeParse(oldId, relid, confrelid, InvalidOid, -1,
 							 (char *) lfirst(def_item),
 							 wqueue, lockmode, tab->rewrite);
 	}
@@ -16262,7 +16274,7 @@ ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab, LOCKMODE lockmode)
 		if (relid != tab->relid)
 			LockRelationOid(relid, AccessExclusiveLock);
 
-		ATPostAlterTypeParse(oldId, relid, InvalidOid, InvalidOid,
+		ATPostAlterTypeParse(oldId, relid, InvalidOid, InvalidOid, -1,
 							 (char *) lfirst(def_item),
 							 wqueue, lockmode, tab->rewrite);
 
@@ -16271,9 +16283,10 @@ ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab, LOCKMODE lockmode)
 	}
 
 	/* add dependencies for new statistics */
-	forthree(oid_item, tab->changedStatisticsOids,
-			 def_item, tab->changedStatisticsDefs,
-			 owner_item, tab->changedStatisticsOwners)
+	forfour(oid_item, tab->changedStatisticsOids,
+			def_item, tab->changedStatisticsDefs,
+			owner_item, tab->changedStatisticsOwners,
+			target_item, tab->changedStatisticsTargets)
 	{
 		Oid			oldId = lfirst_oid(oid_item);
 		Oid			relid;
@@ -16294,8 +16307,9 @@ ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab, LOCKMODE lockmode)
 			LockRelationOid(relid, ShareUpdateExclusiveLock);
 
 		ATPostAlterTypeParse(oldId, relid, InvalidOid, lfirst_oid(owner_item),
-							 (char *) lfirst(def_item),
-							 wqueue, lockmode, tab->rewrite);
+							 lfirst_int(target_item),
+							 (char *) lfirst(def_item), wqueue, lockmode,
+							 tab->rewrite);
 
 		ObjectAddressSet(obj, StatisticExtRelationId, oldId);
 		add_exact_object_address(&obj, objects);
@@ -16358,8 +16372,8 @@ ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab, LOCKMODE lockmode)
  */
 static void
 ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, Oid ownerId,
-					 char *cmd, List **wqueue, LOCKMODE lockmode,
-					 bool rewrite)
+					 int stxstattarget, char *cmd, List **wqueue,
+					 LOCKMODE lockmode, bool rewrite)
 {
 	List	   *raw_parsetree_list;
 	List	   *querytree_list;
@@ -16404,6 +16418,7 @@ ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, Oid ownerId,
 
 			csstmt = transformStatsStmt(oldRelId, (CreateStatsStmt *) stmt, cmd);
 			csstmt->owner = ownerId;
+			csstmt->stxstattarget = stxstattarget;
 
 			querytree_list = lappend(querytree_list, csstmt);
 		}
