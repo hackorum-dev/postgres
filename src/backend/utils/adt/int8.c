@@ -20,6 +20,7 @@
 #include "common/int.h"
 #include "funcapi.h"
 #include "libpq/pqformat.h"
+#include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/supportnodes.h"
 #include "optimizer/optimizer.h"
@@ -779,6 +780,34 @@ int8dec_any(PG_FUNCTION_ARGS)
 }
 
 /*
+ * count_orderby_is_removable
+ *		Can the aggregate-local ORDER BY of a COUNT(ANY) Aggref be removed?
+ *
+ * Removing aggregate ORDER BY also removes evaluation of resjunk sort
+ * expressions.  Only discard bare Vars and Consts: even an immutable
+ * expression such as "1 / b" can still throw.
+ */
+static bool
+count_orderby_is_removable(Aggref *agg)
+{
+	ListCell   *lc;
+
+	foreach(lc, agg->aggorder)
+	{
+		SortGroupClause *sgc = lfirst_node(SortGroupClause, lc);
+		TargetEntry *tle = get_sortgroupclause_tle(sgc, agg->args);
+
+		if (!tle->resjunk)
+			continue;			/* real argument; evaluation survives */
+
+		if (!IsA(tle->expr, Var) && !IsA(tle->expr, Const))
+			return false;
+	}
+
+	return true;
+}
+
+/*
  * int8inc_support
  *		prosupport function for int8inc() and int8inc_any()
  */
@@ -854,44 +883,87 @@ int8inc_support(PG_FUNCTION_ARGS)
 		Aggref	   *agg = req->aggref;
 
 		/*
-		 * Check for COUNT(ANY) and try to convert to COUNT(*). The input
-		 * argument cannot be NULL, we can't have an ORDER BY / DISTINCT in
-		 * the aggregate, and agglevelsup must be 0.
-		 *
-		 * Technically COUNT(ANY) must have 1 arg, but be paranoid and check.
+		 * COUNT is insensitive to input order, but an aggregate-local ORDER
+		 * BY still needs to be removed explicitly, else it's treated as an
+		 * ordered aggregate.  While at it, also convert to COUNT(*) when the
+		 * argument is provably non-NULL.  Both are handled in one pass, since
+		 * simplify_aggref() does not re-invoke us on the node we return.
 		 */
-		if (agg->aggfnoid == F_COUNT_ANY && list_length(agg->args) == 1)
+		if (agg->aggfnoid == F_COUNT_ANY)
 		{
-			TargetEntry *tle = (TargetEntry *) linitial(agg->args);
-			Expr	   *arg = tle->expr;
+			TargetEntry *arg_tle;
+			Expr	   *arg;
+			bool		nonnullable;
+			Aggref	   *newagg;
+			ListCell   *lc;
 
-			/* Check for unsupported cases */
-			if (agg->aggdistinct != NIL || agg->aggorder != NIL ||
-				agg->agglevelsup != 0)
+			if (agg->aggdistinct != NIL || agg->agglevelsup != 0)
 				PG_RETURN_POINTER(NULL);
 
-			/* If the arg isn't NULLable, do the conversion */
-			if (expr_is_nonnullable(req->root, arg, NOTNULL_SOURCE_HASHTABLE))
+			/*
+			 * COUNT(ANY) has one real argument, in the first position of
+			 * agg->args; any further entries are resjunk ORDER-BY-only
+			 * expressions.  The parser guarantees this shape, but an
+			 * unexpected one is simply not an optimization opportunity here,
+			 * not a reason to fail.
+			 */
+			if (agg->args == NIL || list_length(agg->aggargtypes) != 1)
+				PG_RETURN_POINTER(NULL);
+
+			arg_tle = linitial_node(TargetEntry, agg->args);
+			if (arg_tle->resjunk)
+				PG_RETURN_POINTER(NULL);
+
+			for_each_from(lc, agg->args, 1)
 			{
-				Aggref	   *newagg;
+				TargetEntry *tle = lfirst_node(TargetEntry, lc);
 
-				/* We don't expect these to have been set yet */
-				Assert(agg->aggtransno == -1);
-				Assert(agg->aggtranstype == InvalidOid);
+				if (!tle->resjunk)
+					PG_RETURN_POINTER(NULL);
+			}
 
-				/* Convert COUNT(ANY) to COUNT(*) by making a new Aggref */
-				newagg = makeNode(Aggref);
-				memcpy(newagg, agg, sizeof(Aggref));
+			arg = arg_tle->expr;
+
+			/* An ORDER BY that isn't removable rules out any simplification. */
+			if (agg->aggorder != NIL && !count_orderby_is_removable(agg))
+				PG_RETURN_POINTER(NULL);
+
+			nonnullable = expr_is_nonnullable(req->root, arg,
+											  NOTNULL_SOURCE_HASHTABLE);
+
+			/* Nothing to do when there's no ORDER BY and the arg may be NULL. */
+			if (agg->aggorder == NIL && !nonnullable)
+				PG_RETURN_POINTER(NULL);
+
+			/* We don't expect these to have been set yet */
+			Assert(agg->aggtransno == -1);
+			Assert(agg->aggtranstype == InvalidOid);
+
+			newagg = makeNode(Aggref);
+			memcpy(newagg, agg, sizeof(Aggref));
+			newagg->aggorder = NIL;
+
+			if (nonnullable)
+			{
+				/* Convert COUNT(ANY) to COUNT(*); this also drops the args. */
 				newagg->aggfnoid = F_COUNT_;
-
-				/* count(*) has no args */
-				newagg->aggargtypes = NULL;
-				newagg->args = NULL;
+				newagg->aggargtypes = NIL;
+				newagg->args = NIL;
 				newagg->aggstar = true;
 				newagg->location = -1;
-
-				PG_RETURN_POINTER(newagg);
 			}
+			else
+			{
+				/*
+				 * Rebuild with a fresh TargetEntry, canonicalizing to plain
+				 * COUNT(arg) so it can share transition state with one
+				 * elsewhere in the query.
+				 */
+				Assert(agg->aggorder != NIL);
+				newagg->args = list_make1(makeTargetEntry(arg, 1, NULL, false));
+			}
+
+			PG_RETURN_POINTER(newagg);
 		}
 	}
 
