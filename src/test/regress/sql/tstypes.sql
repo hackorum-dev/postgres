@@ -266,6 +266,9 @@ SELECT array_to_tsvector(ARRAY['base','hidden','rebel','spaceship','strike']);
 -- null and empty string are disallowed, since we mustn't make an empty lexeme
 SELECT array_to_tsvector(ARRAY['base','hidden','rebel','spaceship', NULL]);
 SELECT array_to_tsvector(ARRAY['base','hidden','rebel','spaceship', '']);
+-- lexeme of exactly the maximum length is accepted, one byte more is not
+SELECT tsvector_to_array(array_to_tsvector(ARRAY[repeat('x', 2047)])) = ARRAY[repeat('x', 2047)];
+SELECT array_to_tsvector(ARRAY[repeat('x', 2048)]);
 -- array_to_tsvector must sort and de-dup
 SELECT array_to_tsvector(ARRAY['foo','bar','baz','bar']);
 

@@ -1385,6 +1385,15 @@ SELECT array_to_tsvector(ARRAY['base','hidden','rebel','spaceship', NULL]);
 ERROR:  lexeme array may not contain nulls
 SELECT array_to_tsvector(ARRAY['base','hidden','rebel','spaceship', '']);
 ERROR:  lexeme array may not contain empty strings
+-- lexeme of exactly the maximum length is accepted, one byte more is not
+SELECT tsvector_to_array(array_to_tsvector(ARRAY[repeat('x', 2047)])) = ARRAY[repeat('x', 2047)];
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT array_to_tsvector(ARRAY[repeat('x', 2048)]);
+ERROR:  word is too long (2048 bytes, max 2047 bytes)
 -- array_to_tsvector must sort and de-dup
 SELECT array_to_tsvector(ARRAY['foo','bar','baz','bar']);
  array_to_tsvector 
