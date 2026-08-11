@@ -2370,31 +2370,14 @@ static void
 InvalidateBuffer(BufferDesc *buf)
 {
 	BufferTag	oldTag;
-	uint32		oldHash;		/* hash value for oldTag */
-	LWLock	   *oldPartitionLock;	/* buffer partition lock for it */
-	uint32		oldFlags;
 	uint64		buf_state;
 
 	/* Save the original buffer tag before dropping the spinlock */
 	oldTag = buf->tag;
 
 	UnlockBufHdr(buf);
-
-	/*
-	 * Need to compute the old tag's hashcode and partition lock ID. XXX is it
-	 * worth storing the hashcode in BufferDesc so we need not recompute it
-	 * here?  Probably not.
-	 */
-	oldHash = BufTableHashCode(&oldTag);
-	oldPartitionLock = BufMappingPartitionLock(oldHash);
-
 retry:
 
-	/*
-	 * Acquire exclusive mapping lock in preparation for changing the buffer's
-	 * association.
-	 */
-	LWLockAcquire(oldPartitionLock, LW_EXCLUSIVE);
 
 	/* Re-lock the buffer header */
 	buf_state = LockBufHdr(buf);
@@ -2403,7 +2386,6 @@ retry:
 	if (!BufferTagsEqual(&buf->tag, &oldTag))
 	{
 		UnlockBufHdr(buf);
-		LWLockRelease(oldPartitionLock);
 		return;
 	}
 
@@ -2420,11 +2402,11 @@ retry:
 	if (BUF_STATE_GET_REFCOUNT(buf_state) != 0)
 	{
 		UnlockBufHdr(buf);
-		LWLockRelease(oldPartitionLock);
 		/* safety check: should definitely not be our *own* pin */
 		if (GetPrivateRefCount(BufferDescriptorGetBuffer(buf)) > 0)
 			elog(ERROR, "buffer is pinned in InvalidateBuffer");
 		WaitIO(buf);
+		CHECK_FOR_INTERRUPTS();
 		goto retry;
 	}
 
@@ -2438,24 +2420,29 @@ retry:
 	 * Clear out the buffer's tag and flags.  We must do this to ensure that
 	 * linear scans of the buffer array don't think the buffer is valid.
 	 */
-	oldFlags = buf_state & BUF_FLAG_MASK;
 	ClearBufferTag(&buf->tag);
+
+	/*
+	 * Remove the buffer from the lookup hashtable, if it was in there.
+	 */
+	if (buf_state & BM_TAG_VALID)
+	{
+		/*
+		 * Acquire exclusive lock on partition mapping only during the
+		 * deletion process
+		 */
+		int32		oldHash = BufTableHashCode(&oldTag);
+		LWLock	   *partition_lock = BufMappingPartitionLock(oldHash);
+
+		LWLockAcquire(partition_lock, LW_EXCLUSIVE);
+		BufTableDelete(&oldTag, oldHash);
+		LWLockRelease(partition_lock);
+	}
 
 	UnlockBufHdrExt(buf, buf_state,
 					0,
 					BUF_FLAG_MASK | BUF_USAGECOUNT_MASK,
 					0);
-
-	/*
-	 * Remove the buffer from the lookup hashtable, if it was in there.
-	 */
-	if (oldFlags & BM_TAG_VALID)
-		BufTableDelete(&oldTag, oldHash);
-
-	/*
-	 * Done with mapping lock.
-	 */
-	LWLockRelease(oldPartitionLock);
 }
 
 /*
@@ -2480,11 +2467,6 @@ InvalidateVictimBuffer(BufferDesc *buf_hdr)
 	/* have buffer pinned, so it's safe to read tag without lock */
 	tag = buf_hdr->tag;
 
-	hash = BufTableHashCode(&tag);
-	partition_lock = BufMappingPartitionLock(hash);
-
-	LWLockAcquire(partition_lock, LW_EXCLUSIVE);
-
 	/* lock the buffer header */
 	buf_state = LockBufHdr(buf_hdr);
 
@@ -2505,7 +2487,6 @@ InvalidateVictimBuffer(BufferDesc *buf_hdr)
 		Assert(BUF_STATE_GET_REFCOUNT(buf_state) > 0);
 
 		UnlockBufHdr(buf_hdr);
-		LWLockRelease(partition_lock);
 
 		return false;
 	}
@@ -2515,7 +2496,6 @@ InvalidateVictimBuffer(BufferDesc *buf_hdr)
 	 * buffer, therefore BM_LOCK_WAKE_IN_PROGRESS should not be set.
 	 */
 	Assert(!(buf_state & BM_LOCK_WAKE_IN_PROGRESS));
-
 	/*
 	 * Clear out the buffer's tag and flags and usagecount.  This is not
 	 * strictly required, as BM_TAG_VALID/BM_VALID needs to be checked before
@@ -2524,17 +2504,23 @@ InvalidateVictimBuffer(BufferDesc *buf_hdr)
 	 * tag (see e.g. FlushDatabaseBuffers()).
 	 */
 	ClearBufferTag(&buf_hdr->tag);
-	UnlockBufHdrExt(buf_hdr, buf_state,
-					0,
-					BUF_FLAG_MASK | BUF_USAGECOUNT_MASK,
-					0);
 
 	Assert(BUF_STATE_GET_REFCOUNT(buf_state) > 0);
 
 	/* finally delete buffer from the buffer mapping table */
+
+	hash = BufTableHashCode(&tag);
+	partition_lock = BufMappingPartitionLock(hash);
+
+	LWLockAcquire(partition_lock, LW_EXCLUSIVE);
+
 	BufTableDelete(&tag, hash);
 
 	LWLockRelease(partition_lock);
+	UnlockBufHdrExt(buf_hdr, buf_state,
+					0,
+					BUF_FLAG_MASK | BUF_USAGECOUNT_MASK,
+					0);
 
 	buf_state = pg_atomic_read_u64(&buf_hdr->state);
 	Assert(!(buf_state & (BM_DIRTY | BM_VALID | BM_TAG_VALID)));
