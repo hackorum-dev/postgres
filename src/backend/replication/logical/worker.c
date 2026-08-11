@@ -754,6 +754,8 @@ static void send_internal_dependencies(ParallelApplyWorkerInfo *winfo, List *dep
 
 static void maintain_commit_order_dependency(ParallelApplyWorkerInfo *winfo);
 
+static TransactionId get_last_parallelized_xid(void);
+
 /*
  * Compute the hash value for entries in the replica_identity_table.
  */
@@ -1236,6 +1238,63 @@ check_and_record_rel_dependency(LogicalRepRelId relid,
 
 	if (TransactionIdIsValid(new_depended_xid))
 		relentry->last_depended_xid = new_depended_xid;
+}
+
+/*
+ * Check the parallel safety of applying the give action for the relation. If
+ * not safe, wait for preceding transactions to finish before proceeding with
+ * the current change.
+ *
+ * See logicalrep_rel_check_parallel_safety for details on how the safety is
+ * determined.
+ */
+static void
+check_relation_parallel_apply_safety(LogicalRepRelMapEntry *relentry,
+									 LogicalRepParallelAction action)
+{
+	/* Do not check parallel apply safety for streamed transactions */
+	if (in_streamed_transaction)
+		return;
+
+	/* Parallel apply only involves the leader and parallel apply workers */
+	if (!am_leader_apply_worker() && !am_parallel_apply_worker())
+		return;
+
+	/*
+	 * For partitioned tables, we only need to care if the target partition is
+	 * parallel apply safe or not.
+	 */
+	if (relentry->localrel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+		return;
+
+	logicalrep_rel_check_parallel_safety(relentry);
+
+	/* Return if the action is safe for parallel apply */
+	if (!relentry->parallel_global_unsafe[action])
+		return;
+
+	elog(DEBUG1, "found parallel unsafe change on table %u for action %d",
+		 relentry->remoterel.remoteid, action);
+
+	/*
+	 * Wait for all preceding transactions to finish before applying the
+	 * unsafe change. A parallel apply worker waits for the transaction that
+	 * was received immediately before its own, the leader waits for the last
+	 * parallelized transaction; since commit order is preserved, this
+	 * transitively waits for all preceding transactions. The cached XID is
+	 * reset to avoid waiting for the same transaction again for the next
+	 * change.
+	 */
+	if (am_parallel_apply_worker())
+	{
+		if (TransactionIdIsValid(MyParallelShared->preceding_xid))
+		{
+			pa_wait_for_depended_transaction(MyParallelShared->preceding_xid);
+			MyParallelShared->preceding_xid = InvalidTransactionId;
+		}
+	}
+	else
+		maintain_commit_order_dependency(NULL);
 }
 
 /*
@@ -2106,7 +2165,7 @@ apply_handle_begin(StringInfo s)
 
 	maybe_start_skipping_changes(begin_data.final_lsn);
 
-	pa_allocate_worker(remote_ctx.remote_xid);
+	pa_allocate_worker(remote_ctx.remote_xid, get_last_parallelized_xid());
 
 	apply_action = get_transaction_apply_action(remote_ctx.remote_xid, &winfo);
 
@@ -2294,7 +2353,7 @@ apply_handle_begin_prepare(StringInfo s)
 
 	maybe_start_skipping_changes(begin_data.prepare_lsn);
 
-	pa_allocate_worker(remote_ctx.remote_xid);
+	pa_allocate_worker(remote_ctx.remote_xid, get_last_parallelized_xid());
 
 	apply_action = get_transaction_apply_action(remote_ctx.remote_xid, &winfo);
 
@@ -2910,7 +2969,7 @@ apply_handle_stream_start(StringInfo s)
 
 	/* Try to allocate a worker for the streaming transaction. */
 	if (first_segment)
-		pa_allocate_worker(stream_xid);
+		pa_allocate_worker(stream_xid, get_last_parallelized_xid());
 
 	apply_action = get_transaction_apply_action(stream_xid, &winfo);
 
@@ -3857,6 +3916,9 @@ apply_handle_insert(StringInfo s)
 	/* Set relation for error callback */
 	remote_ctx.rel = rel;
 
+	/* Check if the relation is safe for parallel apply */
+	check_relation_parallel_apply_safety(rel, LRPA_INSERT);
+
 	/* Initialize the executor state. */
 	edata = create_edata_for_relation(rel);
 	estate = edata->estate;
@@ -4010,6 +4072,9 @@ apply_handle_update(StringInfo s)
 
 	/* Check if we can do the update. */
 	check_relation_updatable(rel);
+
+	/* Check if the relation is safe for parallel apply */
+	check_relation_parallel_apply_safety(rel, LRPA_UPDATE);
 
 	/*
 	 * Make sure that any user-supplied code runs as the table owner, unless
@@ -4236,6 +4301,9 @@ apply_handle_delete(StringInfo s)
 
 	/* Check if we can do the delete. */
 	check_relation_updatable(rel);
+
+	/* Check if the relation is safe for parallel apply */
+	check_relation_parallel_apply_safety(rel, LRPA_DELETE);
 
 	/*
 	 * Make sure that any user-supplied code runs as the table owner, unless
@@ -4635,22 +4703,25 @@ apply_handle_tuple_routing(ApplyExecutionData *edata,
 	}
 	MemoryContextSwitchTo(oldctx);
 
+	part_entry = logicalrep_partition_open(relmapentry, partrel,
+										   attrmap);
+
 	/* Check if we can do the update or delete on the leaf partition. */
 	if (operation == CMD_UPDATE || operation == CMD_DELETE)
-	{
-		part_entry = logicalrep_partition_open(relmapentry, partrel,
-											   attrmap);
 		check_relation_updatable(part_entry);
-	}
 
 	switch (operation)
 	{
 		case CMD_INSERT:
+			check_relation_parallel_apply_safety(part_entry,
+												 LRPA_INSERT);
 			apply_handle_insert_internal(edata, partrelinfo,
 										 remoteslot_part);
 			break;
 
 		case CMD_DELETE:
+			check_relation_parallel_apply_safety(part_entry,
+												 LRPA_DELETE);
 			apply_handle_delete_internal(edata, partrelinfo,
 										 remoteslot_part, part_entry);
 			break;
@@ -4670,6 +4741,9 @@ apply_handle_tuple_routing(ApplyExecutionData *edata,
 				bool		found;
 				EPQState	epqstate;
 				ConflictTupleInfo conflicttuple = {0};
+
+				check_relation_parallel_apply_safety(part_entry,
+													 LRPA_UPDATE);
 
 				/* Get the matching local tuple from the partition. */
 				found = FindReplTupleInLocalRel(edata, partrel, part_entry,
@@ -4897,6 +4971,8 @@ apply_handle_truncate(StringInfo s)
 			logicalrep_rel_close(rel, lockmode);
 			continue;
 		}
+
+		check_relation_parallel_apply_safety(rel, LRPA_TRUNCATE);
 
 		remote_rels = lappend(remote_rels, rel);
 		TargetPrivilegesCheck(rel->localrel, ACL_TRUNCATE);
@@ -7739,6 +7815,23 @@ send_internal_dependencies(ParallelApplyWorkerInfo *winfo, List *depends_on_xids
 				 errmsg("could not send data to the logical replication parallel apply worker")));
 
 	pfree(dependencies.data);
+}
+
+/*
+ * Return the remote XID of the last transaction whose commit was dispatched
+ * to a parallel apply worker, or InvalidTransactionId if there is none.
+ */
+static TransactionId
+get_last_parallelized_xid(void)
+{
+	FlushPosition *last_txn_node;
+
+	if (dlist_is_empty(&lsn_mapping))
+		return InvalidTransactionId;
+
+	last_txn_node = dlist_tail_element(FlushPosition, node, &lsn_mapping);
+
+	return last_txn_node->pa_remote_xid;
 }
 
 /*
