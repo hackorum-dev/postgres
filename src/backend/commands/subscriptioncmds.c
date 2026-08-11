@@ -33,8 +33,10 @@
 #include "catalog/pg_subscription_rel.h"
 #include "catalog/pg_type.h"
 #include "catalog/pg_user_mapping.h"
+#include "commands/comment.h"
 #include "commands/defrem.h"
 #include "commands/event_trigger.h"
+#include "commands/seclabel.h"
 #include "commands/subscriptioncmds.h"
 #include "commands/tablecmds.h"
 #include "executor/executor.h"
@@ -2780,9 +2782,11 @@ DropSubscription(DropSubscriptionStmt *stmt, bool isTopLevel)
 	/* Drop subscription's conflict log table */
 	drop_sub_conflict_log_table(subid, subname, subconflictlogrelid);
 
-	/* Clean up dependencies */
+	/* Clean up dependencies, comments, and security labels. */
 	deleteDependencyRecordsFor(SubscriptionRelationId, subid, false);
 	deleteSharedDependencyRecordsFor(SubscriptionRelationId, subid, 0);
+	DeleteComments(subid, SubscriptionRelationId, 0);
+	DeleteSecurityLabel(&myself);
 
 	/* Remove any associated relation synchronization states. */
 	RemoveSubscriptionRel(subid, InvalidOid);
