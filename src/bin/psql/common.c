@@ -1796,13 +1796,23 @@ ExecQueryAndProcessResults(const char *query,
 		PsqlScanState scan_state;
 		PQExpBuffer query_buf;
 		promptStatus_t prompt_tmp;
+		PsqlScanResult scan_result;
 
 		scan_state = psql_scan_create(&psqlscan_callbacks);
 		psql_scan_setup(scan_state, query, strlen(query),
 						pset.encoding, standard_strings());
 		query_buf = createPQExpBuffer();
 
-		(void) psql_scan(scan_state, query_buf, &prompt_tmp);
+		/*
+		 * A semicolon ends only one sub-command; keep scanning so that COPY
+		 * FROM STDIN commands past the first semicolon are counted too.  The
+		 * count accumulates in scan_state across the psql_scan() calls.
+		 */
+		do
+		{
+			scan_result = psql_scan(scan_state, query_buf, &prompt_tmp);
+			resetPQExpBuffer(query_buf);
+		} while (scan_result == PSCAN_SEMICOLON);
 
 		num_copy_from_stdin = psql_scan_count_copy_from_stdin(scan_state);
 
