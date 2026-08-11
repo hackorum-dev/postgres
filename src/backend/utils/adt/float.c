@@ -3449,6 +3449,10 @@ float8_regr_accum(PG_FUNCTION_ARGS)
 		 * etc).  Updating them would just create the possibility of injecting
 		 * roundoff error, and we need exact zero results so that the final
 		 * functions will return NULL in the right cases.
+		 *
+		 * Inf/NaN inputs must still force Sxy to NaN when the other variable
+		 * is constant and the Sxy update is skipped.  Otherwise we leave a
+		 * false exact-zero Sxy.  The first-input path below does the same.
 		 */
 		if (isnan(commonX))
 			Sxx += tmpX * tmpX * scale;
@@ -3456,6 +3460,9 @@ float8_regr_accum(PG_FUNCTION_ARGS)
 			Syy += tmpY * tmpY * scale;
 		if (isnan(commonX) && isnan(commonY))
 			Sxy += tmpX * tmpY * scale;
+		else if (isnan(newvalX) || isinf(newvalX) ||
+				 isnan(newvalY) || isinf(newvalY))
+			Sxy = get_float8_nan();
 
 		/*
 		 * Overflow check.  We only report an overflow error when finite

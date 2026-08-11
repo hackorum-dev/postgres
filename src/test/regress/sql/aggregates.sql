@@ -140,6 +140,18 @@ SELECT covar_pop(1::float8,2::float8), covar_samp(3::float8,4::float8);
 SELECT covar_pop(1::float8,'inf'::float8), covar_samp(3::float8,'inf'::float8);
 SELECT covar_pop(1::float8,'nan'::float8), covar_samp(3::float8,'nan'::float8);
 
+-- Inf/NaN not first, other arg constant: must still yield NaN, not 0
+CREATE TEMP TABLE regr_inf_pos (ord int, y float8);
+INSERT INTO regr_inf_pos VALUES (1, 3), (2, 'Infinity'), (3, 4);
+SELECT covar_pop(0::float8, y ORDER BY ord),
+       covar_pop(y, 0::float8 ORDER BY ord),
+       regr_sxy(0::float8, y ORDER BY ord)
+  FROM regr_inf_pos;
+DELETE FROM regr_inf_pos;
+INSERT INTO regr_inf_pos VALUES (1, 3), (2, 'NaN'), (3, 4);
+SELECT covar_pop(0::float8, y ORDER BY ord) FROM regr_inf_pos;
+DROP TABLE regr_inf_pos;
+
 -- check some cases that formerly had poor roundoff-error behavior
 -- note: regr_r2() differs from corr() for a horizontal line, per spec
 SELECT corr(0.09, g), regr_r2(0.09, g)
