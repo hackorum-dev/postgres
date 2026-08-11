@@ -439,4 +439,84 @@ $result =
   $node_subscriber->safe_psql('postgres', "SELECT count(1) FROM regress_tab");
 is ($result, 1, 'inserts are replicated to subscriber');
 
+##################################################
+# Test that parallel apply does not resume while a transaction with unrecorded
+# changes is still in progress after hitting the dependency memory limit.
+##################################################
+
+$node_publisher->safe_psql('postgres', "TRUNCATE TABLE tab_ri_full;");
+$node_publisher->safe_psql('postgres',
+    "INSERT INTO tab_ri_full VALUES (0, 'idle');");
+$node_publisher->wait_for_catchup('regress_sub');
+
+$node_subscriber->safe_psql('postgres',
+    "SELECT injection_points_attach('parallel-worker-before-commit','wait');"
+);
+
+# Tx-1 retains more than half the dependency memory budget (10MB > 8MB),
+# while staying below the 16MB limit.
+$node_publisher->safe_psql('postgres',
+    "INSERT INTO tab_ri_full VALUES (1, repeat('p', 10 * 1024 * 1024));");
+
+$node_subscriber->wait_for_event('logical replication parallel worker',
+    'parallel-worker-before-commit');
+
+# Hold Tx-2 before it applies its UPDATE.
+$node_subscriber->safe_psql('postgres',
+    "SELECT injection_points_attach('apply-update-before-open-indices','wait');"
+);
+
+$offset = -s $node_subscriber->logfile;
+
+# Tx-2's INSERT crosses the 16MB dependency memory limit, so its subsequent
+# UPDATE on id = 0 suspends parallel apply and skips dependency recording.
+$node_publisher->safe_psql('postgres', qq[
+    BEGIN;
+    INSERT INTO tab_ri_full VALUES (2, repeat('t', 7 * 1024 * 1024));
+    UPDATE tab_ri_full SET value = 'first' WHERE id = 0;
+    COMMIT;
+]);
+
+$node_subscriber->wait_for_log(qr/parallel apply suspended:/, $offset);
+
+# Let Tx-1 commit. Reclaiming Tx-1's entries drops memory usage below half of
+# the limit, but Tx-2 is still in flight with an unrecorded UPDATE, so parallel
+# apply must remain suspended until Tx-2 finishes.
+$node_subscriber->safe_psql('postgres', qq[
+    SELECT injection_points_detach('parallel-worker-before-commit');
+    SELECT injection_points_wakeup('parallel-worker-before-commit');
+]);
+
+$node_subscriber->wait_for_event('logical replication parallel worker',
+    'apply-update-before-open-indices');
+$node_subscriber->safe_psql('postgres',
+    "SELECT injection_points_detach('apply-update-before-open-indices');"
+);
+
+# Tx-3 updates the same row (id = 0) as Tx-2's unrecorded UPDATE. Because
+# parallel apply is still suspended, Tx-3 is applied by the leader after
+# waiting for Tx-2 to commit.
+my $psql_tx3 = $node_publisher->background_psql('postgres');
+$psql_tx3->query_until(
+    qr/start_tx3/, q(
+    \echo start_tx3
+    UPDATE tab_ri_full SET value = 'second' WHERE id = 0;
+));
+
+$node_subscriber->safe_psql('postgres',
+    "SELECT injection_points_wakeup('apply-update-before-open-indices');"
+);
+$psql_tx3->quit;
+
+$node_subscriber->wait_for_log(qr/parallel apply resumed:/, $offset);
+$node_publisher->wait_for_catchup('regress_sub');
+
+$result = $node_subscriber->safe_psql('postgres',
+    "SELECT value FROM tab_ri_full WHERE id = 0");
+is($result, 'second',
+    'later update is applied after the suspended transaction finishes');
+
+$node_publisher->safe_psql('postgres', "TRUNCATE TABLE tab_ri_full;");
+$node_publisher->wait_for_catchup('regress_sub');
+
 done_testing();
