@@ -123,7 +123,18 @@ for my $tc (@test_configuration)
 		$primary->command_ok(
 			[ 'pg_verifybackup', '--exit-on-error', $backup_path, ],
 			"verify backup, compression $method");
-
+		if ($method eq 'zstd')
+		{
+			my $archive = "$backup_path/base.tar.zst";
+			open my $fh, '+<', $archive
+				or die "could not open $archive: $!";
+			truncate($fh, (-s $archive) - 1)
+				or die "could not truncate $archive: $!";
+			close $fh;
+			$primary->command_fails(
+				[ 'pg_verifybackup', '--exit-on-error', $backup_path, ],
+				"reject truncated ZSTD backup");
+		}
 		# Cleanup.
 		rmtree($backup_path);
 	}
