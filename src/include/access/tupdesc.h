@@ -158,7 +158,7 @@ typedef struct TupleDescData
 										 * compact_attrs element. */
 	TupleConstr *constr;		/* constraints, or NULL if none */
 	/* compact_attrs[N] is the compact metadata of Attribute Number N+1 */
-	CompactAttribute compact_attrs[FLEXIBLE_ARRAY_MEMBER];
+	CompactAttribute compact_attrs[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(natts);
 }			TupleDescData;
 typedef struct TupleDescData *TupleDesc;
 
@@ -194,7 +194,11 @@ extern void verify_compact_attribute(TupleDesc, int attnum);
 static inline CompactAttribute *
 TupleDescCompactAttr(TupleDesc tupdesc, int i)
 {
-	CompactAttribute *cattr = &tupdesc->compact_attrs[i];
+	CompactAttribute *cattr;
+
+	Assert(i >= 0 && i < tupdesc->natts);
+
+	cattr = &tupdesc->compact_attrs[i];
 
 #ifdef USE_ASSERT_CHECKING
 
