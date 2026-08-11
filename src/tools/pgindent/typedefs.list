@@ -1906,6 +1906,7 @@ OverridingKind
 PACE_HEADER
 PACL
 PATH
+PAWorkerMsgType
 PCtxtHandle
 PERL_CONTEXT
 PERL_SI
