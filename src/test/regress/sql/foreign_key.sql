@@ -2801,3 +2801,45 @@ INSERT INTO fp_subxact_fk VALUES (999, 'bad'), (0, 'boom'), (1, 'ok');
 DROP TRIGGER fp_subxact_trg ON fp_subxact_fk;
 DROP FUNCTION fp_abort_subxact();
 DROP TABLE fp_subxact_fk, fp_subxact_pk;
+
+-- An AFTER trigger runs a query of its own, and that query inserts into a
+-- second table with a fast-path foreign key.  The entry the nested INSERT
+-- creates belongs to the cursor's portal, which is gone by the time the
+-- entry is torn down at the end of the outer statement.  Every key stored
+-- below is present in its referenced table, so the INSERT must just succeed.
+CREATE TABLE fp_customer (id int PRIMARY KEY);
+INSERT INTO fp_customer VALUES (1);
+CREATE TABLE fp_product (id int PRIMARY KEY);
+INSERT INTO fp_product SELECT generate_series(1, 4);
+CREATE TABLE fp_kit_component (kit_product_id int, component_product_id int);
+INSERT INTO fp_kit_component VALUES (1, 2), (1, 3), (1, 4);
+CREATE TABLE fp_order (id int, customer_id int REFERENCES fp_customer,
+    product_id int);
+CREATE TABLE fp_order_item (order_id int, product_id int
+    REFERENCES fp_product);
+CREATE FUNCTION fp_add_order_item(order_id int, product_id int) RETURNS int
+    LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO fp_order_item VALUES (order_id, product_id);
+    RETURN product_id;
+END$$;
+CREATE FUNCTION fp_expand_kit() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    component_id int;
+    ncomponents int := 0;
+BEGIN
+    FOR component_id IN
+        SELECT fp_add_order_item(NEW.id, component_product_id)
+            FROM fp_kit_component WHERE kit_product_id = NEW.product_id
+    LOOP
+        ncomponents := ncomponents + 1;
+    END LOOP;
+    RAISE NOTICE 'order % expanded into % order items', NEW.id, ncomponents;
+    RETURN NULL;
+END$$;
+CREATE TRIGGER fp_expand_kit_trg AFTER INSERT ON fp_order
+    FOR EACH ROW EXECUTE FUNCTION fp_expand_kit();
+INSERT INTO fp_order VALUES (1, 1, 1);
+SELECT count(*) FROM fp_order_item;
+DROP TABLE fp_order, fp_order_item, fp_kit_component, fp_product, fp_customer;
+DROP FUNCTION fp_expand_kit(), fp_add_order_item(int, int);
