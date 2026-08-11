@@ -1168,6 +1168,12 @@ select pg_typeof(cleast_agg(variadic array[4.5,f1])) from int4_tbl;
 --
 begin;
 create table agg_simplify (a int, not_null_col int not null, nullable_col int);
+insert into agg_simplify values
+    (1, 10, 100),
+    (2, 20, null),
+    (3, 30, 300),
+    (4, 40, null),
+    (5, 50, 0);
 
 -- Ensure count(not_null_col) uses count(*)
 explain (costs off, verbose)
@@ -1185,18 +1191,116 @@ select count(null) from agg_simplify;
 explain (costs off, verbose)
 select count(nullable_col) from agg_simplify;
 
--- Ensure there's no optimization with DISTINCT aggs
+-- Ensure there's no optimization with DISTINCT aggs, with or without an
+-- aggregate-local ORDER BY
 explain (costs off, verbose)
 select count(distinct not_null_col) from agg_simplify;
 
--- Ensure there's no optimization with ORDER BY aggs
+explain (costs off, verbose)
+select count(distinct a order by a) from agg_simplify;
+
+-- ORDER BY is redundant for COUNT, so it's removed when every ORDER-BY-only
+-- expression is a bare Var or Const.  A non-nullable arg then reaches count(*).
 explain (costs off, verbose)
 select count(not_null_col order by not_null_col) from agg_simplify;
+
+-- Same, but a nullable arg is only simplified to count(<arg>)
+explain (costs off, verbose)
+select count(nullable_col order by nullable_col) from agg_simplify;
+
+-- A separate resjunk ORDER BY key that's a bare Var is likewise removable
+explain (costs off, verbose)
+select count(nullable_col order by not_null_col) from agg_simplify;
+
+-- A mix of the real argument and a resjunk Var as ORDER BY keys
+explain (costs off, verbose)
+select count(nullable_col order by nullable_col, not_null_col) from agg_simplify;
+
+-- A constant ORDER BY key is likewise removable
+explain (costs off, verbose)
+select count(nullable_col order by 1) from agg_simplify;
+
+-- Sort direction and NULLS ordering don't affect removability
+explain (costs off, verbose)
+select count(nullable_col order by not_null_col desc) from agg_simplify;
+
+explain (costs off, verbose)
+select count(nullable_col order by not_null_col nulls first) from agg_simplify;
+
+-- FILTER doesn't block removal of a safe ORDER BY
+explain (costs off, verbose)
+select count(a order by not_null_col) filter (where a <> 2) from agg_simplify;
+
+-- A complex expression used as the real (non-resjunk) argument is not
+-- affected by the resjunk restriction: its evaluation survives regardless,
+-- so a matching ORDER BY on it is still redundant and removable
+explain (costs off, verbose)
+select count(not_null_col + 1 order by not_null_col + 1) from agg_simplify;
+
+-- Nontrivial ORDER-BY-only expressions are never removed, since dropping
+-- them could suppress side effects or errors that would otherwise surface
+explain (costs off, verbose)
+select count(nullable_col order by nullable_col + 1) from agg_simplify;
+
+explain (costs off, verbose)
+select count(nullable_col order by random()) from agg_simplify;
+
+-- The rule is all-or-nothing across multiple sort keys: one nontrivial key
+-- blocks removal even when another key is a bare Var ...
+explain (costs off, verbose)
+select count(nullable_col order by nullable_col, not_null_col + 1) from agg_simplify;
+
+-- ... while an all-Var/Const set of keys still simplifies
+explain (costs off, verbose)
+select count(nullable_col order by nullable_col, not_null_col) from agg_simplify;
 
 -- Ensure we don't optimize to count(*) with agglevelsup > 0
 explain (costs off, verbose)
 select a from agg_simplify a group by a
 having exists (select 1 from onek b where count(a.not_null_col) = b.four);
+
+-- A volatile ORDER-BY-only expression is not removed, so it still runs once
+-- per row that reaches the aggregate
+create sequence count_order_seq;
+
+select count(not_null_col order by nextval('count_order_seq')) from agg_simplify;
+select currval('count_order_seq') as expect_5;
+
+select count(not_null_col order by nextval('count_order_seq')) filter (where false) from agg_simplify;
+select currval('count_order_seq') as expect_5_still;
+
+select count(not_null_col order by nextval('count_order_seq')) filter (where a <> 2) from agg_simplify;
+select currval('count_order_seq') as expect_9;
+
+-- Result equality: count(arg ORDER BY <removable keys>) matches count(arg),
+-- covering nullable/non-nullable args, sort direction, an all-NULL filtered
+-- input, and an empty filtered input
+select count(nullable_col order by not_null_col) as ordered,
+       count(nullable_col) as plain
+from agg_simplify;
+
+select count(nullable_col order by nullable_col desc) as ordered,
+       count(nullable_col) as plain
+from agg_simplify;
+
+select count(nullable_col order by not_null_col) filter (where nullable_col is null) as ordered,
+       count(nullable_col) filter (where nullable_col is null) as plain
+from agg_simplify;
+
+select count(nullable_col order by not_null_col) filter (where false) as ordered,
+       count(nullable_col) filter (where false) as plain
+from agg_simplify;
+
+-- Immutable expressions can still throw errors.  The strict Var/Const rule
+-- keeps this resjunk expression from disappearing, so the error remains ...
+savepoint sp_div0;
+select count(a order by 1 / nullable_col) from agg_simplify;
+rollback to savepoint sp_div0;
+
+-- ... but when the same expression is the real argument instead, its
+-- evaluation was never conditional on the ORDER BY, so the error remains
+-- even after the (now redundant) ORDER BY is removed
+select count(1 / nullable_col order by 1 / nullable_col) from agg_simplify;
 
 rollback;
 
