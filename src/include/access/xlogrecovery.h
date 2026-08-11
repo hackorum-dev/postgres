@@ -155,7 +155,8 @@ extern PGDLLIMPORT bool StandbyMode;
 
 extern void InitWalRecovery(ControlFileData *ControlFile,
 							bool *wasShutdown_ptr, bool *haveBackupLabel_ptr,
-							bool *haveTblspcMap_ptr);
+							bool *haveTblspcMap_ptr,
+							bool *backupFromStandby_ptr);
 extern void PerformWalRecovery(void);
 
 /*

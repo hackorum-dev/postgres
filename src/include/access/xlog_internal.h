@@ -315,6 +315,8 @@ typedef struct xl_checkpoint_redo
 {
 	int			wal_level;
 	uint32		data_checksum_version;
+	XLogRecPtr	data_checksum_transition_lsn;
+	bool		data_checksum_state_is_local;
 } xl_checkpoint_redo;
 
 /*

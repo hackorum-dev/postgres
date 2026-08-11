@@ -453,11 +453,13 @@ EnableStandbyMode(void)
  * PerformWalRecovery().
  *
  * This initializes some global variables like ArchiveRecoveryRequested, and
- * StandbyModeRequested and InRecovery.
+ * StandbyModeRequested and InRecovery. The output parameters describe the
+ * selected checkpoint and any backup metadata.
  */
 void
 InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
-				bool *haveBackupLabel_ptr, bool *haveTblspcMap_ptr)
+				bool *haveBackupLabel_ptr, bool *haveTblspcMap_ptr,
+				bool *backupFromStandby_ptr)
 {
 	XLogPageReadPrivate *private;
 	struct stat st;
@@ -982,6 +984,7 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	*wasShutdown_ptr = wasShutdown;
 	*haveBackupLabel_ptr = haveBackupLabel;
 	*haveTblspcMap_ptr = haveTblspcMap;
+	*backupFromStandby_ptr = backupFromStandby;
 }
 
 /*

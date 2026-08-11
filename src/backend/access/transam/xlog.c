@@ -559,6 +559,10 @@ typedef struct XLogCtlData
 	/* last data_checksum_version we've seen */
 	uint32		data_checksum_version;
 
+	/* current checksum state and latest online transition */
+	XLogRecPtr	data_checksum_transition_lsn;
+	bool		data_checksum_state_is_local;
+
 	slock_t		info_lck;		/* locks shared variables shown above */
 } XLogCtlData;
 
@@ -677,6 +681,17 @@ static bool updateMinRecoveryPoint = true;
 static ChecksumStateType LocalDataChecksumState = 0;
 
 /*
+ * This node's checksum state after replaying the latest XLOG_CHECKPOINT_REDO
+ * record. Preserve it until the matching XLOG_CHECKPOINT_ONLINE record is
+ * replayed, then store it in the restartpoint instead of the checksum state
+ * received from the primary.
+ */
+static ChecksumStateType replayedCheckpointDataChecksumState = 0;
+static XLogRecPtr replayedCheckpointDataChecksumTransitionLSN = InvalidXLogRecPtr;
+static bool replayedCheckpointDataChecksumStateIsLocal = false;
+static bool replayedCheckpointDataChecksumStateValid = false;
+
+/*
  * Variable backing the GUC, keep it in sync with LocalDataChecksumState.
  * See SetLocalDataChecksumState().
  */
@@ -749,7 +764,7 @@ static void WALInsertLockAcquireExclusive(void);
 static void WALInsertLockRelease(void);
 static void WALInsertLockUpdateInsertingAt(XLogRecPtr insertingAt);
 
-static void XLogChecksums(uint32 new_type);
+static XLogRecPtr XLogChecksums(uint32 new_type);
 
 /*
  * Insert an XLOG record represented by an already-constructed chain of data
@@ -4283,12 +4298,16 @@ InitControlFile(uint64 sysidentifier, uint32 data_checksum_version)
 	ControlFile->wal_log_hints = wal_log_hints;
 	ControlFile->track_commit_timestamp = track_commit_timestamp;
 	ControlFile->data_checksum_version = data_checksum_version;
+	ControlFile->data_checksum_transition_lsn = InvalidXLogRecPtr;
+	ControlFile->data_checksum_state_is_local = false;
 
 	/*
 	 * Set the data_checksum_version value into XLogCtl, which is where all
 	 * processes get the current value from.
 	 */
 	XLogCtl->data_checksum_version = data_checksum_version;
+	XLogCtl->data_checksum_transition_lsn = InvalidXLogRecPtr;
+	XLogCtl->data_checksum_state_is_local = false;
 }
 
 static void
@@ -4747,6 +4766,7 @@ DataChecksumsNeedVerify(void)
 void
 SetDataChecksumsOnInProgress(void)
 {
+	XLogRecPtr	transition_lsn;
 	uint64		barrier;
 
 	/*
@@ -4756,14 +4776,12 @@ SetDataChecksumsOnInProgress(void)
 	START_CRIT_SECTION();
 	MyProc->delayChkptFlags |= DELAY_CHKPT_START;
 
-	XLogChecksums(PG_DATA_CHECKSUM_INPROGRESS_ON);
-
-	SpinLockAcquire(&XLogCtl->info_lck);
-	XLogCtl->data_checksum_version = PG_DATA_CHECKSUM_INPROGRESS_ON;
-	SpinLockRelease(&XLogCtl->info_lck);
+	transition_lsn = XLogChecksums(PG_DATA_CHECKSUM_INPROGRESS_ON);
 
 	LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
 	ControlFile->data_checksum_version = PG_DATA_CHECKSUM_INPROGRESS_ON;
+	ControlFile->data_checksum_transition_lsn = transition_lsn;
+	ControlFile->data_checksum_state_is_local = false;
 	UpdateControlFile();
 	LWLockRelease(ControlFileLock);
 
@@ -4800,6 +4818,7 @@ SetDataChecksumsOnInProgress(void)
 void
 SetDataChecksumsOn(void)
 {
+	XLogRecPtr	transition_lsn;
 	uint64		barrier;
 
 	SpinLockAcquire(&XLogCtl->info_lck);
@@ -4824,11 +4843,7 @@ SetDataChecksumsOn(void)
 	START_CRIT_SECTION();
 	MyProc->delayChkptFlags |= DELAY_CHKPT_START;
 
-	XLogChecksums(PG_DATA_CHECKSUM_VERSION);
-
-	SpinLockAcquire(&XLogCtl->info_lck);
-	XLogCtl->data_checksum_version = PG_DATA_CHECKSUM_VERSION;
-	SpinLockRelease(&XLogCtl->info_lck);
+	transition_lsn = XLogChecksums(PG_DATA_CHECKSUM_VERSION);
 
 	/*
 	 * Update the controlfile before waiting since if we have an immediate
@@ -4836,6 +4851,8 @@ SetDataChecksumsOn(void)
 	 */
 	LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
 	ControlFile->data_checksum_version = PG_DATA_CHECKSUM_VERSION;
+	ControlFile->data_checksum_transition_lsn = transition_lsn;
+	ControlFile->data_checksum_state_is_local = false;
 	UpdateControlFile();
 	LWLockRelease(ControlFileLock);
 
@@ -4864,6 +4881,7 @@ SetDataChecksumsOn(void)
 void
 SetDataChecksumsOff(void)
 {
+	XLogRecPtr	transition_lsn;
 	uint64		barrier;
 
 	SpinLockAcquire(&XLogCtl->info_lck);
@@ -4890,14 +4908,12 @@ SetDataChecksumsOff(void)
 		START_CRIT_SECTION();
 		MyProc->delayChkptFlags |= DELAY_CHKPT_START;
 
-		XLogChecksums(PG_DATA_CHECKSUM_INPROGRESS_OFF);
-
-		SpinLockAcquire(&XLogCtl->info_lck);
-		XLogCtl->data_checksum_version = PG_DATA_CHECKSUM_INPROGRESS_OFF;
-		SpinLockRelease(&XLogCtl->info_lck);
+		transition_lsn = XLogChecksums(PG_DATA_CHECKSUM_INPROGRESS_OFF);
 
 		LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
 		ControlFile->data_checksum_version = PG_DATA_CHECKSUM_INPROGRESS_OFF;
+		ControlFile->data_checksum_transition_lsn = transition_lsn;
+		ControlFile->data_checksum_state_is_local = false;
 		UpdateControlFile();
 		LWLockRelease(ControlFileLock);
 
@@ -4928,14 +4944,12 @@ SetDataChecksumsOff(void)
 	/* Ensure that we don't incur a checkpoint during disabling checksums */
 	MyProc->delayChkptFlags |= DELAY_CHKPT_START;
 
-	XLogChecksums(PG_DATA_CHECKSUM_OFF);
-
-	SpinLockAcquire(&XLogCtl->info_lck);
-	XLogCtl->data_checksum_version = PG_DATA_CHECKSUM_OFF;
-	SpinLockRelease(&XLogCtl->info_lck);
+	transition_lsn = XLogChecksums(PG_DATA_CHECKSUM_OFF);
 
 	LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
 	ControlFile->data_checksum_version = PG_DATA_CHECKSUM_OFF;
+	ControlFile->data_checksum_transition_lsn = transition_lsn;
+	ControlFile->data_checksum_state_is_local = false;
 	UpdateControlFile();
 	LWLockRelease(ControlFileLock);
 
@@ -5426,6 +5440,8 @@ XLOGShmemInit(void *arg)
 
 	/* Use the checksum info from control file */
 	XLogCtl->data_checksum_version = ControlFile->data_checksum_version;
+	XLogCtl->data_checksum_transition_lsn = ControlFile->data_checksum_transition_lsn;
+	XLogCtl->data_checksum_state_is_local = ControlFile->data_checksum_state_is_local;
 	SetLocalDataChecksumState(XLogCtl->data_checksum_version);
 
 	SpinLockInit(&XLogCtl->Insert.insertpos_lck);
@@ -5512,6 +5528,8 @@ BootStrapXLOG(uint32 data_checksum_version)
 	checkPoint.time = (pg_time_t) time(NULL);
 	checkPoint.oldestActiveXid = InvalidTransactionId;
 	checkPoint.dataChecksumState = data_checksum_version;
+	checkPoint.dataChecksumTransitionLSN = InvalidXLogRecPtr;
+	checkPoint.dataChecksumStateIsLocal = false;
 
 	TransamVariables->nextXid = checkPoint.nextXid;
 	TransamVariables->nextOid = checkPoint.nextOid;
@@ -5850,6 +5868,10 @@ StartupXLOG(void)
 	bool		didCrash;
 	bool		haveTblspcMap;
 	bool		haveBackupLabel;
+	bool		backupFromStandby;
+	uint32		localDataChecksumState;
+	XLogRecPtr	localDataChecksumTransitionLSN;
+	bool		localDataChecksumStateIsLocal;
 	XLogRecPtr	EndOfLog;
 	TimeLineID	EndOfLogTLI;
 	TimeLineID	newTLI;
@@ -5987,9 +6009,45 @@ StartupXLOG(void)
 	 * starting checkpoint, and sets InRecovery and ArchiveRecoveryRequested.
 	 * It also applies the tablespace map file, if any.
 	 */
+	localDataChecksumState = ControlFile->checkPointCopy.dataChecksumState;
+	localDataChecksumTransitionLSN = ControlFile->checkPointCopy.dataChecksumTransitionLSN;
+	localDataChecksumStateIsLocal = ControlFile->checkPointCopy.dataChecksumStateIsLocal;
 	InitWalRecovery(ControlFile, &wasShutdown,
-					&haveBackupLabel, &haveTblspcMap);
+					&haveBackupLabel, &haveTblspcMap,
+					&backupFromStandby);
 	checkPoint = ControlFile->checkPointCopy;
+
+	/*
+	 * The checkpoint copy in pg_control has been localized by this node.
+	 * InitWalRecovery rereads the original WAL record, so restore the local
+	 * fields unless a primary backup selected a different checkpoint. A
+	 * standby backup contains pages matching its localized state.
+	 */
+	if (!haveBackupLabel || backupFromStandby)
+	{
+		checkPoint.dataChecksumState = localDataChecksumState;
+		checkPoint.dataChecksumTransitionLSN = localDataChecksumTransitionLSN;
+		checkPoint.dataChecksumStateIsLocal = localDataChecksumStateIsLocal;
+		ControlFile->checkPointCopy.dataChecksumState = localDataChecksumState;
+		ControlFile->checkPointCopy.dataChecksumTransitionLSN = localDataChecksumTransitionLSN;
+		ControlFile->checkPointCopy.dataChecksumStateIsLocal = localDataChecksumStateIsLocal;
+	}
+
+	/*
+	 * A local offline operation override the state in the selected
+	 * checkpoint. Otherwise, restore that checkpoint's state before replay so
+	 * later online checksum records are applied in the right order.
+	 */
+	if (!ControlFile->data_checksum_state_is_local)
+	{
+		XLogCtl->data_checksum_version = checkPoint.dataChecksumState;
+		XLogCtl->data_checksum_transition_lsn = checkPoint.dataChecksumTransitionLSN;
+		XLogCtl->data_checksum_state_is_local = checkPoint.dataChecksumStateIsLocal;
+		SetLocalDataChecksumState(XLogCtl->data_checksum_version);
+		ControlFile->data_checksum_version = checkPoint.dataChecksumState;
+		ControlFile->data_checksum_transition_lsn = checkPoint.dataChecksumTransitionLSN;
+		ControlFile->data_checksum_state_is_local = checkPoint.dataChecksumStateIsLocal;
+	}
 
 	/* initialize shared memory variables from the checkpoint record */
 	TransamVariables->nextXid = checkPoint.nextXid;
@@ -6603,10 +6661,9 @@ StartupXLOG(void)
 	 */
 	if (XLogCtl->data_checksum_version == PG_DATA_CHECKSUM_INPROGRESS_ON)
 	{
-		XLogChecksums(PG_DATA_CHECKSUM_OFF);
+		(void) XLogChecksums(PG_DATA_CHECKSUM_OFF);
 
 		SpinLockAcquire(&XLogCtl->info_lck);
-		XLogCtl->data_checksum_version = PG_DATA_CHECKSUM_OFF;
 		SetLocalDataChecksumState(XLogCtl->data_checksum_version);
 		SpinLockRelease(&XLogCtl->info_lck);
 
@@ -6624,10 +6681,9 @@ StartupXLOG(void)
 	 */
 	else if (XLogCtl->data_checksum_version == PG_DATA_CHECKSUM_INPROGRESS_OFF)
 	{
-		XLogChecksums(PG_DATA_CHECKSUM_OFF);
+		(void) XLogChecksums(PG_DATA_CHECKSUM_OFF);
 
 		SpinLockAcquire(&XLogCtl->info_lck);
-		XLogCtl->data_checksum_version = PG_DATA_CHECKSUM_OFF;
 		SetLocalDataChecksumState(XLogCtl->data_checksum_version);
 		SpinLockRelease(&XLogCtl->info_lck);
 
@@ -6654,6 +6710,8 @@ StartupXLOG(void)
 
 	SpinLockAcquire(&XLogCtl->info_lck);
 	ControlFile->data_checksum_version = XLogCtl->data_checksum_version;
+	ControlFile->data_checksum_transition_lsn = XLogCtl->data_checksum_transition_lsn;
+	ControlFile->data_checksum_state_is_local = XLogCtl->data_checksum_state_is_local;
 	XLogCtl->SharedRecoveryState = RECOVERY_STATE_DONE;
 	SpinLockRelease(&XLogCtl->info_lck);
 
@@ -7524,6 +7582,8 @@ CreateCheckPoint(int flags)
 	 */
 	SpinLockAcquire(&XLogCtl->info_lck);
 	checkPoint.dataChecksumState = XLogCtl->data_checksum_version;
+	checkPoint.dataChecksumTransitionLSN = XLogCtl->data_checksum_transition_lsn;
+	checkPoint.dataChecksumStateIsLocal = XLogCtl->data_checksum_state_is_local;
 	SpinLockRelease(&XLogCtl->info_lck);
 
 	if (shutdown)
@@ -7580,10 +7640,13 @@ CreateCheckPoint(int flags)
 	{
 		xl_checkpoint_redo redo_rec;
 
+		LWLockAcquire(DataChecksumsStateLock, LW_EXCLUSIVE);
 		WALInsertLockAcquire();
 		redo_rec.wal_level = wal_level;
 		SpinLockAcquire(&XLogCtl->info_lck);
 		redo_rec.data_checksum_version = XLogCtl->data_checksum_version;
+		redo_rec.data_checksum_transition_lsn = XLogCtl->data_checksum_transition_lsn;
+		redo_rec.data_checksum_state_is_local = XLogCtl->data_checksum_state_is_local;
 		SpinLockRelease(&XLogCtl->info_lck);
 		WALInsertLockRelease();
 
@@ -7591,6 +7654,7 @@ CreateCheckPoint(int flags)
 		XLogBeginInsert();
 		XLogRegisterData(&redo_rec, sizeof(xl_checkpoint_redo));
 		(void) XLogInsert(RM_XLOG_ID, XLOG_CHECKPOINT_REDO);
+		LWLockRelease(DataChecksumsStateLock);
 
 		/*
 		 * XLogInsertRecord will have updated XLogCtl->Insert.RedoRecPtr in
@@ -7941,6 +8005,8 @@ CreateEndOfRecoveryRecord(void)
 	/* start with the latest checksum version (as of the end of recovery) */
 	SpinLockAcquire(&XLogCtl->info_lck);
 	ControlFile->data_checksum_version = XLogCtl->data_checksum_version;
+	ControlFile->data_checksum_transition_lsn = XLogCtl->data_checksum_transition_lsn;
+	ControlFile->data_checksum_state_is_local = XLogCtl->data_checksum_state_is_local;
 	SpinLockRelease(&XLogCtl->info_lck);
 
 	UpdateControlFile();
@@ -8292,8 +8358,15 @@ CreateRestartPoint(int flags)
 				ControlFile->state = DB_SHUTDOWNED_IN_RECOVERY;
 		}
 
-		/* we shall start with the latest checksum version */
-		ControlFile->data_checksum_version = lastCheckPoint.dataChecksumState;
+		/*
+		 * Keep the current checksum state separate from the historical state
+		 * in checkPointCopy, which is used when replay starts again.
+		 */
+		SpinLockAcquire(&XLogCtl->info_lck);
+		ControlFile->data_checksum_version = XLogCtl->data_checksum_version;
+		ControlFile->data_checksum_transition_lsn = XLogCtl->data_checksum_transition_lsn;
+		ControlFile->data_checksum_state_is_local = XLogCtl->data_checksum_state_is_local;
+		SpinLockRelease(&XLogCtl->info_lck);
 
 		UpdateControlFile();
 	}
@@ -8734,9 +8807,9 @@ XLogReportParameters(void)
 }
 
 /*
- * Log the new state of checksums
+ * Log and publish the new state of checksums
  */
-static void
+static XLogRecPtr
 XLogChecksums(uint32 new_type)
 {
 	xl_checksum_state xlrec;
@@ -8744,11 +8817,23 @@ XLogChecksums(uint32 new_type)
 
 	xlrec.new_checksum_state = new_type;
 
+	LWLockAcquire(DataChecksumsStateLock, LW_EXCLUSIVE);
+
 	XLogBeginInsert();
 	XLogRegisterData((char *) &xlrec, sizeof(xl_checksum_state));
 
 	recptr = XLogInsert(RM_XLOG2_ID, XLOG2_CHECKSUMS);
 	XLogFlush(recptr);
+
+	SpinLockAcquire(&XLogCtl->info_lck);
+	XLogCtl->data_checksum_version = new_type;
+	XLogCtl->data_checksum_transition_lsn = recptr;
+	XLogCtl->data_checksum_state_is_local = false;
+	SpinLockRelease(&XLogCtl->info_lck);
+
+	LWLockRelease(DataChecksumsStateLock);
+
+	return recptr;
 }
 
 /*
@@ -8933,10 +9018,24 @@ xlog_redo(XLogReaderState *record)
 			ProcArrayApplyRecoveryInfo(&running);
 		}
 
+		/*
+		 * Checkpoint checksum state is local to the node that wrote it.
+		 * Preserve this node's state before retaining the checkpoint as a
+		 * possible restartpoint.
+		 */
+		SpinLockAcquire(&XLogCtl->info_lck);
+		checkPoint.dataChecksumState = XLogCtl->data_checksum_version;
+		checkPoint.dataChecksumTransitionLSN = XLogCtl->data_checksum_transition_lsn;
+		checkPoint.dataChecksumStateIsLocal = XLogCtl->data_checksum_state_is_local;
+		SpinLockRelease(&XLogCtl->info_lck);
+		replayedCheckpointDataChecksumStateValid = false;
+
 		/* ControlFile->checkPointCopy always tracks the latest ckpt XID */
 		LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
 		ControlFile->checkPointCopy.nextXid = checkPoint.nextXid;
 		ControlFile->data_checksum_version = checkPoint.dataChecksumState;
+		ControlFile->data_checksum_transition_lsn = checkPoint.dataChecksumTransitionLSN;
+		ControlFile->data_checksum_state_is_local = checkPoint.dataChecksumStateIsLocal;
 
 		UpdateControlFile();
 		LWLockRelease(ControlFileLock);
@@ -9000,6 +9099,18 @@ xlog_redo(XLogReaderState *record)
 								  checkPoint.oldestXid))
 			SetTransactionIdLimit(checkPoint.oldestXid,
 								  checkPoint.oldestXidDB);
+
+		/*
+		 * Use this node's state from the matching redo record. Using the
+		 * state at checkpoint completion would be wrong if an online
+		 * transition occurred while the checkpoint was running.
+		 */
+		Assert(replayedCheckpointDataChecksumStateValid);
+		checkPoint.dataChecksumState = replayedCheckpointDataChecksumState;
+		checkPoint.dataChecksumTransitionLSN = replayedCheckpointDataChecksumTransitionLSN;
+		checkPoint.dataChecksumStateIsLocal = replayedCheckpointDataChecksumStateIsLocal;
+		replayedCheckpointDataChecksumStateValid = false;
+
 		/* ControlFile->checkPointCopy always tracks the latest ckpt XID */
 		LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
 		ControlFile->checkPointCopy.nextXid = checkPoint.nextXid;
@@ -9180,12 +9291,29 @@ xlog_redo(XLogReaderState *record)
 
 		memcpy(&redo_rec, XLogRecGetData(record), sizeof(xl_checkpoint_redo));
 
+		/*
+		 * An offline state overrites transitions already replayed on this
+		 * node. Apply a newer online transition from the redo record, but
+		 * never propagate an offline state from the node that wrote it.
+		 */
 		SpinLockAcquire(&XLogCtl->info_lck);
-		XLogCtl->data_checksum_version = redo_rec.data_checksum_version;
-		SetLocalDataChecksumState(redo_rec.data_checksum_version);
-		if (redo_rec.data_checksum_version != ControlFile->data_checksum_version)
-			new_state = true;
+		if (!redo_rec.data_checksum_state_is_local &&
+			redo_rec.data_checksum_transition_lsn >
+			XLogCtl->data_checksum_transition_lsn)
+		{
+			if (XLogCtl->data_checksum_version != redo_rec.data_checksum_version)
+				new_state = true;
+			XLogCtl->data_checksum_version = redo_rec.data_checksum_version;
+			XLogCtl->data_checksum_transition_lsn = redo_rec.data_checksum_transition_lsn;
+			XLogCtl->data_checksum_state_is_local = false;
+			SetLocalDataChecksumState(redo_rec.data_checksum_version);
+		}
+
+		replayedCheckpointDataChecksumState = XLogCtl->data_checksum_version;
+		replayedCheckpointDataChecksumTransitionLSN = XLogCtl->data_checksum_transition_lsn;
+		replayedCheckpointDataChecksumStateIsLocal = XLogCtl->data_checksum_state_is_local;
 		SpinLockRelease(&XLogCtl->info_lck);
+		replayedCheckpointDataChecksumStateValid = true;
 
 		if (new_state)
 			EmitAndWaitDataChecksumsBarrier(redo_rec.data_checksum_version);
@@ -9249,15 +9377,28 @@ xlog2_redo(XLogReaderState *record)
 	if (info == XLOG2_CHECKSUMS)
 	{
 		xl_checksum_state state;
+		bool		apply;
 
 		memcpy(&state, XLogRecGetData(record), sizeof(xl_checksum_state));
 
 		SpinLockAcquire(&XLogCtl->info_lck);
-		XLogCtl->data_checksum_version = state.new_checksum_state;
+		apply = record->EndRecPtr > XLogCtl->data_checksum_transition_lsn;
+
+		if (apply)
+		{
+			XLogCtl->data_checksum_version = state.new_checksum_state;
+			XLogCtl->data_checksum_transition_lsn = record->EndRecPtr;
+			XLogCtl->data_checksum_state_is_local = false;
+		}
 		SpinLockRelease(&XLogCtl->info_lck);
+
+		if (!apply)
+			return;
 
 		LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
 		ControlFile->data_checksum_version = state.new_checksum_state;
+		ControlFile->data_checksum_transition_lsn = record->EndRecPtr;
+		ControlFile->data_checksum_state_is_local = false;
 		UpdateControlFile();
 		LWLockRelease(ControlFileLock);
 

@@ -647,6 +647,7 @@ main(int argc, char *argv[])
 	{
 		ControlFile->data_checksum_version =
 			(mode == PG_MODE_ENABLE) ? PG_DATA_CHECKSUM_VERSION : PG_DATA_CHECKSUM_OFF;
+		ControlFile->data_checksum_state_is_local = true;
 
 		if (do_sync)
 		{

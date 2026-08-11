@@ -914,6 +914,9 @@ RewriteControlFile(void)
 	XLogSegNoOffsetToRecPtr(newXlogSegNo, SizeOfXLogLongPHD, WalSegSz,
 							ControlFile.checkPointCopy.redo);
 	ControlFile.checkPointCopy.time = (pg_time_t) time(NULL);
+	ControlFile.checkPointCopy.dataChecksumState = ControlFile.data_checksum_version;
+	ControlFile.checkPointCopy.dataChecksumTransitionLSN = ControlFile.data_checksum_transition_lsn;
+	ControlFile.checkPointCopy.dataChecksumStateIsLocal = ControlFile.data_checksum_state_is_local;
 
 	ControlFile.state = DB_SHUTDOWNED;
 	ControlFile.checkPoint = ControlFile.checkPointCopy.redo;
