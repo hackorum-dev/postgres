@@ -354,9 +354,9 @@ ParseConfigFp(FILE *fp, const char *config_file, int depth, int elevel,
 	unsigned int save_ConfigFileLineno = ConfigFileLineno;
 	sigjmp_buf *save_GUC_flex_fatal_jmp = GUC_flex_fatal_jmp;
 	sigjmp_buf	flex_fatal_jmp;
-	yyscan_t	scanner;
+	volatile yyscan_t scanner = NULL;	/* must survive siglongjmp */
 	struct yyguts_t *yyg;		/* needed for yytext macro */
-	volatile YY_BUFFER_STATE lex_buffer = NULL;
+	volatile YY_BUFFER_STATE lex_buffer = NULL;	/* must survive siglongjmp */
 	int			errorcount;
 	int			token;
 
