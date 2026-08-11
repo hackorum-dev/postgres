@@ -304,11 +304,37 @@
 
 #define NAPTIME_PER_CYCLE 1000	/* max sleep time between cycles (1s) */
 
+/*
+ * Struct for tracking the progress of flushing the transaction received from
+ * the publisher.
+ *
+ * A list of these structs (lsn_mapping) is maintained in the apply worker, each
+ * representing a transaction that is being flushed. The entries are removed
+ * from the list when the transaction is fully flushed (see get_flush_position).
+ */
 typedef struct FlushPosition
 {
+	/*
+	 * The end of commit record applied by the worker, and the corresponding end
+	 * of commit record on the publisher.
+	 *
+	 * For transactions assigned to a parallel apply worker, the local_end is
+	 * not immediately available. The leader later fetches the local commit LSN
+	 * asynchronously when needed, either when collecting flush positions to
+	 * report feedback to the walsender, or when reusing the worker for a new
+	 * transaction (see pa_maybe_reuse_worker).
+	 */
 	dlist_node	node;
 	XLogRecPtr	local_end;
 	XLogRecPtr	remote_end;
+
+	/*
+	 * Remote transaction ID. This is valid only when the transaction is being
+	 * applied by a parallel apply worker. The leader uses this xid to look up
+	 * the ParallelApplyTxnHash table and retrieve the local_end from the
+	 * worker.
+	 */
+	TransactionId pa_remote_xid;
 } FlushPosition;
 
 static dlist_head lsn_mapping = DLIST_STATIC_INIT(lsn_mapping);
@@ -1409,7 +1435,8 @@ apply_handle_prepare(StringInfo s)
 	 * XactLastCommitEnd, and adding it for this purpose doesn't seems worth
 	 * it.
 	 */
-	store_flush_position(prepare_data.end_lsn, InvalidXLogRecPtr);
+	store_flush_position(prepare_data.end_lsn, InvalidXLogRecPtr,
+						 InvalidTransactionId);
 
 	in_remote_transaction = false;
 
@@ -1469,7 +1496,8 @@ apply_handle_commit_prepared(StringInfo s)
 	CommitTransactionCommand();
 	pgstat_report_stat(false);
 
-	store_flush_position(prepare_data.end_lsn, XactLastCommitEnd);
+	store_flush_position(prepare_data.end_lsn, XactLastCommitEnd,
+						 InvalidTransactionId);
 	in_remote_transaction = false;
 
 	/*
@@ -1538,7 +1566,8 @@ apply_handle_rollback_prepared(StringInfo s)
 	 * transaction because we always flush the WAL record for it. See
 	 * apply_handle_prepare.
 	 */
-	store_flush_position(rollback_data.rollback_end_lsn, InvalidXLogRecPtr);
+	store_flush_position(rollback_data.rollback_end_lsn, InvalidXLogRecPtr,
+						 InvalidTransactionId);
 	in_remote_transaction = false;
 
 	/*
@@ -1600,7 +1629,8 @@ apply_handle_stream_prepare(StringInfo s)
 			 * It is okay not to set the local_end LSN for the prepare because
 			 * we always flush the prepare record. See apply_handle_prepare.
 			 */
-			store_flush_position(prepare_data.end_lsn, InvalidXLogRecPtr);
+			store_flush_position(prepare_data.end_lsn, InvalidXLogRecPtr,
+								 InvalidTransactionId);
 
 			in_remote_transaction = false;
 
@@ -2587,7 +2617,8 @@ apply_handle_commit_internal(LogicalRepCommitData *commit_data)
 
 		pgstat_report_stat(false);
 
-		store_flush_position(commit_data->end_lsn, XactLastCommitEnd);
+		store_flush_position(commit_data->end_lsn, XactLastCommitEnd,
+							 InvalidTransactionId);
 	}
 	else
 	{
@@ -3989,6 +4020,15 @@ get_flush_position(XLogRecPtr *write, XLogRecPtr *flush,
 		FlushPosition *pos =
 			dlist_container(FlushPosition, node, iter.cur);
 
+		/*
+		 * Stop if the transaction is still being applied in a parallel apply
+		 * worker. Transactions are committed in the publisher's commit order,
+		 * so no later transaction can have been committed or flushed either.
+		 */
+		if (TransactionIdIsValid(pos->pa_remote_xid) &&
+			!pa_get_last_commit_end(pos->pa_remote_xid, &pos->local_end))
+			break;
+
 		*write = pos->remote_end;
 
 		if (pos->local_end <= local_flush)
@@ -3997,19 +4037,12 @@ get_flush_position(XLogRecPtr *write, XLogRecPtr *flush,
 			dlist_delete(iter.cur);
 			pfree(pos);
 		}
-		else
-		{
-			/*
-			 * Don't want to uselessly iterate over the rest of the list which
-			 * could potentially be long. Instead get the last element and
-			 * grab the write position from there.
-			 */
-			pos = dlist_tail_element(FlushPosition, node,
-									 &lsn_mapping);
-			*write = pos->remote_end;
-			*have_pending_txes = true;
-			return;
-		}
+
+		/*
+		 * We cannot stop here because later transactions may have been
+		 * committed by parallel workers, in which case we need to collect their
+		 * local_end and update the write position accordingly.
+		 */
 	}
 
 	*have_pending_txes = !dlist_is_empty(&lsn_mapping);
@@ -4017,9 +4050,15 @@ get_flush_position(XLogRecPtr *write, XLogRecPtr *flush,
 
 /*
  * Store current remote/local lsn pair in the tracking list.
+ *
+ * pa_remote_xid should be a valid transaction ID if the transaction was
+ * assigned to a parallel apply worker and the leader did not wait for it to
+ * commit. In that case, local_lsn will be collected from the worker later (see
+ * get_flush_position). Otherwise, pass InvalidTransactionId.
  */
 void
-store_flush_position(XLogRecPtr remote_lsn, XLogRecPtr local_lsn)
+store_flush_position(XLogRecPtr remote_lsn, XLogRecPtr local_lsn,
+					 TransactionId pa_remote_xid)
 {
 	FlushPosition *flushpos;
 
@@ -4037,11 +4076,14 @@ store_flush_position(XLogRecPtr remote_lsn, XLogRecPtr local_lsn)
 	flushpos = palloc_object(FlushPosition);
 	flushpos->local_end = local_lsn;
 	flushpos->remote_end = remote_lsn;
+	flushpos->pa_remote_xid = pa_remote_xid;
+
+	if (TransactionIdIsValid(pa_remote_xid))
+		pa_bind_flush_position(pa_remote_xid, &flushpos->local_end);
 
 	dlist_push_tail(&lsn_mapping, &flushpos->node);
 	MemoryContextSwitchTo(ApplyMessageContext);
 }
-
 
 /* Update statistics of the worker. */
 static void
