@@ -85,6 +85,7 @@ static int	_discoverArchiveFormat(ArchiveHandle *AH);
 
 static int	RestoringToDB(ArchiveHandle *AH);
 static void dump_lo_buf(ArchiveHandle *AH);
+static char *ReadRequiredStr(ArchiveHandle *AH, const char *fieldname);
 static void dumpTimestamp(ArchiveHandle *AH, const char *msg, time_t tim);
 static void SetOutput(ArchiveHandle *AH, const char *filename,
 					  const pg_compress_specification compression_spec);
@@ -2227,6 +2228,25 @@ ReadStr(ArchiveHandle *AH)
 	return buf;
 }
 
+/*
+ * Like ReadStr(), but require a non-NULL string.
+ *
+ * A negative length is a valid NULL encoding in the archive format
+ * (nullable TOC fields, dependency-list terminator).  Use this only for
+ * fields that a valid dump always writes as a real string.  Getting NULL
+ * there means the TOC is incomplete or corrupt.
+ */
+static char *
+ReadRequiredStr(ArchiveHandle *AH, const char *fieldname)
+{
+	char	   *result;
+
+	result = ReadStr(AH);
+	if (result == NULL)
+		pg_fatal("missing %s in TOC -- perhaps a corrupt TOC", fieldname);
+	return result;
+}
+
 static bool
 _fileExistsInDirectory(const char *dir, const char *filename)
 {
@@ -2735,18 +2755,18 @@ ReadToc(ArchiveHandle *AH)
 
 		if (AH->version >= K_VERS_1_8)
 		{
-			tmp = ReadStr(AH);
+			tmp = ReadRequiredStr(AH, "table OID");
 			sscanf(tmp, "%u", &te->catalogId.tableoid);
 			free(tmp);
 		}
 		else
 			te->catalogId.tableoid = InvalidOid;
-		tmp = ReadStr(AH);
+		tmp = ReadRequiredStr(AH, "OID");
 		sscanf(tmp, "%u", &te->catalogId.oid);
 		free(tmp);
 
-		te->tag = ReadStr(AH);
-		te->desc = ReadStr(AH);
+		te->tag = ReadRequiredStr(AH, "entry tag");
+		te->desc = ReadRequiredStr(AH, "entry description");
 
 		if (AH->version >= K_VERS_1_11)
 		{
@@ -2802,7 +2822,7 @@ ReadToc(ArchiveHandle *AH)
 			is_supported = false;
 		else
 		{
-			tmp = ReadStr(AH);
+			tmp = ReadRequiredStr(AH, "WITH OIDS marker");
 
 			if (strcmp(tmp, "true") == 0)
 				is_supported = false;
