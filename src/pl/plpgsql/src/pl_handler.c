@@ -289,7 +289,9 @@ plpgsql_call_handler(PG_FUNCTION_ARGS)
 		/* Be sure to release the procedure resowner if any */
 		if (procedure_resowner)
 		{
-			ReleaseAllPlanCacheRefsInOwner(procedure_resowner);
+			ResourceOwnerRelease(procedure_resowner, RESOURCE_RELEASE_BEFORE_LOCKS, false, true);
+			ResourceOwnerRelease(procedure_resowner, RESOURCE_RELEASE_LOCKS, false, true);
+			ResourceOwnerRelease(procedure_resowner, RESOURCE_RELEASE_AFTER_LOCKS, false, true);
 			ResourceOwnerDelete(procedure_resowner);
 		}
 	}
@@ -393,7 +395,9 @@ plpgsql_inline_handler(PG_FUNCTION_ARGS)
 
 		/* Clean up the private EState and resowner */
 		FreeExecutorState(simple_eval_estate);
-		ReleaseAllPlanCacheRefsInOwner(simple_eval_resowner);
+		ResourceOwnerRelease(simple_eval_resowner, RESOURCE_RELEASE_BEFORE_LOCKS, false, true);
+		ResourceOwnerRelease(simple_eval_resowner, RESOURCE_RELEASE_LOCKS, false, true);
+		ResourceOwnerRelease(simple_eval_resowner, RESOURCE_RELEASE_AFTER_LOCKS, false, true);
 		ResourceOwnerDelete(simple_eval_resowner);
 
 		/* Function should now have no remaining use-counts ... */
@@ -410,7 +414,9 @@ plpgsql_inline_handler(PG_FUNCTION_ARGS)
 
 	/* Clean up the private EState and resowner */
 	FreeExecutorState(simple_eval_estate);
-	ReleaseAllPlanCacheRefsInOwner(simple_eval_resowner);
+	ResourceOwnerRelease(simple_eval_resowner, RESOURCE_RELEASE_BEFORE_LOCKS, false, true);
+	ResourceOwnerRelease(simple_eval_resowner, RESOURCE_RELEASE_LOCKS, false, true);
+	ResourceOwnerRelease(simple_eval_resowner, RESOURCE_RELEASE_AFTER_LOCKS, false, true);
 	ResourceOwnerDelete(simple_eval_resowner);
 
 	/* Function should now have no remaining use-counts ... */
