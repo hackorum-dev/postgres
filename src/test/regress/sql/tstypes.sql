@@ -18,6 +18,9 @@ SELECT tsvectorin(tsvectorout($$'\\as' ab\c ab\\c AB\\\c ab\\\\c$$::tsvector));
 SELECT '''w'':4A,3B,2C,1D,5 a:8';
 SELECT 'a:3A b:2a'::tsvector || 'ba:1234 a:1B';
 SELECT $$'' '1' '2'$$::tsvector;  -- error, empty lexeme is not allowed
+-- a lexeme of exactly the maximum length is allowed, one byte more is not
+SELECT length((tsvector_to_array(repeat('x', 2047)::tsvector))[1]);
+SELECT repeat('x', 2048)::tsvector;
 
 -- Also try it with non-error-throwing API
 SELECT pg_input_is_valid('foo', 'tsvector');
@@ -66,6 +69,9 @@ SELECT '1&(2&(4&(5|!6)))'::tsquery;
 SELECT E'1&(''2''&('' 4''&(\\|5 | ''6 \\'' !|&'')))'::tsquery;
 SELECT $$'\\as'$$::tsquery;
 SELECT 'a:* & nbb:*ac | doo:a* | goo'::tsquery;
+-- an operand of exactly the maximum length is allowed, one byte more is not
+SELECT repeat('x', 2047)::tsquery::text = '''' || repeat('x', 2047) || '''';
+SELECT pg_input_is_valid(repeat('x', 2048), 'tsquery');
 SELECT '!!b'::tsquery;
 SELECT '!!!b'::tsquery;
 SELECT '!(!b)'::tsquery;
@@ -267,6 +273,7 @@ SELECT array_to_tsvector(ARRAY['base','hidden','rebel','spaceship','strike']);
 SELECT array_to_tsvector(ARRAY['base','hidden','rebel','spaceship', NULL]);
 SELECT array_to_tsvector(ARRAY['base','hidden','rebel','spaceship', '']);
 -- lexeme of exactly the maximum length is accepted, one byte more is not
+SELECT array_to_tsvector(ARRAY[repeat('x', 2047)]) = repeat('x', 2047)::tsvector;
 SELECT tsvector_to_array(array_to_tsvector(ARRAY[repeat('x', 2047)])) = ARRAY[repeat('x', 2047)];
 SELECT array_to_tsvector(ARRAY[repeat('x', 2048)]);
 -- array_to_tsvector must sort and de-dup

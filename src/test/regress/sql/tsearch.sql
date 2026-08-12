@@ -289,6 +289,10 @@ SELECT length(to_tsvector('english', '345 qwe@efd.r '' http://www.com/ http://ae
 /usr/local/fff /awdf/dwqe/4325 rewt/ewr wefjn /wqe-324/ewr gist.h gist.h.c gist.c. readline 4.2 4.2. 4.2, readline-4.2 readline-4.2. 234
 <i <b> wow  < jqw <> qwerty'));
 
+-- a word of exactly the maximum lexeme length is indexed, one byte more is not
+SELECT length((tsvector_to_array(to_tsvector('simple', repeat('x', 2047))))[1]);
+SELECT to_tsvector('simple', repeat('x', 2048));
+
 -- ts_debug
 
 SELECT * from ts_debug('english', '<myns:foo-bar_baz.blurfl>abc&nm1;def&#xa9;ghi&#245;jkl</myns:foo-bar_baz.blurfl>');

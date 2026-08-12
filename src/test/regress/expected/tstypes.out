@@ -89,6 +89,15 @@ SELECT $$'' '1' '2'$$::tsvector;  -- error, empty lexeme is not allowed
 ERROR:  syntax error in tsvector: "'' '1' '2'"
 LINE 1: SELECT $$'' '1' '2'$$::tsvector;
                ^
+-- a lexeme of exactly the maximum length is allowed, one byte more is not
+SELECT length((tsvector_to_array(repeat('x', 2047)::tsvector))[1]);
+ length 
+--------
+   2047
+(1 row)
+
+SELECT repeat('x', 2048)::tsvector;
+ERROR:  word is too long (2048 bytes, max 2047 bytes)
 -- Also try it with non-error-throwing API
 SELECT pg_input_is_valid('foo', 'tsvector');
  pg_input_is_valid 
@@ -353,6 +362,19 @@ SELECT 'a:* & nbb:*ac | doo:a* | goo'::tsquery;
                tsquery                
 --------------------------------------
  'a':* & 'nbb':*AC | 'doo':*A | 'goo'
+(1 row)
+
+-- an operand of exactly the maximum length is allowed, one byte more is not
+SELECT repeat('x', 2047)::tsquery::text = '''' || repeat('x', 2047) || '''';
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT pg_input_is_valid(repeat('x', 2048), 'tsquery');
+ pg_input_is_valid 
+-------------------
+ f
 (1 row)
 
 SELECT '!!b'::tsquery;
@@ -1386,6 +1408,12 @@ ERROR:  lexeme array may not contain nulls
 SELECT array_to_tsvector(ARRAY['base','hidden','rebel','spaceship', '']);
 ERROR:  lexeme array may not contain empty strings
 -- lexeme of exactly the maximum length is accepted, one byte more is not
+SELECT array_to_tsvector(ARRAY[repeat('x', 2047)]) = repeat('x', 2047)::tsvector;
+ ?column? 
+----------
+ t
+(1 row)
+
 SELECT tsvector_to_array(array_to_tsvector(ARRAY[repeat('x', 2047)])) = ARRAY[repeat('x', 2047)];
  ?column? 
 ----------
