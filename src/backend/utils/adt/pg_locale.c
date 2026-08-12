@@ -102,6 +102,7 @@ char	   *localized_abbrev_days[7 + 1];
 char	   *localized_full_days[7 + 1];
 char	   *localized_abbrev_months[12 + 1];
 char	   *localized_full_months[12 + 1];
+char	   *localized_alt_full_months[12 + 1];
 
 static pg_locale_t default_locale = NULL;
 
@@ -701,7 +702,7 @@ cache_single_string(char **dst, const char *src, int encoding)
 void
 cache_locale_time(void)
 {
-	char		buf[(2 * 7 + 2 * 12) * MAX_L10N_DATA];
+	char		buf[(2 * 7 + 3 * 12) * MAX_L10N_DATA];
 	char	   *bufptr;
 	time_t		timenow;
 	struct tm  *timeinfo;
@@ -768,6 +769,9 @@ cache_locale_time(void)
 		if (strftime_l(bufptr, MAX_L10N_DATA, "%B", timeinfo, locale) <= 0)
 			strftimefail = true;
 		bufptr += MAX_L10N_DATA;
+		if (strftime_l(bufptr, MAX_L10N_DATA, "%OB", timeinfo, locale) <= 0)
+			strftimefail = true;
+		bufptr += MAX_L10N_DATA;
 	}
 
 #ifdef WIN32
@@ -824,9 +828,12 @@ cache_locale_time(void)
 		bufptr += MAX_L10N_DATA;
 		cache_single_string(&localized_full_months[i], bufptr, encoding);
 		bufptr += MAX_L10N_DATA;
+		cache_single_string(&localized_alt_full_months[i], bufptr, encoding);
+		bufptr += MAX_L10N_DATA;
 	}
 	localized_abbrev_months[12] = NULL;
 	localized_full_months[12] = NULL;
+	localized_alt_full_months[12] = NULL;
 
 	CurrentLCTimeValid = true;
 }

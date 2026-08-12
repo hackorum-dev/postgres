@@ -553,6 +553,7 @@ do { \
 #define DCH_SUFFIX_th	0x04
 #define DCH_SUFFIX_SP	0x08
 #define DCH_SUFFIX_TM	0x10
+#define DCH_SUFFIX_TAM	0x20
 
 /*
  * Suffix tests
@@ -594,16 +595,25 @@ IS_SUFFIX_TM(uint8 _s)
 	return (_s & DCH_SUFFIX_TM);
 }
 
+static inline bool
+IS_SUFFIX_TAM(uint8 _s)
+{
+	return (_s & DCH_SUFFIX_TAM);
+}
+
 /*
  * Suffixes definition for DATE-TIME TO/FROM CHAR
  */
 #define TM_SUFFIX_LEN	2
+#define TAM_SUFFIX_LEN	3
 
 static const KeySuffix DCH_suff[] = {
 	{"FM", 2, DCH_SUFFIX_FM, SUFFTYPE_PREFIX},
 	{"fm", 2, DCH_SUFFIX_FM, SUFFTYPE_PREFIX},
 	{"TM", TM_SUFFIX_LEN, DCH_SUFFIX_TM, SUFFTYPE_PREFIX},
+	{"TAM", TAM_SUFFIX_LEN, DCH_SUFFIX_TAM, SUFFTYPE_PREFIX},
 	{"tm", 2, DCH_SUFFIX_TM, SUFFTYPE_PREFIX},
+	{"tam", 3, DCH_SUFFIX_TAM, SUFFTYPE_PREFIX},
 	{"TH", 2, DCH_SUFFIX_TH, SUFFTYPE_POSTFIX},
 	{"th", 2, DCH_SUFFIX_th, SUFFTYPE_POSTFIX},
 	{"SP", 2, DCH_SUFFIX_SP, SUFFTYPE_POSTFIX},
@@ -2786,11 +2796,26 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 				INVALID_FOR_INTERVAL;
 				if (!tm->tm_mon)
 					break;
-				if (IS_SUFFIX_TM(n->suffix))
+				if (IS_SUFFIX_TM(n->suffix) || IS_SUFFIX_TAM(n->suffix))
 				{
-					char	   *str = str_toupper_z(localized_full_months[tm->tm_mon - 1], collid);
+					char	   *str;
+					char	   **localized_months;
+					int			suffix_len;
 
-					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
+					if (IS_SUFFIX_TM(n->suffix))
+					{
+						localized_months = localized_full_months;
+						suffix_len = TM_SUFFIX_LEN;
+					}
+					else
+					{
+						localized_months = localized_alt_full_months;
+						suffix_len = TAM_SUFFIX_LEN;
+					}
+
+					str = str_toupper_z(localized_months[tm->tm_mon - 1], collid);
+
+					if (strlen(str) <= (n->key->len + suffix_len) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
 					else
 						ereport(ERROR,
@@ -2806,11 +2831,26 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 				INVALID_FOR_INTERVAL;
 				if (!tm->tm_mon)
 					break;
-				if (IS_SUFFIX_TM(n->suffix))
+				if (IS_SUFFIX_TM(n->suffix) || IS_SUFFIX_TAM(n->suffix))
 				{
-					char	   *str = str_initcap_z(localized_full_months[tm->tm_mon - 1], collid);
+					char	   *str;
+					char	   **localized_months;
+					int			suffix_len;
 
-					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
+					if (IS_SUFFIX_TM(n->suffix))
+					{
+						localized_months = localized_full_months;
+						suffix_len = TM_SUFFIX_LEN;
+					}
+					else
+					{
+						localized_months = localized_alt_full_months;
+						suffix_len = TAM_SUFFIX_LEN;
+					}
+
+					str = str_initcap_z(localized_months[tm->tm_mon - 1], collid);
+
+					if (strlen(str) <= (n->key->len + suffix_len) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
 					else
 						ereport(ERROR,
@@ -2826,11 +2866,26 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 				INVALID_FOR_INTERVAL;
 				if (!tm->tm_mon)
 					break;
-				if (IS_SUFFIX_TM(n->suffix))
+				if (IS_SUFFIX_TM(n->suffix) || IS_SUFFIX_TAM(n->suffix))
 				{
-					char	   *str = str_tolower_z(localized_full_months[tm->tm_mon - 1], collid);
+					char	   *str;
+					char	   **localized_months;
+					int			suffix_len;
 
-					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
+					if (IS_SUFFIX_TM(n->suffix))
+					{
+						localized_months = localized_full_months;
+						suffix_len = TM_SUFFIX_LEN;
+					}
+					else
+					{
+						localized_months = localized_alt_full_months;
+						suffix_len = TAM_SUFFIX_LEN;
+					}
+
+					str = str_tolower_z(localized_months[tm->tm_mon - 1], collid);
+
+					if (strlen(str) <= (n->key->len + suffix_len) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
 					else
 						ereport(ERROR,
@@ -3565,13 +3620,29 @@ DCH_from_char(FormatNode *node, const char *in, TmFromChar *out,
 			case DCH_MONTH:
 			case DCH_Month:
 			case DCH_month:
-				if (!from_char_seq_search(&value, &s, months_full,
-										  IS_SUFFIX_TM(n->suffix) ? localized_full_months : NULL,
-										  collid,
-										  n, escontext))
-					return;
-				if (!from_char_set_int(&out->mm, value + 1, n, escontext))
-					return;
+				{
+					char	  **months;
+
+					if (IS_SUFFIX_TM(n->suffix) && IS_SUFFIX_TAM(n->suffix))
+						ereturn(escontext,,
+								(errcode(ERRCODE_INVALID_DATETIME_FORMAT),
+								 errmsg("TM and TAM prefixes cannot be used together")));
+
+					if (IS_SUFFIX_TM(n->suffix))
+						months = localized_full_months;
+					else if (IS_SUFFIX_TAM(n->suffix))
+						months = localized_alt_full_months;
+					else
+						months = NULL;
+
+					if (!from_char_seq_search(&value, &s, months_full,
+											  months,
+											  collid,
+											  n, escontext))
+						return;
+					if (!from_char_set_int(&out->mm, value + 1, n, escontext))
+						return;
+				}
 				break;
 			case DCH_MON:
 			case DCH_Mon:
