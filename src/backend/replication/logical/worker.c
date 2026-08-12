@@ -2694,6 +2694,32 @@ apply_handle_insert(StringInfo s)
 	/* Set relation for error callback */
 	apply_error_callback_arg.rel = rel;
 
+	/*
+	 * An INSERT has no local row to inherit from, so every column must have
+	 * arrived with a value.  A column marked unchanged reaches us when a row
+	 * filter turns an UPDATE into an INSERT and the column is stored
+	 * out-of-line, unchanged, and outside the replica identity: the publisher
+	 * has only a TOAST pointer for it, and the value is neither in WAL nor
+	 * reachable through the historic snapshot.  Storing it would silently
+	 * substitute a NULL, so refuse the change instead.
+	 *
+	 * All of the publisher's columns are known to exist here, since
+	 * logicalrep_rel_open() rejects a target relation missing any of them.
+	 */
+	for (int i = 0; i < newtup.ncols; i++)
+	{
+		if (newtup.colstatus[i] != LOGICALREP_COLUMN_UNCHANGED)
+			continue;
+
+		ereport(ERROR,
+				errcode(ERRCODE_PROTOCOL_VIOLATION),
+				errmsg("incomplete tuple received for logical replication target relation \"%s.%s\"",
+					   rel->remoterel.nspname, rel->remoterel.relname),
+				errdetail("Column \"%s\" was sent as unchanged, which an INSERT cannot express.",
+						  rel->remoterel.attnames[i]),
+				errhint("This can happen when a row filter transforms an UPDATE into an INSERT and the column is stored out-of-line and is not part of the replica identity.  Setting REPLICA IDENTITY FULL on the publisher avoids it."));
+	}
+
 	/* Initialize the executor state. */
 	edata = create_edata_for_relation(rel);
 	estate = edata->estate;

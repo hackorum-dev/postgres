@@ -799,6 +799,102 @@ is($result, qq(), 'check replicated rows to tab_rowfilter_viaroot_part_1');
 # Testcase end: FOR TABLE with row filter publications
 # ======================================================
 
+# ======================================================
+# Testcase start: out-of-line column outside the replica identity
+#
+# An UPDATE that moves a row into the row filter is transformed into an
+# INSERT, and an INSERT must carry a value for every published column.  A
+# column that was not modified by the UPDATE, is stored out-of-line, and is
+# not part of the replica identity cannot be supplied: the new tuple holds
+# only a pointer to it, the value is not written to WAL, and decoding cannot
+# fetch it afterwards.
+#
+# REPLICA IDENTITY FULL is not affected, because the whole old row is then
+# logged with out-of-line values inlined, which leaves the transformation a
+# usable value.  Both cases are checked here, the working one first, since the
+# other one stops the apply worker.
+#
+# tab_rowfilter_toast above covers the case where the out-of-line column is
+# part of the replica identity, which works for the same reason.
+
+# STORAGE EXTERNAL disables compression for the column, so the value is
+# certain to be stored out-of-line rather than compressed into the tuple.
+$node_publisher->safe_psql('postgres',
+	"CREATE TABLE tab_rowfilter_toast_full (a int PRIMARY KEY, b text)");
+$node_publisher->safe_psql('postgres',
+	"ALTER TABLE tab_rowfilter_toast_full ALTER COLUMN b SET STORAGE EXTERNAL"
+);
+$node_publisher->safe_psql('postgres',
+	"ALTER TABLE tab_rowfilter_toast_full REPLICA IDENTITY FULL");
+$node_publisher->safe_psql('postgres',
+	"CREATE TABLE tab_rowfilter_toast_pk (a int PRIMARY KEY, b text)");
+$node_publisher->safe_psql('postgres',
+	"ALTER TABLE tab_rowfilter_toast_pk ALTER COLUMN b SET STORAGE EXTERNAL");
+
+# The rows start outside the filter, so nothing is copied initially.
+$node_publisher->safe_psql('postgres',
+	"INSERT INTO tab_rowfilter_toast_full VALUES (1, repeat('1234567890', 500))"
+);
+$node_publisher->safe_psql('postgres',
+	"INSERT INTO tab_rowfilter_toast_pk VALUES (1, repeat('1234567890', 500))"
+);
+
+# Guard against the value silently staying inline, which would leave the rest
+# of this testcase proving nothing.
+$result = $node_publisher->safe_psql('postgres',
+	"SELECT pg_relation_size(reltoastrelid) > 0 FROM pg_class WHERE relname = 'tab_rowfilter_toast_pk'"
+);
+is($result, qq(t),
+	'column b of tab_rowfilter_toast_pk is stored out-of-line');
+
+$node_publisher->safe_psql('postgres',
+	"CREATE PUBLICATION tap_pub_toast_ri FOR TABLE tab_rowfilter_toast_full WHERE (a > 10), tab_rowfilter_toast_pk WHERE (a > 10)"
+);
+
+$node_subscriber->safe_psql('postgres',
+	"CREATE TABLE tab_rowfilter_toast_full (a int PRIMARY KEY, b text)");
+$node_subscriber->safe_psql('postgres',
+	"CREATE TABLE tab_rowfilter_toast_pk (a int PRIMARY KEY, b text)");
+$node_subscriber->safe_psql('postgres',
+	"CREATE SUBSCRIPTION tap_sub_toast_ri CONNECTION '$publisher_connstr application_name=tap_sub_toast_ri' PUBLICATION tap_pub_toast_ri"
+);
+$node_subscriber->wait_for_subscription_sync($node_publisher,
+	'tap_sub_toast_ri');
+
+# The row moves into the filter, so this UPDATE arrives as an INSERT.  Column
+# b is unchanged and out-of-line, but REPLICA IDENTITY FULL makes it available.
+$node_publisher->safe_psql('postgres',
+	"UPDATE tab_rowfilter_toast_full SET a = 11 WHERE a = 1");
+$node_publisher->wait_for_catchup('tap_sub_toast_ri');
+
+$result = $node_subscriber->safe_psql('postgres',
+	"SELECT a, length(b) FROM tab_rowfilter_toast_full");
+is($result, qq(11|5000),
+	'unchanged out-of-line column replicated with REPLICA IDENTITY FULL');
+
+# The same UPDATE on a table whose replica identity is the primary key cannot
+# carry column b at all.  Refuse the change rather than storing a NULL.
+my $log_offset = -s $node_subscriber->logfile;
+
+$node_publisher->safe_psql('postgres',
+	"UPDATE tab_rowfilter_toast_pk SET a = 11 WHERE a = 1");
+
+$node_subscriber->wait_for_log(
+	qr/incomplete tuple received for logical replication target relation "public\.tab_rowfilter_toast_pk"/,
+	$log_offset);
+
+$result = $node_subscriber->safe_psql('postgres',
+	"SELECT count(*) FROM tab_rowfilter_toast_pk");
+is($result, qq(0),
+	'no row applied when an unchanged out-of-line column cannot be sent');
+
+# The apply worker cannot get past this transaction, so stop it retrying.
+$node_subscriber->safe_psql('postgres',
+	"ALTER SUBSCRIPTION tap_sub_toast_ri DISABLE");
+
+# Testcase end: out-of-line column outside the replica identity
+# ======================================================
+
 $node_subscriber->stop('fast');
 $node_publisher->stop('fast');
 

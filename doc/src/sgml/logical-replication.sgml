@@ -957,6 +957,27 @@ HINT:  To initiate replication, you must manually create the replication slot, e
    </tgroup>
    </table>
 
+   <warning>
+    <para>
+     An <command>UPDATE</command> that is transformed into an
+     <command>INSERT</command> must send a value for every published column,
+     because the subscriber has no existing row to take values from. A column
+     cannot be sent if all of the following hold: it was not modified by the
+     <command>UPDATE</command>, it is stored out-of-line (see
+     <xref linkend="storage-toast"/>), and it is not part of the
+     <link linkend="sql-altertable-replica-identity">replica identity</link>.
+     The publisher has only a pointer to such a value; it is not written to
+     <acronym>WAL</acronym> and cannot be retrieved during decoding. Applying
+     the change is refused in that case, and replication stops with an error
+     naming the table and column.
+    </para>
+    <para>
+     Setting <literal>REPLICA IDENTITY FULL</literal> on the published table
+     avoids this, because the whole old row is then logged with out-of-line
+     values inlined, which lets the publisher supply the missing value.
+    </para>
+   </warning>
+
   </sect2>
 
   <sect2 id="logical-replication-row-filter-partitioned-table">
