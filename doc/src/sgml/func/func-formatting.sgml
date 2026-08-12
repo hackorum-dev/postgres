@@ -478,6 +478,12 @@
         <entry><literal>TMMonth</literal></entry>
        </row>
        <row>
+        <entry><literal>TAM</literal> prefix</entry>
+        <entry>translation alternative mode (use localized alternative month names based on
+         <xref linkend="guc-lc-time"/>)</entry>
+        <entry><literal>TAMMonth</literal></entry>
+       </row>
+       <row>
         <entry><literal>SP</literal> suffix</entry>
         <entry>spell mode (not implemented)</entry>
         <entry><literal>DDSP</literal></entry>
