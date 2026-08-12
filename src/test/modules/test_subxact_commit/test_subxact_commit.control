@@ -1,0 +1,4 @@
+comment = 'Test code for subtransaction commit error handling'
+default_version = '1.0'
+module_pathname = '$libdir/test_subxact_commit'
+relocatable = true
