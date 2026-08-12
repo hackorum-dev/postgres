@@ -3140,6 +3140,50 @@ ReorderBufferAbort(ReorderBuffer *rb, TransactionId xid, XLogRecPtr lsn,
 	/* cosmetic... */
 	txn->final_lsn = lsn;
 
+	/*
+	 * If this is a subtransaction, remove any tuplecid changes it added to
+	 * the toplevel transaction's list.  Unlike regular changes, tuplecid
+	 * changes are always queued on the toplevel transaction (see
+	 * ReorderBufferAddNewTupleCids), so they would otherwise survive the
+	 * abort of the subtransaction that wrote them.  That's wrong: they
+	 * describe catalog tuple versions created or killed by the aborted
+	 * subtransaction, which never became visible, and keeping them can
+	 * corrupt ReorderBufferBuildTupleCidHash() at commit time -- both when
+	 * the toplevel transaction later reuses the same tid (the stale entry
+	 * collides with the fresh one, breaking the cmin equality assumption)
+	 * and when nothing touches the tid again (a stale cmax would make a
+	 * still-live tuple look deleted on historic snapshots).
+	 *
+	 * The association between the subtransaction and its toplevel is
+	 * guaranteed to be known here: the subtransaction must have written at
+	 * least one WAL record (the xl_heap_new_cid record itself) for any
+	 * tuplecid change to exist, and records written inside a subtransaction
+	 * carry the toplevel xid, which LogicalDecodingProcessRecord() uses to
+	 * assign the subtransaction to its toplevel before dispatching the
+	 * record.
+	 */
+	if (rbtxn_is_known_subxact(txn))
+	{
+		ReorderBufferTXN *toptxn = rbtxn_get_toptxn(txn);
+		dlist_mutable_iter it;
+
+		dlist_foreach_modify(it, &toptxn->tuplecids)
+		{
+			ReorderBufferChange *change;
+
+			change = dlist_container(ReorderBufferChange, node, it.cur);
+
+			Assert(change->action == REORDER_BUFFER_CHANGE_INTERNAL_TUPLECID);
+
+			if (change->data.tuplecid.subxid == xid)
+			{
+				dlist_delete(&change->node);
+				ReorderBufferFreeChange(rb, change, false);
+				toptxn->ntuplecids--;
+			}
+		}
+	}
+
 	/* remove potential on-disk data, and deallocate */
 	ReorderBufferCleanupTXN(rb, txn);
 }
@@ -3477,7 +3521,8 @@ void
 ReorderBufferAddNewTupleCids(ReorderBuffer *rb, TransactionId xid,
 							 XLogRecPtr lsn, RelFileLocator locator,
 							 ItemPointerData tid, CommandId cmin,
-							 CommandId cmax, CommandId combocid)
+							 CommandId cmax, CommandId combocid,
+							 TransactionId subxid)
 {
 	ReorderBufferChange *change = ReorderBufferAllocChange(rb);
 	ReorderBufferTXN *txn;
@@ -3489,6 +3534,7 @@ ReorderBufferAddNewTupleCids(ReorderBuffer *rb, TransactionId xid,
 	change->data.tuplecid.cmin = cmin;
 	change->data.tuplecid.cmax = cmax;
 	change->data.tuplecid.combocid = combocid;
+	change->data.tuplecid.subxid = subxid;
 	change->lsn = lsn;
 	change->txn = txn;
 	change->action = REORDER_BUFFER_CHANGE_INTERNAL_TUPLECID;
