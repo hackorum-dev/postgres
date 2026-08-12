@@ -946,9 +946,6 @@ transformRangeGraphTable(ParseState *pstate, RangeGraphTable *rgt)
 	ListCell   *lc;
 	int			resno = 0;
 	bool		saved_hasSublinks;
-	bool		saved_hasAggs;
-	bool		saved_hasWindowFuncs;
-	bool		saved_hasTargetSRFs;
 
 	rel = parserOpenPropGraph(pstate, rgt->graph_name, AccessShareLock);
 
@@ -970,13 +967,6 @@ transformRangeGraphTable(ParseState *pstate, RangeGraphTable *rgt)
 	saved_hasSublinks = pstate->p_hasSubLinks;
 	pstate->p_hasSubLinks = false;
 
-	saved_hasAggs = pstate->p_hasAggs;
-	pstate->p_hasAggs = false;
-	saved_hasWindowFuncs = pstate->p_hasWindowFuncs;
-	pstate->p_hasWindowFuncs = false;
-	saved_hasTargetSRFs = pstate->p_hasTargetSRFs;
-	pstate->p_hasTargetSRFs = false;
-
 	gp = transformGraphPattern(pstate, rgt->graph_pattern);
 
 	/*
@@ -991,7 +981,7 @@ transformRangeGraphTable(ParseState *pstate, RangeGraphTable *rgt)
 		TargetEntry *te;
 		char	   *colname;
 
-		colexpr = transformExpr(pstate, rt->val, EXPR_KIND_SELECT_TARGET);
+		colexpr = transformExpr(pstate, rt->val, EXPR_KIND_GRAPH_TABLE_COLUMNS);
 
 		if (rt->name)
 			colname = rt->name;
@@ -1040,26 +1030,6 @@ transformRangeGraphTable(ParseState *pstate, RangeGraphTable *rgt)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("subqueries within GRAPH_TABLE reference are not supported")));
 	pstate->p_hasSubLinks = saved_hasSublinks;
-
-	/*
-	 * GRAPH_TABLE cannot yet evaluate aggregate, window, or set-returning
-	 * functions in its COLUMNS list, so prohibit them for now.
-	 */
-	if (pstate->p_hasAggs)
-		ereport(ERROR,
-				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				errmsg("aggregate functions in GRAPH_TABLE COLUMNS are not supported"));
-	if (pstate->p_hasWindowFuncs)
-		ereport(ERROR,
-				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				errmsg("window functions in GRAPH_TABLE COLUMNS are not supported"));
-	if (pstate->p_hasTargetSRFs)
-		ereport(ERROR,
-				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				errmsg("set-returning functions in GRAPH_TABLE COLUMNS are not supported"));
-	pstate->p_hasAggs = saved_hasAggs;
-	pstate->p_hasWindowFuncs = saved_hasWindowFuncs;
-	pstate->p_hasTargetSRFs = saved_hasTargetSRFs;
 
 	return addRangeTableEntryForGraphTable(pstate, graphid, castNode(GraphPattern, gp), columns, colnames, rgt->alias, false, true);
 }

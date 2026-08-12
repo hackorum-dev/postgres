@@ -337,6 +337,23 @@ check_agglevels_and_constraints(ParseState *pstate, Node *expr)
 	}
 
 	/*
+	 * Reject aggregates and grouping operations written in a GRAPH_TABLE
+	 * clause.  pstate has not been walked up yet, so p_expr_kind here still
+	 * reflects the clause the aggregate was written in.  We must check now,
+	 * before we walk up to the query level the aggregate belongs to, since
+	 * for an aggregate referencing an outer query that is a different level
+	 * and p_expr_kind would no longer reflect the GRAPH_TABLE clause.
+	 */
+	if (pstate->p_expr_kind == EXPR_KIND_GRAPH_TABLE_COLUMNS ||
+		pstate->p_expr_kind == EXPR_KIND_GRAPH_TABLE_WHERE)
+		ereport(ERROR,
+				(errcode(ERRCODE_GROUPING_ERROR),
+				 isAgg ?
+				 errmsg("aggregate functions are not allowed in GRAPH_TABLE") :
+				 errmsg("grouping operations are not allowed in GRAPH_TABLE"),
+				 parser_errposition(pstate, location)));
+
+	/*
 	 * Check the arguments to compute the aggregate's level and detect
 	 * improper nesting.
 	 */
@@ -598,6 +615,11 @@ check_agglevels_and_constraints(ParseState *pstate, Node *expr)
 			else
 				err = _("grouping operations are not allowed in property definition expressions");
 
+			break;
+
+		case EXPR_KIND_GRAPH_TABLE_COLUMNS:
+		case EXPR_KIND_GRAPH_TABLE_WHERE:
+			/* rejected above */
 			break;
 
 			/*
@@ -1044,6 +1066,10 @@ transformWindowFuncCall(ParseState *pstate, WindowFunc *wfunc,
 			break;
 		case EXPR_KIND_FOR_PORTION:
 			err = _("window functions are not allowed in FOR PORTION OF expressions");
+			break;
+		case EXPR_KIND_GRAPH_TABLE_COLUMNS:
+		case EXPR_KIND_GRAPH_TABLE_WHERE:
+			err = _("window functions are not allowed in GRAPH_TABLE");
 			break;
 
 			/*
