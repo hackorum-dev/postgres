@@ -64,6 +64,15 @@ typedef struct ExprSetupInfo
 	AttrNumber	last_scan;
 	AttrNumber	last_old;
 	AttrNumber	last_new;
+	/*
+	 * All attribute numbers fetched from scan tuple slots, for use by
+	 * slot_gettargetattr().  Unlike most Bitmapsets of attribute numbers
+	 * elsewhere in the codebase (e.g. pull_varattnos()), this is *not*
+	 * offset by FirstLowInvalidHeapAttributeNumber: members are plain
+	 * zero-based tts_values/tts_isnull array indexes (attnum - 1).  System
+	 * columns never appear here, since FETCHSOME steps never fetch them.
+	 */
+	Bitmapset  *all_scan_attrs;
 	/* MULTIEXPR SubPlan nodes appearing in the expression: */
 	List	   *multiexpr_subplans;
 } ExprSetupInfo;
@@ -557,7 +566,7 @@ ExecBuildUpdateProjection(List *targetList,
 	int			nAssignableCols;
 	bool		sawJunk;
 	Bitmapset  *assignedCols;
-	ExprSetupInfo deform = {0, 0, 0, 0, 0, NIL};
+	ExprSetupInfo deform = {0, 0, 0, 0, 0, NULL, NIL};
 	ExprEvalStep scratch = {0};
 	int			outerattnum;
 	ListCell   *lc,
@@ -2874,7 +2883,7 @@ ExecInitSubPlanExpr(SubPlan *subplan,
 static void
 ExecCreateExprSetupSteps(ExprState *state, Node *node)
 {
-	ExprSetupInfo info = {0, 0, 0, 0, 0, NIL};
+	ExprSetupInfo info = {0, 0, 0, 0, 0, NULL, NIL};
 
 	/* Prescan to find out what we need. */
 	expr_setup_walker(node, &info);
@@ -2904,6 +2913,7 @@ ExecPushExprSetupSteps(ExprState *state, ExprSetupInfo *info)
 	{
 		scratch.opcode = EEOP_INNER_FETCHSOME;
 		scratch.d.fetch.last_var = info->last_inner;
+		scratch.d.fetch.all_vars = NULL;
 		scratch.d.fetch.fixed = false;
 		scratch.d.fetch.kind = NULL;
 		scratch.d.fetch.known_desc = NULL;
@@ -2914,6 +2924,7 @@ ExecPushExprSetupSteps(ExprState *state, ExprSetupInfo *info)
 	{
 		scratch.opcode = EEOP_OUTER_FETCHSOME;
 		scratch.d.fetch.last_var = info->last_outer;
+		scratch.d.fetch.all_vars = NULL;
 		scratch.d.fetch.fixed = false;
 		scratch.d.fetch.kind = NULL;
 		scratch.d.fetch.known_desc = NULL;
@@ -2924,6 +2935,7 @@ ExecPushExprSetupSteps(ExprState *state, ExprSetupInfo *info)
 	{
 		scratch.opcode = EEOP_SCAN_FETCHSOME;
 		scratch.d.fetch.last_var = info->last_scan;
+		scratch.d.fetch.all_vars = info->all_scan_attrs;
 		scratch.d.fetch.fixed = false;
 		scratch.d.fetch.kind = NULL;
 		scratch.d.fetch.known_desc = NULL;
@@ -2934,6 +2946,7 @@ ExecPushExprSetupSteps(ExprState *state, ExprSetupInfo *info)
 	{
 		scratch.opcode = EEOP_OLD_FETCHSOME;
 		scratch.d.fetch.last_var = info->last_old;
+		scratch.d.fetch.all_vars = NULL;
 		scratch.d.fetch.fixed = false;
 		scratch.d.fetch.kind = NULL;
 		scratch.d.fetch.known_desc = NULL;
@@ -2944,6 +2957,7 @@ ExecPushExprSetupSteps(ExprState *state, ExprSetupInfo *info)
 	{
 		scratch.opcode = EEOP_NEW_FETCHSOME;
 		scratch.d.fetch.last_var = info->last_new;
+		scratch.d.fetch.all_vars = NULL;
 		scratch.d.fetch.fixed = false;
 		scratch.d.fetch.kind = NULL;
 		scratch.d.fetch.known_desc = NULL;
@@ -3000,6 +3014,8 @@ expr_setup_walker(Node *node, ExprSetupInfo *info)
 				{
 					case VAR_RETURNING_DEFAULT:
 						info->last_scan = Max(info->last_scan, attnum);
+						if (attnum > 0)
+							info->all_scan_attrs = bms_add_member(info->all_scan_attrs, attnum - 1);
 						break;
 					case VAR_RETURNING_OLD:
 						info->last_old = Max(info->last_old, attnum);
@@ -3674,7 +3690,7 @@ ExecBuildAggTrans(AggState *aggstate, AggStatePerPhase phase,
 	PlanState  *parent = &aggstate->ss.ps;
 	ExprEvalStep scratch = {0};
 	bool		isCombine = DO_AGGSPLIT_COMBINE(aggstate->aggsplit);
-	ExprSetupInfo deform = {0, 0, 0, 0, 0, NIL};
+	ExprSetupInfo deform = {0, 0, 0, 0, 0, NULL, NIL};
 
 	state->expr = (Expr *) aggstate;
 	state->parent = parent;
