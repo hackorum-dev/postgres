@@ -208,6 +208,8 @@ typedef struct TransactionStateData
 	TransactionId *childXids;	/* subcommitted child XIDs, in XID order */
 	int			nChildXids;		/* # of subcommitted child XIDs */
 	int			maxChildXids;	/* allocated size of childXids[] */
+	int			savedParentNChildXids;	/* parent's nChildXids before
+										 * subcommit transfer, or -1 */
 	Oid			prevUser;		/* previous CurrentUserId setting */
 	int			prevSecContext; /* previous SecurityRestrictionContext */
 	bool		prevXactReadOnly;	/* entry-time xact r/o state */
@@ -1711,6 +1713,12 @@ AtSubCommit_childXids(void)
 	Assert(s->parent != NULL);
 
 	/*
+	 * Remember the parent's child count so a later abort can undo this
+	 * transfer (see AbortSubTransaction).
+	 */
+	s->savedParentNChildXids = s->parent->nChildXids;
+
+	/*
 	 * The parent childXids array will need to hold my XID and all my
 	 * childXids, in addition to the XIDs already there.
 	 */
@@ -2142,6 +2150,7 @@ StartTransaction(void)
 	s->childXids = NULL;
 	s->nChildXids = 0;
 	s->maxChildXids = 0;
+	s->savedParentNChildXids = -1;
 
 	/*
 	 * Once the current user ID and the security context flags are fetched,
@@ -5344,6 +5353,24 @@ AbortSubTransaction(void)
 	s->state = TRANS_ABORT;
 
 	/*
+	 * If AtSubCommit_childXids() moved our XID and childXids up to the
+	 * parent, undo that here.  An error escaping the later steps of
+	 * CommitSubTransaction() aborts us in COMMIT state; leaving our aborted
+	 * XID in the parent's committed-child list would make the parent's commit
+	 * mark it committed and corrupt pg_xact.  Our entries are the tail of the
+	 * parent's array, so restoring the saved length drops exactly them.  Done
+	 * before the curTransactionOwner check below so it runs whenever
+	 * AtSubCommit_childXids() did.
+	 */
+	if (s->savedParentNChildXids >= 0)
+	{
+		Assert(s->parent != NULL);
+		Assert(s->parent->nChildXids >= s->savedParentNChildXids);
+		s->parent->nChildXids = s->savedParentNChildXids;
+		s->savedParentNChildXids = -1;
+	}
+
+	/*
 	 * Reset user ID which might have been changed transiently.  (See notes in
 	 * AbortTransaction.)
 	 */
@@ -5516,6 +5543,7 @@ PushTransaction(void)
 	s->parallelModeLevel = 0;
 	s->parallelChildXact = (p->parallelModeLevel != 0 || p->parallelChildXact);
 	s->topXidLogged = false;
+	s->savedParentNChildXids = -1;
 
 	CurrentTransactionState = s;
 
