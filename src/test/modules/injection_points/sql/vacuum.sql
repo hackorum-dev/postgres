@@ -34,11 +34,19 @@ VACUUM vac_tab_auto;
 RESET vacuum_truncate;
 
 -- A TOAST table inherits what it does not set from its main table.
-CREATE TABLE vac_tab_toast_inherit(i int, j text) WITH
+CREATE TABLE vac_tab_toast_inherit(i int, j text STORAGE EXTERNAL) WITH
   (autovacuum_enabled=false,
    vacuum_index_cleanup=false,
-   vacuum_truncate=false, toast.vacuum_truncate=true);
+   vacuum_truncate=false, toast.vacuum_truncate=true,
+   autovacuum_vacuum_insert_threshold=1,
+   autovacuum_vacuum_insert_scale_factor=0);
 VACUUM vac_tab_toast_inherit;
+INSERT INTO vac_tab_toast_inherit
+  VALUES (1, repeat('a', 10000)), (2, repeat('b', 10000));
+SELECT pg_stat_force_next_flush();
+SELECT s.vacuum_insert_score > 1 AS over
+  FROM pg_class c, pg_stat_autovacuum_scores s
+  WHERE s.relid = c.reltoastrelid AND c.relname = 'vac_tab_toast_inherit';
 
 DROP TABLE vac_tab_auto;
 DROP TABLE vac_tab_on_toast_off;

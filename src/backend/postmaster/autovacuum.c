@@ -2015,9 +2015,9 @@ do_autovacuum(void)
 	 * We do this in two passes: on the first one we collect the list of plain
 	 * relations and materialized views, and on the second one we collect
 	 * TOAST tables. The reason for doing the second pass is that during it we
-	 * want to use the main relation's pg_class.reloptions entry if the TOAST
-	 * table does not have any, and we cannot obtain it unless we know
-	 * beforehand what's the main table OID.
+	 * want to fill in any storage parameters that the TOAST table does not
+	 * set with the main relation's, and we cannot obtain those values unless
+	 * we know beforehand what's the main table OID.
 	 *
 	 * We need to check TOAST tables separately because in cases with short,
 	 * wide tables there might be proportionally much more activity in the
@@ -2133,6 +2133,8 @@ do_autovacuum(void)
 		bool		doanalyze;
 		bool		wraparound;
 		AutoVacuumScores scores;
+		av_relation *hentry;
+		bool		found;
 
 		/*
 		 * We cannot safely process other backends' temp tables, so skip 'em.
@@ -2143,21 +2145,14 @@ do_autovacuum(void)
 		relid = classForm->oid;
 
 		/*
-		 * fetch reloptions -- if this toast table does not have them, try the
-		 * main rel
+		 * fetch reloptions -- merge any unset options from the main rel
 		 */
 		relopts = (StdRdOptions *) extractRelOptions(tuple, pg_class_desc, NULL);
 		if (relopts)
 			free_relopts = true;
-		else
-		{
-			av_relation *hentry;
-			bool		found;
-
-			hentry = hash_search(table_toast_map, &relid, HASH_FIND, &found);
-			if (found)
-				relopts = &hentry->ar_reloptions;
-		}
+		hentry = hash_search(table_toast_map, &relid, HASH_FIND, &found);
+		if (found)
+			relopts = merge_toast_reloptions(relopts, &hentry->ar_reloptions);
 
 		relation_needs_vacanalyze(relid, relopts, classForm,
 								  effective_multixact_freeze_max_age,
@@ -2782,6 +2777,7 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 	autovac_table *tab = NULL;
 	bool		wraparound;
 	StdRdOptions *relopts;
+	StdRdOptions *main_relopts = NULL;
 	bool		free_relopts = false;
 	AutoVacuumScores scores;
 
@@ -2792,20 +2788,23 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 	classForm = (Form_pg_class) GETSTRUCT(classTup);
 
 	/*
-	 * Get the applicable reloptions.  If it is a TOAST table, try to get the
-	 * main table reloptions if the toast table itself doesn't have.
+	 * Get the applicable reloptions.  If it is a TOAST table, merge in the
+	 * main table's reloptions where they are unset.
 	 */
 	relopts = (StdRdOptions *) extractRelOptions(classTup, pg_class_desc, NULL);
 	if (relopts)
 		free_relopts = true;
-	else if (classForm->relkind == RELKIND_TOASTVALUE)
+	if (classForm->relkind == RELKIND_TOASTVALUE)
 	{
 		av_relation *hentry;
 		bool		found;
 
 		hentry = hash_search(table_toast_map, &relid, HASH_FIND, &found);
 		if (found)
-			relopts = &hentry->ar_reloptions;
+		{
+			main_relopts = &hentry->ar_reloptions;
+			relopts = merge_toast_reloptions(relopts, main_relopts);
+		}
 	}
 
 	relation_needs_vacanalyze(relid, relopts, classForm,
@@ -2891,7 +2890,7 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 		tab->at_params.log_vacuum_min_duration = log_vacuum_min_duration;
 		tab->at_params.log_analyze_min_duration = log_analyze_min_duration;
 		tab->at_params.toast_parent = InvalidOid;
-		tab->at_params.main_relopts = NULL;
+		tab->at_params.main_relopts = main_relopts;
 
 		/* Determine the number of parallel vacuum workers to use */
 		tab->at_params.nworkers = 0;
@@ -2950,8 +2949,8 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
  * being forced because of Xid or multixact wraparound.
  *
  * relopts is a pointer to the StdRdOptions options (either for itself in the
- * case of a plain table, or for either itself or its parent table in the case
- * of a TOAST table), NULL if none.
+ * case of a plain table, or merged with the main table's for a TOAST table),
+ * NULL if none.
  *
  * A table needs to be vacuumed if the number of dead tuples exceeds a
  * threshold.  This threshold is calculated as
@@ -3609,6 +3608,8 @@ pg_stat_get_autovacuum_scores(PG_FUNCTION_ARGS)
 	TableScanDesc scan;
 	HeapTuple	tup;
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	HTAB	   *table_toast_map;
+	HASHCTL		ctl;
 
 	InitMaterializedSRF(fcinfo, 0);
 
@@ -3617,13 +3618,62 @@ pg_stat_get_autovacuum_scores(PG_FUNCTION_ARGS)
 	recentXid = ReadNextTransactionId();
 	recentMulti = ReadNextMultiXactId();
 
-	/* scan pg_class */
+	/* create hash table for toast <-> main relid mapping */
+	ctl.keysize = sizeof(Oid);
+	ctl.entrysize = sizeof(av_relation);
+	ctl.hcxt = CurrentMemoryContext;
+	table_toast_map = hash_create("TOAST to main relid map",
+								  100,
+								  &ctl,
+								  HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+
+	/*
+	 * Do an initial pass over pg_class to collect the main relations'
+	 * reloptions, which we need in order to compute their TOAST tables'
+	 * effective options below.
+	 */
 	rel = table_open(RelationRelationId, AccessShareLock);
 	scan = table_beginscan_catalog(rel, 0, NULL);
 	while ((tup = heap_getnext(scan, ForwardScanDirection)) != NULL)
 	{
 		Form_pg_class form = (Form_pg_class) GETSTRUCT(tup);
 		StdRdOptions *relopts;
+		av_relation *hentry;
+		bool		found;
+
+		/* skip ineligible entries */
+		if (form->relkind != RELKIND_RELATION &&
+			form->relkind != RELKIND_MATVIEW)
+			continue;
+		if (form->relpersistence == RELPERSISTENCE_TEMP)
+			continue;
+		if (!OidIsValid(form->reltoastrelid))
+			continue;
+
+		relopts = (StdRdOptions *) extractRelOptions(tup, RelationGetDescr(rel), NULL);
+		if (!relopts)
+			continue;
+
+		hentry = hash_search(table_toast_map, &form->reltoastrelid,
+							 HASH_ENTER, &found);
+		Assert(!found);			/* rels cannot share a TOAST table */
+
+		/* hash_search already filled in the key */
+		memcpy(&hentry->ar_reloptions, relopts, sizeof(StdRdOptions));
+
+		pfree(relopts);
+	}
+	table_endscan(scan);
+
+	/*
+	 * Now that we have all parents' reloptions, we can generate the results.
+	 */
+	scan = table_beginscan_catalog(rel, 0, NULL);
+	while ((tup = heap_getnext(scan, ForwardScanDirection)) != NULL)
+	{
+		Form_pg_class form = (Form_pg_class) GETSTRUCT(tup);
+		StdRdOptions *relopts;
+		bool		free_relopts = false;
 		bool		dovacuum;
 		bool		doanalyze;
 		bool		wraparound;
@@ -3640,12 +3690,25 @@ pg_stat_get_autovacuum_scores(PG_FUNCTION_ARGS)
 			continue;
 
 		relopts = (StdRdOptions *) extractRelOptions(tup, RelationGetDescr(rel), NULL);
+		if (relopts)
+			free_relopts = true;
+		if (form->relkind == RELKIND_TOASTVALUE)
+		{
+			av_relation *hentry;
+			bool		found;
+
+			hentry = hash_search(table_toast_map, &form->oid,
+								 HASH_FIND, &found);
+			if (found)
+				relopts = merge_toast_reloptions(relopts, &hentry->ar_reloptions);
+		}
+
 		relation_needs_vacanalyze(form->oid, relopts, form,
 								  effective_multixact_freeze_max_age,
 								  LOG_NEVER,
 								  &dovacuum, &doanalyze, &wraparound,
 								  &scores);
-		if (relopts)
+		if (free_relopts)
 			pfree(relopts);
 
 		vals[0] = ObjectIdGetDatum(form->oid);
@@ -3663,6 +3726,7 @@ pg_stat_get_autovacuum_scores(PG_FUNCTION_ARGS)
 	}
 	table_endscan(scan);
 	table_close(rel, AccessShareLock);
+	hash_destroy(table_toast_map);
 
 	return (Datum) 0;
 }
