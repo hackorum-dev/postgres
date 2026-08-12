@@ -310,6 +310,12 @@ SELECT * FROM GRAPH_TABLE (myshop MATCH (c IS customers WHERE c.* IS NOT NULL)-[
 SELECT * FROM GRAPH_TABLE (myshop MATCH (c IS customers) COLUMNS (count(*) AS num));
 SELECT * FROM GRAPH_TABLE (myshop MATCH (c IS customers) COLUMNS (row_number() OVER () AS rn));
 SELECT * FROM GRAPH_TABLE (myshop MATCH (c IS customers) COLUMNS (generate_series(1, 2) AS gs));
+-- also rejected when the aggregate references an outer query
+SELECT (SELECT num FROM GRAPH_TABLE (myshop MATCH (c IS customers) COLUMNS (count(o.customer_id) AS num)) t)
+FROM customers o;
+-- likewise for an outer-referencing aggregate in a pattern WHERE clause
+SELECT (SELECT nm FROM GRAPH_TABLE (myshop MATCH (c IS customers WHERE count(o.customer_id) > 0) COLUMNS (c.name AS nm)) t)
+FROM customers o;
 -- consecutive element patterns with same kind
 SELECT * FROM GRAPH_TABLE (g1 MATCH ()() COLUMNS (1 as one));
 SELECT * FROM GRAPH_TABLE (g1 MATCH -> COLUMNS (1 AS one));

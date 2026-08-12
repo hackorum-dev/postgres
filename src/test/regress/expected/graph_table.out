@@ -478,6 +478,14 @@ SELECT * FROM GRAPH_TABLE (myshop MATCH (c IS customers) COLUMNS (row_number() O
 ERROR:  window functions in GRAPH_TABLE COLUMNS are not supported
 SELECT * FROM GRAPH_TABLE (myshop MATCH (c IS customers) COLUMNS (generate_series(1, 2) AS gs));
 ERROR:  set-returning functions in GRAPH_TABLE COLUMNS are not supported
+-- also rejected when the aggregate references an outer query
+SELECT (SELECT num FROM GRAPH_TABLE (myshop MATCH (c IS customers) COLUMNS (count(o.customer_id) AS num)) t)
+FROM customers o;
+ERROR:  aggregate functions in GRAPH_TABLE COLUMNS are not supported
+-- likewise for an outer-referencing aggregate in a pattern WHERE clause
+SELECT (SELECT nm FROM GRAPH_TABLE (myshop MATCH (c IS customers WHERE count(o.customer_id) > 0) COLUMNS (c.name AS nm)) t)
+FROM customers o;
+ERROR:  aggregate functions in GRAPH_TABLE WHERE clause are not supported
 -- consecutive element patterns with same kind
 SELECT * FROM GRAPH_TABLE (g1 MATCH ()() COLUMNS (1 as one));
 ERROR:  adjacent vertex patterns are not supported

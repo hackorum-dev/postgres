@@ -932,6 +932,24 @@ parserOpenPropGraph(ParseState *pstate, const RangeVar *relation, LOCKMODE lockm
 }
 
 /*
+ * Walk a GRAPH_TABLE expression tree looking for an Aggref or GroupingFunc.
+ * We can't test pstate->p_hasAggs, since an outer-referencing aggregate sets
+ * that flag on a parent ParseState, not ours.
+ */
+static bool
+graph_table_has_aggs_walker(Node *node, void *context)
+{
+	if (node == NULL)
+		return false;
+
+	if (IsA(node, Aggref) || IsA(node, GroupingFunc))
+		return true;
+
+	return expression_tree_walker(node, graph_table_has_aggs_walker,
+								  context);
+}
+
+/*
  * transformRangeGraphTable -- transform a GRAPH_TABLE clause
  */
 static ParseNamespaceItem *
@@ -946,7 +964,6 @@ transformRangeGraphTable(ParseState *pstate, RangeGraphTable *rgt)
 	ListCell   *lc;
 	int			resno = 0;
 	bool		saved_hasSublinks;
-	bool		saved_hasAggs;
 	bool		saved_hasWindowFuncs;
 	bool		saved_hasTargetSRFs;
 
@@ -970,8 +987,6 @@ transformRangeGraphTable(ParseState *pstate, RangeGraphTable *rgt)
 	saved_hasSublinks = pstate->p_hasSubLinks;
 	pstate->p_hasSubLinks = false;
 
-	saved_hasAggs = pstate->p_hasAggs;
-	pstate->p_hasAggs = false;
 	saved_hasWindowFuncs = pstate->p_hasWindowFuncs;
 	pstate->p_hasWindowFuncs = false;
 	saved_hasTargetSRFs = pstate->p_hasTargetSRFs;
@@ -1043,12 +1058,20 @@ transformRangeGraphTable(ParseState *pstate, RangeGraphTable *rgt)
 
 	/*
 	 * GRAPH_TABLE cannot yet evaluate aggregate, window, or set-returning
-	 * functions in its COLUMNS list, so prohibit them for now.
+	 * functions, so prohibit them for now.  Aggregates are found by walking
+	 * the COLUMNS list and the graph pattern, because an outer-referencing
+	 * aggregate does not set pstate->p_hasAggs on our ParseState.  Window
+	 * functions and SRFs always set their flag on our own ParseState, so a
+	 * flag test finds them.
 	 */
-	if (pstate->p_hasAggs)
+	if (graph_table_has_aggs_walker((Node *) columns, NULL))
 		ereport(ERROR,
 				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				errmsg("aggregate functions in GRAPH_TABLE COLUMNS are not supported"));
+	if (graph_table_has_aggs_walker((Node *) gp, NULL))
+		ereport(ERROR,
+				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				errmsg("aggregate functions in GRAPH_TABLE WHERE clause are not supported"));
 	if (pstate->p_hasWindowFuncs)
 		ereport(ERROR,
 				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
@@ -1057,7 +1080,6 @@ transformRangeGraphTable(ParseState *pstate, RangeGraphTable *rgt)
 		ereport(ERROR,
 				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				errmsg("set-returning functions in GRAPH_TABLE COLUMNS are not supported"));
-	pstate->p_hasAggs = saved_hasAggs;
 	pstate->p_hasWindowFuncs = saved_hasWindowFuncs;
 	pstate->p_hasTargetSRFs = saved_hasTargetSRFs;
 
