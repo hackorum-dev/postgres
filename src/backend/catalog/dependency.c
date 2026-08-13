@@ -16,6 +16,7 @@
 
 #include "access/genam.h"
 #include "access/htup_details.h"
+#include "access/relation.h"
 #include "access/table.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
@@ -74,6 +75,7 @@
 #include "commands/publicationcmds.h"
 #include "commands/seclabel.h"
 #include "commands/sequence.h"
+#include "commands/tablecmds.h"
 #include "commands/trigger.h"
 #include "commands/typecmds.h"
 #include "funcapi.h"
@@ -176,6 +178,7 @@ static bool stack_address_present_add_flags(const ObjectAddress *object,
 											int flags,
 											ObjectAddressStack *stack);
 static void DeleteInitPrivs(const ObjectAddress *object);
+static void check_cascaded_column_drops(ObjectAddresses *targetObjects);
 
 
 /*
@@ -229,6 +232,59 @@ deleteObjectsInList(ObjectAddresses *targetObjects, Relation *depRel,
 
 		deleteOneObject(thisobj, depRel, flags);
 	}
+
+	/*
+	 * A column dropped above as a dependent of some other object, e.g. when
+	 * its datatype is dropped with CASCADE, vanishes from values of its
+	 * relation's row type that are stored elsewhere, just like a column
+	 * dropped with ALTER TABLE ... DROP COLUMN.  ATExecDropColumn() refuses
+	 * that up front for the columns it is asked to drop; do the same check
+	 * for columns dropped by cascading.  It has to wait until all the objects
+	 * have been deleted, so that objects storing the row type that are
+	 * dropped by this same command are not counted.
+	 */
+	check_cascaded_column_drops(targetObjects);
+}
+
+/*
+ * Subroutine of deleteObjectsInList: check that no column dropped by
+ * cascading belongs to a row type that is still stored somewhere.
+ */
+static void
+check_cascaded_column_drops(ObjectAddresses *targetObjects)
+{
+	List	   *relids = NIL;
+
+	for (int i = 0; i < targetObjects->numrefs; i++)
+	{
+		const ObjectAddress *thisobj = &targetObjects->refs[i];
+		const ObjectAddressExtra *thisextra = &targetObjects->extras[i];
+
+		/* only columns, and not those the command was asked to drop */
+		if (thisobj->classId != RelationRelationId ||
+			thisobj->objectSubId == 0 ||
+			(thisextra->flags & DEPFLAG_ORIGINAL))
+			continue;
+
+		relids = list_append_unique_oid(relids, thisobj->objectId);
+	}
+
+	foreach_oid(relid, relids)
+	{
+		Relation	rel;
+
+		/* skip relations that this command dropped as a whole */
+		if (!SearchSysCacheExists1(RELOID, ObjectIdGetDatum(relid)))
+			continue;
+
+		/* RemoveAttributeById() already locked it */
+		rel = relation_open(relid, NoLock);
+		if (OidIsValid(rel->rd_rel->reltype))
+			find_composite_type_dependencies(rel->rd_rel->reltype, rel, NULL);
+		relation_close(rel, NoLock);
+	}
+
+	list_free(relids);
 }
 
 /*

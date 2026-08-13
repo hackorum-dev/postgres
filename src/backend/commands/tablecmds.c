@@ -10055,6 +10055,23 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 				 errmsg("cannot drop column \"%s\" because it is part of the partition key of relation \"%s\"",
 						colName, RelationGetRelationName(rel))));
 
+	/*
+	 * Don't drop it if some other relation stores values of this relation's
+	 * row type.  A composite datum does not carry the tuple descriptor it was
+	 * built with, so every stored value is read back using the row type's
+	 * current definition.  Dropping a column changes no attribute version
+	 * (the dropped attribute keeps its attlen and attalign, so old values can
+	 * still be deformed safely), so nothing notices that the attribute then
+	 * disappears from values that were written before the drop: values that
+	 * were distinct can become equal, which can leave stored data violating a
+	 * unique index that can then no longer be rebuilt.  ALTER COLUMN TYPE
+	 * already refuses for the same reason.
+	 *
+	 * Columns dropped by cascading from the drop of another object get the
+	 * same check in dependency.c.
+	 */
+	find_composite_type_dependencies(rel->rd_rel->reltype, rel, NULL);
+
 	ReleaseSysCache(tuple);
 
 	/*
