@@ -247,6 +247,41 @@ GROUP BY 1 ORDER BY 1;
  'serialize-nested-subbig-subbigabort-subbig-3 |  5000 | table public.spill_test: INSERT: data[text]:'serialize-nested-subbig-subbigabort-subbig-3:5001' | table public.spill_test: INSERT: data[text]:'serialize-nested-subbig-subbigabort-subbig-3:10000'
 (2 rows)
 
+-- Aborted xact discarded at eviction, with a subxact still in memory.
+-- proto_version 1 must not see Stream Abort ('A').
+CREATE PUBLICATION spill_pub FOR TABLE spill_test;
+SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot_pgoutput', 'pgoutput');
+ ?column? 
+----------
+ init
+(1 row)
+
+BEGIN;
+SAVEPOINT s;
+INSERT INTO spill_test VALUES ('subtransaction-change');
+RELEASE SAVEPOINT s;
+INSERT INTO spill_test SELECT repeat('x', 1000) FROM generate_series(1, 5000) g(i);
+ROLLBACK;
+INSERT INTO spill_test VALUES ('after-abort');
+SELECT chr(get_byte(data, 0)) AS msgtype, count(*)
+FROM pg_logical_slot_peek_binary_changes('regression_slot_pgoutput', NULL, NULL,
+     'proto_version', '1', 'publication_names', 'spill_pub')
+GROUP BY 1 ORDER BY 1;
+ msgtype | count 
+---------+-------
+ B       |     1
+ C       |     1
+ I       |     1
+ R       |     1
+(4 rows)
+
+SELECT pg_drop_replication_slot('regression_slot_pgoutput');
+ pg_drop_replication_slot 
+--------------------------
+ 
+(1 row)
+
+DROP PUBLICATION spill_pub;
 DROP TABLE spill_test;
 SELECT pg_drop_replication_slot('regression_slot');
  pg_drop_replication_slot 

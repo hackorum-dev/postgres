@@ -174,6 +174,24 @@ SELECT (regexp_split_to_array(data, ':'))[4] COLLATE "C", COUNT(*), (array_agg(d
 FROM pg_logical_slot_get_changes('regression_slot', NULL,NULL) WHERE data ~ 'INSERT'
 GROUP BY 1 ORDER BY 1;
 
+-- Aborted xact discarded at eviction, with a subxact still in memory.
+-- proto_version 1 must not see Stream Abort ('A').
+CREATE PUBLICATION spill_pub FOR TABLE spill_test;
+SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot_pgoutput', 'pgoutput');
+BEGIN;
+SAVEPOINT s;
+INSERT INTO spill_test VALUES ('subtransaction-change');
+RELEASE SAVEPOINT s;
+INSERT INTO spill_test SELECT repeat('x', 1000) FROM generate_series(1, 5000) g(i);
+ROLLBACK;
+INSERT INTO spill_test VALUES ('after-abort');
+SELECT chr(get_byte(data, 0)) AS msgtype, count(*)
+FROM pg_logical_slot_peek_binary_changes('regression_slot_pgoutput', NULL, NULL,
+     'proto_version', '1', 'publication_names', 'spill_pub')
+GROUP BY 1 ORDER BY 1;
+SELECT pg_drop_replication_slot('regression_slot_pgoutput');
+DROP PUBLICATION spill_pub;
+
 DROP TABLE spill_test;
 
 SELECT pg_drop_replication_slot('regression_slot');
