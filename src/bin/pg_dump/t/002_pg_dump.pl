@@ -55,51 +55,95 @@ my $supports_gzip = check_pg_config("#define HAVE_LIBZ 1");
 # -pe '' to avoid shell quoting issues with empty strings on Windows cmd.exe.
 my $perlbin = $^X;
 $perlbin =~ s!\\!/!g if $PostgreSQL::Test::Utils::windows_os;
-my $perl_cat = "\"$perlbin\" -Mopen=IO,:raw -pe 1";
+
+my $is_win = $PostgreSQL::Test::Utils::windows_os;
+
+# To bypass Windows command-line quoting and escaping issues in the test
+# harness, on Windows we resolve paths to their 8.3 short names (which have
+# absolutely no spaces) and define all pipe commands with zero quotes.
+my $short_perlbin = $perlbin;
+my $short_tempdir = $tempdir;
+if ($is_win)
+{
+	require Win32;
+	$short_perlbin = Win32::GetShortPathName($perlbin);
+	$short_tempdir = Win32::GetShortPathName($tempdir);
+}
+
+my $perl_cat = $is_win
+  ? "$short_perlbin -Mopen=IO,:raw -pe 1"
+  : "\"$perlbin\" -Mopen=IO,:raw -pe 1";
 
 # Check for external gzip program for pipe tests.
 my $gzip_path = $ENV{GZIP_PROGRAM} || 'gzip';
-my $gzip_bin = "\"$gzip_path\"";
+$gzip_path =~ s!\\!/!g if $is_win;
+my $short_gzip_path = $is_win ? Win32::GetShortPathName($gzip_path) : $gzip_path;
+
+my $gzip_bin = $is_win ? $short_gzip_path : "\"$gzip_path\"";
 my $has_gzip_bin =
-  (system("$gzip_bin --version >" . File::Spec->devnull() . " 2>&1") == 0);
+  (system($is_win ? "$gzip_bin --version > NUL 2>&1" : "$gzip_bin --version > /dev/null 2>&1") == 0);
 
 # Pre-calculate complex pipe commands to keep the test definitions readable
 # and ensure unified --pipe=... syntax for Windows stability.
-# On Windows, we use space-wrapped quoting (e.g., " ... ") to protect
-# internal quotes and shell operators from destructive cmd.exe /c stripping.
-my $is_win = $PostgreSQL::Test::Utils::windows_os;
+# On Unix, standard double-quoting protects paths with spaces.
+# On Windows, we use unquoted 8.3 short paths to completely bypass quote-mangling.
+my $pipe_defaults_dir = $is_win
+  ? "$perl_cat > $short_tempdir/defaults_dir_format/%f"
+  : "$perl_cat > \"$tempdir/defaults_dir_format/%f\"";
 
-my $raw_pipe_defaults_dir = "$perl_cat > \"$tempdir/defaults_dir_format/%f\"";
-my $raw_pipe_defaults_res = "$perl_cat \"$tempdir/defaults_dir_format/%f\"";
-my $raw_pipe_cross_dump = "$perl_cat > \"$tempdir/pipe_cross_dump/%f\"";
-my $raw_pipe_cross_restore = ($supports_gzip && !$is_win)
-  ? "if [ -f \"$tempdir/pipe_cross_restore/%f.gz\" ]; then $gzip_bin -d -c \"$tempdir/pipe_cross_restore/%f.gz\"; else $perl_cat \"$tempdir/pipe_cross_restore/%f\"; fi"
-  : "$perl_cat \"$tempdir/pipe_cross_restore/%f\"";
-my $raw_pipe_parallel_out = "$perl_cat > \"$tempdir/pipe_out_dir_parallel/%f\"";
-my $raw_pipe_parallel_in = "$perl_cat \"$tempdir/pipe_out_dir_parallel/%f\"";
-my $raw_pipe_parallel_8_out = "$perl_cat > \"$tempdir/pipe_out_dir_parallel_8/%f\"";
-my $raw_pipe_parallel_8_in = "$perl_cat \"$tempdir/pipe_out_dir_parallel_8/%f\"";
-my $raw_pipe_complex_out = "$gzip_bin | $perl_cat > \"$tempdir/pipe_out_dir_complex/%f.gz\"";
-my $raw_pipe_complex_in = "$perl_cat \"$tempdir/pipe_out_dir_complex/%f.gz\" | $gzip_bin -d";
-my $raw_pipe_lo_out = "$perl_cat > \"$tempdir/pipe_out_dir_lo/%f\"";
-my $raw_pipe_lo_in = "$perl_cat \"$tempdir/pipe_out_dir_lo/%f\"";
-my $raw_pipe_schema_out = "$perl_cat > \"$tempdir/schema_only_pipe_dir/%f\"";
-my $raw_pipe_schema_in = "$perl_cat \"$tempdir/schema_only_pipe_dir/%f\"";
+my $pipe_defaults_res = $is_win
+  ? "$perl_cat $short_tempdir/defaults_dir_format/%f"
+  : "$perl_cat \"$tempdir/defaults_dir_format/%f\"";
 
-my $pipe_defaults_dir = $is_win ? "\" $raw_pipe_defaults_dir \"" : $raw_pipe_defaults_dir;
-my $pipe_defaults_res = $is_win ? "\" $raw_pipe_defaults_res \"" : $raw_pipe_defaults_res;
-my $pipe_cross_dump = $is_win ? "\" $raw_pipe_cross_dump \"" : $raw_pipe_cross_dump;
-my $pipe_cross_restore = $is_win ? "\" $raw_pipe_cross_restore \"" : $raw_pipe_cross_restore;
-my $pipe_parallel_out = $is_win ? "\" $raw_pipe_parallel_out \"" : $raw_pipe_parallel_out;
-my $pipe_parallel_in = $is_win ? "\" $raw_pipe_parallel_in \"" : $raw_pipe_parallel_in;
-my $pipe_parallel_8_out = $is_win ? "\" $raw_pipe_parallel_8_out \"" : $raw_pipe_parallel_8_out;
-my $pipe_parallel_8_in = $is_win ? "\" $raw_pipe_parallel_8_in \"" : $raw_pipe_parallel_8_in;
-my $pipe_complex_out = $is_win ? "\" $raw_pipe_complex_out \"" : $raw_pipe_complex_out;
-my $pipe_complex_in = $is_win ? "\" $raw_pipe_complex_in \"" : $raw_pipe_complex_in;
-my $pipe_lo_out = $is_win ? "\" $raw_pipe_lo_out \"" : $raw_pipe_lo_out;
-my $pipe_lo_in = $is_win ? "\" $raw_pipe_lo_in \"" : $raw_pipe_lo_in;
-my $pipe_schema_out = $is_win ? "\" $raw_pipe_schema_out \"" : $raw_pipe_schema_out;
-my $pipe_schema_in = $is_win ? "\" $raw_pipe_schema_in \"" : $raw_pipe_schema_in;
+my $pipe_cross_dump = $is_win
+  ? "$perl_cat > $short_tempdir/pipe_cross_dump/%f"
+  : "$perl_cat > \"$tempdir/pipe_cross_dump/%f\"";
+
+my $pipe_cross_restore = $is_win
+  ? "$perl_cat $short_tempdir/pipe_cross_restore/%f"
+  : (($supports_gzip)
+	? "if [ -f \"$tempdir/pipe_cross_restore/%f.gz\" ]; then $gzip_bin -d -c \"$tempdir/pipe_cross_restore/%f.gz\"; else $perl_cat \"$tempdir/pipe_cross_restore/%f\"; fi"
+	: "$perl_cat \"$tempdir/pipe_cross_restore/%f\"");
+
+my $pipe_parallel_out = $is_win
+  ? "$perl_cat > $short_tempdir/pipe_out_dir_parallel/%f"
+  : "$perl_cat > \"$tempdir/pipe_out_dir_parallel/%f\"";
+
+my $pipe_parallel_in = $is_win
+  ? "$perl_cat $short_tempdir/pipe_out_dir_parallel/%f"
+  : "$perl_cat \"$tempdir/pipe_out_dir_parallel/%f\"";
+
+my $pipe_parallel_8_out = $is_win
+  ? "$perl_cat > $short_tempdir/pipe_out_dir_parallel_8/%f"
+  : "$perl_cat > \"$tempdir/pipe_out_dir_parallel_8/%f\"";
+
+my $pipe_parallel_8_in = $is_win
+  ? "$perl_cat $short_tempdir/pipe_out_dir_parallel_8/%f"
+  : "$perl_cat \"$tempdir/pipe_out_dir_parallel_8/%f\"";
+
+my $pipe_complex_out = $is_win
+  ? "$gzip_bin | $perl_cat > $short_tempdir/pipe_out_dir_complex/%f.gz"
+  : "$gzip_bin | $perl_cat > \"$tempdir/pipe_out_dir_complex/%f.gz\"";
+
+my $pipe_complex_in = $is_win
+  ? "$perl_cat $short_tempdir/pipe_out_dir_complex/%f.gz | $gzip_bin -d"
+  : "$perl_cat \"$tempdir/pipe_out_dir_complex/%f.gz\" | $gzip_bin -d";
+
+my $pipe_lo_out = $is_win
+  ? "$perl_cat > $short_tempdir/pipe_out_dir_lo/%f"
+  : "$perl_cat > \"$tempdir/pipe_out_dir_lo/%f\"";
+
+my $pipe_lo_in = $is_win
+  ? "$perl_cat $short_tempdir/pipe_out_dir_lo/%f"
+  : "$perl_cat \"$tempdir/pipe_out_dir_lo/%f\"";
+
+my $pipe_schema_out = $is_win
+  ? "$perl_cat > $short_tempdir/schema_only_pipe_dir/%f"
+  : "$perl_cat > \"$tempdir/schema_only_pipe_dir/%f\"";
+
+my $pipe_schema_in = $is_win
+  ? "$perl_cat $short_tempdir/schema_only_pipe_dir/%f"
+  : "$perl_cat \"$tempdir/schema_only_pipe_dir/%f\"";
 
 # Create output directories for pipe tests
 mkdir "$tempdir/pipe_out_dir_parallel";
@@ -5591,13 +5635,15 @@ foreach my $run (sort keys %pgdump_runs)
 # We use a perl one-liner that exits with 1 after processing input.
 # This ensures we test the error handling in pclose() at the end of the dump,
 # verifying that the child's exit status is correctly captured and reported.
-my $failing_perl_cat = "\"$perlbin\" -Mopen=IO,:raw -pe \"END { exit 1 }\"";
+my $failing_perl_cat = $is_win
+  ? "$short_perlbin -Mopen=IO,:raw -pe END{exit(1)}"
+  : "\"$perlbin\" -Mopen=IO,:raw -pe \"END { exit 1 }\"";
 
 # Verify that pg_dump's error message includes the exact failing command,
 # including the specific "-pe "END { exit 1 }"" payload.
 $node->command_fails_like(
-	[ 'pg_dump', '-Fd', $is_win ? "--pipe=\"$failing_perl_cat > \\\"%f\\\"\"" : "--pipe=$failing_perl_cat > \"%f\"", 'postgres' ],
-	qr/pipe command failed: ".*perl.*-Mopen=IO,:raw.*-pe.*END \{ exit 1 \}.*": /,
+	[ 'pg_dump', '-Fd', $is_win ? "--pipe=$failing_perl_cat > $short_tempdir/%f" : "--pipe=$failing_perl_cat > \"%f\"", 'postgres' ],
+	qr/pipe command failed: ".*perl.*-Mopen=IO,:raw.*-pe.*END.*": /,
 	'pg_dump pipe command error reporting includes full command string'
 );
 
@@ -5605,8 +5651,8 @@ $node->command_fails_like(
 # Verify that pg_restore's error message also includes the exact failing command
 # and its arguments, including the target file path.
 $node->command_fails_like(
-	[ 'pg_restore', '-Fd', '-l', $is_win ? "--pipe=\" $failing_perl_cat \\\"$tempdir/pipe_cross_dump/%f\\\" \"" : "--pipe=$failing_perl_cat \"$tempdir/pipe_cross_dump/%f\"", ],
-	qr/pipe command failed: ".*perl.*-Mopen=IO,:raw.*-pe.*END \{ exit 1 \}.*pipe_cross_dump.*": /,
+	[ 'pg_restore', '-Fd', '-l', $is_win ? "--pipe=$failing_perl_cat $short_tempdir/pipe_cross_dump/%f" : "--pipe=$failing_perl_cat \"$tempdir/pipe_cross_dump/%f\"", ],
+	qr/pipe command failed: ".*perl.*-Mopen=IO,:raw.*-pe.*END.*pipe_cross_dump.*": /,
 	'pg_restore pipe command error reporting includes full command string'
 );
 
@@ -5624,7 +5670,7 @@ $node->command_fails_like(
 );
 
 $node->command_fails_like(
-	[ 'pg_dump', '-Fd', '-f', '-', $is_win ? "--pipe=\" $perl_cat > \\\"%f\\\" \"" : "--pipe=$perl_cat > \"%f\"", 'postgres' ],
+	[ 'pg_dump', '-Fd', '-f', '-', $is_win ? "--pipe=$perl_cat > $short_tempdir/%f" : "--pipe=$perl_cat > \"%f\"", 'postgres' ],
 	qr/options -f\/--file and --pipe cannot be used together/,
 	'pg_dump options -f/--file and --pipe conflict check'
 );
@@ -5637,7 +5683,7 @@ open my $fh, '>', "$tempdir/dummy_cluster_archive/toc.glo";
 close $fh;
 
 $node->command_fails_like(
-	[ 'pg_restore', '-Fd', '-l', $is_win ? "--pipe=\" $perl_cat \\\"%f\\\" \"" : "--pipe=$perl_cat \"%f\"", "$tempdir/dummy_cluster_archive" ],
+	[ 'pg_restore', '-Fd', '-l', $is_win ? "--pipe=$perl_cat $short_tempdir/%f" : "--pipe=$perl_cat \"%f\"", "$tempdir/dummy_cluster_archive" ],
 	qr/cannot specify both an input file and --pipe/,
 	'pg_restore --pipe rejects positional argument even for cluster archive'
 );
@@ -5648,13 +5694,16 @@ $node->command_fails_like(
 # non-existent directory, but the error should come from the pipe command/write
 # failure, not from pg_dump's directory initialization.
 my $remote_dir = "$tempdir/non_existent_remote_dir";
+my $short_remote_dir = $remote_dir;
+if ($is_win)
+{
+	$short_remote_dir = Win32::GetShortPathName($tempdir) . "/non_existent_remote_dir";
+}
 $node->command_fails_like(
-	[ 'pg_dump', '-Fd', $is_win ? "--pipe=\" $perl_cat > \\\"$remote_dir/%f\\\" \"" : "--pipe=$perl_cat > \"$remote_dir/%f\"", 'postgres' ],
+	[ 'pg_dump', '-Fd', $is_win ? "--pipe=$perl_cat > $short_remote_dir/%f" : "--pipe=$perl_cat > \"$remote_dir/%f\"", 'postgres' ],
 	qr/could not write to file: (?:Broken pipe|The pipe has been ended)|pipe command failed/,
 	'pg_dump --pipe bypasses local directory existence check'
 );
-
-#########################################
 # Stop the database instance, which will be removed at the end of the tests.
 
 $node->stop('fast');

@@ -103,14 +103,30 @@ $node->command_ok(
 
 mkdir "$backupdir/dump_pipe";
 
-# Pre-calculate pipe commands for readability and unified syntax.
-# Use space-wrapped quoting only on Windows to protect shell operators.
+# To bypass Windows command-line quoting and escaping issues in the test
+# harness, on Windows we resolve paths to their 8.3 short names (which have
+# absolutely no spaces) and define all pipe commands with zero quotes.
 my $is_win = $PostgreSQL::Test::Utils::windows_os;
-my $raw_pipe_dump = "$perl_cat > \"$backupdir/dump_pipe/%f\"";
-my $raw_pipe_restore = "$perl_cat \"$backupdir/dump_pipe/%f\"";
+my $short_perlbin = $perlbin;
+my $short_backupdir = $backupdir;
+if ($is_win)
+{
+	require Win32;
+	$short_perlbin = Win32::GetShortPathName($perlbin);
+	$short_backupdir = Win32::GetShortPathName($backupdir);
+}
 
-my $pipe_dump = $is_win ? "\" $raw_pipe_dump \"" : $raw_pipe_dump;
-my $pipe_restore = $is_win ? "\" $raw_pipe_restore \"" : $raw_pipe_restore;
+my $perl_cat_win = $is_win
+  ? "$short_perlbin -Mopen=IO,:raw -pe 1"
+  : $perl_cat;
+
+my $pipe_dump = $is_win
+  ? "$perl_cat_win > $short_backupdir/dump_pipe/%f"
+  : "$perl_cat > \"$backupdir/dump_pipe/%f\"";
+
+my $pipe_restore = $is_win
+  ? "$perl_cat_win $short_backupdir/dump_pipe/%f"
+  : "$perl_cat \"$backupdir/dump_pipe/%f\"";
 
 $node->command_ok(
 	[
@@ -135,7 +151,9 @@ $node->command_ok(
 
 # Test warning when parallel jobs are used without %f in pipe command.
 # Use a simple command that doesn't use %f.
-my $pipe_no_f = $is_win ? "\" $perl_cat > \\\"$backupdir/no_f.out\\\" \"" : "$perl_cat > \"$backupdir/no_f.out\"";
+my $pipe_no_f = $is_win
+  ? "$perl_cat_win > $short_backupdir/no_f.out"
+  : "$perl_cat > \"$backupdir/no_f.out\"";
 $node->command_checks_all(
 	[
 		'pg_dump',
