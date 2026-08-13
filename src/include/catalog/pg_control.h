@@ -22,7 +22,7 @@
 
 
 /* Version identifier for this pg_control format */
-#define PG_CONTROL_VERSION	1902
+#define PG_CONTROL_VERSION	1903
 
 /* Nonce key length, see below */
 #define MOCK_AUTH_NONCE_LEN		32
@@ -228,7 +228,9 @@ typedef struct ControlFileData
 
 	bool		float8ByVal;	/* float8, int8, etc pass-by-value? */
 
-	/* Are data pages protected by checksums? Zero if no checksum version */
+	/* Are data pages initialized to be protected by checksums? */
+	uint32		data_checksum_version_init;
+	/* Are data pages currently by checksums? Zero if no checksum version */
 	uint32		data_checksum_version;
 
 	/*
