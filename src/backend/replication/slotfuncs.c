@@ -13,16 +13,24 @@
 #include "postgres.h"
 
 #include "access/htup_details.h"
+#include "access/table.h"
 #include "access/xlog_internal.h"
 #include "access/xlogrecovery.h"
 #include "access/xlogutils.h"
+#include "catalog/pg_class.h"
+#include "catalog/pg_publication.h"
 #include "funcapi.h"
+#include "nodes/pg_list.h"
 #include "replication/logical.h"
 #include "replication/slot.h"
+#include "replication/slotscope.h"
 #include "replication/slotsync.h"
 #include "storage/proc.h"
+#include "storage/lmgr.h"
+#include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
+#include "utils/lsyscache.h"
 #include "utils/pg_lsn.h"
 
 /*
@@ -48,8 +56,6 @@ static void
 create_physical_replication_slot(char *name, bool immediately_reserve,
 								 bool temporary, XLogRecPtr restart_lsn)
 {
-	Assert(!MyReplicationSlot);
-
 	/* acquire replication slot, this will check for conflicting names */
 	ReplicationSlotCreate(name, false,
 						  temporary ? RS_TEMPORARY : RS_PERSISTENT, false,
@@ -126,27 +132,10 @@ pg_create_physical_replication_slot(PG_FUNCTION_ARGS)
  * caller's responsibility to ensure it's set to something sensible.
  */
 static void
-create_logical_replication_slot(char *name, char *plugin,
-								bool temporary, bool two_phase,
-								bool failover,
-								XLogRecPtr restart_lsn,
-								bool find_startpoint)
+initialize_logical_replication_slot(char *plugin, XLogRecPtr restart_lsn,
+									bool find_startpoint)
 {
 	LogicalDecodingContext *ctx = NULL;
-
-	Assert(!MyReplicationSlot);
-
-	/*
-	 * Acquire a logical decoding slot, this will check for conflicting names.
-	 * Initially create persistent slot as ephemeral - that allows us to
-	 * nicely handle errors during initialization because it'll get dropped if
-	 * this transaction fails. We'll make it persistent at the end. Temporary
-	 * slots can be created as temporary from beginning as they get dropped on
-	 * error as well.
-	 */
-	ReplicationSlotCreate(name, true,
-						  temporary ? RS_TEMPORARY : RS_EPHEMERAL, two_phase,
-						  false, failover, false);
 
 	/*
 	 * Ensure the logical decoding is enabled before initializing the logical
@@ -191,22 +180,85 @@ create_logical_replication_slot(char *name, char *plugin,
 	FreeDecodingContext(ctx);
 }
 
+static void
+create_logical_replication_slot(char *name, char *plugin,
+								bool temporary, bool two_phase,
+								bool failover, bool unrestricted,
+								List *publications,
+								XLogRecPtr restart_lsn,
+								bool find_startpoint)
+{
+	ReplicationSlotCreate(name, true,
+						  temporary ? RS_TEMPORARY : RS_EPHEMERAL, two_phase,
+						  false, failover, false);
+
+	if (unrestricted)
+	{
+		LogicalSlotScopeConfigureUnrestricted(MyReplicationSlot);
+		initialize_logical_replication_slot(plugin, restart_lsn, find_startpoint);
+	}
+	else
+	{
+		LogicalSlotScopePrepareFromPublications(MyReplicationSlot, publications);
+		initialize_logical_replication_slot(plugin, restart_lsn, find_startpoint);
+		LogicalSlotScopeFinishCreate(MyReplicationSlot, true);
+	}
+}
+
+static void
+create_logical_replication_slot_from_publications(char *name, char *plugin,
+												  bool temporary, bool two_phase,
+												  bool failover, bool unrestricted,
+												  List *publications,
+												  XLogRecPtr restart_lsn,
+												  bool find_startpoint)
+{
+	ReplicationSlotCreate(name, true,
+						  temporary ? RS_TEMPORARY : RS_EPHEMERAL, two_phase,
+						  false, failover, false);
+	if (unrestricted)
+	{
+		LogicalSlotScopeConfigureUnrestricted(MyReplicationSlot);
+		initialize_logical_replication_slot(plugin, restart_lsn, find_startpoint);
+	}
+	else
+	{
+		LogicalSlotScopePrepareFromPublicationOids(MyReplicationSlot, publications);
+		initialize_logical_replication_slot(plugin, restart_lsn, find_startpoint);
+		LogicalSlotScopeFinishCreate(MyReplicationSlot, true);
+	}
+}
+
 /*
  * SQL function for creating a new logical replication slot.
  */
 Datum
 pg_create_logical_replication_slot(PG_FUNCTION_ARGS)
 {
-	Name		name = PG_GETARG_NAME(0);
-	Name		plugin = PG_GETARG_NAME(1);
-	bool		temporary = PG_GETARG_BOOL(2);
-	bool		two_phase = PG_GETARG_BOOL(3);
-	bool		failover = PG_GETARG_BOOL(4);
+	Name		name;
+	Name		plugin;
+	bool		temporary;
+	bool		two_phase;
+	bool		failover;
+	bool		unrestricted;
+	bool		publications_specified = false;
+	List	   *publications = NIL;
 	Datum		result;
 	TupleDesc	tupdesc;
 	HeapTuple	tuple;
 	Datum		values[2];
 	bool		nulls[2];
+
+	/* Preserve the former strict behavior for the original arguments. */
+	for (int i = 0; i < 5; i++)
+		if (PG_ARGISNULL(i))
+			PG_RETURN_NULL();
+
+	name = PG_GETARG_NAME(0);
+	plugin = PG_GETARG_NAME(1);
+	temporary = PG_GETARG_BOOL(2);
+	two_phase = PG_GETARG_BOOL(3);
+	failover = PG_GETARG_BOOL(4);
 
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
 		elog(ERROR, "return type must be a row type");
@@ -215,13 +267,48 @@ pg_create_logical_replication_slot(PG_FUNCTION_ARGS)
 
 	CheckLogicalDecodingRequirements(false);
 
+	if (PG_NARGS() > 5 && !PG_ARGISNULL(5))
+	{
+		ArrayType  *array = PG_GETARG_ARRAYTYPE_P(5);
+		Datum	   *elems;
+		bool	   *nulls;
+		int			nelems;
+
+		publications_specified = true;
+
+		deconstruct_array_builtin(array, TEXTOID, &elems, &nulls, &nelems);
+		for (int i = 0; i < nelems; i++)
+		{
+			if (nulls[i])
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("publications must not contain null values")));
+			publications = lappend(publications, TextDatumGetCString(elems[i]));
+		}
+		if (publications == NIL)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("publications must not be empty")));
+	}
+	unrestricted = !publications_specified;
+	if (!unrestricted && strcmp(NameStr(*plugin), "pgoutput") != 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("restricted logical replication slots currently require pgoutput")));
+	if (!unrestricted && IsTransactionBlock())
+		ereport(ERROR,
+				(errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
+				 errmsg("restricted logical replication slots cannot be created inside a transaction block")));
+
 	create_logical_replication_slot(NameStr(*name),
 									NameStr(*plugin),
 									temporary,
 									two_phase,
 									failover,
+									unrestricted, publications,
 									InvalidXLogRecPtr,
 									true);
+	list_free(publications);
 
 	values[0] = NameGetDatum(&MyReplicationSlot->data.name);
 	values[1] = LSNGetDatum(MyReplicationSlot->data.confirmed_flush);
@@ -231,10 +318,15 @@ pg_create_logical_replication_slot(PG_FUNCTION_ARGS)
 	tuple = heap_form_tuple(tupdesc, values, nulls);
 	result = HeapTupleGetDatum(tuple);
 
-	/* ok, slot is now fully created, mark it as persistent if needed */
+	/*
+	 * Restricted creation is finalized by its transaction callback, after the
+	 * mapping catalog changes commit.  Keep that slot acquired and ephemeral
+	 * until then so abort can remove it safely.
+	 */
 	if (!temporary)
 		ReplicationSlotPersist();
-	ReplicationSlotRelease();
+	if (unrestricted)
+		ReplicationSlotRelease();
 
 	PG_RETURN_DATUM(result);
 }
@@ -264,7 +356,7 @@ pg_drop_replication_slot(PG_FUNCTION_ARGS)
 Datum
 pg_get_replication_slots(PG_FUNCTION_ARGS)
 {
-#define PG_GET_REPLICATION_SLOTS_COLS 21
+#define PG_GET_REPLICATION_SLOTS_COLS 26
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	XLogRecPtr	currlsn;
 	int			slotno;
@@ -279,6 +371,7 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 
 	currlsn = GetXLogWriteRecPtr();
 
+	LWLockAcquire(ReplicationSlotAllocationLock, LW_SHARED);
 	LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
 	for (slotno = 0; slotno < max_replication_slots + max_repack_replication_slots; slotno++)
 	{
@@ -477,6 +570,52 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 		else
 			values[i++] = CStringGetTextDatum(SlotSyncSkipReasonNames[slot_contents.slotsync_skip_reason]);
 
+		if (SlotIsPhysical(&slot_contents))
+			nulls[i++] = true;
+		else
+			values[i++] = BoolGetDatum(slot_contents.data.unrestricted);
+
+		if (SlotIsPhysical(&slot_contents) || slot_contents.data.unrestricted)
+			nulls[i++] = true;
+		else
+		{
+			List	   *publications;
+			Datum	   *oids;
+			int			j = 0;
+
+			/*
+			 * ReplicationSlotAllocationLock keeps the slot directory stable.
+			 * Do not hold ReplicationSlotControlLock across sidecar file I/O.
+			 */
+			LWLockRelease(ReplicationSlotControlLock);
+			publications = LogicalSlotScopeGetPublications(slot);
+			LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
+			oids = palloc_array(Datum, list_length(publications));
+
+			foreach_oid(pubid, publications)
+				oids[j++] = ObjectIdGetDatum(pubid);
+			values[i++] = PointerGetDatum(construct_array_builtin(oids, j, OIDOID));
+			list_free(publications);
+			pfree(oids);
+		}
+
+		if (SlotIsPhysical(&slot_contents))
+			nulls[i++] = true;
+		else
+			values[i++] = BoolGetDatum(slot_contents.data.restricted_scope_ready);
+
+		if (SlotIsPhysical(&slot_contents) || slot_contents.data.unrestricted)
+			nulls[i++] = true;
+		else
+			values[i++] = Int64GetDatum(
+										(int64) slot_contents.data.restricted_scope_incarnation);
+
+		if (SlotIsPhysical(&slot_contents) || slot_contents.data.unrestricted ||
+			!slot_contents.data.restricted_scope_ready)
+			nulls[i++] = true;
+		else
+			values[i++] = LSNGetDatum(slot_contents.data.restricted_scope_ready_lsn);
+
 		Assert(i == PG_GET_REPLICATION_SLOTS_COLS);
 
 		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc,
@@ -484,6 +623,7 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 	}
 
 	LWLockRelease(ReplicationSlotControlLock);
+	LWLockRelease(ReplicationSlotAllocationLock);
 
 	return (Datum) 0;
 }
@@ -552,8 +692,6 @@ pg_replication_slot_advance(PG_FUNCTION_ARGS)
 	bool		nulls[2];
 	HeapTuple	tuple;
 	Datum		result;
-
-	Assert(!MyReplicationSlot);
 
 	CheckSlotPermissions();
 
@@ -651,6 +789,7 @@ copy_replication_slot(FunctionCallInfo fcinfo, bool logical_slot)
 	Datum		result;
 	TupleDesc	tupdesc;
 	HeapTuple	tuple;
+	List	   *copy_publications = NIL;
 
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
 		elog(ERROR, "return type must be a row type");
@@ -662,6 +801,7 @@ copy_replication_slot(FunctionCallInfo fcinfo, bool logical_slot)
 	else
 		CheckSlotRequirements(false);
 
+	LWLockAcquire(ReplicationSlotAllocationLock, LW_SHARED);
 	LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
 
 	/*
@@ -691,6 +831,12 @@ copy_replication_slot(FunctionCallInfo fcinfo, bool logical_slot)
 	}
 
 	LWLockRelease(ReplicationSlotControlLock);
+	if (src != NULL && SlotIsLogical(&first_slot_contents) &&
+		!first_slot_contents.data.unrestricted)
+	{
+		copy_publications = LogicalSlotScopeGetPublications(src);
+	}
+	LWLockRelease(ReplicationSlotAllocationLock);
 
 	if (src == NULL)
 		ereport(ERROR,
@@ -725,6 +871,12 @@ copy_replication_slot(FunctionCallInfo fcinfo, bool logical_slot)
 				errmsg("cannot copy invalidated replication slot \"%s\"",
 					   NameStr(*src_name)));
 
+	if (logical_slot && !first_slot_contents.data.unrestricted &&
+		IsTransactionBlock())
+		ereport(ERROR,
+				(errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
+				 errmsg("restricted logical replication slots cannot be copied inside a transaction block")));
+
 	/* Overwrite params from optional arguments */
 	if (PG_NARGS() >= 3)
 		temporary = PG_GETARG_BOOL(2);
@@ -755,13 +907,15 @@ copy_replication_slot(FunctionCallInfo fcinfo, bool logical_slot)
 		 * on the promoted standby because the slot retains the restart_lsn
 		 * and confirmed_flush_lsn that are much later than expected.
 		 */
-		create_logical_replication_slot(NameStr(*dst_name),
-										plugin,
-										temporary,
-										false,
-										false,
-										src_restart_lsn,
-										false);
+		create_logical_replication_slot_from_publications(NameStr(*dst_name),
+														  plugin,
+														  temporary,
+														  false,
+														  false,
+														  first_slot_contents.data.unrestricted,
+														  copy_publications,
+														  src_restart_lsn,
+														  false);
 	}
 	else
 		create_physical_replication_slot(NameStr(*dst_name),
@@ -885,7 +1039,9 @@ copy_replication_slot(FunctionCallInfo fcinfo, bool logical_slot)
 	tuple = heap_form_tuple(tupdesc, values, nulls);
 	result = HeapTupleGetDatum(tuple);
 
-	ReplicationSlotRelease();
+	if (!logical_slot || first_slot_contents.data.unrestricted)
+		ReplicationSlotRelease();
+	list_free(copy_publications);
 
 	PG_RETURN_DATUM(result);
 }

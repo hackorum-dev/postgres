@@ -49,6 +49,7 @@
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_policy.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_publication.h"
 #include "catalog/pg_publication_rel.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_statistic_ext.h"
@@ -92,6 +93,7 @@
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
+#include "replication/slotscope.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/lock.h"
@@ -3658,6 +3660,11 @@ StoreCatalogInheritance1(Oid relationId, Oid parentOid,
 
 	/* store the pg_inherits row */
 	StoreSingleInheritance(relationId, parentOid, seqNumber);
+	if (child_is_partition)
+	{
+		CommandCounterIncrement();
+		CheckLogicalSlotScopeHierarchyChange(relationId, parentOid);
+	}
 
 	/*
 	 * Store a dependency too
@@ -19803,6 +19810,22 @@ AlterTableNamespaceInternal(Relation rel, Oid oldNspOid, Oid nspOid,
 							  false, objsMoved);
 
 	table_close(classRel, RowExclusiveLock);
+
+	/* Moving a table can make it a member of a schema publication. */
+	if (!IsBootstrapProcessingMode() && oldNspOid != nspOid &&
+		(rel->rd_rel->relkind == RELKIND_RELATION ||
+		 rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE))
+	{
+		List	   *publications;
+		List	   *relations = list_make1_oid(RelationGetRelid(rel));
+
+		CommandCounterIncrement();
+		publications = GetSchemaPublications(nspOid);
+		foreach_oid(pubid, publications)
+			LogicalSlotScopePublicationAddRelations(pubid, relations);
+		list_free(publications);
+		list_free(relations);
+	}
 }
 
 /*

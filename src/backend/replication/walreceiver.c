@@ -441,7 +441,8 @@ WalReceiverMain(const void *startup_data, size_t startup_data_len)
 					 "pg_walreceiver_%lld",
 					 (long long int) walrcv_get_backend_pid(wrconn));
 
-			walrcv_create_slot(wrconn, slotname, true, false, false, 0, NULL);
+			walrcv_create_slot(wrconn, slotname, true, false, false, true, NIL,
+							   0, NULL);
 
 			SpinLockAcquire(&walrcv->mutex);
 			strlcpy(walrcv->slotname, slotname, NAMEDATALEN);

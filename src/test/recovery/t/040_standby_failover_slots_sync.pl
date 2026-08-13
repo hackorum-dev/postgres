@@ -211,6 +211,153 @@ is( $standby1->safe_psql(
 	'synchronized slot has got its own inactive_since');
 
 ##################################################
+# Test synchronization and replacement of a restricted failover slot.
+##################################################
+
+$primary->safe_psql(
+	'postgres', q{
+	CREATE TABLE restricted_sync_tab1 (a int);
+	CREATE TABLE restricted_sync_tab2 (a int);
+	CREATE PUBLICATION restricted_sync_pub1 FOR TABLE restricted_sync_tab1;
+	CREATE PUBLICATION restricted_sync_pub2 FOR TABLE restricted_sync_tab2;
+});
+$primary->safe_psql(
+	'postgres', q{
+	SELECT pg_create_logical_replication_slot(
+		'restricted_sync_slot', 'pgoutput', failover => true,
+		publications => ARRAY['restricted_sync_pub1']);
+});
+
+my $restricted_incarnation1 = $primary->safe_psql(
+	'postgres', q{
+	SELECT restricted_scope_incarnation
+	FROM pg_replication_slots
+	WHERE slot_name = 'restricted_sync_slot';
+});
+my $restricted_ready_lsn1 = $primary->safe_psql(
+	'postgres', q{
+	SELECT restricted_scope_ready_lsn
+	FROM pg_replication_slots
+	WHERE slot_name = 'restricted_sync_slot';
+});
+
+$primary->wait_for_replay_catchup($standby1);
+$standby1->safe_psql('postgres', "SELECT pg_sync_replication_slots();");
+
+# A ready restricted failover slot should retain its scope metadata on standby.
+is( $standby1->safe_psql(
+		'postgres', qq{
+		SELECT synced AND NOT temporary AND NOT unrestricted AND
+		       restricted_scope_ready AND
+		       restricted_scope_incarnation = $restricted_incarnation1 AND
+		       restricted_scope_ready_lsn = '$restricted_ready_lsn1' AND
+		       publication_oids = ARRAY[(SELECT oid FROM pg_publication
+		                                     WHERE pubname = 'restricted_sync_pub1')]
+		FROM pg_replication_slots
+		WHERE slot_name = 'restricted_sync_slot';
+	}),
+	"t",
+	'restricted failover slot scope metadata is synchronized');
+
+# Replayed mappings should enable selective WAL for the restricted relation.
+is( $standby1->safe_psql(
+		'postgres', q{
+		SELECT c.relhasrestrictedslots AND EXISTS (
+			SELECT 1 FROM pg_restricted_slot_relation AS m
+			WHERE m.rsrslotname = 'restricted_sync_slot'
+			  AND m.rsrrelid = c.oid)
+		FROM pg_class AS c
+		WHERE c.oid = 'restricted_sync_tab1'::regclass;
+	}),
+	"t",
+	'restricted failover slot relation mapping is available on standby');
+
+$primary->safe_psql('postgres',
+	"SELECT pg_drop_replication_slot('restricted_sync_slot');");
+$primary->safe_psql(
+	'postgres', q{
+	SELECT pg_create_logical_replication_slot(
+		'restricted_sync_slot', 'pgoutput', failover => true,
+		publications => ARRAY['restricted_sync_pub2']);
+});
+
+my $restricted_incarnation2 = $primary->safe_psql(
+	'postgres', q{
+	SELECT restricted_scope_incarnation
+	FROM pg_replication_slots
+	WHERE slot_name = 'restricted_sync_slot';
+});
+my $restricted_ready_lsn2 = $primary->safe_psql(
+	'postgres', q{
+	SELECT restricted_scope_ready_lsn
+	FROM pg_replication_slots
+	WHERE slot_name = 'restricted_sync_slot';
+});
+
+$primary->wait_for_replay_catchup($standby1);
+$standby1->safe_psql('postgres', "SELECT pg_sync_replication_slots();");
+
+# A changed incarnation should replace the existing synchronized slot.
+is( $standby1->safe_psql(
+		'postgres', qq{
+		SELECT restricted_scope_incarnation = $restricted_incarnation2 AND
+		       restricted_scope_incarnation <> $restricted_incarnation1 AND
+		       restricted_scope_ready_lsn = '$restricted_ready_lsn2' AND
+		       publication_oids = ARRAY[(SELECT oid FROM pg_publication
+		                                     WHERE pubname = 'restricted_sync_pub2')]
+		FROM pg_replication_slots
+		WHERE slot_name = 'restricted_sync_slot';
+	}),
+	"t",
+	'restricted synchronized slot is replaced after incarnation changes');
+
+# Replacement should install mappings only for the new incarnation's scope.
+is( $standby1->safe_psql(
+		'postgres', qq{
+		SELECT newrel.relhasrestrictedslots AND
+		       NOT EXISTS (
+			   SELECT 1 FROM pg_restricted_slot_relation
+			   WHERE rsrslotname = 'restricted_sync_slot'
+			     AND rsrrelid = oldrel.oid
+			     AND rsrincarnation = $restricted_incarnation2) AND
+		       EXISTS (
+			   SELECT 1 FROM pg_restricted_slot_relation
+			   WHERE rsrslotname = 'restricted_sync_slot'
+			     AND rsrrelid = newrel.oid
+			     AND rsrincarnation = $restricted_incarnation2)
+		FROM pg_class AS oldrel, pg_class AS newrel
+		WHERE oldrel.oid = 'restricted_sync_tab1'::regclass
+		  AND newrel.oid = 'restricted_sync_tab2'::regclass;
+	}),
+	"t",
+	'restricted synchronized slot replacement installs its new mappings');
+
+$primary->safe_psql('postgres',
+	"SELECT pg_drop_replication_slot('restricted_sync_slot');");
+$primary->wait_for_replay_catchup($standby1);
+$standby1->safe_psql('postgres', "SELECT pg_sync_replication_slots();");
+
+# Dropping the remote restricted slot should remove its synchronized copy.
+is( $standby1->safe_psql(
+		'postgres', q{
+		SELECT count(*) = 0 FROM pg_replication_slots
+		WHERE slot_name = 'restricted_sync_slot';
+	}),
+	"t",
+	'dropped restricted failover slot is removed from standby');
+
+# Temporary restricted-slot relations should not remain in the FOR ALL TABLES
+# publication used by later subscription tests.
+$primary->safe_psql(
+	'postgres', q{
+	DROP PUBLICATION restricted_sync_pub1;
+	DROP PUBLICATION restricted_sync_pub2;
+	DROP TABLE restricted_sync_tab1;
+	DROP TABLE restricted_sync_tab2;
+});
+$primary->wait_for_replay_catchup($standby1);
+
+##################################################
 # Test that the synchronized slot will be dropped if the corresponding remote
 # slot on the primary server has been dropped.
 ##################################################

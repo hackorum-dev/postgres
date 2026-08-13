@@ -80,6 +80,9 @@ CATALOG(pg_subscription,6100,SubscriptionRelationId) BKI_SHARED_RELATION BKI_ROW
 								 * slots) in the upstream database are enabled
 								 * to be synchronized to the standbys. */
 
+	bool		subunrestricted BKI_DEFAULT(t); /* True if the associated
+											 * replication slots are unrestricted. */
+
 	bool		subretaindeadtuples;	/* True if dead tuples useful for
 										 * conflict detection are retained */
 
@@ -163,6 +166,8 @@ typedef struct Subscription
 								 * (i.e. the main slot and the table sync
 								 * slots) in the upstream database are enabled
 								 * to be synchronized to the standbys. */
+	bool		unrestricted;	/* True if the associated replication slots are
+								 * unrestricted. */
 	bool		retaindeadtuples;	/* True if dead tuples useful for conflict
 									 * detection are retained */
 	int32		maxretention;	/* The maximum duration (in milliseconds) for

@@ -281,6 +281,11 @@
      </row>
 
      <row>
+      <entry><link linkend="catalog-pg-restricted-slot-relation"><structname>pg_restricted_slot_relation</structname></link></entry>
+      <entry>restricted logical replication slot to relation mapping</entry>
+     </row>
+
+     <row>
       <entry><link linkend="catalog-pg-range"><structname>pg_range</structname></link></entry>
       <entry>information about range types</entry>
      </row>
@@ -2128,6 +2133,17 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       </para>
       <para>
        True if this is a table and it has (or recently had) any indexes
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>relhasrestrictedslots</structfield> <type>bool</type>
+      </para>
+      <para>
+       True if this relation is (or recently was) required by a restricted
+       logical replication slot. This flag can remain true until autovacuum
+       removes obsolete slot mappings.
       </para></entry>
      </row>
 
@@ -7136,6 +7152,48 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
      </row>
     </tbody>
    </tgroup>
+ </table>
+ </sect1>
+
+ <sect1 id="catalog-pg-restricted-slot-relation">
+  <title><structname>pg_restricted_slot_relation</structname></title>
+
+  <indexterm zone="catalog-pg-restricted-slot-relation">
+   <primary>pg_restricted_slot_relation</primary>
+  </indexterm>
+
+  <para>
+   The catalog <structname>pg_restricted_slot_relation</structname> records a
+   conservative mapping from restricted logical replication slots to
+   relations that must write logical tuple information. Rows belonging to
+   dropped or replaced slot incarnations can remain until autovacuum cleanup.
+   Rows made obsolete by publication contraction or partition detach are
+   retained conservatively and can remain indefinitely.
+  </para>
+
+  <table>
+   <title><structname>pg_restricted_slot_relation</structname> Columns</title>
+   <tgroup cols="1">
+    <thead>
+     <row><entry role="catalog_table_entry"><para role="column_definition">
+      Column Type
+     </para><para>Description</para></entry></row>
+    </thead>
+    <tbody>
+     <row><entry role="catalog_table_entry"><para role="column_definition">
+      <structfield>rsrslotname</structfield> <type>name</type>
+     </para><para>Name of the restricted replication slot</para></entry></row>
+     <row><entry role="catalog_table_entry"><para role="column_definition">
+      <structfield>rsrrelid</structfield> <type>oid</type>
+      (references <link linkend="catalog-pg-class"><structname>pg_class</structname></link>.<structfield>oid</structfield>)
+     </para><para>OID of a relation that must write logical tuple information,
+      or zero for a committed-initialization marker</para></entry></row>
+     <row><entry role="catalog_table_entry"><para role="column_definition">
+     <structfield>rsrincarnation</structfield> <type>int8</type>
+     </para><para>Restricted slot incarnation associated with this mapping or
+      initialization marker</para></entry></row>
+    </tbody>
+   </tgroup>
   </table>
  </sect1>
 
@@ -8687,6 +8745,17 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
        If true, the associated replication slots (i.e. the main slot and the
        table synchronization slots) in the upstream database are enabled to be
        synchronized to the standbys
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>subunrestricted</structfield> <type>bool</type>
+      </para>
+      <para>
+       If true, the associated replication slots on the upstream database are
+       unrestricted. If false, they are scoped to the subscription's
+       publications.
       </para></entry>
      </row>
 

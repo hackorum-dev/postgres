@@ -649,6 +649,7 @@ static int	shared_memory_size_in_huge_pages;
 static int	wal_block_size;
 static int	num_os_semaphores;
 static int	effective_wal_level = WAL_LEVEL_REPLICA;
+static int	restricted_wal_level = WAL_LEVEL_REPLICA;
 static bool integer_datetimes;
 
 #ifdef USE_ASSERT_CHECKING

@@ -42,6 +42,7 @@
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
 #include "replication/slot.h"
+#include "replication/slotscope.h"
 #include "replication/slotsync.h"
 #include "replication/walsender.h"
 #include "storage/aio_subsys.h"
@@ -1238,6 +1239,9 @@ InitPostgres(const char *in_dbname, Oid dboid,
 	if (!bootstrap)
 		CheckMyDatabase(dbname, am_superuser,
 						(flags & INIT_PG_OVERRIDE_ALLOW_CONNS) != 0);
+
+	if (!bootstrap)
+		LogicalSlotScopeReconcileDatabase();
 
 	/*
 	 * Now process any command-line switches and any additional GUC variable

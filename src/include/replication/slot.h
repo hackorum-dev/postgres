@@ -159,6 +159,18 @@ typedef struct ReplicationSlotPersistentData
 	 * for logical slots on the primary server.
 	 */
 	bool		failover;
+
+	/* May this logical slot decode every eligible relation? */
+	bool		unrestricted;
+
+	/* Are the transactional writer mappings for this restricted slot ready? */
+	bool		restricted_scope_ready;
+
+	/* Identifies this restricted slot creation across name reuse. */
+	uint64		restricted_scope_incarnation;
+
+	/* WAL boundary after the transactional scope mappings committed. */
+	XLogRecPtr	restricted_scope_ready_lsn;
 } ReplicationSlotPersistentData;
 
 /*
@@ -341,6 +353,8 @@ extern void ReplicationSlotAlter(const char *name, const bool *failover,
 
 extern void ReplicationSlotAcquire(const char *name, bool nowait,
 								   bool error_if_invalid);
+extern bool ReplicationSlotConditionalAcquire(const char *name,
+											  bool error_if_invalid);
 extern void ReplicationSlotRelease(void);
 extern void ReplicationSlotCleanup(bool synced_only);
 extern void ReplicationSlotSave(void);
@@ -360,6 +374,8 @@ extern void ReplicationSlotsComputeRequiredLSN(void);
 extern XLogRecPtr ReplicationSlotsComputeLogicalRestartLSN(void);
 extern bool ReplicationSlotsCountDBSlots(Oid dboid, int *nslots, int *nactive);
 extern bool CheckLogicalSlotExists(void);
+extern bool CheckRestrictedLogicalSlotExists(void);
+extern bool CheckFullWalLogicalSlotExists(void);
 extern void ReplicationSlotsDropDBSlots(Oid dboid);
 extern bool InvalidateObsoleteReplicationSlots(uint32 possible_causes,
 											   XLogSegNo oldestSegno,

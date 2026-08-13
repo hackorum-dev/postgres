@@ -42,6 +42,9 @@ PG_MODULE_MAGIC_EXT(
 					.version = PG_VERSION
 );
 
+/* First server version supporting UNRESTRICTED and PUBLICATION_NAMES. */
+#define LOGICAL_SLOT_SCOPE_VERSION_NUM 200000
+
 struct WalReceiverConn
 {
 	/* Current connection to the primary, if any */
@@ -85,6 +88,8 @@ static char *libpqrcv_create_slot(WalReceiverConn *conn,
 								  bool temporary,
 								  bool two_phase,
 								  bool failover,
+								  bool unrestricted,
+								  List *publications,
 								  CRSSnapshotAction snapshot_action,
 								  XLogRecPtr *lsn);
 static void libpqrcv_alter_slot(WalReceiverConn *conn, const char *slotname,
@@ -924,6 +929,7 @@ libpqrcv_send(WalReceiverConn *conn, const char *buffer, int nbytes)
 static char *
 libpqrcv_create_slot(WalReceiverConn *conn, const char *slotname,
 					 bool temporary, bool two_phase, bool failover,
+					 bool unrestricted, List *publications,
 					 CRSSnapshotAction snapshot_action, XLogRecPtr *lsn)
 {
 	PGresult   *res;
@@ -932,6 +938,10 @@ libpqrcv_create_slot(WalReceiverConn *conn, const char *slotname,
 	int			use_new_options_syntax;
 
 	use_new_options_syntax = (PQserverVersion(conn->streamConn) >= 150000);
+	if (!unrestricted && PQserverVersion(conn->streamConn) < LOGICAL_SLOT_SCOPE_VERSION_NUM)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("publisher does not support scoped logical replication slots")));
 
 	initStringInfo(&cmd);
 
@@ -943,6 +953,9 @@ libpqrcv_create_slot(WalReceiverConn *conn, const char *slotname,
 
 	if (conn->logical)
 	{
+		StringInfoData pubnames;
+		ListCell   *lc;
+
 		appendStringInfoString(&cmd, " LOGICAL pgoutput ");
 		if (use_new_options_syntax)
 			appendStringInfoChar(&cmd, '(');
@@ -962,6 +975,21 @@ libpqrcv_create_slot(WalReceiverConn *conn, const char *slotname,
 				appendStringInfoString(&cmd, ", ");
 			else
 				appendStringInfoChar(&cmd, ' ');
+		}
+
+		if (use_new_options_syntax && !unrestricted)
+		{
+			initStringInfo(&pubnames);
+			foreach(lc, publications)
+			{
+				if (lc != list_head(publications))
+					appendStringInfoChar(&pubnames, ',');
+				appendStringInfoString(&pubnames,
+									 quote_identifier(strVal(lfirst(lc))));
+			}
+			appendStringInfo(&cmd, "PUBLICATION_NAMES %s, ",
+							 quote_literal_cstr(pubnames.data));
+			pfree(pubnames.data);
 		}
 
 		if (use_new_options_syntax)

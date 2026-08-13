@@ -1123,7 +1123,12 @@ CREATE VIEW pg_replication_slots AS
             L.invalidation_reason,
             L.failover,
             L.synced,
-            L.slotsync_skip_reason
+            L.slotsync_skip_reason,
+            L.unrestricted,
+            L.publication_oids,
+			L.restricted_scope_ready,
+			L.restricted_scope_incarnation,
+			L.restricted_scope_ready_lsn
     FROM pg_get_replication_slots() AS L
             LEFT JOIN pg_database D ON (L.datoid = D.oid);
 
@@ -1537,6 +1542,7 @@ REVOKE ALL ON pg_subscription FROM public;
 GRANT SELECT (oid, subdbid, subskiplsn, subname, subowner, subenabled,
               subbinary, substream, subtwophasestate, subdisableonerr,
 			  subpasswordrequired, subrunasowner, subfailover,
+			  subunrestricted,
               subretaindeadtuples, submaxretention, subretentionactive,
               subserver, subconflictlogrelid, subconflictlogdest, subslotname,
               subsynccommit, subwalrcvtimeout, subpublications, suborigin)

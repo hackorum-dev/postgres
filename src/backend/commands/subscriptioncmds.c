@@ -83,6 +83,7 @@
 #define SUBOPT_LSN					0x00020000
 #define SUBOPT_ORIGIN				0x00040000
 #define SUBOPT_CONFLICT_LOG_DEST	0x00080000
+#define SUBOPT_UNRESTRICTED_SLOT	0x00100000
 
 /* check if the 'val' has 'bits' set */
 #define IsSet(val, bits)  (((val) & (bits)) == (bits))
@@ -108,6 +109,7 @@ typedef struct SubOpts
 	bool		passwordrequired;
 	bool		runasowner;
 	bool		failover;
+	bool		unrestricted;
 	bool		retaindeadtuples;
 	int32		maxretention;
 	char	   *origin;
@@ -199,6 +201,8 @@ parse_subscription_options(ParseState *pstate, List *stmt_options,
 		opts->runasowner = false;
 	if (IsSet(supported_opts, SUBOPT_FAILOVER))
 		opts->failover = false;
+	if (IsSet(supported_opts, SUBOPT_UNRESTRICTED_SLOT))
+		opts->unrestricted = true;
 	if (IsSet(supported_opts, SUBOPT_RETAIN_DEAD_TUPLES))
 		opts->retaindeadtuples = false;
 	if (IsSet(supported_opts, SUBOPT_MAX_RETENTION_DURATION))
@@ -349,6 +353,15 @@ parse_subscription_options(ParseState *pstate, List *stmt_options,
 
 			opts->specified_opts |= SUBOPT_FAILOVER;
 			opts->failover = defGetBoolean(defel);
+		}
+		else if (IsSet(supported_opts, SUBOPT_UNRESTRICTED_SLOT) &&
+				 strcmp(defel->defname, "unrestricted_slot") == 0)
+		{
+			if (IsSet(opts->specified_opts, SUBOPT_UNRESTRICTED_SLOT))
+				errorConflictingDefElem(defel, pstate);
+
+			opts->specified_opts |= SUBOPT_UNRESTRICTED_SLOT;
+			opts->unrestricted = defGetBoolean(defel);
 		}
 		else if (IsSet(supported_opts, SUBOPT_RETAIN_DEAD_TUPLES) &&
 				 strcmp(defel->defname, "retain_dead_tuples") == 0)
@@ -539,6 +552,7 @@ parse_subscription_options(ParseState *pstate, List *stmt_options,
 								"slot_name = NONE", "create_slot = false")));
 		}
 	}
+
 }
 
 /*
@@ -691,6 +705,7 @@ CreateSubscription(ParseState *pstate, CreateSubscriptionStmt *stmt,
 	 * Connection and publication should not be specified here.
 	 */
 	supported_opts = (SUBOPT_CONNECT | SUBOPT_ENABLED | SUBOPT_CREATE_SLOT |
+					  SUBOPT_UNRESTRICTED_SLOT |
 					  SUBOPT_SLOT_NAME | SUBOPT_COPY_DATA |
 					  SUBOPT_SYNCHRONOUS_COMMIT | SUBOPT_BINARY |
 					  SUBOPT_STREAMING | SUBOPT_TWOPHASE_COMMIT |
@@ -864,6 +879,7 @@ CreateSubscription(ParseState *pstate, CreateSubscriptionStmt *stmt,
 	values[Anum_pg_subscription_subpasswordrequired - 1] = BoolGetDatum(opts.passwordrequired);
 	values[Anum_pg_subscription_subrunasowner - 1] = BoolGetDatum(opts.runasowner);
 	values[Anum_pg_subscription_subfailover - 1] = BoolGetDatum(opts.failover);
+	values[Anum_pg_subscription_subunrestricted - 1] = BoolGetDatum(opts.unrestricted);
 	values[Anum_pg_subscription_subretaindeadtuples - 1] =
 		BoolGetDatum(opts.retaindeadtuples);
 	values[Anum_pg_subscription_submaxretention - 1] =
@@ -1065,7 +1081,8 @@ CreateSubscription(ParseState *pstate, CreateSubscriptionStmt *stmt,
 					twophase_enabled = true;
 
 				walrcv_create_slot(wrconn, opts.slot_name, false, twophase_enabled,
-								   opts.failover, CRS_NOEXPORT_SNAPSHOT, NULL);
+								   opts.failover, opts.unrestricted, publications,
+								   CRS_NOEXPORT_SNAPSHOT, NULL);
 
 				if (twophase_enabled)
 					UpdateTwoPhaseState(subid, LOGICALREP_TWOPHASE_STATE_ENABLED);
@@ -1737,6 +1754,44 @@ AlterSubscription(ParseState *pstate, AlterSubscriptionStmt *stmt,
 		parse_subscription_options(pstate, stmt->options, supported_opts, &opts);
 
 	sub = GetSubscription(subid, false);
+
+	/*
+	 * A restricted slot stores an immutable set of publication identities.
+	 * The subscriber does not retain that original set, so only allow its
+	 * current publication list to be reduced.  This prevents the apply worker
+	 * from failing asynchronously on an identity absent from the slot.
+	 */
+	if (!sub->unrestricted &&
+		(stmt->kind == ALTER_SUBSCRIPTION_SET_PUBLICATION ||
+		 stmt->kind == ALTER_SUBSCRIPTION_ADD_PUBLICATION))
+	{
+		if (stmt->kind == ALTER_SUBSCRIPTION_ADD_PUBLICATION)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("cannot add publications to restricted subscription \"%s\"",
+							stmt->subname),
+					 errhint("Drop and recreate the subscription to expand its publication list.")));
+
+		foreach_node(String, publication, stmt->publication)
+		{
+			bool		found = false;
+
+			foreach_node(String, oldpublication, sub->publications)
+			{
+				if (strcmp(strVal(publication), strVal(oldpublication)) == 0)
+				{
+					found = true;
+					break;
+				}
+			}
+			if (!found)
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("cannot add publication \"%s\" to restricted subscription \"%s\"",
+								strVal(publication), stmt->subname),
+						 errhint("Drop and recreate the subscription to expand its publication list.")));
+		}
+	}
 
 	/*
 	 * Determine in advance whether we need the original conninfo or not, so

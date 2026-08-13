@@ -38,6 +38,7 @@
 #include "parser/parse_collate.h"
 #include "parser/parse_relation.h"
 #include "rewrite/rewriteHandler.h"
+#include "replication/slotscope.h"
 #include "storage/lmgr.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -2036,6 +2037,7 @@ PublicationAddTables(Oid pubid, List *rels, bool if_not_exists,
 					 AlterPublicationStmt *stmt)
 {
 	ListCell   *lc;
+	List	   *relids = NIL;
 
 	foreach(lc, rels)
 	{
@@ -2049,6 +2051,7 @@ PublicationAddTables(Oid pubid, List *rels, bool if_not_exists,
 						   RelationGetRelationName(rel));
 
 		obj = publication_add_relation(pubid, pub_rel, if_not_exists, stmt);
+		relids = lappend_oid(relids, RelationGetRelid(rel));
 		if (stmt)
 		{
 			EventTriggerCollectSimpleCommand(obj, InvalidObjectAddress,
@@ -2058,6 +2061,8 @@ PublicationAddTables(Oid pubid, List *rels, bool if_not_exists,
 									   obj.objectId, 0);
 		}
 	}
+	LogicalSlotScopePublicationAddRelations(pubid, relids);
+	list_free(relids);
 }
 
 /*
@@ -2118,8 +2123,13 @@ PublicationAddSchemas(Oid pubid, List *schemas, bool if_not_exists,
 	{
 		Oid			schemaid = lfirst_oid(lc);
 		ObjectAddress obj;
+		List	   *relations;
 
 		obj = publication_add_schema(pubid, schemaid, if_not_exists);
+		relations = GetSchemaPublicationRelations(schemaid,
+												  PUBLICATION_PART_ALL);
+		LogicalSlotScopePublicationAddRelations(pubid, relations);
+		list_free(relations);
 		if (stmt)
 		{
 			EventTriggerCollectSimpleCommand(obj, InvalidObjectAddress,

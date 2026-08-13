@@ -1698,6 +1698,10 @@ LogicalDecodeStreamTruncateCB
 LogicalDecodeTruncateCB
 LogicalDecodingContext
 LogicalDecodingCtlData
+LogicalSlotScopeCtlData
+LogicalSlotScopeEntry
+LogicalSlotScopeKey
+LogicalSlotScopeOnDisk
 LogicalErrorCallbackState
 LogicalOutputPluginInit
 LogicalOutputPluginWriterPrepareWrite

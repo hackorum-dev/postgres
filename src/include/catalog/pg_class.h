@@ -124,6 +124,9 @@ CATALOG(pg_class,1259,RelationRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(83,Relat
 	/* is relation a partition? */
 	bool		relispartition BKI_DEFAULT(f);
 
+	/* has conservative mappings for restricted logical slots */
+	bool		relhasrestrictedslots BKI_DEFAULT(f);
+
 	/* link to original rel during table rewrite; otherwise 0 */
 	Oid			relrewrite BKI_DEFAULT(0) BKI_LOOKUP_OPT(pg_class);
 

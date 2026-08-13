@@ -30,6 +30,7 @@
 #include "catalog/toasting.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "replication/slotscope.h"
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
@@ -397,6 +398,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	 * Make changes visible
 	 */
 	CommandCounterIncrement();
+	LogicalSlotScopeNoteToastCreation(relOid, toast_relid);
 
 	return true;
 }

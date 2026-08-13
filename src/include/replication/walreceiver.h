@@ -367,12 +367,14 @@ typedef void (*walrcv_send_fn) (WalReceiverConn *conn,
  * slot, or NULL for a physical slot.
  */
 typedef char *(*walrcv_create_slot_fn) (WalReceiverConn *conn,
-										const char *slotname,
-										bool temporary,
-										bool two_phase,
-										bool failover,
-										CRSSnapshotAction snapshot_action,
-										XLogRecPtr *lsn);
+											const char *slotname,
+											bool temporary,
+											bool two_phase,
+											bool failover,
+											bool unrestricted,
+											List *publications,
+											CRSSnapshotAction snapshot_action,
+											XLogRecPtr *lsn);
 
 /*
  * walrcv_alter_slot_fn
@@ -460,8 +462,8 @@ extern PGDLLIMPORT WalReceiverFunctionsType *WalReceiverFunctions;
 	WalReceiverFunctions->walrcv_receive(conn, buffer, wait_fd)
 #define walrcv_send(conn, buffer, nbytes) \
 	WalReceiverFunctions->walrcv_send(conn, buffer, nbytes)
-#define walrcv_create_slot(conn, slotname, temporary, two_phase, failover, snapshot_action, lsn) \
-	WalReceiverFunctions->walrcv_create_slot(conn, slotname, temporary, two_phase, failover, snapshot_action, lsn)
+#define walrcv_create_slot(conn, slotname, temporary, two_phase, failover, unrestricted, publications, snapshot_action, lsn) \
+	WalReceiverFunctions->walrcv_create_slot(conn, slotname, temporary, two_phase, failover, unrestricted, publications, snapshot_action, lsn)
 #define walrcv_alter_slot(conn, slotname, failover, two_phase) \
 	WalReceiverFunctions->walrcv_alter_slot(conn, slotname, failover, two_phase)
 #define walrcv_get_backend_pid(conn) \

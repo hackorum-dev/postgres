@@ -110,6 +110,7 @@ typedef enum RecoveryState
 
 extern PGDLLIMPORT int wal_level;
 extern PGDLLIMPORT bool XLogLogicalInfo;
+extern PGDLLIMPORT bool XLogRestrictedInfo;
 
 /* Is WAL archiving enabled (always or only while server is running normally)? */
 #define XLogArchivingActive() \
@@ -147,8 +148,12 @@ extern PGDLLIMPORT bool XLogLogicalInfo;
  * change until an XID is assigned to the transaction. In other words, it
  * ensures that the same result is returned within an XID-assigned transaction.
  */
-#define XLogLogicalInfoActive() \
+#define XLogFullLogicalInfoActive() \
 	 (wal_level >= WAL_LEVEL_LOGICAL || XLogLogicalInfo)
+#define XLogRestrictedInfoActive() \
+	 (wal_level >= WAL_LEVEL_LOGICAL || XLogRestrictedInfo)
+#define XLogLogicalInfoActive() \
+	 (XLogFullLogicalInfoActive() || XLogRestrictedInfoActive())
 
 #ifdef WAL_DEBUG
 extern PGDLLIMPORT bool XLOG_DEBUG;

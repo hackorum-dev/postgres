@@ -2136,9 +2136,14 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 		/*
 		 * For logical decoding, we need the tuple even if we're doing a full
 		 * page write, so make sure it's included even if we take a full-page
-		 * image. (XXX We could alternatively store a pointer into the FPW).
+		 * image.  A speculative confirmation has no logical-data flag of its
+		 * own, so retain the speculative insertion whenever logical decoding
+		 * is active, even if the relation is outside a restricted slot's
+		 * scope. (XXX We could alternatively store a pointer into the FPW).
 		 */
-		if (RelationIsLogicallyLogged(relation) &&
+		if ((RelationIsLogicallyLogged(relation) ||
+			 ((options & HEAP_INSERT_SPECULATIVE) &&
+			  XLogLogicalInfoActive())) &&
 			!(options & HEAP_INSERT_NO_LOGICAL))
 		{
 			xlrec.flags |= XLH_INSERT_CONTAINS_NEW_TUPLE;

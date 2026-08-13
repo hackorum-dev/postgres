@@ -3175,6 +3175,59 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
        </itemizedlist>
       </para></entry>
      </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>unrestricted</structfield> <type>bool</type>
+      </para>
+      <para>
+       True if the logical slot writes logical tuple information for every
+       eligible relation, false if it is restricted by its stored
+       publications, or <literal>NULL</literal> for a physical slot.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>publication_oids</structfield> <type>oid[]</type>
+      </para>
+      <para>
+       Publications stored by a restricted logical slot, or <literal>NULL</literal>
+       for an unrestricted or physical slot.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>restricted_scope_ready</structfield> <type>bool</type>
+      </para>
+      <para>
+       True when a restricted logical slot's initial relation mappings have
+       committed and the slot can be used, false while initialization is in
+       progress, or <literal>NULL</literal> for an unrestricted or physical slot.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>restricted_scope_incarnation</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Internal identity of a restricted slot initialization, or
+       <literal>NULL</literal> for an unrestricted or physical slot.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>restricted_scope_ready_lsn</structfield> <type>pg_lsn</type>
+      </para>
+      <para>
+       WAL location following the commit of a restricted slot's initial
+       relation mappings, or <literal>NULL</literal> while initialization is
+       incomplete or for an unrestricted or physical slot.
+      </para></entry>
+     </row>
     </tbody>
    </tgroup>
   </table>

@@ -49,6 +49,7 @@
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_partitioned_table.h"
+#include "catalog/pg_publication.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_subscription_rel.h"
 #include "catalog/pg_tablespace.h"
@@ -67,6 +68,7 @@
 #include "parser/parsetree.h"
 #include "partitioning/partdesc.h"
 #include "pgstat.h"
+#include "replication/slotscope.h"
 #include "storage/lmgr.h"
 #include "storage/predicate.h"
 #include "utils/array.h"
@@ -968,6 +970,8 @@ InsertPgClassTuple(Relation pg_class_desc,
 	values[Anum_pg_class_relispopulated - 1] = BoolGetDatum(rd_rel->relispopulated);
 	values[Anum_pg_class_relreplident - 1] = CharGetDatum(rd_rel->relreplident);
 	values[Anum_pg_class_relispartition - 1] = BoolGetDatum(rd_rel->relispartition);
+	values[Anum_pg_class_relhasrestrictedslots - 1] =
+		BoolGetDatum(rd_rel->relhasrestrictedslots);
 	values[Anum_pg_class_relrewrite - 1] = ObjectIdGetDatum(rd_rel->relrewrite);
 	values[Anum_pg_class_relfrozenxid - 1] = TransactionIdGetDatum(rd_rel->relfrozenxid);
 	values[Anum_pg_class_relminmxid - 1] = MultiXactIdGetDatum(rd_rel->relminmxid);
@@ -1040,6 +1044,7 @@ AddNewRelationTuple(Relation pg_class_desc,
 
 	/* relispartition is always set by updating this tuple later */
 	new_rel_reltup->relispartition = false;
+	new_rel_reltup->relhasrestrictedslots = false;
 
 	/* fill rd_att's type ID with something sane even if reltype is zero */
 	new_rel_desc->rd_att->tdtypeid = new_type_oid ? new_type_oid : RECORDOID;
@@ -1540,6 +1545,21 @@ heap_create_with_catalog(const char *relname,
 	if (oncommit != ONCOMMIT_NOOP)
 		register_on_commit_action(relid, oncommit);
 
+	/* A new table may be covered immediately by a schema publication. */
+	if (!IsBootstrapProcessingMode() &&
+		(relkind == RELKIND_RELATION || relkind == RELKIND_PARTITIONED_TABLE))
+	{
+		List	   *publications;
+		List	   *relations = list_make1_oid(relid);
+
+		CommandCounterIncrement();
+		publications = GetSchemaPublications(relnamespace);
+		foreach_oid(pubid, publications)
+			LogicalSlotScopePublicationAddRelations(pubid, relations);
+		list_free(publications);
+		list_free(relations);
+	}
+
 	/*
 	 * ok, the relation has been cataloged, so close our relations and return
 	 * the OID of the newly created relation.
@@ -1846,6 +1866,13 @@ heap_drop_with_catalog(Oid relid)
 	 * Open and lock the relation.
 	 */
 	rel = relation_open(relid, AccessExclusiveLock);
+
+	/*
+	 * Remove any logical replication slot that is using this relation.  This
+	 * must be done before we remove the pg_class row, else the slot will be
+	 * left pointing to a non-existent relation.
+	 */
+	LogicalSlotScopeRelationDrop(relid);
 
 	/*
 	 * There can no longer be anyone *else* touching the relation, but we

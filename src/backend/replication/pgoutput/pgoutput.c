@@ -27,6 +27,8 @@
 #include "replication/logicalproto.h"
 #include "replication/origin.h"
 #include "replication/pgoutput.h"
+#include "replication/slot.h"
+#include "replication/slotscope.h"
 #include "rewrite/rewriteHandler.h"
 #include "utils/builtins.h"
 #include "utils/inval.h"
@@ -86,6 +88,7 @@ static void pgoutput_stream_prepare_txn(LogicalDecodingContext *ctx,
 static bool publications_valid;
 
 static List *LoadPublications(List *pubnames);
+static void ValidateSlotScope(List *pubnames);
 static void publication_invalidation_cb(Datum arg, SysCacheIdentifier cacheid,
 										uint32 hashvalue);
 static void send_repl_origin(LogicalDecodingContext *ctx,
@@ -491,6 +494,20 @@ pgoutput_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 	{
 		/* Parse the params and ERROR if we see any we don't recognize */
 		parse_output_parameters(ctx->output_plugin_options, data);
+
+		/*
+		 * A walsender invokes output-plugin startup outside a transaction,
+		 * whereas SQL decoding functions already have one.  Publication lookup
+		 * needs a transaction environment in either case.
+		 */
+		if (!IsTransactionState())
+		{
+			StartTransactionCommand();
+			ValidateSlotScope(data->publication_names);
+			CommitTransactionCommand();
+		}
+		else
+			ValidateSlotScope(data->publication_names);
 
 		/* Check if we support requested protocol */
 		if (data->protocol_version > LOGICALREP_PROTO_MAX_VERSION_NUM)
@@ -1805,6 +1822,8 @@ LoadPublications(List *pubnames)
 	List	   *result = NIL;
 	ListCell   *lc;
 
+	ValidateSlotScope(pubnames);
+
 	foreach(lc, pubnames)
 	{
 		char	   *pubname = (char *) lfirst(lc);
@@ -1821,6 +1840,24 @@ LoadPublications(List *pubnames)
 	}
 
 	return result;
+}
+
+/* A restricted slot may use any subset of its durable publication set. */
+static void
+ValidateSlotScope(List *pubnames)
+{
+	if (MyReplicationSlot->data.unrestricted)
+		return;
+	if (!MyReplicationSlot->data.restricted_scope_ready)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("restricted replication slot \"%s\" is not ready",
+						NameStr(MyReplicationSlot->data.name))));
+	if (!LogicalSlotScopePublicationsContain(MyReplicationSlot, pubnames))
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("requested publications are not contained in replication slot \"%s\"",
+						NameStr(MyReplicationSlot->data.name))));
 }
 
 /*

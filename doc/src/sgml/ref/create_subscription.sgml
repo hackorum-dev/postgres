@@ -164,6 +164,26 @@ CREATE SUBSCRIPTION <replaceable class="parameter">subscription_name</replaceabl
           <xref linkend="logical-replication-subscription-examples-deferred-slot"/>
           for examples.
          </para>
+       </listitem>
+       </varlistentry>
+
+       <varlistentry id="sql-createsubscription-params-with-unrestricted-slot">
+        <term><literal>unrestricted_slot</literal> (<type>boolean</type>)</term>
+        <listitem>
+         <para>
+          Specifies whether the replication slot created on the publisher
+          writes logical tuple information for every eligible relation. The
+          default is <literal>true</literal>. When set to <literal>false</literal>,
+          the slot is scoped to the relations currently included in the
+          subscription's publications.
+         </para>
+         <para>
+          When <literal>create_slot</literal> is <literal>true</literal>, this
+          option also controls the main slot created on the publisher. When
+          <literal>create_slot</literal> is <literal>false</literal>, it does
+          not alter the separately created main slot, but still controls any
+          table synchronization slots created by this subscription.
+         </para>
         </listitem>
        </varlistentry>
 

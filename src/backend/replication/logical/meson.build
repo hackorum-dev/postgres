@@ -7,6 +7,7 @@ backend_sources += files(
   'launcher.c',
   'logical.c',
   'logicalctl.c',
+  'slotscope.c',
   'logicalfuncs.c',
   'message.c',
   'origin.c',

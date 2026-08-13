@@ -68,6 +68,8 @@
 #include "postmaster/interrupt.h"
 #include "replication/logical.h"
 #include "replication/logicalctl.h"
+#include "replication/slot.h"
+#include "replication/slotscope.h"
 #include "replication/slotsync.h"
 #include "replication/snapbuild.h"
 #include "storage/ipc.h"
@@ -76,6 +78,7 @@
 #include "storage/procarray.h"
 #include "storage/subsystems.h"
 #include "tcop/tcopprot.h"
+#include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/pg_lsn.h"
@@ -170,6 +173,11 @@ typedef struct RemoteSlot
 	char	   *database;
 	bool		two_phase;
 	bool		failover;
+	bool		unrestricted;
+	bool		restricted_scope_ready;
+	uint64		restricted_scope_incarnation;
+	XLogRecPtr	restricted_scope_ready_lsn;
+	List	   *publications;
 	XLogRecPtr	restart_lsn;
 	XLogRecPtr	confirmed_lsn;
 	XLogRecPtr	two_phase_at;
@@ -233,7 +241,8 @@ update_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid)
 	 * Make sure that concerned WAL is received and flushed before syncing
 	 * slot to target lsn received from the primary server.
 	 */
-	if (remote_slot->confirmed_lsn > latestFlushPtr)
+	if (remote_slot->confirmed_lsn > latestFlushPtr ||
+		remote_slot->restricted_scope_ready_lsn > latestFlushPtr)
 	{
 		update_slotsync_skip_stats(SS_SKIP_WAL_NOT_FLUSHED);
 
@@ -786,7 +795,36 @@ synchronize_one_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 	bool		slot_updated = false;
 
 	/* Search for the named slot */
-	if ((slot = SearchNamedReplicationSlot(remote_slot->name, true)))
+	slot = SearchNamedReplicationSlot(remote_slot->name, true);
+	if (slot != NULL)
+	{
+		ReplicationSlotPersistentData data;
+
+		SpinLockAcquire(&slot->mutex);
+		data = slot->data;
+		SpinLockRelease(&slot->mutex);
+		if (data.synced &&
+			(data.unrestricted != remote_slot->unrestricted ||
+			 (!data.unrestricted &&
+			  data.restricted_scope_incarnation !=
+			  remote_slot->restricted_scope_incarnation)))
+		{
+			ReplicationSlotAcquire(remote_slot->name, true, false);
+			ReplicationSlotDropAcquired(false);
+			slot = NULL;
+			slot_updated = true;
+		}
+	}
+
+	/* Its transactional relation mappings may not have committed yet. */
+	if (!remote_slot->unrestricted && !remote_slot->restricted_scope_ready)
+	{
+		if (slot_persistence_pending)
+			*slot_persistence_pending = true;
+		return slot_updated;
+	}
+
+	if (slot != NULL)
 	{
 		bool		synced;
 
@@ -912,6 +950,14 @@ synchronize_one_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 		slot->data.plugin = plugin_name;
 		SpinLockRelease(&slot->mutex);
 
+		if (remote_slot->unrestricted)
+			LogicalSlotScopeConfigureUnrestricted(slot);
+		else
+			LogicalSlotScopeRestorePublications(slot,
+												remote_slot->publications,
+												remote_slot->restricted_scope_incarnation,
+												remote_slot->restricted_scope_ready_lsn);
+
 		reserve_wal_for_local_slot(remote_slot->restart_lsn);
 
 		LWLockAcquire(ReplicationSlotControlLock, LW_EXCLUSIVE);
@@ -948,9 +994,10 @@ synchronize_one_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 static List *
 fetch_remote_slots(WalReceiverConn *wrconn, List *slot_names)
 {
-#define SLOTSYNC_COLUMN_COUNT 10
+#define SLOTSYNC_COLUMN_COUNT 15
 	Oid			slotRow[SLOTSYNC_COLUMN_COUNT] = {TEXTOID, TEXTOID, LSNOID,
-	LSNOID, XIDOID, BOOLOID, LSNOID, BOOLOID, TEXTOID, TEXTOID};
+		LSNOID, XIDOID, BOOLOID, LSNOID, BOOLOID, TEXTOID, TEXTOID, BOOLOID,
+	OIDARRAYOID, BOOLOID, INT8OID, LSNOID};
 
 	WalRcvExecResult *res;
 	TupleTableSlot *tupslot;
@@ -962,7 +1009,10 @@ fetch_remote_slots(WalReceiverConn *wrconn, List *slot_names)
 						   "SELECT slot_name, plugin, confirmed_flush_lsn,"
 						   " restart_lsn, catalog_xmin, two_phase,"
 						   " two_phase_at, failover,"
-						   " database, invalidation_reason"
+						   " database, invalidation_reason, unrestricted,"
+						   " publication_oids, restricted_scope_ready,"
+						   " restricted_scope_incarnation,"
+						   " restricted_scope_ready_lsn"
 						   " FROM pg_catalog.pg_replication_slots"
 						   " WHERE failover and NOT temporary");
 
@@ -1044,6 +1094,35 @@ fetch_remote_slots(WalReceiverConn *wrconn, List *slot_names)
 		remote_slot->invalidated = isnull ? RS_INVAL_NONE :
 			GetSlotInvalidationCause(TextDatumGetCString(d));
 
+		remote_slot->unrestricted = DatumGetBool(slot_getattr(tupslot, ++col,
+															  &isnull));
+		Assert(!isnull);
+
+		d = slot_getattr(tupslot, ++col, &isnull);
+		if (!isnull)
+		{
+			Datum	   *elems;
+			int			nelems;
+
+			deconstruct_array_builtin(DatumGetArrayTypeP(d), OIDOID,
+									  &elems, NULL, &nelems);
+			for (int i = 0; i < nelems; i++)
+				remote_slot->publications = lappend_oid(remote_slot->publications,
+														DatumGetObjectId(elems[i]));
+		}
+
+		remote_slot->restricted_scope_ready =
+			DatumGetBool(slot_getattr(tupslot, ++col, &isnull));
+		Assert(!isnull);
+
+		d = slot_getattr(tupslot, ++col, &isnull);
+		remote_slot->restricted_scope_incarnation =
+			isnull ? 0 : (uint64) DatumGetInt64(d);
+
+		d = slot_getattr(tupslot, ++col, &isnull);
+		remote_slot->restricted_scope_ready_lsn =
+			isnull ? InvalidXLogRecPtr : DatumGetLSN(d);
+
 		/* Sanity check */
 		Assert(col == SLOTSYNC_COLUMN_COUNT);
 
@@ -1058,9 +1137,11 @@ fetch_remote_slots(WalReceiverConn *wrconn, List *slot_names)
 		 * pg_replication_slots view, then we can avoid fetching RS_EPHEMERAL
 		 * slots in the first place.
 		 */
-		if ((!XLogRecPtrIsValid(remote_slot->restart_lsn) ||
-			 !XLogRecPtrIsValid(remote_slot->confirmed_lsn) ||
-			 !TransactionIdIsValid(remote_slot->catalog_xmin)) &&
+		if (((!remote_slot->unrestricted &&
+			  !remote_slot->restricted_scope_ready) ||
+			 (!XLogRecPtrIsValid(remote_slot->restart_lsn) ||
+			  !XLogRecPtrIsValid(remote_slot->confirmed_lsn) ||
+			  !TransactionIdIsValid(remote_slot->catalog_xmin))) &&
 			remote_slot->invalidated == RS_INVAL_NONE)
 			pfree(remote_slot);
 		else

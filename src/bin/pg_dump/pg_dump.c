@@ -5136,6 +5136,7 @@ getSubscriptions(Archive *fout)
 	int			i_suboriginremotelsn;
 	int			i_subenabled;
 	int			i_subfailover;
+	int			i_subunrestricted;
 	int			i_subretaindeadtuples;
 	int			i_submaxretention;
 	int			i,
@@ -5215,6 +5216,13 @@ getSubscriptions(Archive *fout)
 		appendPQExpBufferStr(query,
 							 " false AS subfailover,\n");
 
+	if (fout->remoteVersion >= 200000)
+		appendPQExpBufferStr(query,
+							 " s.subunrestricted,\n");
+	else
+		appendPQExpBufferStr(query,
+							 " true AS subunrestricted,\n");
+
 	if (fout->remoteVersion >= 190000)
 		appendPQExpBufferStr(query,
 							 " s.subretaindeadtuples,\n");
@@ -5277,6 +5285,7 @@ getSubscriptions(Archive *fout)
 	i_subpasswordrequired = PQfnumber(res, "subpasswordrequired");
 	i_subrunasowner = PQfnumber(res, "subrunasowner");
 	i_subfailover = PQfnumber(res, "subfailover");
+	i_subunrestricted = PQfnumber(res, "subunrestricted");
 	i_subretaindeadtuples = PQfnumber(res, "subretaindeadtuples");
 	i_submaxretention = PQfnumber(res, "submaxretention");
 	i_subservername = PQfnumber(res, "subservername");
@@ -5318,6 +5327,8 @@ getSubscriptions(Archive *fout)
 			(strcmp(PQgetvalue(res, i, i_subrunasowner), "t") == 0);
 		subinfo[i].subfailover =
 			(strcmp(PQgetvalue(res, i, i_subfailover), "t") == 0);
+		subinfo[i].subunrestricted =
+			(strcmp(PQgetvalue(res, i, i_subunrestricted), "t") == 0);
 		subinfo[i].subretaindeadtuples =
 			(strcmp(PQgetvalue(res, i, i_subretaindeadtuples), "t") == 0);
 		subinfo[i].submaxretention =
@@ -5592,6 +5603,9 @@ dumpSubscription(Archive *fout, const SubscriptionInfo *subinfo)
 
 	if (subinfo->subfailover)
 		appendPQExpBufferStr(query, ", failover = true");
+
+	if (!subinfo->subunrestricted)
+		appendPQExpBufferStr(query, ", unrestricted_slot = false");
 
 	if (subinfo->subretaindeadtuples)
 		appendPQExpBufferStr(query, ", retain_dead_tuples = true");

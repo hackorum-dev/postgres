@@ -89,6 +89,7 @@
 #include "postmaster/autovacuum.h"
 #include "postmaster/interrupt.h"
 #include "postmaster/postmaster.h"
+#include "replication/slotscope.h"
 #include "storage/aio_subsys.h"
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
@@ -2666,6 +2667,8 @@ deleted:
 	 */
 	if (did_vacuum || !found_concurrent_worker)
 		vac_update_datfrozenxid();
+
+	LogicalSlotScopeCleanup();
 
 	/* Finally close out the last transaction. */
 	CommitTransactionCommand();

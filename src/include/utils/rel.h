@@ -709,8 +709,9 @@ RelationCloseSmgr(Relation relation)
 
 /*
  * RelationIsLogicallyLogged
- *		True if we need to log enough information to extract the data from the
- *		WAL stream.
+ * 		True if the relation is eligible for logical logging.  This does not
+ * 		consider whether logical WAL is active or whether any replication slot
+ * 		requires changes for this particular relation.
  *
  * We don't log information for unlogged tables (since they don't WAL log
  * anyway), for foreign tables (since they don't WAL log, either),
@@ -719,11 +720,23 @@ RelationCloseSmgr(Relation relation)
  * log information for user defined catalog tables since they presumably are
  * interesting to the user...
  */
-#define RelationIsLogicallyLogged(relation) \
-	(XLogLogicalInfoActive() && \
-	 RelationNeedsWAL(relation) && \
-	 (relation)->rd_rel->relkind != RELKIND_FOREIGN_TABLE &&	\
+#define RelationCanBeLogicallyLogged(relation) \
+	(RelationNeedsWAL(relation) && \
+	 (relation)->rd_rel->relkind != RELKIND_FOREIGN_TABLE && \
 	 !IsCatalogRelation(relation))
+
+/*
+ * RelationIsLogicallyLogged
+ *		True if we need to log enough information to extract the data from the
+ *		WAL stream.
+ *
+ * This has included the check for RelationCanBeLogicallyLogged(), and also
+ * checks whether logical WAL is required for this relation.
+ */
+#define RelationIsLogicallyLogged(relation) \
+	RelationNeedsLogicalTupleWAL(relation)
+
+extern bool RelationNeedsLogicalTupleWAL(Relation relation);
 
 /* routines in utils/cache/relcache.c */
 extern void RelationIncrementReferenceCount(Relation rel);

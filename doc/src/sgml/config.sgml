@@ -12453,6 +12453,24 @@ dynamic_library_path = '/usr/local/lib/postgresql:$libdir'
         the value of <varname>effective_wal_level</varname> from the most
         upstream server in the replication chain.
        </para>
+     </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-restricted-wal-level" xreflabel="restricted_wal_level">
+      <term><varname>restricted_wal_level</varname> (<type>enum</type>)
+      <indexterm>
+       <primary><varname>restricted_wal_level</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Reports whether restricted logical tuple logging is active. When this
+        value is <literal>logical</literal> while
+        <xref linkend="guc-effective-wal-level"/> is below
+        <literal>logical</literal>, logical tuple information is written only
+        for relations marked as required by a restricted logical replication
+        slot. This is a read-only parameter.
+       </para>
       </listitem>
      </varlistentry>
 

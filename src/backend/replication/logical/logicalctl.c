@@ -89,6 +89,7 @@ typedef struct LogicalDecodingCtlData
 	 * caches this value in XLogLogicalInfo for better performance.
 	 */
 	bool		xlog_logical_info;
+	bool		xlog_restricted_info;
 
 	/* True if logical decoding is available in the system */
 	bool		logical_decoding_enabled;
@@ -113,6 +114,7 @@ const ShmemCallbacks LogicalDecodingCtlShmemCallbacks = {
  * transaction ends. See the comments for XLogLogicalInfoUpdatePending for details.
  */
 bool		XLogLogicalInfo = false;
+bool		XLogRestrictedInfo = false;
 
 /*
  * When receiving the PROCSIGNAL_BARRIER_UPDATE_XLOG_LOGICAL_INFO signal, if
@@ -164,6 +166,7 @@ static inline void
 update_xlog_logical_info(void)
 {
 	XLogLogicalInfo = IsXLogLogicalInfoEnabled();
+	XLogRestrictedInfo = IsXLogRestrictedInfoEnabled();
 }
 
 /*
@@ -224,6 +227,60 @@ IsXLogLogicalInfoEnabled(void)
 	LWLockRelease(LogicalDecodingControlLock);
 
 	return xlog_logical_info;
+}
+
+/*
+ * Returns true if restricted logical WAL logging is enabled based on the shared memory
+ * status.
+ */
+bool
+IsXLogRestrictedInfoEnabled(void)
+{
+	bool		enabled;
+
+	LWLockAcquire(LogicalDecodingControlLock, LW_SHARED);
+	enabled = LogicalDecodingCtl->xlog_restricted_info;
+	LWLockRelease(LogicalDecodingControlLock);
+	return enabled;
+}
+
+/*
+ * Synchronously raise effective_wal_level to logical.
+ */
+void
+EnsureRestrictedLogicalWAL(void)
+{
+	if (wal_level >= WAL_LEVEL_LOGICAL)
+		return;
+	Assert(wal_level >= WAL_LEVEL_REPLICA);
+	LWLockAcquire(LogicalDecodingControlLock, LW_EXCLUSIVE);
+	if (LogicalDecodingCtl->xlog_restricted_info)
+	{
+		LWLockRelease(LogicalDecodingControlLock);
+		return;
+	}
+	LogicalDecodingCtl->xlog_restricted_info = true;
+	LWLockRelease(LogicalDecodingControlLock);
+	WaitForProcSignalBarrier(EmitProcSignalBarrier(PROCSIGNAL_BARRIER_UPDATE_XLOG_LOGICAL_INFO));
+}
+
+/*
+ * Synchronously raise effective_wal_level to logical.
+ */
+void
+EnsureFullLogicalWAL(void)
+{
+	if (wal_level >= WAL_LEVEL_LOGICAL)
+		return;
+	LWLockAcquire(LogicalDecodingControlLock, LW_EXCLUSIVE);
+	if (LogicalDecodingCtl->xlog_logical_info)
+	{
+		LWLockRelease(LogicalDecodingControlLock);
+		return;
+	}
+	LogicalDecodingCtl->xlog_logical_info = true;
+	LWLockRelease(LogicalDecodingControlLock);
+	WaitForProcSignalBarrier(EmitProcSignalBarrier(PROCSIGNAL_BARRIER_UPDATE_XLOG_LOGICAL_INFO));
 }
 
 /*
@@ -524,6 +581,8 @@ DisableLogicalDecoding(void)
 {
 	bool		in_recovery = RecoveryInProgress();
 	bool		was_enabled;
+	bool		has_logical_slots = false;
+	bool		has_restricted_slots = false;
 
 	LWLockAcquire(LogicalDecodingControlLock, LW_EXCLUSIVE);
 
@@ -534,9 +593,15 @@ DisableLogicalDecoding(void)
 	 * (skip the slot check during recovery because the existing slots will be
 	 * invalidated after disabling logical decoding.)
 	 */
+	if (!in_recovery)
+	{
+		has_logical_slots = CheckLogicalSlotExists();
+		has_restricted_slots = CheckRestrictedLogicalSlotExists();
+	}
 	if ((!LogicalDecodingCtl->logical_decoding_enabled &&
-		 !LogicalDecodingCtl->xlog_logical_info) ||
-		(!in_recovery && CheckLogicalSlotExists()))
+		 !LogicalDecodingCtl->xlog_logical_info &&
+		 !LogicalDecodingCtl->xlog_restricted_info) ||
+		(!in_recovery && CheckFullWalLogicalSlotExists()))
 	{
 		LogicalDecodingCtl->pending_disable = false;
 		LWLockRelease(LogicalDecodingControlLock);
@@ -557,14 +622,16 @@ DisableLogicalDecoding(void)
 	 * information WAL logging in order to ensure that no logical decoding
 	 * processes WAL records with insufficient information.
 	 */
-	LogicalDecodingCtl->logical_decoding_enabled = false;
+	LogicalDecodingCtl->logical_decoding_enabled = has_logical_slots;
 
 	/* Write the WAL to disable logical decoding on standbys too */
-	if (!in_recovery && was_enabled)
+	if (!in_recovery && was_enabled && !has_logical_slots)
 		write_logical_decoding_status_update_record(false);
 
 	/* Now disable logical information WAL logging */
 	LogicalDecodingCtl->xlog_logical_info = false;
+	if (!has_restricted_slots)
+		LogicalDecodingCtl->xlog_restricted_info = false;
 	LogicalDecodingCtl->pending_disable = false;
 
 	END_CRIT_SECTION();
@@ -574,7 +641,7 @@ DisableLogicalDecoding(void)
 	 * the server log before its eventual "is enabled", making server log
 	 * diagnostics easy.
 	 */
-	if (!in_recovery && was_enabled)
+	if (!in_recovery && was_enabled && !has_logical_slots)
 		ereport(LOG,
 				errmsg("logical decoding is disabled because there are no valid logical replication slots"));
 

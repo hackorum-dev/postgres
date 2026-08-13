@@ -1077,7 +1077,7 @@ postgres=# SELECT '0/0'::pg_lsn + pd.segment_number * ps.setting::int + :offset 
         <indexterm>
          <primary>pg_create_logical_replication_slot</primary>
         </indexterm>
-        <function>pg_create_logical_replication_slot</function> ( <parameter>slot_name</parameter> <type>name</type>, <parameter>plugin</parameter> <type>name</type> <optional>, <parameter>temporary</parameter> <type>boolean</type>, <parameter>twophase</parameter> <type>boolean</type>, <parameter>failover</parameter> <type>boolean</type> </optional> )
+        <function>pg_create_logical_replication_slot</function> ( <parameter>slot_name</parameter> <type>name</type>, <parameter>plugin</parameter> <type>name</type> <optional>, <parameter>temporary</parameter> <type>boolean</type>, <parameter>twophase</parameter> <type>boolean</type>, <parameter>failover</parameter> <type>boolean</type>, <parameter>publications</parameter> <type>text[]</type> </optional> )
         <returnvalue>record</returnvalue>
         ( <parameter>slot_name</parameter> <type>name</type>,
         <parameter>lsn</parameter> <type>pg_lsn</type> )
@@ -1098,9 +1098,32 @@ postgres=# SELECT '0/0'::pg_lsn + pd.segment_number * ps.setting::int + :offset 
         <parameter>failover</parameter>, when set to true,
         specifies that this slot is enabled to be synced to the
         standbys so that logical replication can be resumed after
-        failover. A call to this function has the same effect as
+        failover. When the optional <parameter>publications</parameter> array
+        is supplied, it must contain at least one publication name and the
+        output plugin must be <literal>pgoutput</literal>. Such a slot is
+        restricted: logical tuple information is written only for relations
+        covered by one of the stored publications. Omitting the array creates
+        an unrestricted slot. A named publication that currently contains no
+        relations is allowed. The restriction
+        is retained when
+        <xref linkend="guc-wal-level"/> is <literal>logical</literal>, even
+        though that setting causes logical tuple information to be written
+        for every eligible relation. A call to this function has the same effect as
         the replication protocol command
         <literal>CREATE_REPLICATION_SLOT ... LOGICAL</literal>.
+        Restricted slots cannot be created by this function inside an explicit
+        transaction block or subtransaction.
+       </para>
+       <para>
+        The slot stores publication identities, not a fixed relation list.
+        Publication expansion, partition attachment, and TOAST creation add
+        writer-side relation mappings synchronously. Mappings made obsolete
+        by dropping or recreating a slot are cleaned up later by autovacuum.
+        Mappings made obsolete by publication contraction or partition detach
+        are retained indefinitely; this is safe but can cause additional
+        logical tuple information to be written. At decoding startup,
+        <literal>pgoutput</literal> requires every requested publication to be
+        one of the publications stored by the slot.
        </para></entry>
       </row>
 
@@ -1151,7 +1174,8 @@ postgres=# SELECT '0/0'::pg_lsn + pd.segment_number * ps.setting::int + :offset 
         is not copied and is set to <literal>false</literal> by default. This
         is to avoid the risk of being unable to continue logical replication
         after failover to standby where the slot is being synchronized. Copy of
-        an invalidated slot is not allowed.
+        an invalidated slot is not allowed. A restricted logical slot cannot be
+        copied inside an explicit transaction block or subtransaction.
        </para></entry>
       </row>
 

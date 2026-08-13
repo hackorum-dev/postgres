@@ -21,6 +21,7 @@ OBJS = \
 	launcher.o \
 	logical.o \
 	logicalctl.o \
+	slotscope.o \
 	logicalfuncs.o \
 	message.o \
 	origin.o \

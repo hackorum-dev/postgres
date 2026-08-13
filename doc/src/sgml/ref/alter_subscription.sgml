@@ -144,6 +144,13 @@ ALTER SUBSCRIPTION <replaceable class="parameter">name</replaceable> RENAME TO <
      </para>
 
      <para>
+      The publication list of a subscription created with
+      <literal>unrestricted_slot = false</literal> can only be reduced.
+      Publications removed from the subscription cannot be added again without
+      recreating the subscription.
+     </para>
+
+     <para>
       <replaceable>publication_option</replaceable> specifies additional
       options for this operation.  The supported options are:
 

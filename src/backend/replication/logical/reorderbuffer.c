@@ -103,6 +103,7 @@
 #include "replication/logical.h"
 #include "replication/reorderbuffer.h"
 #include "replication/slot.h"
+#include "replication/slotscope.h"
 #include "replication/snapbuild.h"	/* just for SnapBuildSnapDecRefcount */
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
@@ -2353,7 +2354,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 							 relpathperm(change->data.tp.rlocator,
 										 MAIN_FORKNUM).str);
 
-					if (!RelationIsLogicallyLogged(relation))
+					if (!RelationCanBeLogicallyLogged(relation))
 						goto change_done;
 
 					/*
@@ -2491,7 +2492,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 							if (!RelationIsValid(rel))
 								elog(ERROR, "could not open relation with OID %u", relid);
 
-							if (!RelationIsLogicallyLogged(rel))
+							if (!RelationCanBeLogicallyLogged(rel))
 								continue;
 
 							relations[nrelations++] = rel;

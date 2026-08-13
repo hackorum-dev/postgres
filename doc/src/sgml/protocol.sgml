@@ -2446,6 +2446,18 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
          </para>
         </listitem>
        </varlistentry>
+
+       <varlistentry>
+        <term><literal>PUBLICATION_NAMES <replaceable class="parameter">publication_names</replaceable></literal></term>
+        <listitem>
+         <para>
+          A nonempty comma-separated list of publication names. Supplying this
+          option creates a restricted logical slot and requires the
+          <literal>pgoutput</literal> output plugin. Omitting it creates an
+          unrestricted slot.
+         </para>
+        </listitem>
+       </varlistentry>
       </variablelist>
 
       <para>

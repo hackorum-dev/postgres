@@ -54,6 +54,7 @@
 #include "access/timeline.h"
 #include "access/transam.h"
 #include "access/twophase.h"
+#include "access/table.h"
 #include "access/xact.h"
 #include "access/xlog_internal.h"
 #include "access/xlogreader.h"
@@ -62,6 +63,7 @@
 #include "backup/basebackup.h"
 #include "backup/basebackup_incremental.h"
 #include "catalog/pg_authid.h"
+#include "catalog/pg_publication.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "funcapi.h"
@@ -76,6 +78,7 @@
 #include "replication/logical.h"
 #include "replication/slotsync.h"
 #include "replication/slot.h"
+#include "replication/slotscope.h"
 #include "replication/snapbuild.h"
 #include "replication/syncrep.h"
 #include "replication/walreceiver.h"
@@ -85,6 +88,7 @@
 #include "storage/aio_subsys.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
+#include "storage/lmgr.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
@@ -101,6 +105,7 @@
 #include "utils/ps_status.h"
 #include "utils/timeout.h"
 #include "utils/timestamp.h"
+#include "utils/varlena.h"
 #include "utils/wait_event.h"
 
 /* Minimum interval used by walsender for stats flushes, in ms */
@@ -1184,17 +1189,20 @@ logical_read_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr, int req
 /*
  * Process extra options given to CREATE_REPLICATION_SLOT.
  */
+
 static void
 parseCreateReplSlotOptions(CreateReplicationSlotCmd *cmd,
 						   bool *reserve_wal,
 						   CRSSnapshotAction *snapshot_action,
-						   bool *two_phase, bool *failover)
+						   bool *two_phase, bool *failover,
+						   bool *unrestricted, List **publications)
 {
 	ListCell   *lc;
 	bool		snapshot_action_given = false;
 	bool		reserve_wal_given = false;
 	bool		two_phase_given = false;
 	bool		failover_given = false;
+	bool		publication_names_given = false;
 
 	/* Parse options */
 	foreach(lc, cmd->options)
@@ -1253,9 +1261,28 @@ parseCreateReplSlotOptions(CreateReplicationSlotCmd *cmd,
 			failover_given = true;
 			*failover = defGetBoolean(defel);
 		}
+		else if (strcmp(defel->defname, "publication_names") == 0)
+		{
+			if (publication_names_given || cmd->kind != REPLICATION_KIND_LOGICAL)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			publication_names_given = true;
+			if (!SplitIdentifierString(pstrdup(defGetString(defel)), ',',
+									   publications))
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("invalid publication name list")));
+		}
 		else
 			elog(ERROR, "unrecognized option: %s", defel->defname);
 	}
+
+	if (publication_names_given && *publications == NIL)
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("publication_names must not be empty")));
+	*unrestricted = !publication_names_given;
 }
 
 /*
@@ -1270,6 +1297,8 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 	bool		reserve_wal = false;
 	bool		two_phase = false;
 	bool		failover = false;
+	bool		unrestricted = true;
+	List	   *publications = NIL;
 	CRSSnapshotAction snapshot_action = CRS_EXPORT_SNAPSHOT;
 	DestReceiver *dest;
 	TupOutputState *tstate;
@@ -1277,10 +1306,8 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 	Datum		values[4];
 	bool		nulls[4] = {0};
 
-	Assert(!MyReplicationSlot);
-
 	parseCreateReplSlotOptions(cmd, &reserve_wal, &snapshot_action, &two_phase,
-							   &failover);
+							   &failover, &unrestricted, &publications);
 
 	if (cmd->kind == REPLICATION_KIND_PHYSICAL)
 	{
@@ -1305,6 +1332,10 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 		bool		need_full_snapshot = false;
 
 		Assert(cmd->kind == REPLICATION_KIND_LOGICAL);
+		if (!unrestricted && strcmp(cmd->plugin, "pgoutput") != 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("restricted logical replication slots currently require pgoutput")));
 
 		CheckLogicalDecodingRequirements(false);
 
@@ -1371,6 +1402,19 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 		 * Ensure the logical decoding is enabled before initializing the
 		 * logical decoding context.
 		 */
+		if (!unrestricted)
+		{
+			/* Publication catalog access needs a transaction. */
+			if (snapshot_action != CRS_USE_SNAPSHOT)
+				StartTransactionCommand();
+			LogicalSlotScopePrepareFromPublications(MyReplicationSlot,
+													publications);
+			if (snapshot_action != CRS_USE_SNAPSHOT)
+				CommitTransactionCommand();
+		}
+		else
+			LogicalSlotScopeConfigureUnrestricted(MyReplicationSlot);
+		list_free(publications);
 		EnsureLogicalDecodingEnabled();
 
 		/* See the comment in create_logical_replication_slot() */
@@ -1396,6 +1440,20 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 
 		/* build initial snapshot, might take a while */
 		DecodingContextFindStartpoint(ctx);
+
+		/*
+		 * Install transactional relation mappings only after logical decoding
+		 * has established the slot's start point. CreateInitDecodingContext()
+		 * rejects a transaction that has already performed catalog writes.
+		 */
+		if (!unrestricted)
+		{
+			if (snapshot_action != CRS_USE_SNAPSHOT)
+				StartTransactionCommand();
+			LogicalSlotScopeFinishCreate(MyReplicationSlot, false);
+			if (snapshot_action != CRS_USE_SNAPSHOT)
+				CommitTransactionCommand();
+		}
 
 		/*
 		 * Export or use the snapshot if we've been asked to do so.
@@ -1536,8 +1594,6 @@ StartLogicalReplication(StartReplicationCmd *cmd)
 
 	/* make sure that our requirements are still fulfilled */
 	CheckLogicalDecodingRequirements(false);
-
-	Assert(!MyReplicationSlot);
 
 	ReplicationSlotAcquire(cmd->slotname, true, true);
 

@@ -720,6 +720,7 @@ typedef struct _SubscriptionInfo
 	bool		subpasswordrequired;
 	bool		subrunasowner;
 	bool		subfailover;
+	bool		subunrestricted;
 	bool		subretaindeadtuples;
 	int			submaxretention;
 	char	   *subservername;

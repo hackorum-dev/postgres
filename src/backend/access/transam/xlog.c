@@ -5250,7 +5250,15 @@ show_effective_wal_level(void)
 	if (RecoveryInProgress())
 		return IsXLogLogicalInfoEnabled() ? "logical" : "replica";
 
-	return XLogLogicalInfoActive() ? "logical" : "replica";
+	return XLogFullLogicalInfoActive() ? "logical" : "replica";
+}
+
+const char *
+show_restricted_wal_level(void)
+{
+	if (wal_level == WAL_LEVEL_MINIMAL)
+		return "minimal";
+	return IsXLogRestrictedInfoEnabled() ? "logical" : "replica";
 }
 
 /*
