@@ -1674,7 +1674,15 @@ ReorderBufferTruncateTXN(ReorderBuffer *rb, ReorderBufferTXN *txn, bool txn_prep
 		Assert(rbtxn_is_known_subxact(subtxn));
 		Assert(subtxn->nsubtxns == 0);
 
-		ReorderBufferMaybeMarkTXNStreamed(rb, subtxn);
+		/*
+		 * Don't mark subxacts as streamed unless the top-level xact already
+		 * is.  Streaming callers set that flag before we get here.  This
+		 * routine is also used to throw away already-aborted xacts that were
+		 * never sent.  Marking those would make abort emit stream_abort for
+		 * XIDs the downstream has never heard of.
+		 */
+		if (rbtxn_is_streamed(txn))
+			ReorderBufferMaybeMarkTXNStreamed(rb, subtxn);
 		ReorderBufferTruncateTXN(rb, subtxn, txn_prepared);
 	}
 
