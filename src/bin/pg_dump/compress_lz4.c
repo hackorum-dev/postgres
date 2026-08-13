@@ -193,6 +193,9 @@ ReadDataFromArchiveLZ4(ArchiveHandle *AH, CompressorState *cs)
 		}
 	}
 
+	if (status != 0)
+		pg_fatal("could not decompress: chunk is incomplete");
+
 	pg_free(outbuf);
 	pg_free(readbuf);
 

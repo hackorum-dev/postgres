@@ -203,6 +203,24 @@ ReadDataFromArchiveZstd(ArchiveHandle *AH, CompressorState *cs)
 			if (res == 0)
 				break;			/* End of frame */
 		}
+
+		/*
+		 * If ZSTD_decompressStream returned non-zero when all input was
+		 * consumed then there is data left buffered, drain any remaining data
+		 * by calling decompression again with an empty input.
+		 */
+		if (res > 0)
+		{
+			ZSTD_inBuffer empty = {NULL, 0, 0};
+
+			output->pos = 0;
+
+			res = ZSTD_decompressStream(zstdcs->dstream, output, &empty);
+			if (ZSTD_isError(res))
+				pg_fatal("1 could not decompress data: %s", ZSTD_getErrorName(res));
+			((char *) output->dst)[output->pos] = '\0';
+			ahwrite(output->dst, 1, output->pos, AH);
+		}
 	}
 }
 
