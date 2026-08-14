@@ -64,7 +64,7 @@ relptr_store_eval(char *base, char *val)
 	else
 	{
 		Assert(val >= base);
-		return val - base + 1;
+		return (Size) (val - base + 1);
 	}
 }
 
