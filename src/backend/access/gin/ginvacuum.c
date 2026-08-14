@@ -23,6 +23,7 @@
 #include "storage/lmgr.h"
 #include "storage/predicate.h"
 #include "storage/read_stream.h"
+#include "utils/injection_point.h"
 #include "utils/memutils.h"
 
 struct GinVacuumState
@@ -398,6 +399,15 @@ ginVacuumPostingTreeLeaves(GinVacuumState *gvs, BlockNumber blkno)
 		if (GinPageIsLeaf(page))
 		{
 			LockBuffer(buffer, GIN_UNLOCK);
+
+			/*
+			 * No buffer lock is held here, so a concurrent insert can split
+			 * this page.  A root split rewrites the page in place and clears
+			 * GIN_LEAF, so the page may no longer be a leaf once the
+			 * exclusive lock is acquired below.
+			 */
+			INJECTION_POINT("gin-vacuum-posting-tree-relock", NULL);
+
 			LockBuffer(buffer, GIN_EXCLUSIVE);
 			break;
 		}
