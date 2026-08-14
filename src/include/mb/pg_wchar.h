@@ -389,7 +389,7 @@ is_utf16_surrogate_second(char32_t c)
 static inline char32_t
 surrogate_pair_to_codepoint(char16_t first, char16_t second)
 {
-	return ((first & 0x3FF) << 10) + 0x10000 + (second & 0x3FF);
+	return (char32_t) (((first & 0x3FF) << 10) + 0x10000 + (second & 0x3FF));
 }
 
 /*
@@ -429,7 +429,7 @@ unicode_to_utf8(char32_t c, unsigned char *utf8string)
 {
 	if (c <= 0x7F)
 	{
-		utf8string[0] = c;
+		utf8string[0] = (unsigned char) c;
 	}
 	else if (c <= 0x7FF)
 	{

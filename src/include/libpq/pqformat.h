@@ -107,12 +107,12 @@ pq_writeint64(StringInfoData *pg_restrict buf, uint64 i)
 static inline void
 pq_writestring(StringInfoData *pg_restrict buf, const char *pg_restrict str)
 {
-	int			slen = strlen(str);
+	int			slen = (int) strlen(str);
 	char	   *p;
 
 	p = pg_server_to_client(str, slen);
 	if (p != str)				/* actual conversion has been done? */
-		slen = strlen(p);
+		slen = (int) strlen(p);
 
 	Assert(buf->len + slen + 1 <= buf->maxlen);
 
