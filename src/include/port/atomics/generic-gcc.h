@@ -205,7 +205,7 @@ pg_atomic_exchange_u32_impl(volatile pg_atomic_uint32 *ptr, uint32 newval)
 static inline uint32
 pg_atomic_fetch_add_u32_impl(volatile pg_atomic_uint32 *ptr, int32 add_)
 {
-	return __sync_fetch_and_add(&ptr->value, add_);
+	return __sync_fetch_and_add(&ptr->value, (uint32) add_);
 }
 #endif
 
@@ -214,7 +214,7 @@ pg_atomic_fetch_add_u32_impl(volatile pg_atomic_uint32 *ptr, int32 add_)
 static inline uint32
 pg_atomic_fetch_sub_u32_impl(volatile pg_atomic_uint32 *ptr, int32 sub_)
 {
-	return __sync_fetch_and_sub(&ptr->value, sub_);
+	return __sync_fetch_and_sub(&ptr->value, (uint32) sub_);
 }
 #endif
 
@@ -292,7 +292,7 @@ pg_atomic_exchange_u64_impl(volatile pg_atomic_uint64 *ptr, uint64 newval)
 static inline uint64
 pg_atomic_fetch_add_u64_impl(volatile pg_atomic_uint64 *ptr, int64 add_)
 {
-	return __sync_fetch_and_add(&ptr->value, add_);
+	return __sync_fetch_and_add(&ptr->value, (uint64) add_);
 }
 #endif
 
@@ -301,7 +301,7 @@ pg_atomic_fetch_add_u64_impl(volatile pg_atomic_uint64 *ptr, int64 add_)
 static inline uint64
 pg_atomic_fetch_sub_u64_impl(volatile pg_atomic_uint64 *ptr, int64 sub_)
 {
-	return __sync_fetch_and_sub(&ptr->value, sub_);
+	return __sync_fetch_and_sub(&ptr->value, (uint64) sub_);
 }
 #endif
 

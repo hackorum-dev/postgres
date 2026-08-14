@@ -365,7 +365,7 @@ static inline int
 list_cell_number(const List *l, const ListCell *c)
 {
 	Assert(c >= &l->elements[0] && c < &l->elements[l->length]);
-	return c - l->elements;
+	return (int) (c - l->elements);
 }
 
 /*

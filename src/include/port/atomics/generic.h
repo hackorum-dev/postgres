@@ -214,7 +214,7 @@ pg_atomic_fetch_or_u32_impl(volatile pg_atomic_uint32 *ptr, uint32 or_)
 static inline uint32
 pg_atomic_add_fetch_u32_impl(volatile pg_atomic_uint32 *ptr, int32 add_)
 {
-	return pg_atomic_fetch_add_u32_impl(ptr, add_) + add_;
+	return pg_atomic_fetch_add_u32_impl(ptr, add_) + (uint32) add_;
 }
 #endif
 
@@ -223,7 +223,7 @@ pg_atomic_add_fetch_u32_impl(volatile pg_atomic_uint32 *ptr, int32 add_)
 static inline uint32
 pg_atomic_sub_fetch_u32_impl(volatile pg_atomic_uint32 *ptr, int32 sub_)
 {
-	return pg_atomic_fetch_sub_u32_impl(ptr, sub_) - sub_;
+	return pg_atomic_fetch_sub_u32_impl(ptr, sub_) - (uint32) sub_;
 }
 #endif
 
@@ -398,7 +398,7 @@ pg_atomic_fetch_or_u64_impl(volatile pg_atomic_uint64 *ptr, uint64 or_)
 static inline uint64
 pg_atomic_add_fetch_u64_impl(volatile pg_atomic_uint64 *ptr, int64 add_)
 {
-	return pg_atomic_fetch_add_u64_impl(ptr, add_) + add_;
+	return pg_atomic_fetch_add_u64_impl(ptr, add_) + (uint64) add_;
 }
 #endif
 
@@ -407,7 +407,7 @@ pg_atomic_add_fetch_u64_impl(volatile pg_atomic_uint64 *ptr, int64 add_)
 static inline uint64
 pg_atomic_sub_fetch_u64_impl(volatile pg_atomic_uint64 *ptr, int64 sub_)
 {
-	return pg_atomic_fetch_sub_u64_impl(ptr, sub_) - sub_;
+	return pg_atomic_fetch_sub_u64_impl(ptr, sub_) - (uint64) sub_;
 }
 #endif
 

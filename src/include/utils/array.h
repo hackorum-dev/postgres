@@ -308,13 +308,13 @@ typedef struct ArrayIteratorData *ArrayIterator;
  * number of dimensions and total number of items.
  */
 #define ARR_OVERHEAD_NONULLS(ndims) \
-		MAXALIGN(sizeof(ArrayType) + 2 * sizeof(int) * (ndims))
+		MAXALIGN(sizeof(ArrayType) + 2 * sizeof(int) * (Size) (ndims))
 #define ARR_OVERHEAD_WITHNULLS(ndims, nitems) \
-		MAXALIGN(sizeof(ArrayType) + 2 * sizeof(int) * (ndims) + \
+		MAXALIGN(sizeof(ArrayType) + 2 * sizeof(int) * (Size) (ndims) + \
 				 ((nitems) + 7) / 8)
 
 #define ARR_DATA_OFFSET(a) \
-		(ARR_HASNULL(a) ? (a)->dataoffset : ARR_OVERHEAD_NONULLS(ARR_NDIM(a)))
+		(ARR_HASNULL(a) ? (Size) (a)->dataoffset : ARR_OVERHEAD_NONULLS(ARR_NDIM(a)))
 
 /*
  * Returns a pointer to the actual array data.
