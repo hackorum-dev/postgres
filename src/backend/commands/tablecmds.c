@@ -66,6 +66,7 @@
 #include "commands/repack.h"
 #include "commands/sequence.h"
 #include "commands/tablecmds.h"
+#include "commands/policy.h"
 #include "commands/tablespace.h"
 #include "commands/trigger.h"
 #include "commands/typecmds.h"
@@ -23449,6 +23450,54 @@ createPartitionTable(RangeVar *newPartName,
 }
 
 /*
+ * checkPartitionRowSecurity: refuse MERGE/SPLIT when a source partition has
+ * row-level security of its own.
+ *
+ * The new partitions are built from the partitioned-table template, and row
+ * security is not part of that template: it is neither inherited from the
+ * partitioned table nor copied from the source partitions (CREATE TABLE ...
+ * LIKE does not copy policies either).  A partition that restricts, or with
+ * row security enabled and no policy outright denies, direct access to its rows
+ * would therefore be replaced by one that does not, silently exposing rows that
+ * were hidden until now.  Unlike the loss of a privilege grant, which merely
+ * takes access away, this fails in the unsafe direction and is easy to miss, so
+ * refuse the operation instead and let the user re-establish row security on
+ * the new partitions explicitly.  Policies defined while row security is
+ * disabled hide nothing today, but they are user-written definitions that would
+ * likewise disappear without a trace, so those are refused as well.
+ *
+ * Only the source partitions are examined.  Row security on the partitioned
+ * table keeps applying to queries against it, and a partition that never had
+ * row security of its own does not lose any.
+ */
+static void
+checkPartitionRowSecurity(List *sourceOids)
+{
+	foreach_oid(srcOid, sourceOids)
+	{
+		Relation	src = table_open(srcOid, NoLock);
+
+		if (src->rd_rel->relrowsecurity || src->rd_rel->relforcerowsecurity)
+			ereport(ERROR,
+					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("cannot merge or split partition \"%s\" that has row-level security enabled",
+						   RelationGetRelationName(src)),
+					errdetail("Row-level security is not carried over to the new partition, which would expose rows that the partition currently hides."),
+					errhint("Disable row-level security on the partition before the operation, and re-establish it on the new partition afterwards."));
+
+		if (relation_has_policies(src))
+			ereport(ERROR,
+					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("cannot merge or split partition \"%s\" that has row-level security policies",
+						   RelationGetRelationName(src)),
+					errdetail("The policies are not carried over to the new partition and would be silently lost."),
+					errhint("Drop the policies from the partition before the operation, and define them on the new partition afterwards."));
+
+		table_close(src, NoLock);
+	}
+}
+
+/*
  * checkPartitionSchemaPublications: refuse MERGE/SPLIT when the new partition(s)
  * would land in a schema whose FOR TABLES IN SCHEMA publications differ from
  * those of the source partition(s).
@@ -24019,6 +24068,12 @@ ATExecMergePartitions(List **wqueue, AlteredTableInfo *tab, Relation rel,
 		table_close(mergingPartition, NoLock);
 	}
 
+	/*
+	 * Row security of the merged partitions is not carried over to the new
+	 * partition; reject rather than silently dropping it.
+	 */
+	checkPartitionRowSecurity(mergingPartitions);
+
 	/* Look up the existing relation by the new partition name. */
 	RangeVarGetAndCheckCreationNamespace(cmd->name, NoLock, &existingRelid);
 
@@ -24450,6 +24505,12 @@ ATExecSplitPartition(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	splitRel = table_openrv(cmd->name, NoLock);
 
 	splitRelOid = RelationGetRelid(splitRel);
+
+	/*
+	 * Row security of the split partition is not carried over to the new
+	 * partitions; reject rather than silently dropping it.
+	 */
+	checkPartitionRowSecurity(list_make1_oid(splitRelOid));
 
 	/*
 	 * The new partitions inherit the partitioned table's generation
