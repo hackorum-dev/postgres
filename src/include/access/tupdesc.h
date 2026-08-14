@@ -171,7 +171,7 @@ extern void populate_compact_attribute(TupleDesc tupdesc, int attnum);
 #define TupleDescAttrAddress(desc) \
 	(Form_pg_attribute) ((char *) (desc) + \
 	 (offsetof(struct TupleDescData, compact_attrs) + \
-	 (desc)->natts * sizeof(CompactAttribute)))
+	 (Size) (desc)->natts * sizeof(CompactAttribute)))
 
 /* Accessor for the i'th FormData_pg_attribute element of tupdesc. */
 static inline FormData_pg_attribute *
