@@ -250,4 +250,73 @@ command_fails_like(
 	'pg_dumpall: option --exclude-database cannot be used together with -g/--globals-only'
 );
 
+#########################################
+# Corrupt archive checks
+
+# ReadToc() reads several TOC fields that a valid dump always stores as a real
+# string.  A NULL there (encoded as a negative length) used to reach sscanf()
+# or strcmp() and crash pg_restore (bug #19613).  Build minimal custom-format
+# archives, each with one such field encoded as NULL, and check that pg_restore
+# reports a corrupt TOC instead of crashing.
+
+# Encode an integer as the archive does: a sign byte plus intSize magnitude
+# bytes (we set intSize = 1 in the header, so one byte covers these values).
+sub toc_int
+{
+	my ($v) = @_;
+	return pack('CC', ($v < 0 ? 1 : 0), abs($v) & 0xFF);
+}
+
+# Encode a string, or a NULL field (negative length) when undef.
+sub toc_str
+{
+	my ($s) = @_;
+	return defined $s ? toc_int(length $s) . $s : toc_int(-1);
+}
+
+# Custom-format header (version 1.12, format 1, intSize/offSize 1) accepted by
+# ReadHead(), then a TOC announcing a single entry.
+my $toc_header = 'PGDMP' . pack('CCC', 1, 12, 0) . pack('CCC', 1, 1, 1);
+$toc_header .= toc_int(0);				# compression level (none)
+$toc_header .= toc_int(0) x 3;			# createDate: sec, min, hour
+$toc_header .= toc_int(1) . toc_int(0) . toc_int(100);	# mday, mon, year
+$toc_header .= toc_int(0);				# createDate: isdst
+$toc_header .= toc_str(undef) x 3;		# dbname, remote and dump version
+$toc_header .= toc_int(1);				# tocCount
+
+# Every entry starts with dumpId and hadDumper.
+my $toc_entry = toc_int(1) . toc_int(0);
+
+# Each case supplies valid required strings up to the field under test, which is
+# then left NULL.  The names match the ReadRequiredStr() call sites in ReadToc().
+my @toc_cases = (
+	[ 'table OID', '' ],
+	[ 'OID', toc_str('0') ],
+	[ 'entry tag', toc_str('0') . toc_str('0') ],
+	[ 'entry description', toc_str('0') . toc_str('0') . toc_str('t') ],
+	[
+		'WITH OIDS marker',
+		toc_str('0') . toc_str('0') . toc_str('t') . toc_str('d')
+		  . toc_int(0)					# section
+		  . (toc_str(undef) x 6)		# defn, dropStmt, copyStmt, namespace,
+										# tablespace, owner (all nullable)
+	],
+);
+
+my $toc_case_no = 0;
+foreach my $toc_case (@toc_cases)
+{
+	my ($field, $prefix) = @$toc_case;
+	my $file = "$tempdir/corrupt_toc_${toc_case_no}.dump";
+	open my $fh, '>:raw', $file or die "could not create $file: $!";
+	print $fh $toc_header . $toc_entry . $prefix . toc_str(undef);
+	close $fh;
+
+	command_fails_like(
+		[ 'pg_restore', '-l', $file ],
+		qr/\Qpg_restore: error: missing $field in TOC -- perhaps a corrupt TOC\E/,
+		"pg_restore: NULL $field in TOC reported as corrupt");
+	$toc_case_no++;
+}
+
 done_testing();
