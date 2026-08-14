@@ -67,3 +67,26 @@ RESET debug_logical_replication_streaming;
 
 DROP TABLE stream_test;
 SELECT pg_drop_replication_slot('regression_slot');
+
+-- bug #19616
+-- pgoutput protocol compatibility could be broken for an aborted xact
+-- discarded at eviction while a subxact remained in memory.
+-- Stream Abort ('A'), a streaming-only message, could then reach a client
+-- that did not enable streaming.
+CREATE TABLE stream_abort_test(data text);
+CREATE PUBLICATION stream_pub FOR TABLE stream_abort_test;
+SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot_pgoutput', 'pgoutput');
+BEGIN;
+SAVEPOINT s;
+INSERT INTO stream_abort_test VALUES ('subtransaction-change');
+RELEASE SAVEPOINT s;
+INSERT INTO stream_abort_test SELECT repeat('x', 1000) FROM generate_series(1, 5000) g(i);
+ROLLBACK;
+INSERT INTO stream_abort_test VALUES ('after-abort');
+SELECT chr(get_byte(data, 0)) AS msgtype, count(*)
+FROM pg_logical_slot_peek_binary_changes('regression_slot_pgoutput', NULL, NULL,
+     'proto_version', '4', 'streaming', 'off', 'publication_names', 'stream_pub')
+GROUP BY 1 ORDER BY 1;
+SELECT pg_drop_replication_slot('regression_slot_pgoutput');
+DROP PUBLICATION stream_pub;
+DROP TABLE stream_abort_test;
