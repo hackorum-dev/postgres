@@ -545,7 +545,7 @@ HeapTupleHeaderClearDatum(HeapTupleHeaderData *tup)
 static inline uint32
 HeapTupleHeaderGetDatumLength(const HeapTupleHeaderData *tup)
 {
-	return VARSIZE(tup);
+	return (uint32) VARSIZE(tup);
 }
 
 static inline void
