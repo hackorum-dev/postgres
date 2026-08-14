@@ -60,7 +60,7 @@ populate_isnull_array(const uint8 *bits, int natts, bool *isnull)
 	for (int i = 0; i < nbytes; i++, isnull += 8)
 	{
 		uint64		isnull_8;
-		uint8		nullbyte = ~bits[i];
+		uint8		nullbyte = (uint8) ~bits[i];
 
 		/* Convert the lower 4 bits of NULL bitmap word into a 64 bit int */
 		isnull_8 = (nullbyte & 0xf) * SPREAD_BITS_MULTIPLIER_32;
@@ -178,9 +178,9 @@ align_fetch_then_add(const char *tupptr, uint32 *off, bool attbyval, int attlen,
 	{
 		const char *offset_ptr;
 
-		*off = TYPEALIGN(attalignby, *off);
+		*off = (uint32) TYPEALIGN(attalignby, *off);
 		offset_ptr = tupptr + *off;
-		*off += attlen;
+		*off += (uint32) attlen;
 		if (attbyval)
 		{
 			switch (attlen)
@@ -206,7 +206,7 @@ align_fetch_then_add(const char *tupptr, uint32 *off, bool attbyval, int attlen,
 	else if (attlen == -1)
 	{
 		if (!VARATT_IS_SHORT(tupptr + *off))
-			*off = TYPEALIGN(attalignby, *off);
+			*off = (uint32) TYPEALIGN(attalignby, *off);
 
 		res = PointerGetDatum(tupptr + *off);
 		*off += VARSIZE_ANY(DatumGetPointer(res));
@@ -215,7 +215,7 @@ align_fetch_then_add(const char *tupptr, uint32 *off, bool attbyval, int attlen,
 	else
 	{
 		Assert(attlen == -2);
-		*off = TYPEALIGN(attalignby, *off);
+		*off = (uint32) TYPEALIGN(attalignby, *off);
 		res = PointerGetDatum(tupptr + *off);
 		*off += strlen(tupptr + *off) + 1;
 		return res;

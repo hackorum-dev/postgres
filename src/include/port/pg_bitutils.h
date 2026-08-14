@@ -260,7 +260,7 @@ pg_ceil_log2_32(uint32 num)
 	if (num < 2)
 		return 0;
 	else
-		return pg_leftmost_one_pos32(num - 1) + 1;
+		return (uint32) (pg_leftmost_one_pos32(num - 1) + 1);
 }
 
 /*
@@ -273,7 +273,7 @@ pg_ceil_log2_64(uint64 num)
 	if (num < 2)
 		return 0;
 	else
-		return pg_leftmost_one_pos64(num - 1) + 1;
+		return (uint64) (pg_leftmost_one_pos64(num - 1) + 1);
 }
 
 extern uint64 pg_popcount_portable(const char *buf, int bytes);

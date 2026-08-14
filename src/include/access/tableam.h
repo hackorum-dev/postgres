@@ -919,7 +919,7 @@ table_beginscan_common(Relation rel, Snapshot snapshot, int nkeys,
 					   uint32 flags, uint32 user_flags)
 {
 	Assert((user_flags & SO_INTERNAL_FLAGS) == 0);
-	Assert((flags & ~SO_INTERNAL_FLAGS) == 0);
+	Assert((flags & (uint32) ~SO_INTERNAL_FLAGS) == 0);
 	flags |= user_flags;
 
 	/*

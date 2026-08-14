@@ -352,9 +352,9 @@ SH_UPDATE_PARAMETERS(SH_TYPE * tb, uint64 newsize)
 	 * again.
 	 */
 	if (tb->size == SH_MAX_SIZE)
-		tb->grow_threshold = ((double) tb->size) * SH_MAX_FILLFACTOR;
+		tb->grow_threshold = (uint32) (((double) tb->size) * SH_MAX_FILLFACTOR);
 	else
-		tb->grow_threshold = ((double) tb->size) * SH_FILLFACTOR;
+		tb->grow_threshold = (uint32) (((double) tb->size) * SH_FILLFACTOR);
 }
 
 /* return the optimal bucket for the hash */
@@ -393,7 +393,7 @@ SH_DISTANCE_FROM_OPTIMAL(SH_TYPE * tb, uint32 optimal, uint32 bucket)
 	if (optimal <= bucket)
 		return bucket - optimal;
 	else
-		return (tb->size + bucket) - optimal;
+		return (uint32) ((tb->size + bucket) - optimal);
 }
 
 static inline uint32
@@ -462,7 +462,7 @@ SH_CREATE(MemoryContext ctx, uint32 nelements, void *private_data)
 	tb->private_data = private_data;
 
 	/* increase nelements by fillfactor, want to store nelements elements */
-	size = Min((double) SH_MAX_SIZE, ((double) nelements) / SH_FILLFACTOR);
+	size = (uint64) Min((double) SH_MAX_SIZE, ((double) nelements) / SH_FILLFACTOR);
 
 	size = SH_COMPUTE_SIZE(size);
 
@@ -716,7 +716,7 @@ restart:
 				 * explosion for some weird edge cases.
 				 */
 				if (unlikely(++emptydist > SH_GROW_MAX_MOVE) &&
-					((double) tb->members / tb->size) >= SH_GROW_MIN_FILLFACTOR)
+					((double) tb->members / (double) tb->size) >= SH_GROW_MIN_FILLFACTOR)
 				{
 					tb->grow_threshold = 0;
 					goto restart;
@@ -766,7 +766,7 @@ restart:
 		 * explosion for some weird edge cases.
 		 */
 		if (unlikely(insertdist > SH_GROW_MAX_DIB) &&
-			((double) tb->members / tb->size) >= SH_GROW_MIN_FILLFACTOR)
+			((double) tb->members / (double) tb->size) >= SH_GROW_MIN_FILLFACTOR)
 		{
 			tb->grow_threshold = 0;
 			goto restart;
@@ -938,7 +938,7 @@ SH_DELETE_ITEM(SH_TYPE * tb, SH_ELEMENT_TYPE * entry)
 	uint32		curelem;
 
 	/* Calculate the index of 'entry' */
-	curelem = entry - &tb->data[0];
+	curelem = (uint32) (entry - &tb->data[0]);
 
 	tb->members--;
 
@@ -1012,7 +1012,7 @@ SH_START_ITERATE(SH_TYPE * tb, SH_ITERATOR * iter)
 	 * Iterate backwards, that allows the current element to be deleted, even
 	 * if there are backward shifts
 	 */
-	iter->cur = startelem;
+	iter->cur = (uint32) startelem;
 	iter->end = iter->cur;
 	iter->done = false;
 }
