@@ -1,0 +1,52 @@
+Parsed test spec with 2 sessions
+
+starting permutation: vacuum_gin split_root release recycle count_via_index count_via_heap
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step vacuum_gin: VACUUM gin_relock; <waiting ...>
+step split_root: INSERT INTO gin_relock
+					  SELECT g, ARRAY['public']
+					  FROM generate_series(20001, 28000) g;
+step release: 
+	SELECT injection_points_detach('gin-vacuum-posting-tree-relock');
+	SELECT injection_points_wakeup('gin-vacuum-posting-tree-relock');
+
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step vacuum_gin: <... completed>
+step recycle: INSERT INTO gin_relock
+					  SELECT 900000 + g, ARRAY['recycled']
+					  FROM generate_series(1, 400) g;
+step count_via_index: 
+	SET enable_seqscan = off;
+	SET enable_indexscan = on;
+	SET enable_bitmapscan = on;
+	SELECT count(*) AS via_index FROM gin_relock WHERE tags @> ARRAY['public'];
+
+via_index
+---------
+    13899
+(1 row)
+
+step count_via_heap: 
+	SET enable_seqscan = on;
+	SET enable_indexscan = off;
+	SET enable_bitmapscan = off;
+	SELECT count(*) AS via_heap FROM gin_relock WHERE tags @> ARRAY['public'];
+
+via_heap
+--------
+   13899
+(1 row)
+
