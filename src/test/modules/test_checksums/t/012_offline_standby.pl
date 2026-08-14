@@ -96,10 +96,8 @@ test_checksum_state($standby, 'off');
 $standby->stop;
 command_checks_all(
 	[ 'pg_checksums', '--enable', '-D', $standby->data_dir ],
-	0,
-	[qr/appears to be a standby/],
-	[],
-	'standby-role notice on offline enable');
+	0, [qr/appears to be a standby/],
+	[], 'standby-role notice on offline enable');
 $standby->start;
 test_checksum_state($standby, 'on');
 $primary->wait_for_catchup($standby);
@@ -205,7 +203,7 @@ wait_for_checksum_state($primary, 'on');
 $primary->wait_for_catchup($standby);
 wait_for_checksum_state($standby, 'on');
 
-is( $standby->safe_psql('postgres', "SELECT count(*) FROM t;"),
+is($standby->safe_psql('postgres', "SELECT count(*) FROM t;"),
 	'10001', 'standby readable once the transition completes');
 
 $standby->stop;
