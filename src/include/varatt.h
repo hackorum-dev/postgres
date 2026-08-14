@@ -94,7 +94,7 @@ typedef enum vartag_external
 static inline bool
 VARTAG_IS_EXPANDED(vartag_external tag)
 {
-	return ((tag & ~1) == VARTAG_EXPANDED_RO);
+	return ((tag & (unsigned int) ~1) == VARTAG_EXPANDED_RO);
 }
 
 /* Size of the data part of a "TOAST pointer" datum */
@@ -251,10 +251,10 @@ typedef struct
 #define SET_VARSIZE_4B_C(PTR,len) \
 	(((varattrib_4b *) (PTR))->va_4byte.va_header = (((uint32) (len)) << 2) | 0x02)
 #define SET_VARSIZE_1B(PTR,len) \
-	(((varattrib_1b *) (PTR))->va_header = (((uint8) (len)) << 1) | 0x01)
+	(((varattrib_1b *) (PTR))->va_header = (uint8) ((((uint8) (len)) << 1) | 0x01))
 #define SET_VARTAG_1B_E(PTR,tag) \
 	(((varattrib_1b_e *) (PTR))->va_header = 0x01, \
-	 ((varattrib_1b_e *) (PTR))->va_tag = (tag))
+	 ((varattrib_1b_e *) (PTR))->va_tag = (uint8) (tag))
 
 #endif							/* WORDS_BIGENDIAN */
 
