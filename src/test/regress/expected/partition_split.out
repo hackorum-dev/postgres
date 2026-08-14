@@ -1840,6 +1840,33 @@ ALTER TABLE t SPLIT PARTITION tp_0_2 INTO
    PARTITION tp_1_2 FOR VALUES FROM (1) TO (2));
 DROP PUBLICATION pub_split;
 DROP TABLE t;
+-- SPLIT PARTITION rejects a partition with row-level security of its own, for
+-- the same reason as MERGE.
+CREATE TABLE t (i int, secret bool) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_2 PARTITION OF t FOR VALUES FROM (0) TO (2);
+ALTER TABLE tp_0_2 ENABLE ROW LEVEL SECURITY;
+CREATE POLICY hide_secret ON tp_0_2 FOR SELECT USING (secret IS NOT TRUE);
+ALTER TABLE t SPLIT PARTITION tp_0_2 INTO
+  (PARTITION tp_0_1 FOR VALUES FROM (0) TO (1),
+   PARTITION tp_1_2 FOR VALUES FROM (1) TO (2));	-- fails
+ERROR:  cannot merge or split partition "tp_0_2" that has row-level security enabled
+DETAIL:  Row-level security is not carried over to the new partition, which would expose rows that the partition currently hides.
+HINT:  Disable row-level security on the partition before the operation, and re-establish it on the new partition afterwards.
+ALTER TABLE tp_0_2 DISABLE ROW LEVEL SECURITY;
+ALTER TABLE t SPLIT PARTITION tp_0_2 INTO
+  (PARTITION tp_0_1 FOR VALUES FROM (0) TO (1),
+   PARTITION tp_1_2 FOR VALUES FROM (1) TO (2));	-- still fails
+ERROR:  cannot merge or split partition "tp_0_2" that has row-level security policies
+DETAIL:  The policies are not carried over to the new partition and would be silently lost.
+HINT:  Drop the policies from the partition before the operation, and define them on the new partition afterwards.
+DROP POLICY hide_secret ON tp_0_2;
+-- Row security on the partitioned table alone is fine.
+ALTER TABLE t ENABLE ROW LEVEL SECURITY;
+CREATE POLICY hide_secret ON t FOR SELECT USING (secret IS NOT TRUE);
+ALTER TABLE t SPLIT PARTITION tp_0_2 INTO
+  (PARTITION tp_0_1 FOR VALUES FROM (0) TO (1),
+   PARTITION tp_1_2 FOR VALUES FROM (1) TO (2));
+DROP TABLE t;
 RESET search_path;
 --
 DROP SCHEMA partition_split_schema;

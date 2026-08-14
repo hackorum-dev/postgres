@@ -1314,6 +1314,15 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
       being merged.
      </para>
 
+     <para>
+      Row-level security is likewise not carried over: the new partition is
+      built from the partitioned table, which does not pass its policies down to
+      its partitions.  A partition that has row-level security enabled, or that
+      has policies of its own, is therefore rejected, since the new partition
+      would otherwise expose rows that the merged partitions currently hide.
+      Disable row-level security and drop the policies before merging, and
+      re-establish them on the new partition afterwards.
+     </para>
 
      <para>
       Moving rows into the new partition does not emit logical replication
@@ -1465,6 +1474,15 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
       being split.
      </para>
 
+     <para>
+      Row-level security is likewise not carried over: the new partitions are
+      built from the partitioned table, which does not pass its policies down to
+      its partitions.  A partition that has row-level security enabled, or that
+      has policies of its own, is therefore rejected, since the new partitions
+      would otherwise expose rows that the partition being split currently
+      hides.  Disable row-level security and drop the policies before splitting,
+      and re-establish them on the new partitions afterwards.
+     </para>
 
      <para>
       Moving rows into the new partitions does not emit logical replication
