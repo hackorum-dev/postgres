@@ -17,6 +17,7 @@
 #include "backup_label.h"
 #include "common/file_perm.h"
 #include "common/logging.h"
+#include "common/pg_parse_lsn.h"
 #include "write_manifest.h"
 
 static int	get_eol_offset(StringInfo buf);
@@ -242,20 +243,20 @@ static bool
 parse_lsn(char *s, char *e, XLogRecPtr *lsn, char **c)
 {
 	char		save = *e;
-	int			nchars;
+	char	   *token_end;
+	char		save_token_end;
 	bool		success;
-	unsigned	hi;
-	unsigned	lo;
 
 	*e = '\0';
-	success = (sscanf(s, "%X/%08X%n", &hi, &lo, &nchars) == 2);
+	token_end = s + strcspn(s, " \t\n\r\f\v");
+	save_token_end = *token_end;
+	*token_end = '\0';
+	success = pg_parse_lsn(s, lsn);
+	*token_end = save_token_end;
 	*e = save;
 
 	if (success)
-	{
-		*lsn = ((XLogRecPtr) hi) << 32 | (XLogRecPtr) lo;
-		*c = s + nchars;
-	}
+		*c = token_end;
 
 	return success;
 }
