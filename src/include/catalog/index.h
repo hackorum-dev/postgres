@@ -207,7 +207,7 @@ itemptr_encode(const ItemPointerData *itemptr)
 	 * cannot be negative encoded values (We assume a two's complement
 	 * representation).
 	 */
-	encoded = ((uint64) block << 16) | (uint16) offset;
+	encoded = (int64) (((uint64) block << 16) | (uint16) offset);
 
 	return encoded;
 }
