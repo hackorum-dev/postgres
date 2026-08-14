@@ -49,6 +49,8 @@ tests += {
       't/023_concurrent_checkpoint_enable.pl',
       't/024_enable_crash_after_checkpoint.pl',
       't/025_cascade_divergence.pl',
+      't/026_rewind_state.pl',
+      't/027_rewind_standby_target.pl',
     ],
   },
 }
