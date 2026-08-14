@@ -54,7 +54,7 @@ typedef struct ExtensibleNode
  *
  * nodeRead is a deserialization function for the node type.  It does not need
  * to read type or extnodename; the core system handles those.  It should fetch
- * the next token using pg_strtok() from the current input stream, and then
+ * the next token from the ReadNodeContext using pg_strtok(ctx), and then
  * reconstruct the private fields according to the manner in readfuncs.c.
  *
  * All callbacks are mandatory.
@@ -69,7 +69,8 @@ typedef struct ExtensibleNodeMethods
 							  const struct ExtensibleNode *b);
 	void		(*nodeOut) (struct StringInfoData *str,
 							const struct ExtensibleNode *node);
-	void		(*nodeRead) (struct ExtensibleNode *node);
+	void		(*nodeRead) (struct ReadNodeContext *ctx,
+							 struct ExtensibleNode *node);
 } ExtensibleNodeMethods;
 
 extern void RegisterExtensibleNodeMethods(const ExtensibleNodeMethods *methods);
