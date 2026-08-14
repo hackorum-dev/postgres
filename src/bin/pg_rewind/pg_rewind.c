@@ -738,6 +738,20 @@ perform_rewind(filemap_t *filemap, rewind_source *source,
 	ControlFile_new.minRecoveryPoint = endrec;
 	ControlFile_new.minRecoveryPointTLI = endtli;
 	ControlFile_new.state = DB_IN_ARCHIVE_RECOVERY;
+
+	/*
+	 * Keep the target's own data checksum state.  Most of the data directory
+	 * is still the target's: only blocks it changed since the divergence
+	 * were copied from the source, so the source's state says nothing about
+	 * the pages that stay.  Replay from the last common checkpoint applies
+	 * any WAL-logged transition the target has not seen (the watermark tells
+	 * them apart), which converges the rewound server to the source's state
+	 * whenever the WAL carries it.
+	 */
+	ControlFile_new.data_checksum_version = ControlFile_target.data_checksum_version;
+	ControlFile_new.data_checksum_lsn = ControlFile_target.data_checksum_lsn;
+	ControlFile_new.data_checksum_is_local = ControlFile_target.data_checksum_is_local;
+
 	if (!dry_run)
 		update_controlfile(datadir_target, &ControlFile_new, do_sync);
 }

@@ -648,6 +648,16 @@ main(int argc, char *argv[])
 		ControlFile->data_checksum_version =
 			(mode == PG_MODE_ENABLE) ? PG_DATA_CHECKSUM_VERSION : PG_DATA_CHECKSUM_OFF;
 
+		/*
+		 * Mark the state as changed locally, without a WAL record.  Recovery
+		 * then knows the state is newer than anything the WAL carries and
+		 * does not let a replayed checkpoint overwrite it.  The watermark is
+		 * left alone: any XLOG2_CHECKSUMS record this node had applied stays
+		 * covered, and only records above it, written after this change, take
+		 * effect again.
+		 */
+		ControlFile->data_checksum_is_local = true;
+
 		if (do_sync)
 		{
 			pg_log_info("syncing data directory");
