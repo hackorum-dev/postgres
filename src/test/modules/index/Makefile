@@ -2,6 +2,7 @@
 
 EXTRA_INSTALL = contrib/btree_gin contrib/btree_gist
 
+REGRESS = gistrescan
 ISOLATION = killtuples
 
 ifdef USE_PGXS

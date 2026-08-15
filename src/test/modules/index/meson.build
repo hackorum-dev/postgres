@@ -4,6 +4,11 @@ tests += {
   'name': 'index',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
+  'regress': {
+    'sql': [
+      'gistrescan',
+    ],
+  },
   'isolation': {
     'specs': [
       'killtuples',
