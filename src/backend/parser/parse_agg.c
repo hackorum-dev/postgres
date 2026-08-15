@@ -600,6 +600,12 @@ check_agglevels_and_constraints(ParseState *pstate, Node *expr)
 
 			break;
 
+		case EXPR_KIND_GRAPH_TABLE_COLUMNS:
+		case EXPR_KIND_GRAPH_TABLE_WHERE:
+			errkind = true;
+
+			break;
+
 			/*
 			 * There is intentionally no default: case here, so that the
 			 * compiler will warn if we add a new ParseExprKind without
@@ -769,6 +775,18 @@ check_agg_arguments_walker(Node *node,
 {
 	if (node == NULL)
 		return false;
+	if (IsA(node, GraphPropertyRef))
+	{
+		/*
+		 * A GraphPropertyRef refers to its own GRAPH_TABLE's level, so it
+		 * contributes min_varlevel 0.  It can't occur in a sub-select (the
+		 * child parse state doesn't copy the GRAPH_TABLE namespace), hence
+		 * the Assert.
+		 */
+		Assert(context->sublevels_up == 0);
+		context->min_varlevel = 0;
+		return false;
+	}
 	if (IsA(node, Var))
 	{
 		int			varlevelsup = ((Var *) node)->varlevelsup;
@@ -1044,6 +1062,10 @@ transformWindowFuncCall(ParseState *pstate, WindowFunc *wfunc,
 			break;
 		case EXPR_KIND_FOR_PORTION:
 			err = _("window functions are not allowed in FOR PORTION OF expressions");
+			break;
+		case EXPR_KIND_GRAPH_TABLE_COLUMNS:
+		case EXPR_KIND_GRAPH_TABLE_WHERE:
+			errkind = true;
 			break;
 
 			/*
