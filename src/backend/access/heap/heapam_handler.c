@@ -31,6 +31,7 @@
 #include "access/xact.h"
 #include "catalog/catalog.h"
 #include "catalog/index.h"
+#include "catalog/pg_am_d.h"
 #include "catalog/storage.h"
 #include "catalog/storage_xlog.h"
 #include "commands/progress.h"
@@ -2048,12 +2049,22 @@ heapam_relation_needs_toast_table(Relation rel)
 }
 
 /*
- * TOAST tables for heap relations are just heap relations.
+ * TOAST tables are always plain heap relations, regardless of the AM of
+ * the table they belong to.  Return the literal heap AM oid rather than
+ * rel->rd_rel->relam: those are only the same value when rel is itself a
+ * genuine heap relation.  A table AM that reuses this callback (e.g. by
+ * copying the whole heap TableAmRoutine and overriding only a handful of
+ * callbacks) is not itself heap, so returning rel->rd_rel->relam would
+ * create its TOAST table using that AM instead -- and storage-layer code
+ * that still calls heap_getnext() directly (see its comment) rejects any
+ * relation whose rd_tableam is not literally GetHeapamTableAmRoutine(),
+ * which fails as soon as anything scans that TOAST table, e.g. to build
+ * its chunk_id/chunk_seq index.
  */
 static Oid
 heapam_relation_toast_am(Relation rel)
 {
-	return rel->rd_rel->relam;
+	return HEAP_TABLE_AM_OID;
 }
 
 
