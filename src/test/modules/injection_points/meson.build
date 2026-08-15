@@ -44,6 +44,7 @@ tests += {
   'isolation': {
     'specs': [
       'basic',
+      'gin_pending_cleanup',
       'gin_vacuum_relock',
       'inplace',
       'reindex_concurrently_deferred',

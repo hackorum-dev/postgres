@@ -1,0 +1,61 @@
+Parsed test spec with 2 sessions
+
+starting permutation: vacuum_gin scan_incomplete ghost_begin ghost_update ghost_rollback release recycle count_via_index count_via_heap
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step vacuum_gin: VACUUM (INDEX_CLEANUP ON) gin_pending; <waiting ...>
+step scan_incomplete: 
+	SELECT heap_blks_scanned < heap_blks_total AS scan_incomplete
+	FROM pg_stat_progress_vacuum WHERE relid = 'gin_pending'::regclass;
+
+scan_incomplete
+---------------
+t              
+(1 row)
+
+step ghost_begin: BEGIN;
+step ghost_update: UPDATE gin_pending SET tags = ARRAY['ghost'] WHERE id > 11900;
+step ghost_rollback: ROLLBACK;
+step release: 
+	SELECT injection_points_detach('gin-bulkdelete-pending-cleaned');
+	SELECT injection_points_wakeup('gin-bulkdelete-pending-cleaned');
+
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step vacuum_gin: <... completed>
+step recycle: INSERT INTO gin_pending
+					  SELECT 900000 + g, ARRAY['recycled']
+					  FROM generate_series(1, 12000) g;
+step count_via_index: 
+	SET enable_seqscan = off;
+	SET enable_indexscan = on;
+	SET enable_bitmapscan = on;
+	SELECT count(*) AS via_index FROM gin_pending WHERE tags @> ARRAY['ghost'];
+
+via_index
+---------
+        0
+(1 row)
+
+step count_via_heap: 
+	SET enable_seqscan = on;
+	SET enable_indexscan = off;
+	SET enable_bitmapscan = off;
+	SELECT count(*) AS via_heap FROM gin_pending WHERE tags @> ARRAY['ghost'];
+
+via_heap
+--------
+       0
+(1 row)
+

@@ -13,6 +13,7 @@ REGRESS = injection_points hashagg reindex_conc vacuum
 REGRESS_OPTS = --dlpath=$(top_builddir)/src/test/regress
 
 ISOLATION = basic \
+	    gin_pending_cleanup \
 	    gin_vacuum_relock \
 	    inplace \
 	    reindex_concurrently_deferred \

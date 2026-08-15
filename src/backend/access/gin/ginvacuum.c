@@ -648,6 +648,8 @@ ginbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 						 false, true, stats);
 	}
 
+	INJECTION_POINT("gin-bulkdelete-pending-cleaned", NULL);
+
 	/* we'll re-count the tuples each time */
 	stats->num_index_tuples = 0;
 	gvs.result = stats;
