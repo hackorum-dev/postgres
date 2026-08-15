@@ -4452,6 +4452,32 @@ SetPromoteIsTriggered(void)
 }
 
 /*
+ * Has hot standby initialization started pg_subtrans?
+ */
+bool
+RecoverySubtransInitialized(void)
+{
+	bool		result;
+
+	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	result = XLogRecoveryCtl->SharedRecoverySubtransInitialized;
+	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+
+	return result;
+}
+
+/*
+ * Remember that hot standby initialization has started pg_subtrans.
+ */
+void
+SetRecoverySubtransInitialized(void)
+{
+	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	XLogRecoveryCtl->SharedRecoverySubtransInitialized = true;
+	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+}
+
+/*
  * Check whether a promote request has arrived.
  */
 static bool
