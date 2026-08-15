@@ -559,6 +559,14 @@ typedef struct XLogCtlData
 	/* last data_checksum_version we've seen */
 	uint32		data_checksum_version;
 
+	/*
+	 * lastChecksumChangeRecPtr points to the end of the last XLOG2_CHECKSUMS
+	 * record inserted or replayed, i.e. the last change of
+	 * data_checksum_version.  InvalidXLogRecPtr if the state hasn't changed
+	 * since the server started.
+	 */
+	XLogRecPtr	lastChecksumChangeRecPtr;
+
 	slock_t		info_lck;		/* locks shared variables shown above */
 } XLogCtlData;
 
@@ -4735,6 +4743,27 @@ DataChecksumsNeedVerify(void)
 }
 
 /*
+ * GetLastChecksumChangeRecPtr
+ *		Returns the location of the last data checksum state change
+ *
+ * Returns the end of the last XLOG2_CHECKSUMS record inserted or replayed
+ * since the server started, or InvalidXLogRecPtr if there was none.  Note
+ * that offline state changes by pg_checksums leave no trace here; callers
+ * comparing against it must also inspect the current state.
+ */
+XLogRecPtr
+GetLastChecksumChangeRecPtr(void)
+{
+	XLogRecPtr	ptr;
+
+	SpinLockAcquire(&XLogCtl->info_lck);
+	ptr = XLogCtl->lastChecksumChangeRecPtr;
+	SpinLockRelease(&XLogCtl->info_lck);
+
+	return ptr;
+}
+
+/*
  * SetDataChecksumsOnInProgress
  *		Sets the data checksum state to "inprogress-on" to enable checksums
  *
@@ -4843,6 +4872,8 @@ SetDataChecksumsOn(void)
 
 	MyProc->delayChkptFlags &= ~DELAY_CHKPT_START;
 	END_CRIT_SECTION();
+
+	INJECTION_POINT("datachecksums-on-before-checkpoint", NULL);
 
 	RequestCheckpoint(CHECKPOINT_FORCE | CHECKPOINT_WAIT | CHECKPOINT_FAST);
 	WaitForProcSignalBarrier(barrier);
@@ -8749,6 +8780,10 @@ XLogChecksums(uint32 new_type)
 
 	recptr = XLogInsert(RM_XLOG2_ID, XLOG2_CHECKSUMS);
 	XLogFlush(recptr);
+
+	SpinLockAcquire(&XLogCtl->info_lck);
+	XLogCtl->lastChecksumChangeRecPtr = recptr;
+	SpinLockRelease(&XLogCtl->info_lck);
 }
 
 /*
@@ -9254,6 +9289,7 @@ xlog2_redo(XLogReaderState *record)
 
 		SpinLockAcquire(&XLogCtl->info_lck);
 		XLogCtl->data_checksum_version = state.new_checksum_state;
+		XLogCtl->lastChecksumChangeRecPtr = record->EndRecPtr;
 		SpinLockRelease(&XLogCtl->info_lck);
 
 		LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
