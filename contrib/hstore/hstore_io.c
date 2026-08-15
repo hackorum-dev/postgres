@@ -350,6 +350,24 @@ comparePairs(const void *a, const void *b)
 }
 
 /*
+ * Add the string-data length of a pair to *buflen, checking for overflow.
+ * Individual keys and values are each limited to HENTRY_POSMASK bytes, but
+ * their combined length can exceed the range of int32.
+ */
+static void
+hstoreAddPairLen(int32 *buflen, const Pairs *pair)
+{
+	Size pairlen;
+
+	pairlen = pair->keylen + (pair->isnull ? 0 : pair->vallen);
+	if (pairlen > MaxAllocSize - (Size) *buflen)
+		ereport(ERROR,
+				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				 errmsg("hstore is too large")));
+	*buflen += pairlen;
+}
+
+/*
  * this code still respects pairs.needfree, even though in general
  * it should never be called in a context where anything needs freeing.
  * we keep it because (a) those calls are in a rare code path anyway,
@@ -365,7 +383,7 @@ hstoreUniquePairs(Pairs *a, int32 l, int32 *buflen)
 	if (l < 2)
 	{
 		if (l == 1)
-			*buflen = a->keylen + ((a->isnull) ? 0 : a->vallen);
+			hstoreAddPairLen(buflen, a);
 		return l;
 	}
 
@@ -391,7 +409,7 @@ hstoreUniquePairs(Pairs *a, int32 l, int32 *buflen)
 		}
 		else
 		{
-			*buflen += res->keylen + ((res->isnull) ? 0 : res->vallen);
+			hstoreAddPairLen(buflen, res);
 			res++;
 			if (res != ptr)
 				memcpy(res, ptr, sizeof(Pairs));
@@ -400,7 +418,7 @@ hstoreUniquePairs(Pairs *a, int32 l, int32 *buflen)
 		ptr++;
 	}
 
-	*buflen += res->keylen + ((res->isnull) ? 0 : res->vallen);
+	hstoreAddPairLen(buflen, res);
 	return res + 1 - a;
 }
 
@@ -452,10 +470,15 @@ hstorePairs(Pairs *pairs, int32 pcount, int32 buflen)
 	HEntry	   *entry;
 	char	   *ptr;
 	char	   *buf;
-	int32		len;
+	Size		len;
 	int32		i;
 
 	len = CALCDATASIZE(pcount, buflen);
+	if (!AllocSizeIsValid(len))
+		ereport(ERROR,
+				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				 errmsg("hstore is too large")));
+
 	out = palloc(len);
 	SET_VARSIZE(out, len);
 	HS_SETCOUNT(out, pcount);
