@@ -600,6 +600,12 @@ check_agglevels_and_constraints(ParseState *pstate, Node *expr)
 
 			break;
 
+		case EXPR_KIND_GRAPH_TABLE_COLUMNS:
+		case EXPR_KIND_GRAPH_TABLE_WHERE:
+			errkind = true;
+
+			break;
+
 			/*
 			 * There is intentionally no default: case here, so that the
 			 * compiler will warn if we add a new ParseExprKind without
@@ -1044,6 +1050,10 @@ transformWindowFuncCall(ParseState *pstate, WindowFunc *wfunc,
 			break;
 		case EXPR_KIND_FOR_PORTION:
 			err = _("window functions are not allowed in FOR PORTION OF expressions");
+			break;
+		case EXPR_KIND_GRAPH_TABLE_COLUMNS:
+		case EXPR_KIND_GRAPH_TABLE_WHERE:
+			errkind = true;
 			break;
 
 			/*

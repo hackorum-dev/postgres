@@ -579,6 +579,8 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 		case EXPR_KIND_GENERATED_COLUMN:
 		case EXPR_KIND_CYCLE_MARK:
 		case EXPR_KIND_PROPGRAPH_PROPERTY:
+		case EXPR_KIND_GRAPH_TABLE_COLUMNS:
+		case EXPR_KIND_GRAPH_TABLE_WHERE:
 			/* okay */
 			break;
 
@@ -1843,6 +1845,8 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 		case EXPR_KIND_VALUES:
 		case EXPR_KIND_VALUES_SINGLE:
 		case EXPR_KIND_CYCLE_MARK:
+		case EXPR_KIND_GRAPH_TABLE_COLUMNS:
+		case EXPR_KIND_GRAPH_TABLE_WHERE:
 			/* okay */
 			break;
 		case EXPR_KIND_CHECK_CONSTRAINT:
@@ -3255,6 +3259,10 @@ ParseExprKindName(ParseExprKind exprKind)
 			return "property definition expression";
 		case EXPR_KIND_FOR_PORTION:
 			return "FOR PORTION OF";
+		case EXPR_KIND_GRAPH_TABLE_COLUMNS:
+			return "GRAPH_TABLE COLUMNS";
+		case EXPR_KIND_GRAPH_TABLE_WHERE:
+			return "GRAPH_TABLE WHERE";
 
 			/*
 			 * There is intentionally no default: case here, so that the
