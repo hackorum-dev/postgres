@@ -597,8 +597,9 @@ adjust_group_pathkeys_to_input(List *group_pathkeys, List *pathkeys)
  *
  * The function considers (and keeps) following GROUP BY orderings:
  *
- * - GROUP BY keys as ordered by preprocess_groupclause() to match target
- *   ORDER BY clause (as much as possible),
+ * - GROUP BY keys as ordered and directed by preprocess_groupclause() to
+ *   match the target ORDER BY clause or the first window's sort order (as
+ *   much as possible),
  * - GROUP BY keys reordered to match 'path' ordering (as much as possible),
  *   taking on the sort direction and NULLS ordering of 'path' where they
  *   differ from those of the GROUP BY keys.
