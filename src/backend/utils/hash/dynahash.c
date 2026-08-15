@@ -927,11 +927,13 @@ hash_search_with_hash_value(HTAB *hashp,
 	if (action == HASH_ENTER || action == HASH_ENTER_NULL)
 	{
 		/*
-		 * Can't split if running in partitioned mode, nor if frozen, nor if
+		 * Can't split if running in partitioned mode, nor if frozen,
+		 * nor if fixed (in shared memory), nor if
 		 * table is the subject of any active hash_seq_search scans.
 		 */
 		if (hctl->freeList[0].nentries > (int64) hctl->max_bucket &&
 			!IS_PARTITIONED(hctl) && !hashp->frozen &&
+			!hctl->isfixed &&
 			!has_seq_scans(hashp))
 			(void) expand_table(hashp);
 	}
