@@ -78,6 +78,12 @@ typedef struct XLogRecoveryCtlData
 	bool		SharedPromoteIsTriggered;
 
 	/*
+	 * SharedArchiveRecoveryRequested indicates if the ArchiveRecoveryRequested
+	 * was set during startup InitWalRecovery(). Protected by info_lck.
+	 */
+	bool		SharedArchiveRecoveryRequested;
+
+	/*
 	 * recoveryWakeupLatch is used to wake up the startup process to continue
 	 * WAL replay, if it is waiting for WAL to arrive or promotion to be
 	 * requested.
@@ -220,6 +226,7 @@ extern XLogRecPtr GetCurrentReplayRecPtr(TimeLineID *replayEndTLI);
 
 extern bool PromoteIsTriggered(void);
 extern bool CheckPromoteSignal(void);
+extern bool ArchiveRecoveryWasRequested(void);
 extern void WakeupRecovery(void);
 
 extern void StartupRequestWalReceiverRestart(void);

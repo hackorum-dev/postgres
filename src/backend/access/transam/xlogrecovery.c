@@ -394,6 +394,7 @@ static bool HotStandbyActiveInReplay(void);
 static void SetCurrentChunkStartTime(TimestampTz xtime);
 static void SetLatestXTime(TimestampTz xtime);
 static RecoveryTargetType DetermineRecoveryTargetType(void);
+static void	SetArchiveRecoveryWasRequested(void);
 
 /*
  * Register shared memory for WAL recovery
@@ -982,6 +983,9 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	*wasShutdown_ptr = wasShutdown;
 	*haveBackupLabel_ptr = haveBackupLabel;
 	*haveTblspcMap_ptr = haveTblspcMap;
+
+	if (ArchiveRecoveryRequested)
+		SetArchiveRecoveryWasRequested();
 }
 
 /*
@@ -4449,6 +4453,34 @@ SetPromoteIsTriggered(void)
 	SetRecoveryPause(false);
 
 	LocalPromoteIsTriggered = true;
+}
+
+bool
+ArchiveRecoveryWasRequested(void)
+{
+	/*
+	 * We only set local ArchiveRecoveryRequested once in the startup while
+	 * reading recovery signal files. So there's no need to keep checking after
+	 * the shared variable has once been seen true.
+	 */
+	if (ArchiveRecoveryRequested)
+		return true;
+
+	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	ArchiveRecoveryRequested = XLogRecoveryCtl->SharedArchiveRecoveryRequested;
+	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+
+	return ArchiveRecoveryRequested;
+}
+
+void
+SetArchiveRecoveryWasRequested(void)
+{
+	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	XLogRecoveryCtl->SharedArchiveRecoveryRequested = true;
+	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+
+	ArchiveRecoveryRequested = true;
 }
 
 /*

@@ -8366,7 +8366,7 @@ CreateRestartPoint(int flags)
 	 * in subtrans.c).  When hot standby is disabled, though, we mustn't do
 	 * this because StartupSUBTRANS hasn't been called yet.
 	 */
-	if (EnableHotStandby)
+	if (EnableHotStandby && ArchiveRecoveryWasRequested())
 		TruncateSUBTRANS(GetOldestTransactionIdConsideredRunning());
 
 	/* Real work is done; log and update stats. */
