@@ -2244,7 +2244,7 @@ match_previous_words(int pattern_id,
 	else if (Matches("ALTER", "AGGREGATE", MatchAny, MatchAny))
 	{
 		if (ends_with(prev_wd, ')'))
-			COMPLETE_WITH("OWNER TO", "RENAME TO", "SET SCHEMA");
+			COMPLETE_WITH("OWNER TO", "RENAME TO", "SET SCHEMA", "SUPPORT");
 		else
 			COMPLETE_WITH_FUNCTION_ARG(prev2_wd);
 	}

@@ -30,6 +30,7 @@
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
+#include "utils/regproc.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
@@ -74,7 +75,8 @@ AggregateCreate(const char *aggName,
 				int32 aggmTransSpace,
 				const char *agginitval,
 				const char *aggminitval,
-				char proparallel)
+				char proparallel,
+				Oid prosupport)
 {
 	Relation	aggdesc;
 	HeapTuple	tup;
@@ -639,7 +641,7 @@ AggregateCreate(const char *aggName,
 							 PointerGetDatum(NULL), /* trftypes */
 							 NIL,	/* trfoids */
 							 PointerGetDatum(NULL), /* proconfig */
-							 InvalidOid,	/* no prosupport */
+							 prosupport,	/* planner support function */
 							 1, /* procost */
 							 0);	/* prorows */
 	procOid = myself.objectId;
