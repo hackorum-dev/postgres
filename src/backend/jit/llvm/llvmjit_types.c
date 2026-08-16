@@ -173,6 +173,7 @@ void	   *referenced_functions[] =
 	ExecEvalXmlExpr,
 	ExecEvalJsonConstructor,
 	ExecEvalJsonIsPredicate,
+	ExecEvalJsonExprReset,
 	ExecEvalJsonCoercion,
 	ExecEvalJsonCoercionFinish,
 	ExecEvalJsonExprPath,

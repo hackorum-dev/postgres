@@ -4758,6 +4758,11 @@ ExecInitJsonExpr(JsonExpr *jsexpr, ExprState *state,
 
 	jsestate->jsexpr = jsexpr;
 
+	/* Clear empty/error here. SQL NULL skips PATH. */
+	scratch->opcode = EEOP_JSONEXPR_RESET;
+	scratch->d.jsonexpr.jsestate = jsestate;
+	ExprEvalPushStep(state, scratch);
+
 	/*
 	 * Evaluate formatted_expr storing the result into
 	 * jsestate->formatted_expr.

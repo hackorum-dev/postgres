@@ -2257,6 +2257,12 @@ llvm_compile_expr(ExprState *state)
 				LLVMBuildBr(b, opblocks[opno + 1]);
 				break;
 
+			case EEOP_JSONEXPR_RESET:
+				build_EvalXFunc(b, mod, "ExecEvalJsonExprReset",
+								v_state, op);
+				LLVMBuildBr(b, opblocks[opno + 1]);
+				break;
+
 			case EEOP_JSONEXPR_PATH:
 				{
 					JsonExprState *jsestate = op->d.jsonexpr.jsestate;
