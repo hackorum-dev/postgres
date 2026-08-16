@@ -45,6 +45,7 @@ tests += {
     'sql': [
       'hstore_plperl',
       'hstore_plperlu',
+      'hstore_plperl_tied',
       'create_transform',
     ],
   },

@@ -46,6 +46,7 @@ tests += {
     'sql': [
       'jsonb_plperl',
       'jsonb_plperlu',
+      'jsonb_plperl_tied',
     ],
   },
 }
