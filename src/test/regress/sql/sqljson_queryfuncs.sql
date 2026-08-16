@@ -128,6 +128,27 @@ SELECT
 FROM
 	generate_series(0, 2) x;
 
+-- SQL NULL must not reuse a previous row's ON EMPTY / ON ERROR result.
+SELECT x IS NULL AS is_null,
+       json_value(x, '$.a' RETURNING int DEFAULT 42 ON EMPTY) AS jv
+FROM (VALUES ('{}'), (NULL), ('{}')) v(x);
+
+SELECT x IS NULL AS is_null,
+       json_value(x, 'strict $.a' RETURNING int DEFAULT 42 ON ERROR) AS jv
+FROM (VALUES ('1'), (NULL), ('1')) v(x);
+
+SELECT p IS NULL AS is_null,
+       json_value('{}', p RETURNING int DEFAULT 42 ON EMPTY) AS jv
+FROM (VALUES ('$.a'::jsonpath), (NULL), ('$.a'::jsonpath)) v(p);
+
+SELECT x IS NULL AS is_null,
+       json_query(x, '$.a' DEFAULT '"empty"' ON EMPTY) AS jq
+FROM (VALUES ('{}'::jsonb), (NULL), ('{}'::jsonb)) v(x);
+
+SELECT x IS NULL AS is_null,
+       json_exists(x, 'strict $.a' TRUE ON ERROR) AS je
+FROM (VALUES ('1'::jsonb), (NULL), ('1'::jsonb)) v(x);
+
 SELECT JSON_VALUE(jsonb 'null', '$a' PASSING point ' (1, 2 )' AS a);
 SELECT JSON_VALUE(jsonb 'null', '$a' PASSING point ' (1, 2 )' AS a RETURNING point);
 SELECT JSON_VALUE(jsonb 'null', '$a' PASSING point ' (1, 2 )' AS a RETURNING point ERROR ON ERROR);
