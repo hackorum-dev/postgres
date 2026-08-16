@@ -165,6 +165,34 @@ BufTableHashCode(BufferTag *tagPtr)
 	return tag_hash(tagPtr, sizeof(BufferTag));
 }
 
+bool
+BufTableLinkByTag(BufferTableLink * link, BufferTag *tagPtr, uint32 hashcode)
+{
+	link->head = &buckets[hashcode & (num_buckets - 1)].head;
+	link->buf_id = link->head;
+	while (*link->buf_id != BUF_TABLE_CHAIN_END)
+	{
+		if (BufferTagsEqual(&entries[*link->buf_id].tag, tagPtr))
+			return true;
+		link->buf_id = &entries[*link->buf_id].next;
+	}
+	return false;
+}
+
+bool
+BufTableLinkByBuffer(BufferTableLink * link, Buffer buf, uint32 hashcode)
+{
+	link->head = &buckets[hashcode & (num_buckets - 1)].head;
+	link->buf_id = link->head;
+	while (*link->buf_id != BUF_TABLE_CHAIN_END)
+	{
+		if (*link->buf_id == buf)
+			return true;
+		link->buf_id = &entries[*link->buf_id].next;
+	}
+	return false;
+}
+
 /*
  * BufTableLookup
  *		Lookup the given BufferTag; return buffer ID, or -1 if not found
@@ -174,14 +202,10 @@ BufTableHashCode(BufferTag *tagPtr)
 int
 BufTableLookup(BufferTag *tagPtr, uint32 hashcode)
 {
-	int			id = buckets[hashcode % num_buckets].head;
+	BufferTableLink link;
 
-	while (id != BUF_TABLE_CHAIN_END)
-	{
-		if (BufferTagsEqual(&entries[id].tag, tagPtr))
-			return id;
-		id = entries[id].next;
-	}
+	if (BufTableLinkByTag(&link, tagPtr, hashcode))
+		return *link.buf_id;
 	return -1;
 }
 
@@ -198,20 +222,14 @@ BufTableLookup(BufferTag *tagPtr, uint32 hashcode)
 int
 BufTableInsert(BufferTag *tagPtr, uint32 hashcode, int buf_id)
 {
-	int			bucket_id = hashcode % num_buckets;
-	int			head = buckets[bucket_id].head;
-	int			id = head;
+	BufferTableLink link;
 
 	Assert(buf_id >= 0 && buf_id < NBuffers);
 	Assert(tagPtr->blockNum != P_NEW);	/* invalid tag */
 
 	/* If the tag is already in the chain, surface the existing buf_id. */
-	while (id != BUF_TABLE_CHAIN_END)
-	{
-		if (BufferTagsEqual(&entries[id].tag, tagPtr))
-			return id;
-		id = entries[id].next;
-	}
+	if (BufTableLinkByTag(&link, tagPtr, hashcode))
+		return *link.buf_id;
 
 	/*
 	 * Not present.  entry[buf_id] must be empty: bufmgr always deletes a
@@ -221,15 +239,29 @@ BufTableInsert(BufferTag *tagPtr, uint32 hashcode, int buf_id)
 
 	/*
 	 * Link entry[buf_id] at the chain head, keeping the prior head as its
-	 * successor.  (Use the saved `head`, not `id`, which the loop above has
-	 * advanced to BUF_TABLE_CHAIN_END.)
+	 * successor.  (Use the saved head, not buf_id on the link, which the walk
+	 * has advanced to the chain terminator.)
 	 */
 	entries[buf_id].tag = *tagPtr;
-	entries[buf_id].next = head;
-	buckets[bucket_id].head = buf_id;
-
+	entries[buf_id].next = *link.head;
+	*link.head = buf_id;
 	return -1;
 }
+
+/*
+ * BufTableUnlink
+ *		Delete the hashtable entry using a BufferTableLink
+ */
+void
+BufTableUnlink(BufferTableLink * link)
+{
+	int			id = *link->buf_id;
+
+	*link->buf_id = entries[id].next;
+	entries[id].tag.blockNum = P_NEW;
+	entries[id].next = BUF_TABLE_CHAIN_END;
+}
+
 
 /*
  * BufTableDelete
@@ -240,32 +272,42 @@ BufTableInsert(BufferTag *tagPtr, uint32 hashcode, int buf_id)
 void
 BufTableDelete(BufferTag *tagPtr, uint32 hashcode)
 {
-	int			bucket_id = hashcode % num_buckets;
-	int			prev = BUF_TABLE_CHAIN_END;
-	int			id = buckets[bucket_id].head;
+	BufferTableLink link;
 
-	while (id != BUF_TABLE_CHAIN_END)
+	if (!BufTableLinkByTag(&link, tagPtr, hashcode))
 	{
-		if (BufferTagsEqual(&entries[id].tag, tagPtr))
-		{
-			/* unlink from the chain */
-			if (prev == BUF_TABLE_CHAIN_END)
-				buckets[bucket_id].head = entries[id].next;
-			else
-				entries[prev].next = entries[id].next;
-			/* mark the entry empty */
-			entries[id].tag.blockNum = P_NEW;
-			entries[id].next = BUF_TABLE_CHAIN_END;
-			return;
-		}
-		prev = id;
-		id = entries[id].next;
+		/*
+		 * Entry not in table.  Callers never double-delete (deletion is gated
+		 * by BM_TAG_VALID on the buffer header), so this indicates
+		 * corruption.
+		 */
+		Assert(false);
+		elog(ERROR, "shared buffer hash table corrupted");
 	}
+	BufTableUnlink(&link);
+}
 
-	/*
-	 * Entry not in table.  Callers never double-delete (deletion is gated by
-	 * BM_TAG_VALID on the buffer header), so this indicates corruption.
-	 */
-	Assert(false);
-	elog(ERROR, "shared buffer hash table corrupted");
+
+/*
+ * BufTableDeleteBuffer
+ *		Delete the hashtable entry for given buffer (which must exist)
+ *
+ * Caller must hold exclusive lock on BufMappingLock for buffer's partition
+ */
+void
+BufTableDeleteBuffer(Buffer buf, uint32 hashcode)
+{
+	BufferTableLink link;
+
+	if (!BufTableLinkByBuffer(&link, buf, hashcode))
+	{
+		/*
+		 * Entry not in table.  Callers never double-delete (deletion is gated
+		 * by BM_TAG_VALID on the buffer header), so this indicates
+		 * corruption.
+		 */
+		Assert(false);
+		elog(ERROR, "shared buffer hash table corrupted");
+	}
+	BufTableUnlink(&link);
 }

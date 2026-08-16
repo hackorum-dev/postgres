@@ -196,6 +196,20 @@ buftable_bench_probe(PG_FUNCTION_ARGS)
 			}
 			END_TIMING;
 
+			BEGIN_TIMING("del-buf", n)
+			{
+				int32		j = r_ord[i];
+				BufTableDeleteBuffer(bufids[j], phash[j]);
+			}
+			END_TIMING
+
+			BEGIN_TIMING("insert", n)
+			{
+				int32		j = w_ord[i];
+				BufTableInsert(&ptag[j], phash[j], bufids[j]);
+			}
+			END_TIMING
+
 			BEGIN_TIMING("miss", n)
 			{
 				int32		j = r_ord[i];

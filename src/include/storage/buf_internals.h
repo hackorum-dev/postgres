@@ -167,6 +167,17 @@ typedef struct buftag
 	BlockNumber blockNum;		/* blknum relative to begin of reln */
 } BufferTag;
 
+
+/*
+ * A mutable chain link: buf_id points at the int that currently stores the
+ * entry index (either a bucket head or a predecessor's next field).
+ */
+typedef struct
+{
+	int		   *buf_id;			/* link to to that leads to an existing buffer */
+	int		   *head;			/* bucket chain head, for insert-at-front */
+} BufferTableLink;
+
 static inline RelFileNumber
 BufTagGetRelNumber(const BufferTag *tag)
 {
@@ -599,6 +610,16 @@ extern uint32 BufTableHashCode(BufferTag *tagPtr);
 extern int	BufTableLookup(BufferTag *tagPtr, uint32 hashcode);
 extern int	BufTableInsert(BufferTag *tagPtr, uint32 hashcode, int buf_id);
 extern void BufTableDelete(BufferTag *tagPtr, uint32 hashcode);
+extern void BufTableDeleteBuffer(Buffer buf, uint32 hashcode);
+
+/* Populate a BufferTableLink comparing a BufferTag */
+extern bool BufTableLinkByTag(BufferTableLink * link, BufferTag *tagPtr, uint32 hashcode);
+
+/* Populate a BufferTableLink comparing buffer id */
+extern bool BufTableLinkByBuffer(BufferTableLink * link, Buffer buf, uint32 hashcode);
+
+/* Quick removal of a buffer entry using a BufferTableLink */
+extern void BufTableUnlink(BufferTableLink * link);
 
 /* localbuf.c */
 extern bool PinLocalBuffer(BufferDesc *buf_hdr, bool adjust_usagecount);
