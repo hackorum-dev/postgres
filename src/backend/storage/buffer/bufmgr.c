@@ -2374,10 +2374,13 @@ InvalidateBuffer(BufferDesc *buf)
 	LWLock	   *oldPartitionLock;	/* buffer partition lock for it */
 	uint32		oldFlags;
 	uint64		buf_state;
+	Buffer		buf_id;
+	BufferTableLink buf_link;
+
 
 	/* Save the original buffer tag before dropping the spinlock */
 	oldTag = buf->tag;
-
+	buf_id = buf->buf_id;
 	UnlockBufHdr(buf);
 
 	/*
@@ -2395,6 +2398,7 @@ retry:
 	 * association.
 	 */
 	LWLockAcquire(oldPartitionLock, LW_EXCLUSIVE);
+	BufTableLinkByBuffer(&buf_link, buf_id, oldHash);
 
 	/* Re-lock the buffer header */
 	buf_state = LockBufHdr(buf);
@@ -2441,16 +2445,17 @@ retry:
 	oldFlags = buf_state & BUF_FLAG_MASK;
 	ClearBufferTag(&buf->tag);
 
-	UnlockBufHdrExt(buf, buf_state,
-					0,
-					BUF_FLAG_MASK | BUF_USAGECOUNT_MASK,
-					0);
 
 	/*
 	 * Remove the buffer from the lookup hashtable, if it was in there.
 	 */
 	if (oldFlags & BM_TAG_VALID)
-		BufTableDelete(&oldTag, oldHash);
+		BufTableUnlink(&buf_link);
+
+	UnlockBufHdrExt(buf, buf_state,
+					0,
+					BUF_FLAG_MASK | BUF_USAGECOUNT_MASK,
+					0);
 
 	/*
 	 * Done with mapping lock.
@@ -2474,6 +2479,7 @@ InvalidateVictimBuffer(BufferDesc *buf_hdr)
 	uint32		hash;
 	LWLock	   *partition_lock;
 	BufferTag	tag;
+	BufferTableLink buf_link;
 
 	Assert(GetPrivateRefCount(BufferDescriptorGetBuffer(buf_hdr)) == 1);
 
@@ -2484,6 +2490,7 @@ InvalidateVictimBuffer(BufferDesc *buf_hdr)
 	partition_lock = BufMappingPartitionLock(hash);
 
 	LWLockAcquire(partition_lock, LW_EXCLUSIVE);
+	BufTableLinkByBuffer(&buf_link, buf_hdr->buf_id, hash);
 
 	/* lock the buffer header */
 	buf_state = LockBufHdr(buf_hdr);
@@ -2524,15 +2531,17 @@ InvalidateVictimBuffer(BufferDesc *buf_hdr)
 	 * tag (see e.g. FlushDatabaseBuffers()).
 	 */
 	ClearBufferTag(&buf_hdr->tag);
+
+	Assert(BUF_STATE_GET_REFCOUNT(buf_state) > 0);
+
+	/* finally delete buffer from the buffer mapping table */
+	BufTableUnlink(&buf_link);
+
 	UnlockBufHdrExt(buf_hdr, buf_state,
 					0,
 					BUF_FLAG_MASK | BUF_USAGECOUNT_MASK,
 					0);
 
-	Assert(BUF_STATE_GET_REFCOUNT(buf_state) > 0);
-
-	/* finally delete buffer from the buffer mapping table */
-	BufTableDelete(&tag, hash);
 
 	LWLockRelease(partition_lock);
 
