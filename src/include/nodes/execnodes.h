@@ -1099,7 +1099,7 @@ typedef struct DomainConstraintState
  * State for JsonExpr evaluation, too big to inline.
  *
  * This contains the information going into and coming out of the
- * EEOP_JSONEXPR_PATH eval step.
+ * EEOP_JSONEXPR_RESET / EEOP_JSONEXPR_PATH eval steps.
  */
 typedef struct JsonExprState
 {
@@ -1119,7 +1119,7 @@ typedef struct JsonExprState
 	 * Output variables that drive the EEOP_JUMP_IF_NOT_TRUE steps that are
 	 * added for ON ERROR and ON EMPTY expressions, if any.
 	 *
-	 * Reset for each evaluation of EEOP_JSONEXPR_PATH.
+	 * Cleared by EEOP_JSONEXPR_RESET at the start of each evaluation.
 	 */
 
 	/* Set to true if jsonpath evaluation cause an error.  */
@@ -1161,7 +1161,7 @@ typedef struct JsonExprState
 	 * not ERROR, a pointer to this is passed to ExecInitExprRec() when
 	 * initializing the coercion expressions or to ExecInitJsonCoercion().
 	 *
-	 * Reset for each evaluation of EEOP_JSONEXPR_PATH.
+	 * Reset by EEOP_JSONEXPR_RESET at the start of each evaluation.
 	 */
 	ErrorSaveContext escontext;
 } JsonExprState;
