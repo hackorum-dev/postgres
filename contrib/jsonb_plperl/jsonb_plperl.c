@@ -186,6 +186,9 @@ SV_to_JsonbValue(SV *in, JsonbInState *jsonb_state, bool is_elem)
 	/* this can recurse via AV_to_JsonbValue() or HV_to_JsonbValue() */
 	check_stack_depth();
 
+	/* Tied values leave SvOK() false until FETCH. */
+	SvGETMAGIC(in);
+
 	/* Dereference references recursively. */
 	while (SvROK(in))
 	{

@@ -138,7 +138,14 @@ plperl_to_hstore(PG_FUNCTION_ARGS)
 	while ((he = hv_iternext(hv)))
 	{
 		char	   *key = sv2cstr(HeSVKEY_force(he));
-		SV		   *value = HeVAL(he);
+		SV		   *value;
+
+		/*
+		 * Tied hashes leave HeVAL() unset.  hv_iterval() plus
+		 * SvGETMAGIC() runs FETCH.
+		 */
+		value = hv_iterval(hv, he);
+		SvGETMAGIC(value);
 
 		if (i >= pcount)
 		{

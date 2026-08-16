@@ -1092,10 +1092,18 @@ plperl_build_tuple_result(HV *perlhash, TupleDesc td)
 	hv_iterinit(perlhash);
 	while ((he = hv_iternext(perlhash)))
 	{
-		SV		   *val = HeVAL(he);
-		char	   *key = hek2cstr(he);
-		int			attn = SPI_fnumber(td, key);
+		char	   *key;
+		SV		   *val;
+		int			attn;
 		Form_pg_attribute attr;
+
+		/*
+		 * Tied hashes leave HeVAL() unset.  hek2cstr() uses FREETMPS, so
+		 * it must run before hv_iterval().
+		 */
+		key = hek2cstr(he);
+		val = hv_iterval(perlhash, he);
+		attn = SPI_fnumber(td, key);
 
 		if (attn == SPI_ERROR_NOATTRIBUTE)
 			ereport(ERROR,
@@ -1348,6 +1356,12 @@ plperl_sv_to_datum(SV *sv, Oid typid, int32 typmod,
 	 * VOID.  In the latter case, we should pay no attention to the last Perl
 	 * statement's result, and this is a convenient means to ensure that.
 	 */
+	if (sv)
+	{
+		dTHX;
+		SvGETMAGIC(sv);
+	}
+
 	if (!sv || !SvOK(sv) || typid == VOIDOID)
 	{
 		/* look up type info if they did not pass it */
@@ -1803,10 +1817,15 @@ plperl_modify_tuple(HV *hvTD, TriggerData *tdata, HeapTuple otup)
 	hv_iterinit(hvNew);
 	while ((he = hv_iternext(hvNew)))
 	{
-		char	   *key = hek2cstr(he);
-		SV		   *val = HeVAL(he);
-		int			attn = SPI_fnumber(tupdesc, key);
+		char	   *key;
+		SV		   *val;
+		int			attn;
 		Form_pg_attribute attr;
+
+		/* hek2cstr() uses FREETMPS, so it must run before hv_iterval(). */
+		key = hek2cstr(he);
+		val = hv_iterval(hvNew, he);
+		attn = SPI_fnumber(tupdesc, key);
 
 		if (attn == SPI_ERROR_NOATTRIBUTE)
 			ereport(ERROR,
@@ -2478,14 +2497,18 @@ plperl_func_handler(PG_FUNCTION_ARGS)
 		if (sav)
 		{
 			dTHX;
-			int			i = 0;
-			SV		  **svp = 0;
 			AV		   *rav = (AV *) SvRV(sav);
+			int			alen = av_len(rav) + 1;
 
-			while ((svp = av_fetch(rav, i, FALSE)) != NULL)
+			for (int i = 0; i < alen; i++)
 			{
-				plperl_return_next_internal(*svp);
-				i++;
+				SV		  **svp = av_fetch(rav, i, FALSE);
+
+				if (svp)
+				{
+					SvGETMAGIC(*svp);
+					plperl_return_next_internal(*svp);
+				}
 			}
 		}
 		else if (SvOK(perlret))
