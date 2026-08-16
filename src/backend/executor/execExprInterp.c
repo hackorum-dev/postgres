@@ -578,6 +578,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		&&CASE_EEOP_XMLEXPR,
 		&&CASE_EEOP_JSON_CONSTRUCTOR,
 		&&CASE_EEOP_IS_JSON,
+		&&CASE_EEOP_JSONEXPR_RESET,
 		&&CASE_EEOP_JSONEXPR_PATH,
 		&&CASE_EEOP_JSONEXPR_COERCION,
 		&&CASE_EEOP_JSONEXPR_COERCION_FINISH,
@@ -1932,6 +1933,13 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		{
 			/* too complex for an inline implementation */
 			ExecEvalJsonIsPredicate(state, op);
+
+			EEO_NEXT();
+		}
+
+		EEO_CASE(EEOP_JSONEXPR_RESET)
+		{
+			ExecEvalJsonExprReset(state, op);
 
 			EEO_NEXT();
 		}
@@ -4891,8 +4899,34 @@ ExecEvalJsonIsPredicate(ExprState *state, ExprEvalStep *op)
 }
 
 /*
+ * ExecEvalJsonExprReset
+ *		Clear empty/error and ErrorSaveContext for this evaluation.
+ *
+ * SQL NULL skips EEOP_JSONEXPR_PATH, so this cannot live there.
+ */
+void
+ExecEvalJsonExprReset(ExprState *state, ExprEvalStep *op)
+{
+	JsonExprState *jsestate = op->d.jsonexpr.jsestate;
+
+	memset(&jsestate->error, 0, sizeof(NullableDatum));
+	memset(&jsestate->empty, 0, sizeof(NullableDatum));
+
+	if (jsestate->escontext.details_wanted)
+	{
+		jsestate->escontext.error_data = NULL;
+		jsestate->escontext.details_wanted = false;
+	}
+	jsestate->escontext.error_occurred = false;
+}
+
+/*
  * Evaluate a jsonpath against a document, both of which must have been
  * evaluated and their values saved in op->d.jsonexpr.jsestate.
+ *
+ * JsonExprState.empty/error and ErrorSaveContext are already cleared by
+ * EEOP_JSONEXPR_RESET.  This step only sets them.  SQL NULL skips this
+ * step, so they must not be cleared here.
  *
  * If an error occurs during JsonPath* evaluation or when coercing its result
  * to the RETURNING type, JsonExprState.error is set to true, provided the
@@ -4921,18 +4955,6 @@ ExecEvalJsonExprPath(ExprState *state, ExprEvalStep *op,
 
 	item = jsestate->formatted_expr.value;
 	path = DatumGetJsonPathP(jsestate->pathspec.value);
-
-	/* Set error/empty to false. */
-	memset(&jsestate->error, 0, sizeof(NullableDatum));
-	memset(&jsestate->empty, 0, sizeof(NullableDatum));
-
-	/* Also reset ErrorSaveContext contents for the next row. */
-	if (jsestate->escontext.details_wanted)
-	{
-		jsestate->escontext.error_data = NULL;
-		jsestate->escontext.details_wanted = false;
-	}
-	jsestate->escontext.error_occurred = false;
 
 	switch (jsexpr->op)
 	{

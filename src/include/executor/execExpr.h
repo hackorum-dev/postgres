@@ -265,6 +265,7 @@ typedef enum ExprEvalOp
 	EEOP_XMLEXPR,
 	EEOP_JSON_CONSTRUCTOR,
 	EEOP_IS_JSON,
+	EEOP_JSONEXPR_RESET,
 	EEOP_JSONEXPR_PATH,
 	EEOP_JSONEXPR_COERCION,
 	EEOP_JSONEXPR_COERCION_FINISH,
@@ -754,7 +755,7 @@ typedef struct ExprEvalStep
 			JsonIsPredicate *pred;	/* original expression node */
 		}			is_json;
 
-		/* for EEOP_JSONEXPR_PATH */
+		/* for EEOP_JSONEXPR_RESET, EEOP_JSONEXPR_PATH, EEOP_JSONEXPR_COERCION_FINISH */
 		struct
 		{
 			struct JsonExprState *jsestate;
@@ -892,6 +893,7 @@ extern void ExecEvalXmlExpr(ExprState *state, ExprEvalStep *op);
 extern void ExecEvalJsonConstructor(ExprState *state, ExprEvalStep *op,
 									ExprContext *econtext);
 extern void ExecEvalJsonIsPredicate(ExprState *state, ExprEvalStep *op);
+extern void ExecEvalJsonExprReset(ExprState *state, ExprEvalStep *op);
 extern int	ExecEvalJsonExprPath(ExprState *state, ExprEvalStep *op,
 								 ExprContext *econtext);
 extern void ExecEvalJsonCoercion(ExprState *state, ExprEvalStep *op,
