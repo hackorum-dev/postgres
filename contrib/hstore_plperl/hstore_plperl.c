@@ -138,7 +138,15 @@ plperl_to_hstore(PG_FUNCTION_ARGS)
 	while ((he = hv_iternext(hv)))
 	{
 		char	   *key = sv2cstr(HeSVKEY_force(he));
-		SV		   *value = HeVAL(he);
+		SV		   *value;
+
+		/*
+		 * Tied hashes leave HeVAL() unset.  hv_iterval() plus
+		 * SvGETMAGIC() runs FETCH.
+		 */
+		value = hv_iterval(hv, he);
+		if (value)
+			SvGETMAGIC(value);
 
 		if (i >= pcount)
 		{
@@ -150,7 +158,7 @@ plperl_to_hstore(PG_FUNCTION_ARGS)
 		pairs[i].keylen = hstoreCheckKeyLen(strlen(pairs[i].key));
 		pairs[i].needfree = true;
 
-		if (!SvOK(value))
+		if (!value || !SvOK(value))
 		{
 			pairs[i].val = NULL;
 			pairs[i].vallen = 0;

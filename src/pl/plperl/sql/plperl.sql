@@ -521,3 +521,24 @@ $$ LANGUAGE plperl;
 
 SELECT self_modify(42);
 SELECT self_modify(42);
+
+-- Tied array via an inline class (no Tie::Array).  av_fetch on a tied
+-- array never returns NULL, so walking until it does would not stop.
+CREATE OR REPLACE FUNCTION tied_setof() RETURNS SETOF text AS $$
+	{
+		package PLPerlTiedArray;
+		sub TIEARRAY { bless [], $_[0] }
+		sub STORE { $_[0][$_[1]] = $_[2] }
+		sub FETCH { $_[0][$_[1]] }
+		sub FETCHSIZE { scalar @{$_[0]} }
+	}
+	my @a;
+	tie @a, 'PLPerlTiedArray';
+	$a[0] = 'a';
+	$a[1] = 'b';
+	$a[2] = 'c';
+	return \@a;
+$$ LANGUAGE plperl;
+
+SELECT * FROM tied_setof();
+
