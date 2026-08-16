@@ -17,6 +17,7 @@
 #ifndef EXECDEBUG_H
 #define EXECDEBUG_H
 
+#include "access/printtup.h"
 #include "executor/executor.h"
 #include "nodes/print.h"
 
