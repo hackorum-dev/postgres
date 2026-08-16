@@ -2478,14 +2478,15 @@ plperl_func_handler(PG_FUNCTION_ARGS)
 		if (sav)
 		{
 			dTHX;
-			int			i = 0;
-			SV		  **svp = 0;
 			AV		   *rav = (AV *) SvRV(sav);
+			int			alen = av_len(rav) + 1;
 
-			while ((svp = av_fetch(rav, i, FALSE)) != NULL)
+			for (int i = 0; i < alen; i++)
 			{
-				plperl_return_next_internal(*svp);
-				i++;
+				SV		  **svp = av_fetch(rav, i, FALSE);
+
+				if (svp)
+					plperl_return_next_internal(*svp);
 			}
 		}
 		else if (SvOK(perlret))
