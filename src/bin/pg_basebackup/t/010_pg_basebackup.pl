@@ -913,6 +913,15 @@ $node->command_checks_all(
 	'pg_basebackup reports checksum mismatch');
 rmtree("$tempdir/backup_corrupt");
 
+# The failure must be counted in pg_stat_database even though the file only
+# has a single corrupted page.  The walsender reports the failures when it
+# exits, so poll for the counter.
+ok( $node->poll_query_until(
+		'postgres',
+		'SELECT checksum_failures = 1 FROM pg_stat_database '
+		  . "WHERE datname = 'postgres';"),
+	'checksum failure reported in pg_stat_database');
+
 # induce further corruption in 5 more blocks
 $node->stop;
 for my $i (1 .. 5)
@@ -941,6 +950,14 @@ $node->command_checks_all(
 	[qr/^WARNING.*7 total checksum verification failures/s],
 	'pg_basebackup correctly report the total number of checksum mismatches');
 rmtree("$tempdir/backup_corrupt3");
+
+# The counter accumulates the failures of all three backups, including the
+# single-page failure of the second file in the last one.
+ok( $node->poll_query_until(
+		'postgres',
+		'SELECT checksum_failures = 14 FROM pg_stat_database '
+		  . "WHERE datname = 'postgres';"),
+	'checksum failures accumulated in pg_stat_database');
 
 # do not verify checksums, should return ok
 $node->command_ok(
