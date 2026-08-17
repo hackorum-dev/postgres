@@ -4956,20 +4956,17 @@ transformJsonBehavior(ParseState *pstate, JsonExpr *jsexpr,
 			coerce_at_runtime = true;
 
 			/*
-			 * json_populate_type() expects to be passed a jsonb value, so gin
-			 * up a Const containing the appropriate boolean value represented
-			 * as jsonb, discarding the original Const containing a plain
-			 * boolean.
+			 * json_populate_type() only takes a jsonb value, so convert a
+			 * boolean to jsonb by calling to_jsonb() on it.  That way any
+			 * boolean-valued expression -- whether a canned TRUE/FALSE
+			 * constant or a user-supplied DEFAULT expression -- is converted
+			 * according to the value it actually evaluates to.
 			 */
 			if (exprType(expr) == BOOLOID)
-			{
-				char	   *val = btype == JSON_BEHAVIOR_TRUE ? "true" : "false";
-
-				expr = (Node *) makeConst(JSONBOID, -1, InvalidOid, -1,
-										  DirectFunctionCall1(jsonb_in,
-															  CStringGetDatum(val)),
-										  false, false);
-			}
+				expr = (Node *) makeFuncExpr(F_TO_JSONB, JSONBOID,
+											 list_make1(expr),
+											 InvalidOid, InvalidOid,
+											 COERCE_EXPLICIT_CALL);
 		}
 		else
 		{
