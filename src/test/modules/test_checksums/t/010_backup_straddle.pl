@@ -22,6 +22,7 @@ use warnings FATAL => 'all';
 
 use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
+use File::Path qw(rmtree);
 use Test::More;
 use IPC::Run;
 
@@ -68,12 +69,15 @@ my $backupdir = $node->backup_dir . '/straddle';
 my ($out, $err) = ('', '');
 my $backup = IPC::Run::start(
 	[
-		'pg_basebackup', '-D', $backupdir,
-		'--wal-method=none', '--no-sync',
-		'--checkpoint=fast',
+		'pg_basebackup', '-D',
+		$backupdir, '--wal-method=none',
+		'--no-sync', '--checkpoint=fast',
 		'-d', $node->connstr('postgres')
 	],
-	'>', \$out, '2>', \$err,
+	'>',
+	\$out,
+	'2>',
+	\$err,
 	IPC::Run::timeout(180));
 
 $node->wait_for_event('walsender', 'basebackup-before-send-files');
@@ -99,7 +103,7 @@ $node->safe_psql('postgres',
 
 wait_for_checksum_state($node, 'on');
 $node->poll_query_until('postgres',
-	    "SELECT count(*) = 0 FROM pg_catalog.pg_stat_activity "
+		"SELECT count(*) = 0 FROM pg_catalog.pg_stat_activity "
 	  . "WHERE backend_type = 'datachecksums launcher';");
 
 my $result = $node->safe_psql('postgres',
@@ -110,10 +114,12 @@ is($result, '0', 'no spurious checksum failures after enable');
 # A backup started once enabling has completed must verify, and pass
 $node->command_ok(
 	[
-		'pg_basebackup', '-D', $node->backup_dir . '/after_enable',
-		'--wal-method=none', '--no-sync', '--checkpoint=fast'
+		'pg_basebackup', '-D',
+		$node->backup_dir . '/after_enable', '--wal-method=none',
+		'--no-sync', '--checkpoint=fast'
 	],
 	'backup after enable completion succeeds');
+rmtree($node->backup_dir . '/after_enable');
 
 # Now test a backup which straddles checksums being disabled and re-enabled.
 # Recreate the table since the earlier scan set its hint bits and the rewrite
@@ -130,12 +136,15 @@ $backupdir = $node->backup_dir . '/onoffon';
 ($out, $err) = ('', '');
 $backup = IPC::Run::start(
 	[
-		'pg_basebackup', '-D', $backupdir,
-		'--wal-method=none', '--no-sync',
-		'--checkpoint=fast',
+		'pg_basebackup', '-D',
+		$backupdir, '--wal-method=none',
+		'--no-sync', '--checkpoint=fast',
 		'-d', $node->connstr('postgres')
 	],
-	'>', \$out, '2>', \$err,
+	'>',
+	\$out,
+	'2>',
+	\$err,
 	IPC::Run::timeout(180));
 
 $node->wait_for_event('walsender', 'basebackup-before-send-files');
@@ -172,21 +181,45 @@ $node->safe_psql('postgres',
 
 wait_for_checksum_state($node, 'on');
 $node->poll_query_until('postgres',
-	    "SELECT count(*) = 0 FROM pg_catalog.pg_stat_activity "
+		"SELECT count(*) = 0 FROM pg_catalog.pg_stat_activity "
 	  . "WHERE backend_type = 'datachecksums launcher';");
 
 $result = $node->safe_psql('postgres',
 	"SELECT coalesce(sum(checksum_failures), 0) FROM pg_catalog.pg_stat_database;"
 );
 is($result, '0', 'no spurious checksum failures after disable and re-enable');
+rmtree($backupdir);
 
 # A backup started once re-enabling has completed must verify, and pass
 $node->command_ok(
 	[
-		'pg_basebackup', '-D', $node->backup_dir . '/after_onoffon',
-		'--wal-method=none', '--no-sync', '--checkpoint=fast'
+		'pg_basebackup', '-D',
+		$node->backup_dir . '/after_onoffon', '--wal-method=none',
+		'--no-sync', '--checkpoint=fast'
 	],
 	'backup after re-enable completion succeeds');
+rmtree($node->backup_dir . '/after_onoffon');
+
+# Corrupt data on disk and take another backup to make sure the corruption is
+# reported
+my $fcorrupt = $node->safe_psql('postgres',
+	q{CREATE TABLE corrupt AS SELECT a FROM generate_series(1,10000) AS a; ALTER TABLE corrupt SET (autovacuum_enabled=false); SELECT pg_relation_filepath('corrupt')}
+);
+$node->stop;
+$node->corrupt_page_checksum($fcorrupt, 0);
+$node->start;
+
+$node->command_checks_all(
+	[
+		'pg_basebackup', '-D',
+		$node->backup_dir . '/after_onoffon_corrupt', '--wal-method=none',
+		'--no-sync', '--checkpoint=fast'
+	],
+	1,
+	[qr{^$}],
+	[qr/^WARNING.*checksum verification failed/s],
+	'pg_basebackup reports checksum mismatch');
+rmtree($node->backup_dir . '/after_onoffon_corrupt');
 
 $node->stop;
 done_testing();
