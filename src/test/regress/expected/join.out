@@ -3108,6 +3108,60 @@ and t1.fivethous < 5;
 
 rollback;
 --
+-- test that hash right semi/anti joins aren't charged for the outer side's
+-- row count, which they don't emit
+--
+begin;
+create temp table hj_small(id int primary key);
+create temp table hj_large(v int);
+insert into hj_small select i from generate_series(1,200)i;
+insert into hj_large select (i % 500) + 11 from generate_series(1,1000)i;
+analyze hj_small, hj_large;
+-- ensure we hash the small side and scan the large one, not the reverse
+explain (costs off)
+select count(*) from hj_small s where exists
+  (select 1 from hj_large r where r.v = s.id);
+                QUERY PLAN                
+------------------------------------------
+ Aggregate
+   ->  Hash Right Semi Join
+         Hash Cond: (r.v = s.id)
+         ->  Seq Scan on hj_large r
+         ->  Hash
+               ->  Seq Scan on hj_small s
+(6 rows)
+
+-- and check we get the expected results
+select count(*) from hj_small s where exists
+  (select 1 from hj_large r where r.v = s.id);
+ count 
+-------
+   190
+(1 row)
+
+-- likewise for a right anti join
+explain (costs off)
+select count(*) from hj_small s where not exists
+  (select 1 from hj_large r where r.v = s.id);
+                QUERY PLAN                
+------------------------------------------
+ Aggregate
+   ->  Hash Right Anti Join
+         Hash Cond: (r.v = s.id)
+         ->  Seq Scan on hj_large r
+         ->  Hash
+               ->  Seq Scan on hj_small s
+(6 rows)
+
+select count(*) from hj_small s where not exists
+  (select 1 from hj_large r where r.v = s.id);
+ count 
+-------
+    10
+(1 row)
+
+rollback;
+--
 -- regression test for bug #13908 (hash join with skew tuples & nbatch increase)
 --
 set work_mem to '64kB';
