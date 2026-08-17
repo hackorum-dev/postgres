@@ -807,3 +807,34 @@ SELECT 'B'::citext ~<=~ 'a'::varchar AS t;  -- varchar wins.
 
 SELECT 'a'::citext ~>~  'B'::varchar AS t;  -- varchar wins.
 SELECT 'a'::citext ~>=~ 'B'::varchar AS t;  -- varchar wins.
+
+--
+-- Check grouping conflicts in simple CASE expressions.
+--
+
+CREATE TABLE citext_distinct_test (t citext);
+
+INSERT INTO citext_distinct_test VALUES ('a'), ('A'), ('b');
+
+-- DISTINCT ON groups 'a' and 'A' using citext equality.  The secondary
+-- sort key makes 'A' the deterministic representative of that group.
+-- The outer simple CASE compares using text equality, so the qual must
+-- remain above the DISTINCT ON operation.
+EXPLAIN (COSTS OFF)
+SELECT *
+FROM (
+    SELECT DISTINCT ON (t) t
+    FROM citext_distinct_test
+    ORDER BY t, t::text COLLATE "C"
+) d
+WHERE CASE t::text WHEN 'a' THEN 1 ELSE 0 END = 1;
+
+SELECT *
+FROM (
+    SELECT DISTINCT ON (t) t
+    FROM citext_distinct_test
+    ORDER BY t, t::text COLLATE "C"
+) d
+WHERE CASE t::text WHEN 'a' THEN 1 ELSE 0 END = 1;
+
+DROP TABLE citext_distinct_test;

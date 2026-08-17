@@ -2682,3 +2682,42 @@ SELECT 'a'::citext ~>=~ 'B'::varchar AS t;  -- varchar wins.
  t
 (1 row)
 
+--
+-- Check grouping conflicts in simple CASE expressions.
+--
+CREATE TABLE citext_distinct_test (t citext);
+INSERT INTO citext_distinct_test VALUES ('a'), ('A'), ('b');
+-- DISTINCT ON groups 'a' and 'A' using citext equality.  The secondary
+-- sort key makes 'A' the deterministic representative of that group.
+-- The outer simple CASE compares using text equality, so the qual must
+-- remain above the DISTINCT ON operation.
+EXPLAIN (COSTS OFF)
+SELECT *
+FROM (
+    SELECT DISTINCT ON (t) t
+    FROM citext_distinct_test
+    ORDER BY t, t::text COLLATE "C"
+) d
+WHERE CASE t::text WHEN 'a' THEN 1 ELSE 0 END = 1;
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
+ Subquery Scan on d
+   Filter: (CASE (d.t)::text WHEN 'a'::text THEN 1 ELSE 0 END = 1)
+   ->  Unique
+         ->  Sort
+               Sort Key: citext_distinct_test.t, citext_distinct_test.t COLLATE "C" USING <
+               ->  Seq Scan on citext_distinct_test
+(6 rows)
+
+SELECT *
+FROM (
+    SELECT DISTINCT ON (t) t
+    FROM citext_distinct_test
+    ORDER BY t, t::text COLLATE "C"
+) d
+WHERE CASE t::text WHEN 'a' THEN 1 ELSE 0 END = 1;
+ t 
+---
+(0 rows)
+
+DROP TABLE citext_distinct_test;
