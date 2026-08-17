@@ -4463,6 +4463,7 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 	Cost		cpu_per_tuple;
 	QualCost	hash_qual_cost;
 	QualCost	qp_qual_cost;
+	double		outer_matched_rows = 0;
 	double		hashjointuples;
 	double		virtualbuckets;
 	Selectivity innerbucketsize;
@@ -4611,7 +4612,6 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 		path->jpath.jointype == JOIN_ANTI ||
 		extra->inner_unique)
 	{
-		double		outer_matched_rows;
 		Selectivity inner_scan_frac;
 
 		/*
@@ -4625,9 +4625,29 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 		 * 2.0 to that fraction.  (If we used a larger fuzz factor, we'd have
 		 * to clamp inner_scan_frac to at most 1.0; but since match_count is
 		 * at least 1, no such clamp is needed now.)
+		 *
+		 * For RIGHT_SEMI or RIGHT_ANTI, we cannot compute outer_matched_rows
+		 * from the semifactors: outer_match_frac describes the semijoin's
+		 * LHS, which is the inner rel in these orientations.  Instead, count
+		 * the matching pairs with approx_tuple_count().  These join types
+		 * reach here only when the innerrel is known unique, so each outer
+		 * row matches at most one inner row and the number of pairs equals
+		 * the number of matched outer rows.  Uniqueness also fixes
+		 * match_count at 1, making inner_scan_frac 1.0.
 		 */
-		outer_matched_rows = rint(outer_path_rows * extra->semifactors.outer_match_frac);
-		inner_scan_frac = 2.0 / (extra->semifactors.match_count + 1.0);
+		if (path->jpath.jointype == JOIN_RIGHT_SEMI ||
+			path->jpath.jointype == JOIN_RIGHT_ANTI)
+		{
+			outer_matched_rows = Min(approx_tuple_count(root, &path->jpath,
+														hashclauses),
+									 outer_path_rows);
+			inner_scan_frac = 1.0;
+		}
+		else
+		{
+			outer_matched_rows = rint(outer_path_rows * extra->semifactors.outer_match_frac);
+			inner_scan_frac = 2.0 / (extra->semifactors.match_count + 1.0);
+		}
 
 		startup_cost += hash_qual_cost.startup;
 		run_cost += hash_qual_cost.per_tuple * outer_matched_rows *
@@ -4649,12 +4669,6 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 		run_cost += hash_qual_cost.per_tuple *
 			(outer_path_rows - outer_matched_rows) *
 			clamp_row_est(inner_path_rows / virtualbuckets) * 0.05;
-
-		/* Get # of tuples that will pass the basic join */
-		if (path->jpath.jointype == JOIN_ANTI)
-			hashjointuples = outer_path_rows - outer_matched_rows;
-		else
-			hashjointuples = outer_matched_rows;
 	}
 	else
 	{
@@ -4671,14 +4685,34 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 		startup_cost += hash_qual_cost.startup;
 		run_cost += hash_qual_cost.per_tuple * outer_path_rows *
 			clamp_row_est(inner_path_rows * innerbucketsize) * 0.5;
-
-		/*
-		 * Get approx # tuples passing the hashquals.  We use
-		 * approx_tuple_count here because we need an estimate done with
-		 * JOIN_INNER semantics.
-		 */
-		hashjointuples = approx_tuple_count(root, &path->jpath, hashclauses);
 	}
+
+	/*
+	 * Get # of tuples that will pass the basic join.
+	 *
+	 * A RIGHT_SEMI or RIGHT_ANTI join produces rows from the inner side: one
+	 * for each inner row that has a match, or that lacks one.  The fraction
+	 * we need is outer_match_frac, which always describes the semijoin's LHS,
+	 * ie, the inner side for these two join types.
+	 *
+	 * Everything else produces rows from the outer side.  For SEMI and
+	 * inner_unique joins that is the matched outer rows, and for ANTI the
+	 * unmatched ones, both available from outer_matched_rows computed above.
+	 * For plain joins, use approx_tuple_count(), which gives an estimate done
+	 * with JOIN_INNER semantics.
+	 */
+	if (path->jpath.jointype == JOIN_RIGHT_SEMI)
+		hashjointuples = clamp_row_est(inner_path_rows *
+									   extra->semifactors.outer_match_frac);
+	else if (path->jpath.jointype == JOIN_RIGHT_ANTI)
+		hashjointuples = clamp_row_est(inner_path_rows *
+									   (1.0 - extra->semifactors.outer_match_frac));
+	else if (path->jpath.jointype == JOIN_ANTI)
+		hashjointuples = outer_path_rows - outer_matched_rows;
+	else if (path->jpath.jointype == JOIN_SEMI || extra->inner_unique)
+		hashjointuples = outer_matched_rows;
+	else
+		hashjointuples = approx_tuple_count(root, &path->jpath, hashclauses);
 
 	/*
 	 * For each tuple that gets through the hashjoin proper, we charge
@@ -5281,11 +5315,17 @@ get_restriction_qual_cost(PlannerInfo *root, RelOptInfo *baserel,
  *	joinrel: join relation under consideration
  *	outerrel: outer relation under consideration
  *	innerrel: inner relation under consideration
- *	jointype: if not JOIN_SEMI or JOIN_ANTI, we assume it's inner_unique
+ *	jointype: if not JOIN_SEMI, JOIN_ANTI, JOIN_RIGHT_SEMI or JOIN_RIGHT_ANTI,
+ *			  we assume it's inner_unique
  *	sjinfo: SpecialJoinInfo relevant to this join
  *	restrictlist: join quals
  * Output parameters:
  *	*semifactors is filled in (see pathnodes.h for field definitions)
+ *
+ * Note that outer_match_frac is derived from sjinfo and so always describes
+ * the semijoin's LHS, whichever side is physically outer.  match_count, by
+ * contrast, is computed from the physical inner rel, and so is not meaningful
+ * for JOIN_RIGHT_SEMI or JOIN_RIGHT_ANTI.
  */
 void
 compute_semi_anti_join_factors(PlannerInfo *root,
@@ -5331,7 +5371,9 @@ compute_semi_anti_join_factors(PlannerInfo *root,
 	jselec = clauselist_selectivity(root,
 									joinquals,
 									0,
-									(jointype == JOIN_ANTI) ? JOIN_ANTI : JOIN_SEMI,
+									(jointype == JOIN_ANTI ||
+									 jointype == JOIN_RIGHT_ANTI) ?
+									JOIN_ANTI : JOIN_SEMI,
 									sjinfo);
 
 	/*
