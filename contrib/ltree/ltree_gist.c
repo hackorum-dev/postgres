@@ -735,7 +735,12 @@ ltree_gist_relopts_validator(void *parsed_options, relopt_value *vals,
 Datum
 ltree_gist_options(PG_FUNCTION_ARGS)
 {
-	local_relopts *relopts = (local_relopts *) PG_GETARG_POINTER(0);
+	local_relopts *relopts;
+
+	if (PG_ARGISNULL(0))
+		PG_RETURN_VOID();
+
+	relopts = (local_relopts *) PG_GETARG_POINTER(0);
 
 	init_local_reloptions(relopts, sizeof(LtreeGistOptions));
 	add_local_int_reloption(relopts, "siglen",
