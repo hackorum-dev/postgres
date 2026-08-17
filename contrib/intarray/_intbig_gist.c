@@ -585,7 +585,12 @@ g_intbig_consistent(PG_FUNCTION_ARGS)
 Datum
 g_intbig_options(PG_FUNCTION_ARGS)
 {
-	local_relopts *relopts = (local_relopts *) PG_GETARG_POINTER(0);
+	local_relopts *relopts;
+
+	if (PG_ARGISNULL(0))
+		PG_RETURN_VOID();
+
+	relopts = (local_relopts *) PG_GETARG_POINTER(0);
 
 	init_local_reloptions(relopts, sizeof(GISTIntArrayBigOptions));
 	add_local_int_reloption(relopts, "siglen",
