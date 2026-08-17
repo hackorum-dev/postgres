@@ -1453,6 +1453,7 @@ create_append_path(PlannerInfo *root,
 		if (child->parallel_aware == parallel_aware)
 		{
 			pathnode->path.rows = child->rows;
+			pathnode->path.disabled_nodes = child->disabled_nodes;
 			pathnode->path.startup_cost = child->startup_cost;
 			pathnode->path.total_cost = child->total_cost;
 		}

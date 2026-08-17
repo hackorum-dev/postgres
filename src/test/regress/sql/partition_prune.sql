@@ -1538,3 +1538,22 @@ select * from (select a, b from phv_boolpart) t
   group by grouping sets (a, b);
 
 drop table phv_boolpart;
+
+-- Prefer a non-disabled path even when a disabled path provides ordering.
+CREATE TABLE append_disabled_test (a int, b int) PARTITION BY LIST (a);
+CREATE TABLE append_disabled_test_1
+  PARTITION OF append_disabled_test FOR VALUES IN (1);
+CREATE INDEX append_disabled_test_1_a_idx
+  ON append_disabled_test_1 (a);
+
+INSERT INTO append_disabled_test VALUES (1, 1), (1, 2), (1, 3);
+ANALYZE append_disabled_test;
+
+SET enable_indexscan = off;
+
+EXPLAIN (COSTS OFF)
+SELECT * FROM append_disabled_test ORDER BY a;
+
+RESET enable_indexscan;
+
+DROP TABLE append_disabled_test;
