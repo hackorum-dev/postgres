@@ -9131,7 +9131,7 @@
   proargtypes => 'internal internal internal',
   prosrc => 'brin_minmax_multi_union' },
 { oid => '4620', descr => 'BRIN multi minmax support',
-  proname => 'brin_minmax_multi_options', proisstrict => 'f',
+  proname => 'brin_minmax_multi_options', proisstrict => 't',
   prorettype => 'void', proargtypes => 'internal',
   prosrc => 'brin_minmax_multi_options' },
 
@@ -9237,7 +9237,7 @@
   proname => 'brin_bloom_union', prorettype => 'bool',
   proargtypes => 'internal internal internal', prosrc => 'brin_bloom_union' },
 { oid => '4595', descr => 'BRIN bloom support',
-  proname => 'brin_bloom_options', proisstrict => 'f', prorettype => 'void',
+  proname => 'brin_bloom_options', proisstrict => 't', prorettype => 'void',
   proargtypes => 'internal', prosrc => 'brin_bloom_options' },
 
 # userlock replacements
@@ -10008,7 +10008,7 @@
   proargtypes => 'internal gtsvector int4 oid internal',
   prosrc => 'gtsvector_consistent_oldsig' },
 { oid => '3434', descr => 'GiST tsvector support',
-  proname => 'gtsvector_options', proisstrict => 'f', prorettype => 'void',
+  proname => 'gtsvector_options', proisstrict => 't', prorettype => 'void',
   proargtypes => 'internal', prosrc => 'gtsvector_options' },
 
 { oid => '3656', descr => 'GIN tsvector support',
