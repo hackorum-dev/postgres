@@ -113,10 +113,42 @@ typedef enum LWLockMode
 extern PGDLLIMPORT bool Trace_lwlocks;
 #endif
 
-extern bool LWLockAcquire(LWLock *lock, LWLockMode mode);
+extern bool LWLockAcquireExclusive(LWLock *lock);
+extern bool LWLockAcquireShared(LWLock *lock);
+
+inline bool LWLockAcquire(LWLock *lock, LWLockMode mode)
+{
+	if(mode == LW_EXCLUSIVE)
+		return LWLockAcquireExclusive(lock);
+	else
+		return LWLockAcquireShared(lock);
+}
+
 extern bool LWLockConditionalAcquire(LWLock *lock, LWLockMode mode);
 extern bool LWLockAcquireOrWait(LWLock *lock, LWLockMode mode);
 extern void LWLockRelease(LWLock *lock);
+
+extern void LWLockReleaseExclusive(LWLock *lock);
+extern void LWLockReleaseShared(LWLock *lock);
+inline void LWLockReleaseMode(LWLock *lock, LWLockMode mode)
+{
+	if(mode == LW_EXCLUSIVE)
+		LWLockReleaseExclusive(lock);
+	else
+		LWLockReleaseShared(lock);
+}
+
+extern void LWLockReleaseLastExclusive(LWLock *lock);
+extern void LWLockReleaseLastShared(LWLock *lock);
+inline void LWLockReleaseLast(LWLock *lock, LWLockMode mode)
+{
+	if(mode == LW_EXCLUSIVE)
+		LWLockReleaseLastExclusive(lock);
+	else
+		LWLockReleaseLastShared(lock);
+}
+
+
 extern void LWLockReleaseClearVar(LWLock *lock, pg_atomic_uint64 *valptr, uint64 val);
 extern void LWLockReleaseAll(void);
 extern bool LWLockHeldByMe(LWLock *lock);

@@ -99,6 +99,42 @@ bench_lwlock(PG_FUNCTION_ARGS)
 		}
 		END_TIMING;
 
+		BEGIN_TIMING("lw-ex-mode", n)
+		{
+			LWLock	   *lock = locks[i];
+
+			LWLockAcquire(lock, LW_EXCLUSIVE);
+			LWLockReleaseMode(lock, LW_EXCLUSIVE);
+		}
+		END_TIMING;
+
+		BEGIN_TIMING("lw-ex-last", n)
+		{
+			LWLock	   *lock = locks[i];
+
+			LWLockAcquire(lock, LW_EXCLUSIVE);
+			LWLockReleaseLast(lock, LW_EXCLUSIVE);
+		}
+		END_TIMING;
+
+		BEGIN_TIMING("lw-sh-mode", n)
+		{
+			LWLock	   *lock = locks[i];
+
+			LWLockAcquire(lock, LW_SHARED);
+			LWLockReleaseMode(lock, LW_SHARED);
+		}
+		END_TIMING;
+
+		BEGIN_TIMING("lw-sh-last", n)
+		{
+			LWLock	   *lock = locks[i];
+
+			LWLockAcquire(lock, LW_SHARED);
+			LWLockReleaseLast(lock, LW_SHARED);
+		}
+		END_TIMING;
+
 		BEGIN_TIMING("LWLock-cond", n)
 		{
 			LWLock	   *lock = locks[i];
