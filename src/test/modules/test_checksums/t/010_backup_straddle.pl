@@ -40,11 +40,14 @@ my $node = PostgreSQL::Test::Cluster->new('backup_node');
 $node->init(no_data_checksums => 1, allows_streaming => 1);
 # The pages rewritten while enabling must stay dirty in shared buffers until
 # the final checkpoint, otherwise they reach disk with checksums on their own
-# and nothing is left to misjudge.  Autovacuum is disabled so that nothing
-# sets hint bits behind our back, and wal_log_hints (implied by
-# allows_streaming) must be off so that setting them does not move the page
-# LSNs past the backup start.
-$node->append_conf('postgresql.conf', 'shared_buffers = 128MB');
+# and nothing is left to misjudge.  The background writer must not flush them
+# behind our back, and shared_buffers must exceed four times the table size
+# so that the scan below does not go through a ring buffer.  Autovacuum is
+# disabled so that nothing sets hint bits behind our back, and wal_log_hints
+# (implied by allows_streaming) must be off so that setting them does not
+# move the page LSNs past the backup start.
+$node->append_conf('postgresql.conf', 'shared_buffers = 32MB');
+$node->append_conf('postgresql.conf', 'bgwriter_lru_maxpages = 0');
 $node->append_conf('postgresql.conf', 'autovacuum = off');
 $node->append_conf('postgresql.conf', 'wal_log_hints = off');
 $node->start;
@@ -96,6 +99,10 @@ $node->safe_psql('postgres',
 ok($backup->finish, 'backup straddling enable completion succeeds')
   or diag("stderr: $err");
 
+# The backup must not even mention checksums: it must skip verification
+# entirely, including the warning-only path for short reads.
+unlike($err, qr/checksum/, 'straddling backup does not verify checksums');
+
 $node->safe_psql('postgres',
 	"SELECT injection_points_wakeup('datachecksums-on-before-checkpoint');");
 $node->safe_psql('postgres',
@@ -105,11 +112,6 @@ wait_for_checksum_state($node, 'on');
 $node->poll_query_until('postgres',
 		"SELECT count(*) = 0 FROM pg_catalog.pg_stat_activity "
 	  . "WHERE backend_type = 'datachecksums launcher';");
-
-my $result = $node->safe_psql('postgres',
-	"SELECT coalesce(sum(checksum_failures), 0) FROM pg_catalog.pg_stat_database;"
-);
-is($result, '0', 'no spurious checksum failures after enable');
 
 # A backup started once enabling has completed must verify, and pass
 $node->command_ok(
@@ -173,6 +175,8 @@ $node->safe_psql('postgres',
 
 ok($backup->finish, 'backup straddling disable and re-enable succeeds')
   or diag("stderr: $err");
+unlike($err, qr/checksum/,
+	'backup straddling disable and re-enable does not verify checksums');
 
 $node->safe_psql('postgres',
 	"SELECT injection_points_wakeup('datachecksums-on-before-checkpoint');");
@@ -183,11 +187,6 @@ wait_for_checksum_state($node, 'on');
 $node->poll_query_until('postgres',
 		"SELECT count(*) = 0 FROM pg_catalog.pg_stat_activity "
 	  . "WHERE backend_type = 'datachecksums launcher';");
-
-$result = $node->safe_psql('postgres',
-	"SELECT coalesce(sum(checksum_failures), 0) FROM pg_catalog.pg_stat_database;"
-);
-is($result, '0', 'no spurious checksum failures after disable and re-enable');
 rmtree($backupdir);
 
 # A backup started once re-enabling has completed must verify, and pass

@@ -187,19 +187,19 @@ $node_primary->wait_for_catchup($node_standby, 'replay',
 	$node_primary->lsn('insert'));
 
 # The rewritten pages are again only dirty in shared buffers, so the on-disk
-# pages still lack checksums.  A base backup must skip verification and pass.
-$node_standby->command_ok(
+# pages still lack checksums.  A base backup must skip verification entirely
+# and pass without mentioning checksums on stderr.  Standby backups always
+# print a NOTICE about WAL archiving, so stderr is not empty.
+$node_standby->command_checks_all(
 	[
 		'pg_basebackup', '-D',
 		$node_standby->backup_dir . '/underway', '--wal-method=none',
 		'--no-sync', '--checkpoint=fast'
 	],
+	0,
+	[qr{^$}],
+	[qr{^(?!.*checksum)}s],
 	'backup from standby while enabling is underway succeeds');
-
-$result = $node_standby->safe_psql('postgres',
-	"SELECT coalesce(sum(checksum_failures), 0) FROM pg_catalog.pg_stat_database;"
-);
-is($result, '0', 'no spurious checksum failures while enabling is underway');
 rmtree($node_standby->backup_dir . '/underway');
 
 # Release the enabling; its final checkpoint flushes the rewritten pages.
@@ -218,19 +218,17 @@ $node_primary->wait_for_catchup($node_standby, 'replay',
 	$node_primary->lsn('insert'));
 $node_standby->safe_psql('postgres', 'CHECKPOINT;');
 
-$node_standby->command_ok(
+$node_standby->command_checks_all(
 	[
 		'pg_basebackup', '-D',
 		$node_standby->backup_dir . '/after_enable', '--wal-method=none',
 		'--no-sync', '--checkpoint=fast'
 	],
+	0,
+	[qr{^$}],
+	[qr{^(?!.*checksum)}s],
 	'backup from standby after enable completion succeeds');
 rmtree($node_standby->backup_dir . '/after_enable');
-
-$result = $node_standby->safe_psql('postgres',
-	"SELECT coalesce(sum(checksum_failures), 0) FROM pg_catalog.pg_stat_database;"
-);
-is($result, '0', 'no spurious checksum failures after enable completion');
 
 $node_standby->stop;
 $node_primary->stop;
