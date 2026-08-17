@@ -1146,8 +1146,8 @@ LWLockDequeueSelf(LWLock *lock)
  *
  * Side effect: cancel/die interrupts are held off until lock release.
  */
-bool
-LWLockAcquire(LWLock *lock, LWLockMode mode)
+static pg_always_inline bool
+LWLockAcquireCommon(LWLock *lock, LWLockMode mode)
 {
 	PGPROC	   *proc = MyProc;
 	bool		result = true;
@@ -1308,6 +1308,30 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 		PGSemaphoreUnlock(proc->sem);
 
 	return result;
+}
+
+/*
+ * LWLockAcquireExclusive - acquire an exclusive lock
+ *
+ * extern function specialised for LW_SHARED at compile time
+ * can be called via LWLockAcquire(lock, LW_EXCLUSIVE)
+ */
+extern bool
+LWLockAcquireExclusive(LWLock *lock)
+{
+	return LWLockAcquireCommon(lock, LW_EXCLUSIVE);
+}
+
+/*
+ * LWLockAcquireShared - acquire a shared lock
+ *
+ * Extern function specialised for LW_SHARED at compile time.
+ * can be called via LWLockAcquire(lock, LW_SHARED)
+ */
+extern bool
+LWLockAcquireShared(LWLock *lock)
+{
+	return LWLockAcquireCommon(lock, LW_SHARED);
 }
 
 /*
@@ -1757,36 +1781,28 @@ LWLockUpdateVar(LWLock *lock, pg_atomic_uint64 *valptr, uint64 val)
 
 
 /*
- * LWLockRelease - release a previously acquired lock
+ * Cold path for waking waiters - kept out of line to enable shrink-wrapping.
+ */
+static pg_noinline void
+LWLockReleaseWakeWaiters(LWLock *lock)
+{
+	/* XXX: remove before commit? */
+	LOG_LWDEBUG("LWLockRelease", lock, "releasing waiters");
+	LWLockWakeup(lock);
+	RESUME_INTERRUPTS();
+}
+
+/*
+ * LWLockReleaseInternal - core release logic, always inlined for constant folding.
  *
  * NB: This will leave lock->owner pointing to the current backend (if
  * LOCK_DEBUG is set). This is somewhat intentional, as it makes it easier to
  * debug cases of missing wakeups during lock release.
  */
-void
-LWLockRelease(LWLock *lock)
+static pg_always_inline void
+LWLockReleaseInternal(LWLock *lock, LWLockMode mode)
 {
-	LWLockMode	mode;
 	uint32		oldstate;
-	bool		check_waiters;
-	int			i;
-
-	/*
-	 * Remove lock from list of locks held.  Usually, but not always, it will
-	 * be the latest-acquired lock; so search array backwards.
-	 */
-	for (i = num_held_lwlocks; --i >= 0;)
-		if (lock == held_lwlocks[i].lock)
-			break;
-
-	if (i < 0)
-		elog(ERROR, "lock %s is not held", T_NAME(lock));
-
-	mode = held_lwlocks[i].mode;
-
-	num_held_lwlocks--;
-	for (; i < num_held_lwlocks; i++)
-		held_lwlocks[i] = held_lwlocks[i + 1];
 
 	PRINT_LWDEBUG("LWLockRelease", lock, mode);
 
@@ -1807,30 +1823,167 @@ LWLockRelease(LWLock *lock)
 
 	/*
 	 * Check if we're still waiting for backends to get scheduled, if so,
-	 * don't wake them up again.
+	 * don't wake them up again. As waking up waiters requires the spinlock
+	 * to be acquired, only do so if necessary.
 	 */
-	if ((oldstate & LW_FLAG_HAS_WAITERS) &&
-		!(oldstate & LW_FLAG_WAKE_IN_PROGRESS) &&
-		(oldstate & LW_LOCK_MASK) == 0)
-		check_waiters = true;
-	else
-		check_waiters = false;
-
-	/*
-	 * As waking up waiters requires the spinlock to be acquired, only do so
-	 * if necessary.
-	 */
-	if (check_waiters)
+	if (unlikely((oldstate & LW_FLAG_HAS_WAITERS) &&
+				 !(oldstate & LW_FLAG_WAKE_IN_PROGRESS) &&
+				 (oldstate & LW_LOCK_MASK) == 0))
 	{
-		/* XXX: remove before commit? */
-		LOG_LWDEBUG("LWLockRelease", lock, "releasing waiters");
-		LWLockWakeup(lock);
+		LWLockReleaseWakeWaiters(lock);
+		return;
 	}
 
 	/*
 	 * Now okay to allow cancel/die interrupts.
 	 */
 	RESUME_INTERRUPTS();
+}
+
+
+/*
+ * LWLockRelease - generic lock release
+ *
+ * extern function without compile-time mode specialisation
+ */
+extern void
+LWLockRelease(LWLock *lock)
+{
+	int			i = num_held_lwlocks - 1;
+	LWLockMode	mode;
+	/*
+	 * Fast path: check if this is the most recently acquired lock.
+	 */
+	if (likely(i >= 0 && held_lwlocks[i].lock == lock))
+	{
+		mode = held_lwlocks[i].mode;
+		num_held_lwlocks = i;
+		LWLockReleaseInternal(lock, mode);
+		return;
+	}
+
+	/*
+	 * Slow path: search array backwards to find the lock.
+	 */
+	
+	for (i = num_held_lwlocks; --i >= 0;)
+		if (lock == held_lwlocks[i].lock)
+			break;
+
+	if (i < 0)
+		elog(ERROR, "lock %s is not held", T_NAME(lock));
+
+	mode = held_lwlocks[i].mode;
+
+	num_held_lwlocks--;
+	for (; i < num_held_lwlocks; i++)
+		held_lwlocks[i] = held_lwlocks[i + 1];
+
+	LWLockReleaseInternal(lock, mode);
+}
+
+/*
+ * LWLockReleaseCommon - release a lock with known mode
+ *
+ * Potentially faster than LWLockRelease, doesn't have to
+ * read the mode and logic can be simplified if passed mode
+ * is a compile time constant.
+ * 
+ * Inlined in LWLockReleaseExclusive and LWLockRelelaseShared
+ */
+static pg_always_inline void
+LWLockReleaseCommon(LWLock *lock, LWLockMode mode)
+{
+	int			i = num_held_lwlocks - 1;
+
+	if (likely(i >= 0 && held_lwlocks[i].lock == lock))
+	{
+		Assert(held_lwlocks[i].mode == mode);
+		num_held_lwlocks = i;
+		LWLockReleaseInternal(lock, mode);
+		return;
+	}
+
+	
+	for (;i >= 0; --i)
+		if (lock == held_lwlocks[i].lock)
+			break;
+
+	if (i < 0)
+		elog(ERROR, "lock %s is not held", T_NAME(lock));
+
+	Assert(held_lwlocks[i].mode == mode);
+
+	num_held_lwlocks--;
+	for (; i < num_held_lwlocks; i++)
+		held_lwlocks[i] = held_lwlocks[i + 1];
+
+	LWLockReleaseInternal(lock, mode);
+}
+/*
+ * LWLockReleaseExclusive
+ *
+ * Extern function specialised for LW_EXCLUSIVE at compile time
+ * Can be called via LWLockReleaseMode(LW_EXCLUSIVE)
+ */
+extern void
+LWLockReleaseExclusive(LWLock *lock)
+{
+	LWLockReleaseCommon(lock, LW_EXCLUSIVE);
+}
+
+/*
+ * LWLockReleaseShared
+ *
+ * Extern function specialised for LW_SHARED at compile time
+ * Can be called via LWLockReleaseMode(LW_SHARED)
+ */
+extern void
+LWLockReleaseShared(LWLock *lock)
+{
+	LWLockReleaseCommon(lock, LW_SHARED);
+}
+
+
+/*
+ * LWLockReleaseLastCommon - release a lock at the top of the stack
+ *
+ * Static function to be inlined in LWLockReleaseLastShared 
+ * and LWLockReleaseLastExclusive by the compiler.
+ */
+static pg_always_inline void
+LWLockReleaseLastCommon(LWLock *lock, LWLockMode mode)
+{
+	Assert(num_held_lwlocks > 0);
+	Assert(held_lwlocks[num_held_lwlocks - 1].lock == lock);
+	Assert(held_lwlocks[num_held_lwlocks - 1].mode == mode);
+
+	num_held_lwlocks--;
+	LWLockReleaseInternal(lock, mode);
+}
+
+/*
+ * LWLockReleaseLastExclusive:
+ *
+ * extern function specialised for LW_EXCLUSIVE mode at compile time
+ * Can be called via LWLockReleaseLast(LW_EXCLUSIVE)
+ */
+extern void
+LWLockReleaseLastExclusive(LWLock *lock)
+{
+	LWLockReleaseLastCommon(lock, LW_EXCLUSIVE);
+}
+
+/*
+ * LWLockReleaseLastShared: LW_SHARED mode LWLock release
+ *
+ * extern function specialized for LW_SHARED mode at compile time
+ * Can be called via LWLockReleaseLast(LW_EXCLUSIVE)
+ */
+extern void
+LWLockReleaseLastShared(LWLock *lock)
+{
+	LWLockReleaseLastCommon(lock, LW_SHARED);
 }
 
 /*
