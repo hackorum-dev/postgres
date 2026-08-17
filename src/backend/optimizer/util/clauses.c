@@ -6391,13 +6391,12 @@ expression_has_grouping_conflict(Node *expr,
  * btree/hash member and so is not treated as a comparison here.
  *
  * Comparison nodes are OpExpr/ScalarArrayOpExpr whose operator is a btree/hash
- * member, and RowCompareExpr (one operator and collation per column).  A
- * simple CASE (CaseExpr with a non-NULL arg) is a comparison in disguise:
+ * member, and RowCompareExpr (one operator and collation per column).
+ * A simple CASE (CaseExpr with a non-NULL arg) is a comparison in disguise:
  * parse analysis builds each WHEN as "OpExpr(CaseTestExpr op val)", with the
  * CaseTestExpr standing in for the arg, so the arg is effectively an operand
- * of each WHEN's comparison.  Those WHEN operators are always the type-default
- * "=", matching the grouping eqop, so only a collation conflict is possible
- * there.
+ * of each WHEN's comparison.  Check that operand against each WHEN operator
+ * just as for an ordinary comparison node.
  */
 static bool
 grouping_conflict_walker(Node *node, grouping_walker_ctx *ctx)
@@ -6475,24 +6474,18 @@ grouping_conflict_walker(Node *node, grouping_walker_ctx *ctx)
 
 		if (arg && IsA(arg, Var))
 		{
-			Var		   *var = (Var *) arg;
-
-			/*
-			 * The arg is a grouping column compared by every WHEN.  For a
-			 * nondeterministic collation, reject if any WHEN applies a
-			 * different collation.
-			 */
-			if (OidIsValid(ctx->get_eqop(var, ctx->cb_context)) &&
-				OidIsValid(var->varcollid) &&
-				!get_collation_isdeterministic(var->varcollid))
+			foreach_node(CaseWhen, cw, cexpr->args)
 			{
-				foreach_node(CaseWhen, cw, cexpr->args)
-				{
-					Oid			collid = exprInputCollation((Node *) cw->expr);
+				OpExpr *opexpr;
 
-					if (OidIsValid(collid) && collid != var->varcollid)
-						return true;
-				}
+				Assert(IsA(cw->expr, OpExpr));
+				opexpr = (OpExpr *) cw->expr;
+
+				if (grouping_check_operand((Node *) cexpr->arg,
+										   opexpr->opno,
+										   opexpr->inputcollid,
+										   ctx))
+					return true;
 			}
 		}
 		else if (grouping_conflict_walker((Node *) cexpr->arg, ctx))
