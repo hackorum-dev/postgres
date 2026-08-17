@@ -28,6 +28,7 @@ use warnings FATAL => 'all';
 
 use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
+use File::Path     qw(rmtree);
 use Test::More;
 
 use FindBin;
@@ -95,19 +96,36 @@ $node_standby->safe_psql('postgres', 'CHECKPOINT;');
 # standby's copies of them can be removed later, and remember where the
 # enabling era begins.
 $node_primary->safe_psql('postgres', 'SELECT pg_switch_wal();');
-my $enable_start_lsn =
-  $node_primary->safe_psql('postgres', 'SELECT pg_current_wal_insert_lsn();');
-my $enable_start_seg = $node_primary->safe_psql('postgres',
-	"SELECT pg_walfile_name('$enable_start_lsn');");
 
 # Enable checksums, holding the launcher after the state change but before
 # the final checkpoint, so the rewritten pages stay dirty everywhere.
 $node_primary->safe_psql('postgres',
+	"SELECT injection_points_attach('datachecksums-enable-checksums-delay', 'wait');"
+);
+$node_primary->safe_psql('postgres',
 	"SELECT injection_points_attach('datachecksums-on-before-checkpoint','wait');"
 );
 enable_data_checksums($node_primary);
+
+$node_primary->wait_for_event('datachecksums launcher',
+	'datachecksums-enable-checksums-delay');
+my $enable_start_lsn =
+  $node_primary->safe_psql('postgres', 'SELECT pg_current_wal_insert_lsn();');
+my $enable_start_seg = $node_primary->safe_psql('postgres',
+	"SELECT pg_walfile_name('$enable_start_lsn');");
+$node_primary->safe_psql('postgres',
+	"SELECT injection_points_wakeup('datachecksums-enable-checksums-delay');"
+);
+
+# Immediately start to wait for the next event and hold off on detaching the
+# previous injection point till later to avoid delays and risk missing the
+# wait event
 $node_primary->wait_for_event('datachecksums launcher',
 	'datachecksums-on-before-checkpoint');
+# Detach the injection point now that we have some more time
+$node_primary->safe_psql('postgres',
+	"SELECT injection_points_detach('datachecksums-enable-checksums-delay');"
+);
 
 # The standby has now replayed the state change: its pg_control says "on"
 # while the rewritten pages are only dirty in its shared buffers.
@@ -126,11 +144,10 @@ my ($stdout, $stderr) =
 my ($min_recovery) =
   $stdout =~ /Minimum recovery ending location:\s*([0-9A-F]+\/[0-9A-F]+)/;
 die "could not parse pg_controldata output" unless defined $min_recovery;
-is( $node_primary->safe_psql(
-		'postgres',
-		"SELECT '$min_recovery'::pg_lsn > '$enable_start_lsn'::pg_lsn;"),
-	't',
-	'minRecoveryPoint advanced past the checksum state change');
+
+my $result = $node_primary->safe_psql('postgres',
+	"SELECT '$min_recovery'::pg_lsn > '$enable_start_lsn'::pg_lsn;");
+is($result, 't', 'minRecoveryPoint advanced past the checksum state change');
 
 # Remove the enabling-era WAL from the standby and cut it off from the
 # primary, so that replay after the restart stalls below the state change.
@@ -173,15 +190,17 @@ $node_primary->wait_for_catchup($node_standby, 'replay',
 # pages still lack checksums.  A base backup must skip verification and pass.
 $node_standby->command_ok(
 	[
-		'pg_basebackup', '-D', $node_standby->backup_dir . '/underway',
-		'--wal-method=none', '--no-sync', '--checkpoint=fast'
+		'pg_basebackup', '-D',
+		$node_standby->backup_dir . '/underway', '--wal-method=none',
+		'--no-sync', '--checkpoint=fast'
 	],
 	'backup from standby while enabling is underway succeeds');
 
-my $result = $node_standby->safe_psql('postgres',
+$result = $node_standby->safe_psql('postgres',
 	"SELECT coalesce(sum(checksum_failures), 0) FROM pg_catalog.pg_stat_database;"
 );
 is($result, '0', 'no spurious checksum failures while enabling is underway');
+rmtree($node_standby->backup_dir . '/underway');
 
 # Release the enabling; its final checkpoint flushes the rewritten pages.
 $node_primary->safe_psql('postgres',
@@ -190,7 +209,7 @@ $node_primary->safe_psql('postgres',
 	"SELECT injection_points_detach('datachecksums-on-before-checkpoint');");
 wait_for_checksum_state($node_primary, 'on');
 $node_primary->poll_query_until('postgres',
-	    "SELECT count(*) = 0 FROM pg_catalog.pg_stat_activity "
+		"SELECT count(*) = 0 FROM pg_catalog.pg_stat_activity "
 	  . "WHERE backend_type = 'datachecksums launcher';");
 
 # A restartpoint on the final checkpoint lets verification resume, and a
@@ -201,10 +220,12 @@ $node_standby->safe_psql('postgres', 'CHECKPOINT;');
 
 $node_standby->command_ok(
 	[
-		'pg_basebackup', '-D', $node_standby->backup_dir . '/after_enable',
-		'--wal-method=none', '--no-sync', '--checkpoint=fast'
+		'pg_basebackup', '-D',
+		$node_standby->backup_dir . '/after_enable', '--wal-method=none',
+		'--no-sync', '--checkpoint=fast'
 	],
 	'backup from standby after enable completion succeeds');
+rmtree($node_standby->backup_dir . '/after_enable');
 
 $result = $node_standby->safe_psql('postgres',
 	"SELECT coalesce(sum(checksum_failures), 0) FROM pg_catalog.pg_stat_database;"

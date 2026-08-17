@@ -9297,9 +9297,9 @@ xlog2_redo(XLogReaderState *record)
 		 * recover back up to this point before allowing hot standby again.
 		 * The new state is durable in pg_control while its location is only
 		 * tracked in shared memory; a standby becoming consistent below this
-		 * record would let base backups resume checksum verification with
-		 * the location unknown.  The local copies cannot be updated as long
-		 * as crash recovery is happening and we expect all the WAL to be
+		 * record would let base backups resume checksum verification with the
+		 * location unknown.  The local copies cannot be updated as long as
+		 * crash recovery is happening and we expect all the WAL to be
 		 * replayed.
 		 */
 		if (InArchiveRecovery)
