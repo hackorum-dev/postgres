@@ -1092,10 +1092,18 @@ plperl_build_tuple_result(HV *perlhash, TupleDesc td)
 	hv_iterinit(perlhash);
 	while ((he = hv_iternext(perlhash)))
 	{
-		SV		   *val = HeVAL(he);
-		char	   *key = hek2cstr(he);
-		int			attn = SPI_fnumber(td, key);
+		char	   *key;
+		SV		   *val;
+		int			attn;
 		Form_pg_attribute attr;
+
+		/*
+		 * Tied hashes leave HeVAL() unset.  hek2cstr() uses FREETMPS, so
+		 * it must run before hv_iterval().
+		 */
+		key = hek2cstr(he);
+		val = hv_iterval(perlhash, he);
+		attn = SPI_fnumber(td, key);
 
 		if (attn == SPI_ERROR_NOATTRIBUTE)
 			ereport(ERROR,
@@ -1145,6 +1153,12 @@ get_perl_array_ref(SV *sv)
 {
 	dTHX;
 
+	if (!sv)
+		return NULL;
+
+	/* Tied scalars leave SvOK()/SvROK() false until FETCH. */
+	SvGETMAGIC(sv);
+
 	if (SvOK(sv) && SvROK(sv))
 	{
 		if (SvTYPE(SvRV(sv)) == SVt_PVAV)
@@ -1154,9 +1168,13 @@ get_perl_array_ref(SV *sv)
 			HV		   *hv = (HV *) SvRV(sv);
 			SV		  **sav = hv_fetch_string(hv, "array");
 
-			if (sav && *sav && SvOK(*sav) && SvROK(*sav) &&
-				SvTYPE(SvRV(*sav)) == SVt_PVAV)
-				return *sav;
+			if (sav && *sav)
+			{
+				SvGETMAGIC(*sav);
+				if (SvOK(*sav) && SvROK(*sav) &&
+					SvTYPE(SvRV(*sav)) == SVt_PVAV)
+					return *sav;
+			}
 
 			elog(ERROR, "could not get array reference from PostgreSQL::InServer::ARRAY object");
 		}
@@ -1348,6 +1366,12 @@ plperl_sv_to_datum(SV *sv, Oid typid, int32 typmod,
 	 * VOID.  In the latter case, we should pay no attention to the last Perl
 	 * statement's result, and this is a convenient means to ensure that.
 	 */
+	if (sv)
+	{
+		dTHX;
+		SvGETMAGIC(sv);
+	}
+
 	if (!sv || !SvOK(sv) || typid == VOIDOID)
 	{
 		/* look up type info if they did not pass it */
@@ -1787,6 +1811,7 @@ plperl_modify_tuple(HV *hvTD, TriggerData *tdata, HeapTuple otup)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_COLUMN),
 				 errmsg("$_TD->{new} does not exist")));
+	SvGETMAGIC(*svp);
 	if (!SvOK(*svp) || !SvROK(*svp) || SvTYPE(SvRV(*svp)) != SVt_PVHV)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATATYPE_MISMATCH),
@@ -1803,10 +1828,15 @@ plperl_modify_tuple(HV *hvTD, TriggerData *tdata, HeapTuple otup)
 	hv_iterinit(hvNew);
 	while ((he = hv_iternext(hvNew)))
 	{
-		char	   *key = hek2cstr(he);
-		SV		   *val = HeVAL(he);
-		int			attn = SPI_fnumber(tupdesc, key);
+		char	   *key;
+		SV		   *val;
+		int			attn;
 		Form_pg_attribute attr;
+
+		/* hek2cstr() uses FREETMPS, so it must run before hv_iterval(). */
+		key = hek2cstr(he);
+		val = hv_iterval(hvNew, he);
+		attn = SPI_fnumber(tupdesc, key);
 
 		if (attn == SPI_ERROR_NOATTRIBUTE)
 			ereport(ERROR,
@@ -2478,14 +2508,15 @@ plperl_func_handler(PG_FUNCTION_ARGS)
 		if (sav)
 		{
 			dTHX;
-			int			i = 0;
-			SV		  **svp = 0;
 			AV		   *rav = (AV *) SvRV(sav);
+			int			alen = av_len(rav) + 1;
 
-			while ((svp = av_fetch(rav, i, FALSE)) != NULL)
+			for (int i = 0; i < alen; i++)
 			{
-				plperl_return_next_internal(*svp);
-				i++;
+				SV		  **svp = av_fetch(rav, i, FALSE);
+
+				if (svp)
+					plperl_return_next_internal(*svp);
 			}
 		}
 		else if (SvOK(perlret))
@@ -2572,6 +2603,13 @@ plperl_trigger_handler(PG_FUNCTION_ARGS)
 	************************************************************/
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish() failed");
+
+	if (perlret)
+	{
+		dTHX;
+
+		SvGETMAGIC(perlret);
+	}
 
 	if (perlret == NULL || !SvOK(perlret))
 	{
@@ -3292,6 +3330,13 @@ plperl_return_next_internal(SV *sv)
 
 	if (!sv)
 		return;
+
+	{
+		dTHX;
+
+		/* Tied scalars leave SvOK()/SvROK() false until FETCH. */
+		SvGETMAGIC(sv);
+	}
 
 	prodesc = current_call_data->prodesc;
 	fcinfo = current_call_data->fcinfo;
