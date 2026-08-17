@@ -3012,6 +3012,10 @@ ERROR:  jsonpath member accessor can only be applied to an object
        <para>
         <literal>jsonb_path_query_array('[1, "a", 1, 3]', '$[*] ? (@ == "a")')</literal>
         <returnvalue>["a"]</returnvalue>
+       </para>
+       <para>
+        <literal>jsonb_path_query_array('["a","b","c"]', '$[*] ? (@ == $arr)','{"arr": ["c","b"]}')</literal>
+        <returnvalue>["b","c"]</returnvalue>
        </para></entry>
       </row>
 
