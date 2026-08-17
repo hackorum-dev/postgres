@@ -11,7 +11,7 @@ PG_CPPFLAGS = -I$(top_srcdir)/src/pl/plperl
 EXTENSION = jsonb_plperlu jsonb_plperl
 DATA = jsonb_plperlu--1.0.sql jsonb_plperl--1.0.sql
 
-REGRESS = jsonb_plperl jsonb_plperlu
+REGRESS = jsonb_plperl jsonb_plperlu jsonb_plperl_tied
 
 SHLIB_LINK += $(filter -lm, $(LIBS))
 
