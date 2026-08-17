@@ -274,6 +274,7 @@ static bool get_actual_variable_endpoint(Relation heapRel,
 static RelOptInfo *find_join_input_rel(PlannerInfo *root, Relids relids);
 static double btcost_correlation(IndexOptInfo *index,
 								 VariableStatData *vardata);
+static bool strip_all_adjacency_relabeltypes_walker(Node *node, void *context);
 
 /* Define support routines for MCV hash tables */
 #define SH_PREFIX				MCVHashTable
@@ -5656,6 +5657,7 @@ examine_variable(PlannerInfo *root, Node *node, int varRelid,
 	Relids		varnos;
 	Relids		basevarnos;
 	RelOptInfo *onerel;
+	Node	   *save_node;
 
 	/* Make sure we don't return dangling pointers in vardata */
 	MemSet(vardata, 0, sizeof(VariableStatData));
@@ -5673,12 +5675,24 @@ examine_variable(PlannerInfo *root, Node *node, int varRelid,
 	basenode = strip_all_phvs_deep(root, node);
 
 	/*
-	 * Look inside any binary-compatible relabeling.  We need to handle nested
-	 * RelabelType nodes here, because the prior stripping of PlaceHolderVars
-	 * may have brought separate RelabelTypes into adjacency.
+	 * eval_const_expressions() should already have stripped adjacent
+	 * RelabelTypes. However, stripping PlaceHolderVars above may have
+	 * brought previously separated RelabelTypes into adjacency, whether
+	 * at the top level or within a deeper subtree. Therefore, run
+	 * strip_all_adjacency_relabeltypes_walker() to normalize the expression.
+	 *
+	 * If the outermost RelabelType and its underlying argument have the same
+	 * type, typmod, and collation, and the argument is a base Var,
+	 * strip_all_adjacency_relabeltypes_walker() reduces the RelabelType chain
+	 * to that Var, making the expression equivalent to a plain base Var.
+	 *
+	 * Keep the stripped result in save_node rather than modifying the
+	 * original node. The result is used to compare against indexprs and
+	 * extended-statistics expressions, which are also processed by
+	 * eval_const_expressions() and compared using equal().
 	 */
-	while (IsA(basenode, RelabelType))
-		basenode = (Node *) ((RelabelType *) basenode)->arg;
+	strip_all_adjacency_relabeltypes_walker(basenode, NULL);
+	save_node = basenode;
 
 	/* Fast path for a simple Var */
 	if (IsA(basenode, Var) &&
@@ -5799,9 +5813,7 @@ examine_variable(PlannerInfo *root, Node *node, int varRelid,
 					if (indexpr_item == NULL)
 						elog(ERROR, "too few entries in indexprs list");
 					indexkey = (Node *) lfirst(indexpr_item);
-					if (indexkey && IsA(indexkey, RelabelType))
-						indexkey = (Node *) ((RelabelType *) indexkey)->arg;
-					if (equal(node, indexkey))
+					if (equal(save_node, indexkey))
 					{
 						/*
 						 * Found a match ... is it a unique index? Tests here
@@ -5925,12 +5937,8 @@ examine_variable(PlannerInfo *root, Node *node, int varRelid,
 
 				Assert(expr);
 
-				/* strip RelabelType before comparing it */
-				if (expr && IsA(expr, RelabelType))
-					expr = (Node *) ((RelabelType *) expr)->arg;
-
 				/* found a match, see if we can extract pg_statistic row */
-				if (equal(node, expr))
+				if (equal(save_node, expr))
 				{
 					/*
 					 * XXX Not sure if we should cache the tuple somewhere.
@@ -9340,4 +9348,58 @@ brincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 		statsData.pagesPerRange;
 
 	*indexPages = index->pages;
+}
+
+/*
+ * strip_all_adjacency_relabeltypes_walker
+ *		Walker to deeply strip all adjacent RelabelTypes.
+ *
+ * If the outermost RelabelType and its underlying argument have the same
+ * type, typmod, and collation, and the argument is a base Var,
+ * strip_all_adjacency_relabeltypes_walker() reduces the RelabelType chain
+ * to that Var, making the expression equivalent to a plain base Var.
+ */
+static bool
+strip_all_adjacency_relabeltypes_walker(Node *node, void *context)
+{
+	if (node == NULL)
+		return false;
+
+	if (IsA(node, RelabelType))
+	{
+		RelabelType 	*relabel = (RelabelType *) node;
+
+		if (relabel->arg == NULL)
+			return false;
+
+		if (IsA(relabel->arg, RelabelType))
+		{
+			Expr	*expr = relabel->arg;
+
+			/* Strip adjacent RelabelTypes iteratively to avoid recursive calls. */
+			while (expr && IsA(expr, RelabelType))
+				expr = ((RelabelType *) expr)->arg;
+
+			relabel->arg = expr;
+
+			if (relabel->arg == NULL)
+				return false;
+		}
+
+		if (IsA(relabel->arg, Var))
+		{
+			Var		*var = (Var *) relabel->arg;
+
+			if (relabel->resulttype == var->vartype &&
+				relabel->resulttypmod == var->vartypmod &&
+				relabel->resultcollid == var->varcollid)
+			{
+				/* RelabelType equivalent to a plain base Var. */
+				node = (Node *) var;
+			}
+			return false;
+		}
+	}
+
+	return expression_tree_walker(node, strip_all_adjacency_relabeltypes_walker, context);
 }
