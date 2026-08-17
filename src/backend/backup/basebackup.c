@@ -1811,13 +1811,14 @@ sendFile(bbsink *sink, const char *readfilename, const char *tarfilename,
 	CloseTransientFile(fd);
 
 	if (checksum_failures > 1)
-	{
 		ereport(WARNING,
 				(errmsg_plural("file \"%s\" has a total of %d checksum verification failure",
 							   "file \"%s\" has a total of %d checksum verification failures",
 							   checksum_failures,
 							   readfilename, checksum_failures)));
 
+	if (checksum_failures > 0)
+	{
 		pgstat_prepare_report_checksum_failure(dboid);
 		pgstat_report_checksum_failures_in_db(dboid, checksum_failures);
 	}
