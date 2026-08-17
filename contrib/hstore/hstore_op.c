@@ -76,7 +76,7 @@ hstoreArrayToPairs(ArrayType *a, int *npairs)
 	bool	   *key_nulls;
 	int			key_count;
 	Pairs	   *key_pairs;
-	int			bufsiz;
+	Size		bufsiz;
 	int			i,
 				j;
 
