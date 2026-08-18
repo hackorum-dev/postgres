@@ -971,6 +971,7 @@ show_all_settings(PG_FUNCTION_ARGS)
 	while (call_cntr < max_calls)	/* do when there is more left to send */
 	{
 		struct config_generic *conf = guc_vars[call_cntr];
+		const char *cvalues[NUM_PG_SETTINGS_ATTS];
 		char	   *values[NUM_PG_SETTINGS_ATTS];
 		HeapTuple	tuple;
 		Datum		result;
@@ -984,7 +985,14 @@ show_all_settings(PG_FUNCTION_ARGS)
 		}
 
 		/* extract values for the current variable */
-		GetConfigOptionValues(conf, (const char **) values);
+		GetConfigOptionValues(conf, cvalues);
+
+		/*
+		 * This is so that both GetConfigOptionValues() and
+		 * BuildTupleFromCStrings() are satisfied about the const-ness without
+		 * triggering warnings.
+		 */
+		memcpy(values, cvalues, sizeof(cvalues));
 
 		/* build a tuple */
 		tuple = BuildTupleFromCStrings(attinmeta, values);
