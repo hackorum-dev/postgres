@@ -49,6 +49,7 @@
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_policy.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_publication.h"
 #include "catalog/pg_publication_rel.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_statistic_ext.h"
@@ -63,6 +64,7 @@
 #include "commands/event_trigger.h"
 #include "commands/extension.h"
 #include "commands/repack.h"
+#include "commands/publicationcmds.h"
 #include "commands/sequence.h"
 #include "commands/tablecmds.h"
 #include "commands/tablespace.h"
@@ -19802,6 +19804,16 @@ AlterTableNamespaceInternal(Relation rel, Oid oldNspOid, Oid nspOid,
 	AlterConstraintNamespaces(RelationGetRelid(rel), oldNspOid, nspOid,
 							  false, objsMoved);
 
+	/*
+	 * Remove any EXCEPT clause entries for this relation from schema
+	 * publications.  A schema-scoped exclusion is no longer meaningful once
+	 * the table moves to a different schema.
+	 */
+	if (rel->rd_rel->relkind == RELKIND_RELATION ||
+		rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+		RemoveSchemaPubExceptForRel(RelationGetRelid(rel), oldNspOid,
+									nspOid);
+
 	table_close(classRel, RowExclusiveLock);
 }
 
@@ -21135,6 +21147,7 @@ ATExecAttachPartition(List **wqueue, Relation rel, PartitionCmd *cmd,
 	if (exceptpuboids != NIL)
 	{
 		bool		first = true;
+		bool		has_alltables_pub = false;
 		StringInfoData pubnames;
 
 		initStringInfo(&pubnames);
@@ -21148,17 +21161,22 @@ ATExecAttachPartition(List **wqueue, Relation rel, PartitionCmd *cmd,
 			else
 				appendStringInfo(&pubnames, _(", \"%s\""), pubname);
 			first = false;
+
+			if (GetPublication(pubid)->alltables)
+				has_alltables_pub = true;
 		}
 
 		ereport(ERROR,
 				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				errmsg_plural("cannot attach table \"%s\" as partition because it is referenced in publication %s EXCEPT clause",
-							  "cannot attach table \"%s\" as partition because it is referenced in publications %s EXCEPT clause",
+				errmsg_plural("cannot attach table \"%s\" as partition because it is named in EXCEPT clause of publication %s",
+							  "cannot attach table \"%s\" as partition because it is named in EXCEPT clause of publications %s",
 							  list_length(exceptpuboids),
 							  RelationGetRelationName(attachrel),
 							  pubnames.data),
 				errdetail("The publication EXCEPT clause cannot contain tables that are partitions."),
-				errhint("Change the publication's EXCEPT clause using ALTER PUBLICATION ... SET ALL TABLES."));
+				errhint("%s", has_alltables_pub ?
+						_("Change the EXCEPT clause using ALTER PUBLICATION ... SET ALL TABLES ... EXCEPT.") :
+						_("Change the EXCEPT clause using ALTER PUBLICATION ... SET TABLES IN SCHEMA ... EXCEPT.")));
 	}
 
 	list_free(exceptpuboids);

@@ -22,6 +22,7 @@
 #include "catalog/namespace.h"
 #include "catalog/objectaccess.h"
 #include "catalog/objectaddress.h"
+#include "catalog/partition.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_namespace.h"
@@ -61,7 +62,7 @@ typedef struct rf_context
 	Oid			parentid;		/* relid of the parent relation */
 } rf_context;
 
-static List *OpenTableList(List *tables);
+static List *OpenTableList(List *tables, List **cross_schema_children);
 static void CloseTableList(List *rels);
 static void LockSchemaList(List *schemalist);
 static void PublicationAddTables(Oid pubid, List *rels, bool if_not_exists,
@@ -71,6 +72,18 @@ static void PublicationAddSchemas(Oid pubid, List *schemas, bool if_not_exists,
 								  AlterPublicationStmt *stmt);
 static void PublicationDropSchemas(Oid pubid, List *schemas, bool missing_ok);
 static char defGetGeneratedColsOption(DefElem *def);
+static void CheckExceptNotInTableList(List *except_rels,
+									  List *cross_schema_children,
+									  List *explicitrelids);
+static void CheckExceptChildNotInSchemaList(List *cross_schema_children,
+											List *schemaidlist,
+											List *except_rels);
+static void CheckExceptPartitionNotInSchemaList(List *except_rels,
+												List *schemaidlist);
+static void ProcessSchemaExceptTables(Oid schemaid, List *except_tables,
+									  ParseState *pstate, List **schemas,
+									  List **schemas_with_except,
+									  List **except_pubtables);
 
 
 static void
@@ -176,15 +189,92 @@ parse_publication_options(ParseState *pstate,
 }
 
 /*
+ * Reject a schema being mentioned more than once with an EXCEPT clause, even
+ * if the EXCEPT clauses are identical — much like OpenTableList() rejects
+ * "FOR TABLE t1(a), t1(a)" despite the column lists matching. A schema can
+ * still be mentioned multiple times, just not more than once with EXCEPT.
+ *
+ * Also qualify unqualified EXCEPT table names with the given schema (rejecting
+ * any explicitly qualified with a different schema), and append them to
+ * *except_pubtables.
+ *
+ * schemaid: OID of the schema for this TABLES IN SCHEMA mention.
+ * except_tables: the EXCEPT list (or NIL) attached to this mention.
+ * pstate: parse state of the statement, used to report the error position of
+ * an offending EXCEPT entry.
+ * *schemas: accumulates all schema OIDs seen so far in this statement.
+ * *schemas_with_except: This is a subset of *schemas. Tracks which of
+ * the seen schemas of this statement had an EXCEPT clause.
+ * *except_pubtables: accumulates the (now schema-qualified) EXCEPT table
+ * entries across the whole statement.
+ */
+static void
+ProcessSchemaExceptTables(Oid schemaid, List *except_tables,
+						  ParseState *pstate, List **schemas,
+						  List **schemas_with_except, List **except_pubtables)
+{
+	char	   *schema_name = get_namespace_name(schemaid);
+	bool		schema_has_except = (except_tables != NIL);
+
+	/*
+	 * A repeating schema is only a problem if this mention has EXCEPT, or an
+	 * earlier mention of the same schema did.
+	 */
+	if (list_member_oid(*schemas, schemaid))
+	{
+		if (schema_has_except ||
+			list_member_oid(*schemas_with_except, schemaid))
+			ereport(ERROR,
+					errcode(ERRCODE_DUPLICATE_OBJECT),
+					errmsg("conflicting or redundant EXCEPT clauses for schema \"%s\"",
+						   schema_name));
+	}
+
+	if (schema_has_except)
+		*schemas_with_except = lappend_oid(*schemas_with_except, schemaid);
+
+	/* Filter out duplicates if the user specifies "sch1, sch1" */
+	*schemas = list_append_unique_oid(*schemas, schemaid);
+
+	if (!schema_has_except)
+		return;
+
+	foreach_ptr(PublicationObjSpec, eobj, except_tables)
+	{
+		RangeVar   *relation = eobj->pubtable->relation;
+
+		if (relation->schemaname == NULL)
+			relation->schemaname = schema_name;
+		else if (strcmp(relation->schemaname, schema_name) != 0)
+			ereport(ERROR,
+					errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+					errmsg("table \"%s\" in EXCEPT clause does not belong to schema \"%s\"",
+						   quote_qualified_identifier(relation->schemaname, relation->relname),
+						   schema_name),
+					parser_errposition(pstate, eobj->location));
+
+		/*
+		 * Remember that this EXCEPT entry is associated with a schema. This
+		 * is used by OpenTableList() to skip inheritance children outside
+		 * that schema.
+		 */
+		eobj->pubtable->except_in_schema = true;
+
+		*except_pubtables = lappend(*except_pubtables, eobj->pubtable);
+	}
+}
+
+/*
  * Convert the PublicationObjSpecType list into schema oid list and
  * PublicationTable list.
  */
 static void
 ObjectsInPublicationToOids(List *pubobjspec_list, ParseState *pstate,
-						   List **rels, List **exceptrels, List **schemas)
+						   List **rels, List **except_pubtables, List **schemas)
 {
 	ListCell   *cell;
 	PublicationObjSpec *pubobj;
+	List	   *schemas_with_except = NIL;
 
 	if (!pubobjspec_list)
 		return;
@@ -200,7 +290,7 @@ ObjectsInPublicationToOids(List *pubobjspec_list, ParseState *pstate,
 		{
 			case PUBLICATIONOBJ_EXCEPT_TABLE:
 				pubobj->pubtable->except = true;
-				*exceptrels = lappend(*exceptrels, pubobj->pubtable);
+				*except_pubtables = lappend(*except_pubtables, pubobj->pubtable);
 				break;
 			case PUBLICATIONOBJ_TABLE:
 				pubobj->pubtable->except = false;
@@ -209,8 +299,10 @@ ObjectsInPublicationToOids(List *pubobjspec_list, ParseState *pstate,
 			case PUBLICATIONOBJ_TABLES_IN_SCHEMA:
 				schemaid = get_namespace_oid(pubobj->name, false);
 
-				/* Filter out duplicates if user specifies "sch1, sch1" */
-				*schemas = list_append_unique_oid(*schemas, schemaid);
+				ProcessSchemaExceptTables(schemaid, pubobj->except_tables,
+										  pstate, schemas,
+										  &schemas_with_except,
+										  except_pubtables);
 				break;
 			case PUBLICATIONOBJ_TABLES_IN_CUR_SCHEMA:
 				search_path = fetch_search_path(false);
@@ -222,8 +314,10 @@ ObjectsInPublicationToOids(List *pubobjspec_list, ParseState *pstate,
 				schemaid = linitial_oid(search_path);
 				list_free(search_path);
 
-				/* Filter out duplicates if user specifies "sch1, sch1" */
-				*schemas = list_append_unique_oid(*schemas, schemaid);
+				ProcessSchemaExceptTables(schemaid, pubobj->except_tables,
+										  pstate, schemas,
+										  &schemas_with_except,
+										  except_pubtables);
 				break;
 			default:
 				/* shouldn't happen */
@@ -770,6 +864,195 @@ TransformPubWhereClauses(List *tables, const char *queryString,
 	}
 }
 
+/*
+ * Check that a table is not both excluded and published in the same DDL.
+ *
+ * Similar checks are present in publication_add_relation() and
+ * check_publication_add_relation(), but they rely on pg_publication_rel
+ * entries and ancestor lookups. Here, the checks are performed on the
+ * object lists collected during the statement, as the catalog state is
+ * not sufficient in the cases below:
+ *
+ * - CreatePublication() inserts the explicit tables and the EXCEPT tables in
+ *   a single command, but rows inserted by the current command are not
+ *   visible to later lookups within the same command.
+ *
+ * - For partitions, the excluded root's row might not yet exist because the
+ *   root may be added to the EXCEPT list later. Detecting such contradictions
+ *   when adding the root to the EXCEPT clause would require traversing
+ *   downward through the partition hierarchy, whereas the existing ancestor
+ *   lookups only traverse upward from the relation being added.
+ */
+static void
+CheckExceptNotInTableList(List *except_rels, List *cross_schema_children,
+						  List *explicitrelids)
+{
+	foreach_oid(explicitrelid, explicitrelids)
+	{
+		Oid			root = InvalidOid;
+
+		if (get_rel_relispartition(explicitrelid))
+		{
+			List	   *ancestors = get_partition_ancestors(explicitrelid);
+
+			/*
+			 * ancestors is NIL for a partition with a pending DETACH
+			 * CONCURRENTLY.
+			 */
+			if (ancestors != NIL)
+				root = llast_oid(ancestors);
+			list_free(ancestors);
+		}
+
+		foreach_ptr(PublicationRelInfo, pri, except_rels)
+		{
+			Oid			exceptrelid = RelationGetRelid(pri->relation);
+
+			if (exceptrelid == explicitrelid)
+				ereport(ERROR,
+						errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("table \"%s\" cannot be both published and excluded",
+							   RelationGetQualifiedRelationName(pri->relation)));
+
+			if (OidIsValid(root) && exceptrelid == root)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("partition \"%s\" cannot be both published and excluded",
+								quote_qualified_identifier(get_namespace_name(get_rel_namespace(explicitrelid)),
+														   get_rel_name(explicitrelid))),
+						 errdetail("Partition root \"%s\" is named in the publication's EXCEPT clause for schema \"%s\".",
+								   RelationGetQualifiedRelationName(pri->relation),
+								   get_namespace_name(RelationGetNamespace(pri->relation)))));
+		}
+
+		/*
+		 * An EXCEPT clause also applies to inheritance children of a parent
+		 * named without ONLY. Children in other schemas are not added to
+		 * except_rels, but are still excluded by the EXCEPT clause.
+		 * Explicitly publishing such a child therefore conflicts with the
+		 * EXCEPT clause.
+		 */
+		if (list_member_oid(cross_schema_children, explicitrelid))
+			ereport(ERROR,
+					errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					errmsg("table \"%s\" cannot be both published and excluded",
+						   quote_qualified_identifier(get_namespace_name(get_rel_namespace(explicitrelid)),
+													  get_rel_name(explicitrelid))),
+					errdetail("It inherits from a table named in an EXCEPT clause of this statement."),
+					errhint("Use ONLY in the EXCEPT clause to exclude just the parent, or do not publish this table explicitly."));
+	}
+}
+
+/*
+ * Check that an EXCEPT clause does not conflict with a TABLES IN SCHEMA
+ * clause in the same statement.
+ *
+ * cross_schema_children contains inheritance children excluded through a
+ * parent in another schema. If such a child is also included through a
+ * TABLES IN SCHEMA clause in the same statement, report the conflict.
+ *
+ * If the child's schema also has an EXCEPT clause specified through TABLES
+ * IN SCHEMA, there is no conflict, since both clauses exclude the child.
+ *
+ * Conflicts with explicitly listed tables are handled by
+ * CheckExceptNotInTableList().
+ */
+static void
+CheckExceptChildNotInSchemaList(List *cross_schema_children, List *schemaidlist,
+								List *except_rels)
+{
+	foreach_oid(childrelid, cross_schema_children)
+	{
+		Oid			childnsp = get_rel_namespace(childrelid);
+		bool		excluded = false;
+
+		if (!list_member_oid(schemaidlist, childnsp))
+			continue;
+
+		foreach_ptr(PublicationRelInfo, pri, except_rels)
+		{
+			if (RelationGetRelid(pri->relation) == childrelid)
+			{
+				excluded = true;
+				break;
+			}
+		}
+
+		if (excluded)
+			continue;
+
+		ereport(ERROR,
+				errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				errmsg("table \"%s\" cannot be both published and excluded",
+					   quote_qualified_identifier(get_namespace_name(childnsp),
+												  get_rel_name(childrelid))),
+				errdetail("It inherits from a table named in the EXCEPT clause of another schema, and its own schema \"%s\" is published in full.",
+						  get_namespace_name(childnsp)),
+				errhint("Use ONLY in the EXCEPT clause to exclude just the parent, or name this table in the EXCEPT clause of schema \"%s\".",
+						get_namespace_name(childnsp)));
+	}
+}
+
+/*
+ * Check that an EXCEPT clause naming a partitioned table does not conflict with
+ * a schema included by the same statement.
+ *
+ * Excluding a partitioned table excludes its whole partition tree, but that
+ * reach stops at the schema the EXCEPT clause belongs to: a partition in another
+ * schema is not covered, just as an inheritance child in another schema is not.
+ * If the statement also includes that partition's schema, the two clauses
+ * disagree about the partition, and there is no way to spell the intended
+ * result, since a partition can never be named in an EXCEPT clause itself.
+ * Report the conflict.
+ *
+ * Partitions in the same schema as the excluded table are covered by the
+ * EXCEPT clause and are not a conflict.
+ */
+static void
+CheckExceptPartitionNotInSchemaList(List *except_rels, List *schemaidlist)
+{
+	foreach_ptr(PublicationRelInfo, pri, except_rels)
+	{
+		Oid			rootrelid = RelationGetRelid(pri->relation);
+		Oid			rootnsp = RelationGetNamespace(pri->relation);
+		List	   *parts;
+
+		if (pri->relation->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
+			continue;
+
+		/*
+		 * No lock is taken on the partitions; the same is true of
+		 * GetPubPartitionOptionRelations(), which walks the tree for the
+		 * relcache invalidations that follow.
+		 */
+		parts = find_all_inheritors(rootrelid, NoLock, NULL);
+
+		foreach_oid(partrelid, parts)
+		{
+			Oid			partnsp = get_rel_namespace(partrelid);
+
+			if (partnsp == rootnsp || !list_member_oid(schemaidlist, partnsp))
+				continue;
+
+			ereport(ERROR,
+					errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					errmsg("table \"%s\" cannot be both published and excluded",
+						   quote_qualified_identifier(get_namespace_name(partnsp),
+													  get_rel_name(partrelid))),
+					errdetail("It is a partition of \"%s\", which is named in the EXCEPT clause of schema \"%s\", and its own schema \"%s\" is published in full.",
+							  quote_qualified_identifier(get_namespace_name(rootnsp),
+														 get_rel_name(rootrelid)),
+							  get_namespace_name(rootnsp),
+							  get_namespace_name(partnsp)),
+					errhint("Either do not publish schema \"%s\", or do not name \"%s\" in the EXCEPT clause.",
+							get_namespace_name(partnsp),
+							quote_qualified_identifier(get_namespace_name(rootnsp),
+													   get_rel_name(rootrelid))));
+		}
+
+		list_free(parts);
+	}
+}
 
 /*
  * Given a list of tables that are going to be added to a publication,
@@ -849,7 +1132,7 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 	char		publish_generated_columns;
 	AclResult	aclresult;
 	List	   *relations = NIL;
-	List	   *exceptrelations = NIL;
+	List	   *except_pubtables = NIL;
 	List	   *schemaidlist = NIL;
 
 	/* must have CREATE privilege on database */
@@ -936,16 +1219,16 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 
 	/* Associate objects with the publication. */
 	ObjectsInPublicationToOids(stmt->pubobjects, pstate, &relations,
-							   &exceptrelations, &schemaidlist);
+							   &except_pubtables, &schemaidlist);
 
 	if (stmt->for_all_tables)
 	{
 		/* Process EXCEPT table list */
-		if (exceptrelations != NIL)
+		if (except_pubtables != NIL)
 		{
 			List	   *rels;
 
-			rels = OpenTableList(exceptrelations);
+			rels = OpenTableList(except_pubtables, NULL);
 			PublicationAddTables(puboid, rels, true, NULL);
 			CloseTableList(rels);
 		}
@@ -959,6 +1242,11 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 	}
 	else if (!stmt->for_all_sequences)
 	{
+		List	   *explicitrelids = NIL;
+
+		/* EXCEPT tables here always belong to a schema in schemaidlist */
+		Assert(except_pubtables == NIL || schemaidlist != NIL);
+
 		/* FOR TABLES IN SCHEMA requires superuser */
 		if (schemaidlist != NIL && !superuser())
 			ereport(ERROR,
@@ -969,7 +1257,7 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 		{
 			List	   *rels;
 
-			rels = OpenTableList(relations);
+			rels = OpenTableList(relations, NULL);
 			TransformPubWhereClauses(rels, pstate->p_sourcetext,
 									 publish_via_partition_root);
 
@@ -978,6 +1266,20 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 									   publish_via_partition_root);
 
 			PublicationAddTables(puboid, rels, true, NULL);
+
+			/*
+			 * Collect explicit table OIDs now, before we close the relation
+			 * list, so that the except-table validation for pub-included
+			 * schemas below can check for contradictions without relying on a
+			 * catalog scan that might not yet see the just-inserted rows.
+			 */
+			if (except_pubtables != NIL)
+			{
+				foreach_ptr(PublicationRelInfo, pri, rels)
+					explicitrelids = lappend_oid(explicitrelids,
+												 RelationGetRelid(pri->relation));
+			}
+
 			CloseTableList(rels);
 		}
 
@@ -989,6 +1291,38 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 			 */
 			LockSchemaList(schemaidlist);
 			PublicationAddSchemas(puboid, schemaidlist, true, NULL);
+
+			if (except_pubtables != NIL)
+			{
+				List	   *except_rels;
+				List	   *cross_schema_children = NIL;
+
+				except_rels = OpenTableList(except_pubtables,
+											&cross_schema_children);
+
+				/*
+				 * Validate that a table is not both explicitly included and
+				 * excluded by the schema's EXCEPT clause.
+				 */
+				CheckExceptNotInTableList(except_rels, cross_schema_children,
+										  explicitrelids);
+
+				/*
+				 * Validate that an inheritance child is not both excluded by
+				 * an EXCEPT clause and included by its schema.
+				 */
+				CheckExceptChildNotInSchemaList(cross_schema_children,
+												schemaidlist, except_rels);
+
+				/*
+				 * Validate that a partition is not both excluded through its
+				 * root by an EXCEPT clause and included by its own schema.
+				 */
+				CheckExceptPartitionNotInSchemaList(except_rels, schemaidlist);
+
+				PublicationAddTables(puboid, except_rels, false, NULL);
+				CloseTableList(except_rels);
+			}
 		}
 	}
 
@@ -1255,7 +1589,7 @@ AlterPublicationTables(AlterPublicationStmt *stmt, HeapTuple tup,
 	if (!tables && stmt->action != AP_SetObjects)
 		return;
 
-	rels = OpenTableList(tables);
+	rels = OpenTableList(tables, NULL);
 
 	if (stmt->action == AP_AddObjects)
 	{
@@ -1295,8 +1629,15 @@ AlterPublicationTables(AlterPublicationStmt *stmt, HeapTuple tup,
 		}
 		else
 		{
-			oldrelids = GetIncludedPublicationRelations(pubid,
-														PUBLICATION_PART_ROOT);
+			/*
+			 * SET replaces the publication's whole relation list, so every
+			 * existing entry has to be reconciled against the new one -- an
+			 * EXCEPT entry included.  If the same relation is now requested
+			 * with the opposite kind, the old entry is dropped below and the
+			 * new one added, rather than the old one being silently kept.
+			 */
+			oldrelids = GetPublicationRelationsOfAnyKind(pubid,
+														 PUBLICATION_PART_ROOT);
 
 			TransformPubWhereClauses(rels, queryString, pubform->pubviaroot);
 
@@ -1317,6 +1658,7 @@ AlterPublicationTables(AlterPublicationStmt *stmt, HeapTuple tup,
 			HeapTuple	rftuple;
 			Node	   *oldrelwhereclause = NULL;
 			Bitmapset  *oldcolumns = NULL;
+			bool		oldexcept = false;
 
 			/* look up the cache for the old relmap */
 			rftuple = SearchSysCache2(PUBLICATIONRELMAP,
@@ -1348,6 +1690,8 @@ AlterPublicationTables(AlterPublicationStmt *stmt, HeapTuple tup,
 				if (!isnull)
 					oldcolumns = pub_collist_to_bitmapset(NULL, columnListDatum, NULL);
 
+				oldexcept = ((Form_pg_publication_rel) GETSTRUCT(rftuple))->prexcept;
+
 				ReleaseSysCache(rftuple);
 			}
 
@@ -1371,14 +1715,17 @@ AlterPublicationTables(AlterPublicationStmt *stmt, HeapTuple tup,
 
 				/*
 				 * Check if any of the new set of relations matches with the
-				 * existing relations in the publication. Additionally, if the
+				 * existing relations in the publication. An entry matches
+				 * only if it is of the same kind, that is, both are ordinary
+				 * members or both are EXCEPT entries. Additionally, if the
 				 * relation has an associated WHERE clause, check the WHERE
 				 * expressions also match. Same for the column list. Drop the
 				 * rest.
 				 */
 				if (newrelid == oldrelid)
 				{
-					if (equal(oldrelwhereclause, newpubrel->whereClause) &&
+					if (newpubrel->except == oldexcept &&
+						equal(oldrelwhereclause, newpubrel->whereClause) &&
 						bms_equal(oldcolumns, newcolumns))
 					{
 						found = true;
@@ -1830,12 +2177,68 @@ RemovePublicationSchemaById(Oid psoid)
 }
 
 /*
+ * Remove any EXCEPT clause entries for a relation from schema publications.
+ * Called when a table changes schema (ALTER TABLE ... SET SCHEMA), so that
+ * a schema-scoped exclusion does not silently follow the table to its new
+ * schema.
+ */
+void
+RemoveSchemaPubExceptForRel(Oid relid, Oid oldNspOid, Oid newNspOid)
+{
+	List	   *pubids;
+
+	/*
+	 * If the table is not actually moving to a different schema (no-op ALTER
+	 * TABLE ... SET SCHEMA <current_schema>), there is nothing to do.
+	 */
+	if (oldNspOid == newNspOid)
+		return;
+
+	pubids = GetRelationExcludedPublications(relid);
+
+	foreach_oid(pubid, pubids)
+	{
+		Oid			proid;
+
+		/*
+		 * This problem does not apply to FOR ALL TABLES publications, because
+		 * their EXCEPT clause is publication-scoped, not schema-scoped: the
+		 * exclusion should persist regardless of what schema the table is in.
+		 */
+		if (!is_schema_publication(pubid))
+			continue;
+
+		proid = GetSysCacheOid2(PUBLICATIONRELMAP,
+								Anum_pg_publication_rel_oid,
+								ObjectIdGetDatum(relid),
+								ObjectIdGetDatum(pubid));
+		if (OidIsValid(proid))
+		{
+			ObjectAddress obj;
+
+			ObjectAddressSet(obj, PublicationRelRelationId, proid);
+
+			ereport(DEBUG2,
+					errmsg_internal("auto-remove exclusion of table \"%s.%s\" from publication \"%s\": table moved to schema \"%s\"",
+									get_namespace_name(oldNspOid),
+									get_rel_name(relid),
+									get_publication_name(pubid, false),
+									get_namespace_name(newNspOid)));
+
+			performDeletion(&obj, DROP_CASCADE, 0);
+		}
+	}
+
+	list_free(pubids);
+}
+
+/*
  * Open relations specified by a PublicationTable list.
  * The returned tables are locked in ShareUpdateExclusiveLock mode in order to
  * add them to a publication.
  */
 static List *
-OpenTableList(List *tables)
+OpenTableList(List *tables, List **cross_schema_children)
 {
 	List	   *relids = NIL;
 	List	   *rels = NIL;
@@ -1911,6 +2314,7 @@ OpenTableList(List *tables)
 		{
 			List	   *children;
 			ListCell   *child;
+			Oid			parentnsp = RelationGetNamespace(rel);
 
 			children = find_all_inheritors(myrelid, ShareUpdateExclusiveLock,
 										   NULL);
@@ -1921,6 +2325,21 @@ OpenTableList(List *tables)
 
 				/* Allow query cancel in case this takes a long time */
 				CHECK_FOR_INTERRUPTS();
+
+				/*
+				 * An EXCEPT clause also excludes inheritance children in
+				 * other schemas. Keep track of such children separately so
+				 * the caller can detect if the same statement also includes
+				 * them through another table or schema clause.
+				 */
+				if (t->except_in_schema &&
+					get_rel_namespace(childrelid) != parentnsp)
+				{
+					if (cross_schema_children)
+						*cross_schema_children = lappend_oid(*cross_schema_children,
+															 childrelid);
+					continue;
+				}
 
 				/*
 				 * Skip duplicates if user specified both parent and child

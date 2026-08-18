@@ -179,6 +179,8 @@ extern List *GetIncludedPublicationRelations(Oid pubid,
 											 PublicationPartOpt pub_partopt);
 extern List *GetExcludedPublicationTables(Oid pubid,
 										  PublicationPartOpt pub_partopt);
+extern List *GetPublicationRelationsOfAnyKind(Oid pubid,
+											  PublicationPartOpt pub_partopt);
 extern List *GetAllTablesPublications(void);
 extern List *GetAllPublicationRelations(Oid pubid, char relkind, bool pubviaroot);
 extern List *GetPublicationSchemas(Oid pubid);
@@ -192,6 +194,7 @@ extern List *GetPubPartitionOptionRelations(List *result,
 											Oid relid);
 extern Oid	GetTopMostAncestorInPublication(Oid puboid, List *ancestors,
 											int *ancestor_level);
+extern bool CheckPublicationRelEntry(Oid pubid, Oid relid, bool *is_except);
 
 extern bool is_publishable_relation(Relation rel);
 extern bool is_schema_publication(Oid pubid);

@@ -5804,7 +5804,6 @@ RelationBuildPublicationDesc(Relation relation, PublicationDesc *pubdesc)
 {
 	List	   *puboids = NIL;
 	List	   *exceptpuboids = NIL;
-	List	   *alltablespuboids;
 	ListCell   *lc;
 	MemoryContext oldcxt;
 	Oid			schemaid;
@@ -5848,12 +5847,9 @@ RelationBuildPublicationDesc(Relation relation, PublicationDesc *pubdesc)
 
 	if (relation->rd_rel->relispartition)
 	{
-		Oid			last_ancestor_relid;
+		ancestors = get_partition_ancestors(relid);
 
 		/* Add publications that the ancestors are in too. */
-		ancestors = get_partition_ancestors(relid);
-		last_ancestor_relid = llast_oid(ancestors);
-
 		foreach(lc, ancestors)
 		{
 			Oid			ancestor = lfirst_oid(lc);
@@ -5866,11 +5862,13 @@ RelationBuildPublicationDesc(Relation relation, PublicationDesc *pubdesc)
 		}
 
 		/*
-		 * Only the top-most ancestor can appear in the EXCEPT clause.
-		 * Therefore, for a partition, exclusion must be evaluated at the
-		 * top-most ancestor.
+		 * Only the topmost root of a partition hierarchy can appear in an
+		 * EXCEPT clause, so that is where exclusion has to be evaluated.
+		 * ancestors is NIL for a partition with a pending DETACH
+		 * CONCURRENTLY, in which case there is no root to consult.
 		 */
-		exceptpuboids = GetRelationExcludedPublications(last_ancestor_relid);
+		if (ancestors != NIL)
+			exceptpuboids = GetRelationExcludedPublications(llast_oid(ancestors));
 	}
 	else
 	{
@@ -5881,10 +5879,12 @@ RelationBuildPublicationDesc(Relation relation, PublicationDesc *pubdesc)
 		exceptpuboids = GetRelationExcludedPublications(relid);
 	}
 
-	alltablespuboids = GetAllTablesPublications();
-	puboids = list_concat_unique_oid(puboids,
-									 list_difference_oid(alltablespuboids,
-														 exceptpuboids));
+	puboids = list_concat_unique_oid(puboids, GetAllTablesPublications());
+
+	/* Ignore the publications that exclude this relation. */
+	if (exceptpuboids != NIL)
+		puboids = list_difference_oid(puboids, exceptpuboids);
+
 	foreach(lc, puboids)
 	{
 		Oid			pubid = lfirst_oid(lc);
