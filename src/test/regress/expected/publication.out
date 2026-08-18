@@ -671,14 +671,14 @@ DROP PUBLICATION testpub_except_alter1;
 CREATE PUBLICATION testpub_except_alter2 FOR TABLE pub_test.testpub_tbl_s1;
 ALTER PUBLICATION testpub_except_alter2
     SET TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1);
+ERROR:  EXCEPT clause is not supported with SET in ALTER PUBLICATION
+HINT:  Drop and re-add the schema with the desired EXCEPT list.
 \dRp+ testpub_except_alter2
                                                       Publication testpub_except_alter2
           Owner           | All tables | All sequences | Inserts | Updates | Deletes | Truncates | Generated columns | Via root | Description 
 --------------------------+------------+---------------+---------+---------+---------+-----------+-------------------+----------+-------------
  regress_publication_user | f          | f             | t       | t       | t       | t         | none              | f        | 
-Tables from schemas:
-    "pub_test"
-Except tables:
+Tables:
     "pub_test.testpub_tbl_s1"
 
 DROP PUBLICATION testpub_except_alter2;
@@ -709,7 +709,7 @@ CREATE PUBLICATION testpub_inh
         TABLES IN SCHEMA public;
 ERROR:  table "public.testpub_inh_child" cannot be both published and excluded
 DETAIL:  It inherits from a table named in the EXCEPT clause of another schema, and its own schema "public" is published in full.
-HINT:  Use ONLY in the EXCEPT clause to exclude just the parent, or name this table in the EXCEPT clause of schema "public".
+HINT:  Use ONLY in the EXCEPT clause to exclude just the parent, or arrange for schema "public" to exclude this table as well.
 -- fail: the child is also explicitly included by the same statement
 CREATE PUBLICATION testpub_inh
     FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_inh_parent),
@@ -756,12 +756,100 @@ Except tables:
 DROP PUBLICATION testpub_inh;
 DROP TABLE testpub_inh_child, pub_test.testpub_inh_sibling,
            pub_test.testpub_inh_parent;
+-- The reverse order must be rejected too: excluding a root or parent first and
+-- then adding the schema that holds a descendant reaches the same state that a
+-- single statement refuses.
+CREATE TABLE pub_test.testpub_xs_parted (a int) PARTITION BY LIST (a);
+CREATE TABLE testpub_xs_part PARTITION OF pub_test.testpub_xs_parted
+    FOR VALUES IN (1);
+CREATE TABLE pub_test.testpub_xs_parent (a int);
+CREATE TABLE testpub_xs_child (b int) INHERITS (pub_test.testpub_xs_parent);
+CREATE PUBLICATION testpub_xs
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_xs_parted);
+-- fail: public holds a partition of the excluded root
+ALTER PUBLICATION testpub_xs ADD TABLES IN SCHEMA public;
+ERROR:  cannot add schema "public" to publication "testpub_xs"
+DETAIL:  It contains table "public.testpub_xs_part", which descends from "pub_test.testpub_xs_parted", already named in the publication's EXCEPT clause for schema "pub_test".
+HINT:  The table would be both published and excluded.
+DROP PUBLICATION testpub_xs;
+-- An EXCEPT entry naming a plain table cannot be checked this way: whether it
+-- was written with ONLY is not recorded, and with the only child in another
+-- schema both spellings leave the same single row behind.  So adding the
+-- child's schema is accepted for either spelling.
+CREATE PUBLICATION testpub_xs
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_xs_parent);
+ALTER PUBLICATION testpub_xs ADD TABLES IN SCHEMA public;
+DROP PUBLICATION testpub_xs;
+CREATE PUBLICATION testpub_xs
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE ONLY pub_test.testpub_xs_parent);
+ALTER PUBLICATION testpub_xs ADD TABLES IN SCHEMA public;
+DROP PUBLICATION testpub_xs;
+DROP TABLE testpub_xs_child, pub_test.testpub_xs_parent;
+DROP TABLE testpub_xs_part, pub_test.testpub_xs_parted;
+---------------------------------------------
+-- EXCEPT tests for ALTER PUBLICATION
+---------------------------------------------
+CREATE PUBLICATION testpub_alter_except;
+-- fail: non-existing table in EXCEPT clause
+ALTER PUBLICATION testpub_alter_except ADD TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.nonexistent_table);
+ERROR:  relation "pub_test.nonexistent_table" does not exist
+-- fail: EXCEPT table belongs to a different schema
+ALTER PUBLICATION testpub_alter_except ADD TABLES IN SCHEMA pub_test EXCEPT (TABLE public.testpub_tbl1);
+ERROR:  table "public.testpub_tbl1" in EXCEPT clause does not belong to schema "pub_test"
+LINE 1: ...xcept ADD TABLES IN SCHEMA pub_test EXCEPT (TABLE public.tes...
+                                                             ^
+-- fail: TABLE keyword is required for the first entry in EXCEPT clause
+ALTER PUBLICATION testpub_alter_except ADD TABLES IN SCHEMA pub_test EXCEPT (testpub_nopk);
+ERROR:  syntax error at or near "testpub_nopk"
+LINE 1: ...lter_except ADD TABLES IN SCHEMA pub_test EXCEPT (testpub_no...
+                                                             ^
+-- fail: exact same table given as both explicitly published and excluded
+-- in a single ALTER ... ADD
+ALTER PUBLICATION testpub_alter_except
+    ADD TABLE pub_test.testpub_tbl_s1,
+       TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1);
+ERROR:  table "pub_test.testpub_tbl_s1" cannot be both published and excluded
+-- fail: add explicit partition and EXCEPT ancestor, given in a
+-- single ALTER ... ADD statement
+ALTER PUBLICATION testpub_alter_except
+    ADD TABLE pub_test.testpub_part_s,
+       TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_parted_s);
+ERROR:  partition "pub_test.testpub_part_s" cannot be both published and excluded
+DETAIL:  Partition root "pub_test.testpub_parted_s" is named in the publication's EXCEPT clause for schema "pub_test".
+-- fail: partition already explicitly published, then its root is EXCEPT-ed
+-- via a later, separate ALTER ... ADD
+ALTER PUBLICATION testpub_alter_except ADD TABLE pub_test.testpub_part_s;
+ALTER PUBLICATION testpub_alter_except ADD TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_parted_s);
+ERROR:  partition "pub_test.testpub_part_s" cannot be both published and excluded
+DETAIL:  Partition root "pub_test.testpub_parted_s" is named in the publication's EXCEPT clause for schema "pub_test".
+ALTER PUBLICATION testpub_alter_except DROP TABLE pub_test.testpub_part_s;
+-- fail: root already explicitly published, then its partition is rejected
+-- from EXCEPT via a later, separate ALTER ... ADD (partitions can never
+-- appear in EXCEPT, independent of the root's state)
+ALTER PUBLICATION testpub_alter_except ADD TABLE pub_test.testpub_parted_s;
+ALTER PUBLICATION testpub_alter_except ADD TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_part_s);
+ERROR:  cannot specify relation "pub_test.testpub_part_s" in the publication EXCEPT clause
+DETAIL:  This operation is not supported for individual partitions.
+ALTER PUBLICATION testpub_alter_except DROP TABLE pub_test.testpub_parted_s;
+-- ADD: qualified and unqualified names; unqualified is implicitly qualified with the schema
+ALTER PUBLICATION testpub_alter_except ADD TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1, testpub_tbl_s2);
+\dRp+ testpub_alter_except
+                                                       Publication testpub_alter_except
+          Owner           | All tables | All sequences | Inserts | Updates | Deletes | Truncates | Generated columns | Via root | Description 
+--------------------------+------------+---------------+---------+---------+---------+-----------+-------------------+----------+-------------
+ regress_publication_user | f          | f             | t       | t       | t       | t         | none              | f        | 
+Tables from schemas:
+    "pub_test"
+Except tables:
+    "pub_test.testpub_tbl_s1"
+    "pub_test.testpub_tbl_s2"
+
 -- Cleanup
 RESET client_min_messages;
 DROP TABLE pub_test.testpub_tbl_s1, pub_test.testpub_tbl_s2;
 DROP TABLE pub_test.testpub_parted_s CASCADE;
 DROP TABLE testpub_nopk, testpub_tbl_s1;
-DROP PUBLICATION testpub_schema_except1, testpub_schema_except2, testpub_schema_except_multi;
+DROP PUBLICATION testpub_schema_except1, testpub_schema_except2, testpub_schema_except_multi, testpub_alter_except;
 ---------------------------------------------
 -- Tests for publications with SEQUENCES
 ---------------------------------------------
