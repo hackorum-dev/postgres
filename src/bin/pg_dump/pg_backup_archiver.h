@@ -244,7 +244,6 @@ struct _archiveHandle
 	int			readHeader;		/* Set if we already read "PGDMP" marker */
 	char	   *lookahead;		/* Buffer used when reading header to discover
 								 * format */
-	size_t		lookaheadSize;	/* Allocated size of buffer */
 	size_t		lookaheadLen;	/* Length of valid data in lookahead */
 	size_t		lookaheadPos;	/* Current read position in lookahead buffer */
 

@@ -2252,7 +2252,6 @@ _discoverArchiveFormat(ArchiveHandle *AH)
 	pg_free(AH->lookahead);
 
 	AH->readHeader = 0;
-	AH->lookaheadSize = 512;
 	AH->lookahead = pg_malloc0(512);
 	AH->lookaheadLen = 0;
 	AH->lookaheadPos = 0;
