@@ -4482,6 +4482,9 @@ typedef struct PublicationTable
 	Node	   *whereClause;	/* qualifications */
 	List	   *columns;		/* List of columns in a publication table */
 	bool		except;			/* True if listed in the EXCEPT clause */
+	bool		except_in_schema;	/* True if listed in the EXCEPT clause of
+									 * a TABLES IN SCHEMA clause, whose scope
+									 * is limited to that schema */
 } PublicationTable;
 
 /*
@@ -4503,6 +4506,8 @@ typedef struct PublicationObjSpec
 	PublicationObjSpecType pubobjtype;	/* type of this publication object */
 	char	   *name;
 	PublicationTable *pubtable;
+	List	   *except_tables;	/* tables specified in the EXCEPT clause (for
+								 * TABLES IN SCHEMA) */
 	ParseLoc	location;		/* token location, or -1 if unknown */
 } PublicationObjSpec;
 

@@ -58,6 +58,7 @@
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "parser/parser.h"
+#include "utils/builtins.h"
 #include "utils/datetime.h"
 #include "utils/xml.h"
 
@@ -11230,7 +11231,7 @@ AlterOwnerStmt: ALTER AGGREGATE aggregate_with_argtypes OWNER TO RoleSpec
  * pub_obj is one of:
  *
  *		TABLE table [, ...]
- *		TABLES IN SCHEMA schema [, ...]
+ *		TABLES IN SCHEMA schema [EXCEPT (TABLE table [, ...] )] [, ...]
  *
  *****************************************************************************/
 
@@ -11290,23 +11291,26 @@ PublicationObjSpec:
 					$$->pubtable->columns = $3;
 					$$->pubtable->whereClause = $4;
 				}
-			| TABLES IN_P SCHEMA ColId
+			| TABLES IN_P SCHEMA ColId opt_pub_except_clause
 				{
 					$$ = makeNode(PublicationObjSpec);
 					$$->pubobjtype = PUBLICATIONOBJ_TABLES_IN_SCHEMA;
 					$$->name = $4;
+					$$->except_tables = $5;
 					$$->location = @4;
 				}
-			| TABLES IN_P SCHEMA CURRENT_SCHEMA
+			| TABLES IN_P SCHEMA CURRENT_SCHEMA opt_pub_except_clause
 				{
 					$$ = makeNode(PublicationObjSpec);
 					$$->pubobjtype = PUBLICATIONOBJ_TABLES_IN_CUR_SCHEMA;
+					$$->except_tables = $5;
 					$$->location = @4;
 				}
-			| ColId opt_column_list OptWhereClause
+			| ColId opt_column_list OptWhereClause opt_pub_except_clause
 				{
 					$$ = makeNode(PublicationObjSpec);
 					$$->pubobjtype = PUBLICATIONOBJ_CONTINUATION;
+					$$->except_tables = $4;
 					/*
 					 * If either a row filter or column list is specified, create
 					 * a PublicationTable object.
@@ -11350,10 +11354,11 @@ PublicationObjSpec:
 					$$->pubtable->columns = $2;
 					$$->pubtable->whereClause = $3;
 				}
-			| CURRENT_SCHEMA
+			| CURRENT_SCHEMA opt_pub_except_clause
 				{
 					$$ = makeNode(PublicationObjSpec);
 					$$->pubobjtype = PUBLICATIONOBJ_CONTINUATION;
+					$$->except_tables = $2;
 					$$->location = @1;
 				}
 				;
@@ -20812,6 +20817,11 @@ preprocess_pub_all_objtype_list(List *all_objects_list, List **pubobjects,
 /*
  * Process pubobjspec_list to check for errors in any of the objects and
  * convert PUBLICATIONOBJ_CONTINUATION into appropriate PublicationObjSpecType.
+ *
+ * The except_tables attached to TABLES IN SCHEMA nodes are left in place here;
+ * ObjectsInPublicationToOids() qualifies their names, validates schema
+ * membership, and merges the qualified tables into its except_pubtables
+ * output list once the schema OID is known.
  */
 static void
 preprocess_pubobj_list(List *pubobjspec_list, core_yyscan_t yyscanner)
@@ -20840,6 +20850,13 @@ preprocess_pubobj_list(List *pubobjspec_list, core_yyscan_t yyscanner)
 
 		if (pubobj->pubobjtype == PUBLICATIONOBJ_TABLE)
 		{
+			/* EXCEPT is not valid for table objects */
+			if (pubobj->except_tables != NIL)
+				ereport(ERROR,
+						errcode(ERRCODE_SYNTAX_ERROR),
+						errmsg("EXCEPT is not allowed for TABLE publication objects"),
+						parser_errposition(pubobj->location));
+
 			/* relation name or pubtable must be set for this type of object */
 			if (!pubobj->name && !pubobj->pubtable)
 				ereport(ERROR,
