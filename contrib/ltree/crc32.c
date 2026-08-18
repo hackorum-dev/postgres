@@ -32,7 +32,7 @@ ltree_crc32_sz(const char *buf, int size)
 	INIT_TRADITIONAL_CRC32(crc);
 	while (size > 0)
 	{
-		char		foldstr[UNICODE_CASEMAP_BUFSZ + 1];
+		char		foldstr[PG_CASEMAP_BUFSZ];
 		int			srclen = pg_mblen_range(p, end);
 		size_t		foldlen;
 
