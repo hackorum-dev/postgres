@@ -671,14 +671,14 @@ DROP PUBLICATION testpub_except_alter1;
 CREATE PUBLICATION testpub_except_alter2 FOR TABLE pub_test.testpub_tbl_s1;
 ALTER PUBLICATION testpub_except_alter2
     SET TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1);
-ERROR:  EXCEPT clause is not supported with SET in ALTER PUBLICATION
-HINT:  Drop and re-add the schema with the desired EXCEPT list.
 \dRp+ testpub_except_alter2
                                                       Publication testpub_except_alter2
           Owner           | All tables | All sequences | Inserts | Updates | Deletes | Truncates | Generated columns | Via root | Description 
 --------------------------+------------+---------------+---------+---------+---------+-----------+-------------------+----------+-------------
  regress_publication_user | f          | f             | t       | t       | t       | t         | none              | f        | 
-Tables:
+Tables from schemas:
+    "pub_test"
+Except tables:
     "pub_test.testpub_tbl_s1"
 
 DROP PUBLICATION testpub_except_alter2;
@@ -754,6 +754,52 @@ Except tables:
     "public.testpub_inh_child"
 
 DROP PUBLICATION testpub_inh;
+-- SET replaces the EXCEPT list rather than adding to it, so an entry the
+-- publication currently holds cannot excuse a conflict: it may be one that this
+-- same statement drops.
+CREATE PUBLICATION testpub_inh
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_inh_parent),
+        TABLES IN SCHEMA public EXCEPT (TABLE testpub_inh_child);
+-- fail: dropping public's EXCEPT clause would leave testpub_inh_child published
+-- while pub_test's clause still covers it
+ALTER PUBLICATION testpub_inh
+    SET TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_inh_parent),
+        TABLES IN SCHEMA public;
+ERROR:  table "public.testpub_inh_child" cannot be both published and excluded
+DETAIL:  It inherits from a table named in the EXCEPT clause of another schema, and its own schema "public" is published in full.
+HINT:  Use ONLY in the EXCEPT clause to exclude just the parent, or arrange for schema "public" to exclude this table as well.
+-- ok: the new EXCEPT list still excludes it, so both clauses agree
+ALTER PUBLICATION testpub_inh
+    SET TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_inh_parent),
+        TABLES IN SCHEMA public EXCEPT (TABLE testpub_inh_child);
+\dRp+ testpub_inh
+                                                           Publication testpub_inh
+          Owner           | All tables | All sequences | Inserts | Updates | Deletes | Truncates | Generated columns | Via root | Description 
+--------------------------+------------+---------------+---------+---------+---------+-----------+-------------------+----------+-------------
+ regress_publication_user | f          | f             | t       | t       | t       | t         | none              | f        | 
+Tables from schemas:
+    "pub_test"
+    "public"
+Except tables:
+    "pub_test.testpub_inh_parent"
+    "pub_test.testpub_inh_sibling"
+    "public.testpub_inh_child"
+
+-- ok: public is no longer published, so nothing is both published and excluded
+ALTER PUBLICATION testpub_inh
+    SET TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_inh_parent);
+\dRp+ testpub_inh
+                                                           Publication testpub_inh
+          Owner           | All tables | All sequences | Inserts | Updates | Deletes | Truncates | Generated columns | Via root | Description 
+--------------------------+------------+---------------+---------+---------+---------+-----------+-------------------+----------+-------------
+ regress_publication_user | f          | f             | t       | t       | t       | t         | none              | f        | 
+Tables from schemas:
+    "pub_test"
+Except tables:
+    "pub_test.testpub_inh_parent"
+    "pub_test.testpub_inh_sibling"
+
+DROP PUBLICATION testpub_inh;
 DROP TABLE testpub_inh_child, pub_test.testpub_inh_sibling,
            pub_test.testpub_inh_parent;
 -- The reverse order must be rejected too: excluding a root or parent first and
@@ -783,6 +829,19 @@ DROP PUBLICATION testpub_xs;
 CREATE PUBLICATION testpub_xs
     FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE ONLY pub_test.testpub_xs_parent);
 ALTER PUBLICATION testpub_xs ADD TABLES IN SCHEMA public;
+DROP PUBLICATION testpub_xs;
+-- SET runs the same conflict checks.  Unlike ADD it replaces the EXCEPT list,
+-- so an exclusion the publication already holds is not carried over and cannot
+-- conflict with anything; only what the statement itself names can.
+CREATE PUBLICATION testpub_xs
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_xs_parted);
+-- fail: public holds a partition of the root this statement excludes
+ALTER PUBLICATION testpub_xs
+    SET TABLES IN SCHEMA public, pub_test
+        EXCEPT (TABLE pub_test.testpub_xs_parted);
+ERROR:  table "public.testpub_xs_part" cannot be both published and excluded
+DETAIL:  It is a partition of "pub_test.testpub_xs_parted", which is named in the EXCEPT clause of schema "pub_test", and its own schema "public" is published in full.
+HINT:  Either do not publish schema "public", or do not name "pub_test.testpub_xs_parted" in the EXCEPT clause.
 DROP PUBLICATION testpub_xs;
 DROP TABLE testpub_xs_child, pub_test.testpub_xs_parent;
 DROP TABLE testpub_xs_part, pub_test.testpub_xs_parted;
@@ -843,6 +902,115 @@ Tables from schemas:
 Except tables:
     "pub_test.testpub_tbl_s1"
     "pub_test.testpub_tbl_s2"
+
+-- SET: replace the except list (keep same schema, different except table)
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s2);
+\dRp+ testpub_alter_except
+                                                       Publication testpub_alter_except
+          Owner           | All tables | All sequences | Inserts | Updates | Deletes | Truncates | Generated columns | Via root | Description 
+--------------------------+------------+---------------+---------+---------+---------+-----------+-------------------+----------+-------------
+ regress_publication_user | f          | f             | t       | t       | t       | t         | none              | f        | 
+Tables from schemas:
+    "pub_test"
+Except tables:
+    "pub_test.testpub_tbl_s2"
+
+-- fail: table in EXCEPT clause also appears in the explicit table list
+ALTER PUBLICATION testpub_alter_except SET TABLE pub_test.testpub_tbl_s1, TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1);
+ERROR:  table "pub_test.testpub_tbl_s1" cannot be both published and excluded
+-- fail: explicit partition + EXCEPT-ed root, given in a single SET statement
+ALTER PUBLICATION testpub_alter_except SET TABLE pub_test.testpub_part_s, TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_parted_s);
+ERROR:  partition "pub_test.testpub_part_s" cannot be both published and excluded
+DETAIL:  Partition root "pub_test.testpub_parted_s" is named in the publication's EXCEPT clause for schema "pub_test".
+-- fail: except table's schema (public) not in the publication's schema list (pub_test)
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA pub_test EXCEPT (TABLE public.testpub_tbl1);
+ERROR:  table "public.testpub_tbl1" in EXCEPT clause does not belong to schema "pub_test"
+LINE 1: ...xcept SET TABLES IN SCHEMA pub_test EXCEPT (TABLE public.tes...
+                                                             ^
+-- SET: unqualified name in EXCEPT is implicitly qualified with the schema
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA pub_test EXCEPT (TABLE testpub_tbl_s1);
+\dRp+ testpub_alter_except
+                                                       Publication testpub_alter_except
+          Owner           | All tables | All sequences | Inserts | Updates | Deletes | Truncates | Generated columns | Via root | Description 
+--------------------------+------------+---------------+---------+---------+---------+-----------+-------------------+----------+-------------
+ regress_publication_user | f          | f             | t       | t       | t       | t         | none              | f        | 
+Tables from schemas:
+    "pub_test"
+Except tables:
+    "pub_test.testpub_tbl_s1"
+
+-- SET without EXCEPT clears the existing except list
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA pub_test;
+\dRp+ testpub_alter_except
+                                                       Publication testpub_alter_except
+          Owner           | All tables | All sequences | Inserts | Updates | Deletes | Truncates | Generated columns | Via root | Description 
+--------------------------+------------+---------------+---------+---------+---------+-----------+-------------------+----------+-------------
+ regress_publication_user | f          | f             | t       | t       | t       | t         | none              | f        | 
+Tables from schemas:
+    "pub_test"
+
+-- SET to a different schema removes old schema's EXCEPT entries
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA pub_test EXCEPT (TABLE testpub_tbl_s1);
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA public;
+\dRp+ testpub_alter_except
+                                                       Publication testpub_alter_except
+          Owner           | All tables | All sequences | Inserts | Updates | Deletes | Truncates | Generated columns | Via root | Description 
+--------------------------+------------+---------------+---------+---------+---------+-----------+-------------------+----------+-------------
+ regress_publication_user | f          | f             | t       | t       | t       | t         | none              | f        | 
+Tables from schemas:
+    "public"
+
+-- fail: nonexistent table in EXCEPT clause (SET path)
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.nonexistent_table);
+ERROR:  relation "pub_test.nonexistent_table" does not exist
+-- SET: multiple schemas each with their own EXCEPT clause
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1),
+                                                                      public EXCEPT (TABLE testpub_tbl1);
+\dRp+ testpub_alter_except
+                                                       Publication testpub_alter_except
+          Owner           | All tables | All sequences | Inserts | Updates | Deletes | Truncates | Generated columns | Via root | Description 
+--------------------------+------------+---------------+---------+---------+---------+-----------+-------------------+----------+-------------
+ regress_publication_user | f          | f             | t       | t       | t       | t         | none              | f        | 
+Tables from schemas:
+    "pub_test"
+    "public"
+Except tables:
+    "pub_test.testpub_tbl_s1"
+    "public.testpub_tbl1"
+
+-- fail: ALTER PUBLICATION ... DROP TABLE on an excluded table is rejected
+-- with an EXCEPT-specific error.
+ALTER PUBLICATION testpub_alter_except DROP TABLE pub_test.testpub_tbl_s1;
+ERROR:  cannot drop table "pub_test.testpub_tbl_s1" from publication "testpub_alter_except"
+DETAIL:  The table is currently named in an EXCEPT clause of the publication.
+HINT:  Change the EXCEPT clause using ALTER PUBLICATION ... SET TABLES IN SCHEMA ... EXCEPT.
+-- the EXCEPT entry is still present after the rejected DROP TABLE
+\dRp+ testpub_alter_except
+                                                       Publication testpub_alter_except
+          Owner           | All tables | All sequences | Inserts | Updates | Deletes | Truncates | Generated columns | Via root | Description 
+--------------------------+------------+---------------+---------+---------+---------+-----------+-------------------+----------+-------------
+ regress_publication_user | f          | f             | t       | t       | t       | t         | none              | f        | 
+Tables from schemas:
+    "pub_test"
+    "public"
+Except tables:
+    "pub_test.testpub_tbl_s1"
+    "public.testpub_tbl1"
+
+-- fail: EXCEPT is not allowed with DROP
+ALTER PUBLICATION testpub_alter_except DROP TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s2);
+ERROR:  EXCEPT clause is not supported with DROP in ALTER PUBLICATION
+-- DROP TABLES IN SCHEMA removes associated EXCEPT entries
+ALTER PUBLICATION testpub_alter_except DROP TABLES IN SCHEMA pub_test;
+\dRp+ testpub_alter_except
+                                                       Publication testpub_alter_except
+          Owner           | All tables | All sequences | Inserts | Updates | Deletes | Truncates | Generated columns | Via root | Description 
+--------------------------+------------+---------------+---------+---------+---------+-----------+-------------------+----------+-------------
+ regress_publication_user | f          | f             | t       | t       | t       | t         | none              | f        | 
+Tables from schemas:
+    "public"
+Except tables:
+    "public.testpub_tbl1"
 
 -- Cleanup
 RESET client_min_messages;
