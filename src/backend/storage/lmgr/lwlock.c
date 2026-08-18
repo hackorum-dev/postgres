@@ -156,15 +156,9 @@ LWLockPadded *MainLWLockArray = NULL;
  */
 #define MAX_SIMUL_LWLOCKS	200
 
-/* struct representing the LWLocks we're holding */
-typedef struct LWLockHandle
-{
-	LWLock	   *lock;
-	LWLockMode	mode;
-} LWLockHandle;
 
 static int	num_held_lwlocks = 0;
-static LWLockHandle held_lwlocks[MAX_SIMUL_LWLOCKS];
+static LWLock *held_lwlocks[MAX_SIMUL_LWLOCKS];
 
 /* Maximum number of LWLock tranches that can be assigned by extensions */
 #define MAX_USER_DEFINED_TRANCHES 256
@@ -229,6 +223,12 @@ static const char *GetLWTrancheName(uint16 trancheId);
 #define T_NAME(lock) \
 	GetLWTrancheName((lock)->tranche)
 
+static LWLockMode
+LWLockInferLockMode(LWLock *lock)
+{
+	return (pg_atomic_read_u32(&lock->state) & LW_VAL_EXCLUSIVE) ?
+		LW_EXCLUSIVE : LW_SHARED;
+}
 #ifdef LWLOCK_STATS
 typedef struct lwlock_stats_key
 {
@@ -1298,8 +1298,7 @@ LWLockAcquireCommon(LWLock *lock, LWLockMode mode)
 		TRACE_POSTGRESQL_LWLOCK_ACQUIRE(T_NAME(lock), mode);
 
 	/* Add lock to list of locks held by this backend */
-	held_lwlocks[num_held_lwlocks].lock = lock;
-	held_lwlocks[num_held_lwlocks++].mode = mode;
+	held_lwlocks[num_held_lwlocks++] = lock;
 
 	/*
 	 * Fix the process wait semaphore's count for any absorbed wakeups.
@@ -1376,8 +1375,7 @@ LWLockConditionalAcquire(LWLock *lock, LWLockMode mode)
 	else
 	{
 		/* Add lock to list of locks held by this backend */
-		held_lwlocks[num_held_lwlocks].lock = lock;
-		held_lwlocks[num_held_lwlocks++].mode = mode;
+		held_lwlocks[num_held_lwlocks++] = lock;
 		if (TRACE_POSTGRESQL_LWLOCK_CONDACQUIRE_ENABLED())
 			TRACE_POSTGRESQL_LWLOCK_CONDACQUIRE(T_NAME(lock), mode);
 	}
@@ -1507,8 +1505,7 @@ LWLockAcquireOrWait(LWLock *lock, LWLockMode mode)
 	{
 		LOG_LWDEBUG("LWLockAcquireOrWait", lock, "succeeded");
 		/* Add lock to list of locks held by this backend */
-		held_lwlocks[num_held_lwlocks].lock = lock;
-		held_lwlocks[num_held_lwlocks++].mode = mode;
+		held_lwlocks[num_held_lwlocks++] = lock;
 		if (TRACE_POSTGRESQL_LWLOCK_ACQUIRE_OR_WAIT_ENABLED())
 			TRACE_POSTGRESQL_LWLOCK_ACQUIRE_OR_WAIT(T_NAME(lock), mode);
 	}
@@ -1850,13 +1847,12 @@ extern void
 LWLockRelease(LWLock *lock)
 {
 	int			i = num_held_lwlocks - 1;
-	LWLockMode	mode;
+	LWLockMode	mode = LWLockInferLockMode(lock);
 	/*
 	 * Fast path: check if this is the most recently acquired lock.
 	 */
-	if (likely(i >= 0 && held_lwlocks[i].lock == lock))
+	if (likely(i >= 0 && held_lwlocks[i] == lock))
 	{
-		mode = held_lwlocks[i].mode;
 		num_held_lwlocks = i;
 		LWLockReleaseInternal(lock, mode);
 		return;
@@ -1867,13 +1863,11 @@ LWLockRelease(LWLock *lock)
 	 */
 	
 	for (i = num_held_lwlocks; --i >= 0;)
-		if (lock == held_lwlocks[i].lock)
+		if (lock == held_lwlocks[i])
 			break;
 
 	if (i < 0)
 		elog(ERROR, "lock %s is not held", T_NAME(lock));
-
-	mode = held_lwlocks[i].mode;
 
 	num_held_lwlocks--;
 	for (; i < num_held_lwlocks; i++)
@@ -1896,9 +1890,9 @@ LWLockReleaseCommon(LWLock *lock, LWLockMode mode)
 {
 	int			i = num_held_lwlocks - 1;
 
-	if (likely(i >= 0 && held_lwlocks[i].lock == lock))
+	if (likely(i >= 0 && held_lwlocks[i] == lock))
 	{
-		Assert(held_lwlocks[i].mode == mode);
+		Assert(LWLockInferLockMode(lock) == mode);
 		num_held_lwlocks = i;
 		LWLockReleaseInternal(lock, mode);
 		return;
@@ -1906,13 +1900,13 @@ LWLockReleaseCommon(LWLock *lock, LWLockMode mode)
 
 	
 	for (;i >= 0; --i)
-		if (lock == held_lwlocks[i].lock)
+		if (lock == held_lwlocks[i])
 			break;
 
 	if (i < 0)
 		elog(ERROR, "lock %s is not held", T_NAME(lock));
 
-	Assert(held_lwlocks[i].mode == mode);
+	Assert(LWLockInferLockMode(lock) == mode);
 
 	num_held_lwlocks--;
 	for (; i < num_held_lwlocks; i++)
@@ -1955,8 +1949,8 @@ static pg_always_inline void
 LWLockReleaseLastCommon(LWLock *lock, LWLockMode mode)
 {
 	Assert(num_held_lwlocks > 0);
-	Assert(held_lwlocks[num_held_lwlocks - 1].lock == lock);
-	Assert(held_lwlocks[num_held_lwlocks - 1].mode == mode);
+	Assert(held_lwlocks[num_held_lwlocks - 1] == lock);
+	Assert(LWLockInferLockMode(lock) == mode);
 
 	num_held_lwlocks--;
 	LWLockReleaseInternal(lock, mode);
@@ -2022,7 +2016,7 @@ LWLockReleaseAll(void)
 	{
 		HOLD_INTERRUPTS();		/* match the upcoming RESUME_INTERRUPTS */
 
-		LWLockRelease(held_lwlocks[num_held_lwlocks - 1].lock);
+		LWLockRelease(held_lwlocks[num_held_lwlocks - 1]);
 	}
 
 	Assert(num_held_lwlocks == 0);
@@ -2041,7 +2035,7 @@ LWLockHeldByMe(LWLock *lock)
 
 	for (i = 0; i < num_held_lwlocks; i++)
 	{
-		if (held_lwlocks[i].lock == lock)
+		if (held_lwlocks[i] == lock)
 			return true;
 	}
 	return false;
@@ -2064,7 +2058,7 @@ LWLockAnyHeldByMe(LWLock *lock, int nlocks, size_t stride)
 	end = begin + nlocks * stride;
 	for (i = 0; i < num_held_lwlocks; i++)
 	{
-		held_lock_addr = (char *) held_lwlocks[i].lock;
+		held_lock_addr = (char *) held_lwlocks[i];
 		if (held_lock_addr >= begin &&
 			held_lock_addr < end &&
 			(held_lock_addr - begin) % stride == 0)
@@ -2085,7 +2079,7 @@ LWLockHeldByMeInMode(LWLock *lock, LWLockMode mode)
 
 	for (i = 0; i < num_held_lwlocks; i++)
 	{
-		if (held_lwlocks[i].lock == lock && held_lwlocks[i].mode == mode)
+		if (held_lwlocks[i] == lock && LWLockInferLockMode(lock) == mode)
 			return true;
 	}
 	return false;
