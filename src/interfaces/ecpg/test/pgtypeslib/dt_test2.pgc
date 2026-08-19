@@ -66,6 +66,12 @@ main(void)
 		date *dc;
 	exec sql end declare section;
 
+	char large_fmt[10000] = {
+		[0] = '%',
+		[1] = 'D',
+		[2 ... 9998] = 'A'
+	};
+
 	int i, j;
 	char *endptr;
 
@@ -146,6 +152,9 @@ main(void)
 		PGTYPESinterval_free(ic);
 		PGTYPESinterval_free(i1);
 	}
+
+	PGTYPEStimestamp_defmt_asc("1 minute", large_fmt, &ts1);
+	printf("Success parsing large string\n");
 
 	return 0;
 }
