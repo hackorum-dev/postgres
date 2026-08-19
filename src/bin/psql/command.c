@@ -38,11 +38,21 @@
 #include "input.h"
 #include "large_obj.h"
 #include "libpq/pqcomm.h"
+
+#ifdef LUA_SUPPORT
+
+#include "lua-psql.h"
+
+#endif
+
 #include "mainloop.h"
 #include "pqexpbuffer.h"
 #include "psqlscanslash.h"
+#include "prompt.h"
 #include "settings.h"
 #include "variables.h"
+
+#include "fe_utils/simple_list.h"
 
 /*
  * Editable database object types.
@@ -69,6 +79,16 @@ static backslashResult exec_command_cd(PsqlScanState scan_state, bool active_bra
 									   const char *cmd);
 static backslashResult exec_command_close_prepared(PsqlScanState scan_state,
 												   bool active_branch, const char *cmd);
+
+#ifdef LUA_SUPPORT
+
+static backslashResult exec_command_luastr(PsqlScanState scan_state, bool active_branch);
+static backslashResult exec_command_luacode(PsqlScanState scan_state, bool active_branch);
+static backslashResult exec_command_luafile(PsqlScanState scan_state, bool active_branch);
+static backslashResult exec_command_lua(PsqlScanState scan_state, bool active_branch, const char *cmd);
+
+#endif
+
 static backslashResult exec_command_conninfo(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_copy(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_copyright(PsqlScanState scan_state, bool active_branch);
@@ -198,7 +218,6 @@ static void checkWin32Codepage(void);
 
 static bool restricted;
 static char *restrict_key;
-
 
 /*----------
  * HandleSlashCmds:
@@ -351,6 +370,21 @@ exec_command(const char *cmd,
 		status = exec_command_cd(scan_state, active_branch, cmd);
 	else if (strcmp(cmd, "close_prepared") == 0)
 		status = exec_command_close_prepared(scan_state, active_branch, cmd);
+
+#ifdef LUA_SUPPORT
+
+	else if (strcmp(cmd, "luastr") == 0)
+		status = exec_command_luastr(scan_state, active_branch);
+	else if (strcmp(cmd, "luacode") == 0)
+		status = exec_command_luacode(scan_state, active_branch);
+	else if (strcmp(cmd, "luafile") == 0)
+		status = exec_command_luafile(scan_state, active_branch);
+	else if ((strcmp(cmd, "lua") == 0) ||
+			 (strcmp(cmd, "luaset") == 0))
+		status = exec_command_lua(scan_state, active_branch, cmd);
+
+#endif
+
 	else if (strcmp(cmd, "conninfo") == 0)
 		status = exec_command_conninfo(scan_state, active_branch);
 	else if (pg_strcasecmp(cmd, "copy") == 0)
@@ -479,8 +513,13 @@ exec_command(const char *cmd,
 		status = exec_command_shell_escape(scan_state, active_branch);
 	else if (strcmp(cmd, "?") == 0)
 		status = exec_command_slash_command_help(scan_state, active_branch);
-	else
-		status = PSQL_CMD_UNKNOWN;
+
+#ifdef LUA_SUPPORT
+
+	else 
+		status = exec_lua_command(lua, scan_state, active_branch, cmd);
+
+#endif
 
 	/*
 	 * All the commands that return PSQL_CMD_SEND want to execute previous_buf
@@ -782,6 +821,520 @@ exec_command_close_prepared(PsqlScanState scan_state, bool active_branch, const 
 
 	return status;
 }
+
+/*
+ * reads one line from multiline string.
+ * Doesn't modify origin string, doesn't remove EOLN marker
+ */
+static char *
+getline_binary(char **str, int *bytes)
+{
+	char	   *eoln;
+	char	   *result;
+
+	if (!*str)
+		return NULL;
+
+	result = *str;
+	eoln = strchr(result, '\n');
+
+	if (eoln)
+	{
+		*str = eoln + 1;
+		*bytes = *str - result;
+	}
+	else
+	{
+		*str = NULL;
+		*bytes = strlen(result);
+	}
+
+	return result;
+}
+
+static bool
+is_EOF_marker(char *str, int bytes)
+{
+	if ((bytes == 2 && memcmp(str, "\\.", 2) == 0) ||
+		(bytes == 3 && memcmp(str, "\\.\n", 3) == 0) ||
+		(bytes == 4 && memcmp(str, "\\.\r\n", 7) == 0))
+	{
+		return true;
+	}
+
+	return false;
+}
+
+#ifdef LUA_SUPPORT
+
+static backslashResult
+exec_command_luastr(PsqlScanState scan_state, bool active_branch)
+{
+	PQExpBufferData expr;
+	char	   *opt;
+	int			result;
+
+	if (!active_branch && pset.cur_cmd_interactive)
+	{
+		ignore_slash_whole_line(scan_state);
+		return PSQL_CMD_SKIP_LINE;
+	}
+
+	initPQExpBuffer(&expr);
+
+	/*
+	 * Attention: psql_scan_slash_option quitly eats single quotes
+	 */
+	opt = psql_scan_slash_option(scan_state, OT_NORMAL, NULL, false);
+
+	while (opt)
+	{
+		appendPQExpBuffer(&expr, "%s ", opt);
+		free(opt);
+		opt = psql_scan_slash_option(scan_state, OT_NORMAL, NULL, false);
+	}
+
+	result = luaL_dostring(lua, expr.data);
+	if (result != LUA_OK)
+	{
+		pg_log_error("Error: %s", lua_tostring(lua, -1));
+
+		termPQExpBuffer(&expr);
+		/* pop error message */
+		lua_pop(lua, 1);
+
+		return PSQL_CMD_ERROR;
+	}
+
+	termPQExpBuffer(&expr);
+
+	return PSQL_CMD_SKIP_LINE;
+}
+
+/*
+ * \luacode - inputs code until \.
+ *
+ * Note: when luacode is executed from history or from temp file, then
+ * OT_WHOLE_LINE contains complete multiline string - unfortunately
+ * trimmed from both sides, so we cannot to place some optional arguments to
+ * first line. And when last row is not EOF marker we must add new line.
+ */
+static backslashResult
+exec_command_luacode(PsqlScanState scan_state, bool active_branch)
+{
+#define READCODE_BUFSIZE		1024
+
+	bool		showprompt = false;
+	bool		readcode_done = false;
+	PQExpBufferData		code;
+	char	   *opt;
+	int			result;
+
+	if (!active_branch && pset.cur_cmd_interactive)
+	{
+		ignore_slash_whole_line(scan_state);
+		return PSQL_CMD_SKIP_LINE;
+	}
+
+	showprompt = pset.cur_cmd_interactive && !pset.quiet;
+
+	initPQExpBuffer(&code);
+
+	/* the content can be passed as multiline string in cmd line */
+	opt = psql_scan_slash_option(scan_state, OT_WHOLE_LINE, NULL, false);
+
+	if (opt)
+	{
+		char	   *lines = opt;
+
+		while (lines)
+		{
+			char	   *line;
+			int			bytes;
+
+			line = getline_binary(&lines, &bytes);
+
+			if (!is_EOF_marker(line, bytes))
+			{
+				appendBinaryPQExpBuffer(&code, line, bytes);
+				if (!lines)
+					appendPQExpBufferChar(&code, '\n');
+			}
+			else
+				readcode_done = true;
+		}
+
+		free(opt);
+	}
+
+	if (!readcode_done)
+	{
+		bool		at_line_begin = true;
+		char		buf[READCODE_BUFSIZE];
+
+		/*
+		 * EOF flag can be set on pset.cur_cmd_source from previous execution
+		 */
+		clearerr(pset.cur_cmd_source);
+
+		showprompt = pset.cur_cmd_interactive && !pset.quiet;
+
+		/*
+		 * Establish longjmp destination for exiting from wait-for-input. (This is
+		 * only effective while sigint_interrupt_enabled is TRUE.)
+		 */
+		if (sigsetjmp(sigint_interrupt_jmp, 1) != 0)
+			goto code_cleanup;
+
+		if (showprompt)
+			puts(_("Enter code to be copied followed by a newline.\n"
+				   "End with a backslash and a period on a line by itself, or an EOF signal."));
+
+		while (!readcode_done)
+		{
+			char	   *fgresult;
+
+			if (at_line_begin && showprompt)
+			{
+				const char *prompt = get_prompt(PROMPT_COPY, NULL);
+
+				fputs(prompt, stdout);
+				fflush(stdout);
+			}
+
+			/* enable longjmp while waiting for input */
+			sigint_interrupt_enabled = true;
+
+			fgresult = fgets(buf, READCODE_BUFSIZE, pset.cur_cmd_source);
+
+			sigint_interrupt_enabled = false;
+
+			if (!fgresult)
+			{
+				readcode_done = true;
+				if (showprompt)
+				{
+					fputs("\\.\n", stdout);
+					fflush(stdout);
+				}
+			}
+			else
+			{
+				int			linelen;
+
+				linelen = strlen(fgresult);
+
+				if (buf[linelen - 1] == '\n')
+				{
+					if (at_line_begin)
+					{
+						if (is_EOF_marker(buf, linelen))
+							readcode_done = true;
+					}
+
+					pset.lineno++;
+					pset.stmt_lineno++;
+
+					at_line_begin = true;
+				}
+				else
+					at_line_begin = false;
+
+				if (!readcode_done)
+					appendBinaryPQExpBuffer(&code, buf, linelen);
+			}
+		}
+
+		if (ferror(pset.cur_cmd_source))
+			goto code_cleanup;
+	}
+
+	if (!active_branch)
+		return PSQL_CMD_SKIP_LINE;
+
+	result = luaL_dostring(lua, code.data);
+	if (result != LUA_OK)
+	{
+		pg_log_error("Error: %s", lua_tostring(lua, -1));
+
+		/* pop error message */
+		lua_pop(lua, 1);
+		termPQExpBuffer(&code);
+
+		return PSQL_CMD_ERROR;
+	}
+
+	fflush(stdout);
+
+	return PSQL_CMD_SKIP_LINE;
+
+code_cleanup:
+
+	if (showprompt)
+	{
+		fputs("\n", stdout);
+		fflush(stdout);
+	}
+
+	termPQExpBuffer(&code);
+
+	return PSQL_CMD_ERROR;
+
+}
+
+/*
+ * \luafile - read lua code from file
+ */
+static backslashResult
+exec_command_luafile(PsqlScanState scan_state, bool active_branch)
+{
+	char	   *opt;
+	int			result;
+
+	if (!active_branch && pset.cur_cmd_interactive)
+	{
+		ignore_slash_whole_line(scan_state);
+		return PSQL_CMD_SKIP_LINE;
+	}
+
+	opt = psql_scan_slash_option(scan_state,
+								 OT_NORMAL, NULL, true);
+
+	if (!opt)
+	{
+		pg_log_error("\\luafile: missing required argument");
+		return PSQL_CMD_ERROR;
+	}
+
+	expand_tilde(&opt);
+
+	result = luaL_dofile(lua, opt);
+
+	free(opt);
+
+	if (result != LUA_OK)
+	{
+		pg_log_error("Error: %s", lua_tostring(lua, -1));
+
+		/* pop error message */
+		lua_pop(lua, 1);
+
+		return PSQL_CMD_ERROR;
+	}
+
+	return PSQL_CMD_SKIP_LINE;
+}
+
+/*
+ * lua luafunction arguments - run lua function with arguments
+ */
+static backslashResult
+exec_command_lua(PsqlScanState scan_state, bool active_branch, const char *cmd)
+{
+	char	   *opt = NULL;
+	int			result;
+	int			nargs = 0;
+	int			stacksize;
+	int			nresults;
+	char	   *varname = NULL;
+	SimpleStringList vars = {NULL, NULL};
+	bool		isLuaSet = false;
+
+	if (!active_branch)
+		return PSQL_CMD_SKIP_LINE;
+
+	if (strcmp(cmd, "luaset") == 0)
+	{
+		isLuaSet = true;
+
+		for (;;)
+		{
+			/*
+			 * Parsing list of variables is complex. Main reason is fact
+			 * so slash option parser uses only space as token delimiter,
+			 * and one slash option can contain one or more variables
+			 * separated by comma, can contains only comma, comma can be on
+			 * the start or on the end - all possible variants should be
+			 * supported
+			 *
+			 * a,b,c
+			 * a , b , c
+			 * a, b, c
+			 * a ,b, c
+			 */
+			if (!varname)
+				varname = psql_scan_slash_option(scan_state,
+												 OT_NORMAL, NULL, false);
+
+			if (!varname)
+			{
+				pg_log_error("\\%s: missing required argument", cmd);
+				return PSQL_CMD_ERROR;
+			}
+
+			if (varname[0] != '\'' && varname[0] != '"')
+			{
+				char	   *names = varname;
+				bool		last_token_is_comma = false;
+
+				/* slash option can hold multiple varnames - x,y */
+				while (*names)
+				{
+					char	   *ptr;
+
+					if (*names == ',')
+					{
+						pg_log_error("\\%s: missing required argument before \",\"", cmd);
+						free(varname);
+						return PSQL_CMD_ERROR;
+					}
+
+					ptr = strchr(names, ',');
+					if (ptr)
+						*ptr = '\0';
+
+					simple_string_list_append(&vars, names);
+
+					if (ptr)
+					{
+						last_token_is_comma = true;
+						names = ptr + 1;
+					}
+					else
+					{
+						last_token_is_comma = false;
+						break;
+					}
+				}
+
+				if (last_token_is_comma)
+				{
+					free(varname);
+					varname = NULL;
+					continue;
+				}
+			}
+			else
+			{
+				simple_string_list_append(&vars, varname);
+				free(varname);
+			}
+
+			varname = psql_scan_slash_option(scan_state,
+											 OT_NORMAL, NULL, false);
+			if (!varname)
+				break;
+			else if (strcmp(varname, ",") == 0)
+			{
+				free(varname);
+				varname = NULL;
+				continue;
+			}
+			else if (varname[0] == ',')
+			{
+				char	   *aux = varname;
+
+				varname = strdup(varname + 1);
+				free(aux);
+				continue;
+			}
+
+			opt = varname;
+			break;
+		}
+	}
+	else
+	{
+		opt = psql_scan_slash_option(scan_state,
+									 OT_NORMAL, NULL, false);
+	}
+
+	if (!opt)
+	{
+		pg_log_error("\\%s: missing required argument", cmd);
+		simple_string_list_destroy(&vars);
+		return PSQL_CMD_ERROR;
+	}
+
+	stacksize = lua_gettop(lua);
+
+	lua_getglobal(lua, opt);
+	if (!lua_isfunction(lua, -1)) {
+		fprintf(stderr, "ERROR: %s is not function!\n", opt);
+		lua_settop(lua, stacksize);
+		simple_string_list_destroy(&vars);
+		return PSQL_CMD_ERROR;
+	}
+
+	free(opt);
+	opt = psql_scan_slash_option(scan_state,
+								 OT_NORMAL, NULL, true);
+
+	while (opt)
+	{
+		lua_pushstring(lua, opt);
+		free(opt);
+		opt = psql_scan_slash_option(scan_state,
+									 OT_NORMAL, NULL, true);
+		nargs++;
+	}
+
+	result = lua_pcall(lua, nargs, LUA_MULTRET, 0);
+
+	if (result != LUA_OK) {
+		fprintf(stderr, "Error running lua: %s\n", lua_tostring(lua, -1));
+		lua_settop(lua, stacksize);
+		simple_string_list_destroy(&vars);
+		return PSQL_CMD_ERROR;
+	}
+
+	nresults = lua_gettop(lua) - stacksize;
+
+	if (isLuaSet)
+	{
+		for (SimpleStringListCell *cell = vars.head; cell; cell = cell->next)
+		{
+			varname = cell->val;
+
+			if (nresults > 0)
+			{
+				if (lua_isnil(lua, - nresults))
+					SetVariable(pset.vars, varname, NULL);
+				else
+					SetVariable(pset.vars, varname, lua_tostring(lua, - nresults));
+
+				nresults--;
+			}
+			else
+				SetVariable(pset.vars, varname, NULL);
+		}
+	}
+	else
+	{
+		bool		isfirst = true;
+
+		while (nresults)
+		{
+			if (!isfirst)
+				fprintf(stderr, "\t");
+			else
+				isfirst = false;
+
+			fprintf(stderr, "%s", lua_tostring(lua, - nresults));
+			nresults--;
+		}
+
+		if (!isfirst)
+			fprintf(stderr, "\n");
+	}
+
+	lua_settop(lua, stacksize);
+	simple_string_list_destroy(&vars);
+
+	return PSQL_CMD_SKIP_LINE;
+}
+
+#endif
 
 /*
  * \conninfo -- display information about the current connection
