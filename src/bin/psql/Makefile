@@ -41,8 +41,13 @@ OBJS = \
 	startup.o \
 	stringutils.o \
 	tab-complete.o \
-	variables.o
+	variables.o \
 
+ifdef with_lua
+OBJS += luapgsql.o lua-psql.o
+CFLAGS += $(LUA_INCLUDES) -DLUA_SUPPORT
+LDFLAGS_INTERNAL += $(LUA_LIBS)
+endif
 
 all: psql
 
