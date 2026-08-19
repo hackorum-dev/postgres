@@ -1318,10 +1318,56 @@ strupper_c(char *dst, size_t dstsize, const char *src, size_t srclen)
 }
 
 /*
+ * Case Mapping Complexities
+ *
+ * pg_strlower(), pg_strtitle(), pg_strupper(), and pg_strfold() are based on
+ * case mapping.  Below are general notes on the complexities of Unicode case
+ * mapping, which are relevant to most locales other than "C", but which vary
+ * significantly among different providers and locales.  See the Unicode
+ * Standard and the provider implementation for details.
+ *
+ * Some characters map to more than one other character, so the result may
+ * have more characters than the original.  Unicode defines the maximum string
+ * expansion to be 3x the code points (not necessarily bytes); see Unicode
+ * 17.0 section 5.18.2.  Examples: U+0130 LATIN CAPITAL LETTER I WITH DOT
+ * ABOVE lowercases to "i" followed by U+0307 COMBINING DOT ABOVE; U+FB01
+ * LATIN SMALL LIGATURE FI titlecases to "Fi"; U+0390 GREEK SMALL LETTER IOTA
+ * WITH DIALYTIKA AND TONOS uppercases to <0399 0308 0301>; U+00DF LATIN SMALL
+ * LETTER SHARP S casefolds to "ss".
+ *
+ * Some characters have more than two forms, e.g. U+03A3 GREEK CAPITAL LETTER
+ * SIGMA, U+03C3 GREEK SMALL LETTER SIGMA, and U+03C2 GREEK SMALL LETTER FINAL
+ * SIGMA (the first is uppercase and the latter two are both lowercase).  The
+ * form used depends on context within the string.
+ *
+ * Some characters have special titlecase forms to use for the initial letter
+ * of a word, if available; otherwise uppercase is used.  Example: U+01F2
+ * LATIN CAPITAL LETTER D WITH SMALL LETTER Z.
+ *
+ * Titlecasing requires finding a word boundary, which is dependent on the
+ * provider and locale.  The semantics of identifying word boundaries may
+ * differ from the semantics used to choose a particular form (e.g. U+03C3
+ * GREEK SMALL LETTER SIGMA vs. U+03C2 GREEK SMALL LETTER FINAL SIGMA).
+ *
+ * Mappings may depend on the provider and the version of Unicode on which it
+ * is based.  If mapping only assigned code points, the results of casefolding
+ * are guaranteed to be stable across Unicode versions.  Unassigned code
+ * points map to themselves, so are subject to change if the provider updates
+ * Unicode.  Therefore, casefolding strings of assigned code points is the
+ * safest mapping for callers that will store the result, e.g. an expression
+ * index.
+ */
+
+/*
  * pg_strlower()
  *
  * Convert src to lowercase, and return the result length (not including
  * terminating NUL).
+ *
+ * Lowercasing is intended for human-readable display.  If the goal is to
+ * convert to a canonical caseless form, see pg_strfold().
+ *
+ * See Case Mapping Complexities comment above.
  *
  * src must be in the database encoding with no embedded NULs.  If dstsize is
  * zero, dst may be NULL, which is useful for calculating the required buffer
@@ -1347,6 +1393,13 @@ pg_strlower(char *dst, size_t dstsize, const char *src, size_t srclen,
  * Convert src to titlecase, and return the result length (not including
  * terminating NUL).
  *
+ * Titlecasing is intended for human-readable display.  A titlecase string has
+ * the initial letter of each word uppercased (or changed to a special
+ * titlecase form, if available), and all other characters lowercased.  Used
+ * to implement the SQL INITCAP() function.
+ *
+ * See Case Mapping Complexities comment above.
+ *
  * src must be in the database encoding with no embedded NULs.  If dstsize is
  * zero, dst may be NULL, which is useful for calculating the required buffer
  * size before allocating.
@@ -1371,6 +1424,11 @@ pg_strtitle(char *dst, size_t dstsize, const char *src, size_t srclen,
  * Convert src to uppercase, and return the result length (not including
  * terminating NUL).
  *
+ * Uppercasing is intended for human-readable display.  If the goal is to
+ * convert to a canonical caseless form, see pg_strfold().
+ *
+ * See Case Mapping Complexities comment above.
+ *
  * src must be in the database encoding with no embedded NULs.  If dstsize is
  * zero, dst may be NULL, which is useful for calculating the required buffer
  * size before allocating.
@@ -1392,7 +1450,19 @@ pg_strupper(char *dst, size_t dstsize, const char *src, size_t srclen,
 /*
  * pg_strfold()
  *
- * Casefold src, and return the result length (not including terminating NUL).
+ * Casefold src, and return the result length (not including terminating
+ * NUL).
+ *
+ * Casefolding produces a canonical string such that, iff the casefolded
+ * strings are equal, the original strings are a case-insensitive match (the
+ * strength of this guarantee depends on normalization, provider and locale).
+ * In practice the result is similar to lowercasing, but the purpose is
+ * different: lowercasing is for human-readable display; whereas casefolding
+ * is meant to canonicalize complex mappings reliably without regard for
+ * display.  Unicode guarantees that casefolding is stable across versions if
+ * the original string consists only of assigned code points.
+ *
+ * See Case Mapping Complexities comment above.
  *
  * src must be in the database encoding with no embedded NULs.  If dstsize is
  * zero, dst may be NULL, which is useful for calculating the required buffer
