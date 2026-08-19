@@ -138,6 +138,7 @@ typedef union
 		int			fd;
 		uint16		iov_length;
 		uint64		offset;
+		uint32		wait_event_info;
 	}			read;
 
 	struct
@@ -145,6 +146,7 @@ typedef union
 		int			fd;
 		uint16		iov_length;
 		uint64		offset;
+		uint32		wait_event_info;
 	}			write;
 } PgAioOpData;
 
@@ -297,9 +299,12 @@ extern PgAioOp pgaio_io_get_op(PgAioHandle *ioh);
 extern PgAioOpData *pgaio_io_get_op_data(PgAioHandle *ioh);
 
 extern void pgaio_io_start_readv(PgAioHandle *ioh,
-								 int fd, int iovcnt, uint64 offset);
+								 int fd, int iovcnt, uint64 offset,
+								 uint32 wait_event_info);
 extern void pgaio_io_start_writev(PgAioHandle *ioh,
-								  int fd, int iovcnt, uint64 offset);
+								  int fd, int iovcnt, uint64 offset,
+								  uint32 wait_event_info);
+
 
 /* functions in aio_target.c */
 extern void pgaio_io_set_target(PgAioHandle *ioh, PgAioTargetID targetid);
