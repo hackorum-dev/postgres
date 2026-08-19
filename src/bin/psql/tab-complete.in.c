@@ -60,6 +60,12 @@
 #include "settings.h"
 #include "stringutils.h"
 
+#ifdef LUA_SUPPORT
+
+#include "lua-psql.h"
+
+#endif
+
 /*
  * Ancient versions of libedit provide filename_completion_function()
  * instead of rl_filename_completion_function().  Likewise for
@@ -1919,6 +1925,13 @@ psql_completion(const char *text, int start, int end)
 	static const char *const backslash_commands[] = {
 		"\\a",
 		"\\bind", "\\bind_named",
+
+#ifdef LUA_SUPPORT
+
+		"\\luacode", "\\luafile", "\\luaset", "\\luastr",
+
+#endif
+
 		"\\connect", "\\conninfo", "\\C", "\\cd", "\\close_prepared", "\\copy",
 		"\\copyright", "\\crosstabview",
 		"\\d", "\\da", "\\dA", "\\dAc", "\\dAf", "\\dAo", "\\dAp",
@@ -1983,7 +1996,57 @@ psql_completion(const char *text, int start, int end)
 
 	/* If current word is a backslash command, offer completions for that */
 	if (text[0] == '\\')
+	{
+
+#ifdef LUA_SUPPORT
+
+		int		lua_commands = 0;
+
+		SimpleStringList custom_commands = {NULL, NULL};
+
+		lua_commands = lua_custom_commands(lua, &custom_commands);
+		if (lua_commands > 0)
+		{
+			int		i;
+			const char **commands;
+			SimpleStringListCell *cell;
+
+			i = 0;
+			while (backslash_commands[i])
+				i++;
+
+			commands = pg_malloc((i + lua_commands + 1) * sizeof(char *));
+
+			i = 0;
+			while (backslash_commands[i])
+			{
+				commands[i] = backslash_commands[i];
+				i++;
+			}
+
+			for (cell = custom_commands.head; cell; cell = cell->next)
+			{
+				commands[i] = cell->val;
+				i++;
+			}
+
+			commands[i] = NULL;
+
+			COMPLETE_WITH_LIST_CS(commands);
+
+			simple_string_list_destroy(&custom_commands);
+			free(commands);
+		}
+		else
+			COMPLETE_WITH_LIST_CS(backslash_commands);
+
+#else
+
 		COMPLETE_WITH_LIST_CS(backslash_commands);
+
+#endif
+
+	}
 
 	/* If current word is a variable interpolation, handle that case */
 	else if (text[0] == ':' && text[1] != ':')
@@ -5757,7 +5820,7 @@ match_previous_words(int pattern_id,
 		else if (TailMatches("CREATE|ALTER|DROP", "USER", "MAPPING"))
 			COMPLETE_WITH("FOR");
 	}
-	else if (TailMatchesCS("\\l*") && !TailMatchesCS("\\lo*"))
+	else if (TailMatchesCS("\\list|\\l"))
 		COMPLETE_WITH_QUERY(Query_for_list_of_databases);
 	else if (TailMatchesCS("\\password"))
 		COMPLETE_WITH_QUERY(Query_for_list_of_roles);
@@ -5820,6 +5883,42 @@ match_previous_words(int pattern_id,
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_routines);
 	else if (TailMatchesCS("\\sv*"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_views);
+
+#ifdef LUA_SUPPORT
+
+	else if (TailMatchesCS("\\luafile"))
+		COMPLETE_WITH_FILES("\\", false);
+	else if (TailMatchesCS("\\lua|\\luastr"))
+	{
+		SimpleStringList globfunc = {NULL, NULL};
+		int			nglobfunc;
+
+		nglobfunc = lua_global_functions(lua, &globfunc);
+		if (nglobfunc > 0)
+		{
+			int		i ;
+			const char **globfunclist;
+			SimpleStringListCell *cell;
+
+			globfunclist = pg_malloc((nglobfunc + 1) * sizeof(char *));
+
+			for (i = 0, cell = globfunc.head; cell; cell = cell->next)
+			{
+				globfunclist[i] = cell->val;
+				i++;
+			}
+
+			globfunclist[i] = NULL;
+
+			COMPLETE_WITH_LIST_CS(globfunclist);
+
+			simple_string_list_destroy(&globfunc);
+			free(globfunclist);
+		}
+	}
+
+#endif
+
 	else if (TailMatchesCS("\\cd|\\e|\\edit|\\g|\\gx|\\i|\\include|"
 						   "\\ir|\\include_relative|\\o|\\out|"
 						   "\\s|\\w|\\write|\\lo_import") ||
