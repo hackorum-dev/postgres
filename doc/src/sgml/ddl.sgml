@@ -5844,7 +5844,12 @@ CREATE PROPERTY GRAPH myshop
    This graph could then be queried like this:
 <programlisting>
 -- get list of customers active today
-SELECT customer_name FROM GRAPH_TABLE (myshop MATCH (c IS customers)-[IS customer_orders]->(o IS orders WHERE o.ordered_when = current_date) COLUMNS (c.name AS customer_name));
+SELECT customer_name
+FROM GRAPH_TABLE (
+    myshop MATCH (c IS customers)
+        -[IS customer_orders]->(o IS orders WHERE o.ordered_when = current_date)
+    COLUMNS (c.name AS customer_name)
+);
 </programlisting>
    corresponding approximately to this relational query:
 <programlisting>
@@ -5908,7 +5913,12 @@ CREATE PROPERTY GRAPH myshop
   <para>
    With this definition, we can write a query like this:
 <programlisting>
-SELECT customer_name FROM GRAPH_TABLE (myshop MATCH (c IS customer)-[IS has_placed]->(o IS "order" WHERE o.ordered_when = current_date) COLUMNS (c.name AS customer_name));
+SELECT customer_name
+FROM GRAPH_TABLE (
+    myshop MATCH (c IS customer)
+        -[IS has_placed]->(o IS "order" WHERE o.ordered_when = current_date)
+    COLUMNS (c.name AS customer_name)
+);
 </programlisting>
    With the new labels the <literal>MATCH</literal> clause is now more intuitive.
   </para>
