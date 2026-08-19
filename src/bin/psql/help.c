@@ -25,6 +25,10 @@
 #include "input.h"
 #include "settings.h"
 #include "sql_help.h"
+#include "fe_utils/simple_list.h"
+#include "fe_utils/mbprint.h"
+#include "common.h"
+#include "lua-psql.h"
 
 /*
  * PLEASE:
@@ -151,6 +155,7 @@ slashUsage(unsigned short int pager)
 	int			nlcount;
 	FILE	   *output;
 	char	   *currdb;
+	SimplePtrList help_strings = {NULL, NULL};
 
 	currdb = PQdb(pset.db);
 
@@ -327,6 +332,15 @@ slashUsage(unsigned short int pager)
 	HELP0("  \\unset NAME            unset (delete) internal variable\n");
 	HELP0("\n");
 
+	HELP0("Lua\n");
+	HELP0("  \\lua FUNCNAME [args]   execute lua function with arguments\n");
+	HELP0("  \\luacode               reads lua source code\n");
+	HELP0("  \\luafile [FILE]        reads lua source code from file\n");
+	HELP0("  \\luaset VARNAME FUNCNAME [args]\n"
+		  "                         set result of Lua function to variable\n");
+	HELP0("  \\luastr LUAEXPR        execute evaluated string as Lua code\n");
+	HELP0("\n");
+
 	HELP0("Extended Query Protocol\n");
 	HELP0("  \\bind [PARAM]...       set query parameters\n");
 	HELP0("  \\bind_named STMT_NAME [PARAM]...\n"
@@ -341,6 +355,35 @@ slashUsage(unsigned short int pager)
 	HELP0("  \\sendpipeline          send an extended query to an ongoing pipeline\n");
 	HELP0("  \\startpipeline         enter pipeline mode\n");
 	HELP0("  \\syncpipeline          add a synchronisation point to an ongoing pipeline\n");
+
+	if (lua_help_strings(lua, &help_strings) > 0)
+	{
+		SimplePtrListCell *cell;
+		HelpStruct *hlp;
+
+		HELP0("\nCustom commands\n");
+
+		for (cell = help_strings.head; cell; cell = cell->next)
+		{
+			int syntax_width;
+
+			hlp = (HelpStruct *) cell->ptr;
+			syntax_width = pg_wcswidth(hlp->syntax, strlen(hlp->syntax), pset.encoding);
+
+			if (syntax_width > 22)
+			{
+				HELPN("  %s\n                         %s\n", hlp->syntax, hlp->desc);
+			}
+			else
+			{
+				HELPN("  %s%*s %s\n", hlp->syntax, 22- syntax_width, " ", hlp->desc);
+			}
+
+			free(cell->ptr);
+		}
+
+		simple_ptr_list_destroy(&help_strings);
+	}
 
 	/* Now we can count the lines. */
 	nlcount = 0;

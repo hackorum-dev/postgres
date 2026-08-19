@@ -647,7 +647,6 @@ PrintTiming(double elapsed_msec)
 		   elapsed_msec, days, (int) hours, (int) minutes, seconds);
 }
 
-
 /*
  * PSQLexec
  *
@@ -799,7 +798,6 @@ PrintQueryTuples(const PGresult *result, const printQueryOpt *opt,
 
 	return ok;
 }
-
 
 /*
  * StoreQueryTuple: assuming query result is OK, save data into variables
