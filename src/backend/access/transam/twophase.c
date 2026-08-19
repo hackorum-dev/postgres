@@ -1498,6 +1498,32 @@ StandbyTransactionIdIsPrepared(TransactionId xid)
 	return result;
 }
 
+bool
+TwoPhaseTransactionIdIsPrepared(TransactionId xid)
+{
+	TransactionId topxid;
+	bool		result = false;
+
+	Assert(TransactionIdIsValid(xid));
+	topxid = SubTransGetTopmostTransaction(xid);
+
+	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
+	for (int i = 0; i < TwoPhaseState->numPrepXacts; i++)
+	{
+		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
+
+		if (gxact->valid &&
+			TransactionIdEquals(XidFromFullTransactionId(gxact->fxid), topxid))
+		{
+			result = true;
+			break;
+		}
+	}
+	LWLockRelease(TwoPhaseStateLock);
+
+	return result;
+}
+
 /*
  * FinishPreparedTransaction: execute COMMIT PREPARED or ROLLBACK PREPARED
  */
@@ -1624,6 +1650,12 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 
 	/* Make sure files supposed to be dropped are dropped */
 	DropRelationFiles(delrels, ndelrels, false);
+
+	if (isCommit)
+	{
+		for (int i = 0; i < hdr->nabortrels; i++)
+			RelationCreateMarkerCleanup(&abortrels[i]);
+	}
 
 	if (isCommit)
 		pgstat_execute_transactional_drops(hdr->ncommitstats, commitstats, false);

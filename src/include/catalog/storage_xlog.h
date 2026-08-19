@@ -34,6 +34,7 @@ typedef struct xl_smgr_create
 {
 	RelFileLocator rlocator;
 	ForkNumber	forkNum;
+	bool		createMarker;
 } xl_smgr_create;
 
 /* flags for xl_smgr_truncate */
@@ -51,6 +52,8 @@ typedef struct xl_smgr_truncate
 } xl_smgr_truncate;
 
 extern void log_smgrcreate(const RelFileLocator *rlocator, ForkNumber forkNum);
+extern TransactionId log_smgrcreate_marker(const RelFileLocator *rlocator,
+										   ForkNumber forkNum);
 
 extern void smgr_redo(XLogReaderState *record);
 extern void smgr_desc(StringInfo buf, XLogReaderState *record);

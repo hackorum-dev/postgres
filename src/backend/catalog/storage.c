@@ -20,6 +20,8 @@
 #include "postgres.h"
 
 #include "access/visibilitymap.h"
+#include "access/transam.h"
+#include "access/twophase.h"
 #include "access/xact.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
@@ -28,7 +30,9 @@
 #include "catalog/storage_xlog.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "port/pg_crc32c.h"
 #include "storage/bulk_write.h"
+#include "storage/fd.h"
 #include "storage/freespace.h"
 #include "storage/proc.h"
 #include "storage/smgr.h"
@@ -38,6 +42,179 @@
 
 /* GUC variables */
 int			wal_skip_threshold = 2048;	/* in kilobytes */
+
+#define RELATION_CREATE_MARKER_DIR "pg_relcreate"
+#define RELATION_CREATE_MARKER_MAGIC 0x52434D4B
+#define RELATION_CREATE_MARKER_VERSION 1
+
+typedef struct RelationCreateMarker
+{
+	uint32		magic;
+	uint32		version;
+	RelFileLocator rlocator;
+	TransactionId xid;
+	pg_crc32c	crc;
+} RelationCreateMarker;
+
+static void
+relation_create_marker_path(char *path, Size size,
+							const RelFileLocator *rlocator)
+{
+	snprintf(path, size, RELATION_CREATE_MARKER_DIR "/%u_%u_%u",
+			 rlocator->spcOid, rlocator->dbOid, rlocator->relNumber);
+}
+
+static void
+create_relation_create_marker(const RelFileLocator *rlocator,
+							  TransactionId xid)
+{
+	RelationCreateMarker marker;
+	RelationCreateMarker existing;
+	char		path[MAXPGPATH];
+	int			fd;
+	int			save_errno;
+
+	relation_create_marker_path(path, sizeof(path), rlocator);
+	marker.magic = RELATION_CREATE_MARKER_MAGIC;
+	marker.version = RELATION_CREATE_MARKER_VERSION;
+	marker.rlocator = *rlocator;
+	marker.xid = xid;
+	INIT_CRC32C(marker.crc);
+	COMP_CRC32C(marker.crc, &marker, offsetof(RelationCreateMarker, crc));
+	FIN_CRC32C(marker.crc);
+
+	fd = OpenTransientFile(path, O_WRONLY | O_CREAT | O_EXCL | PG_BINARY);
+	if (fd < 0 && errno == EEXIST)
+	{
+		fd = OpenTransientFile(path, O_RDONLY | PG_BINARY);
+		if (fd >= 0 &&
+			read(fd, &existing, sizeof(existing)) == sizeof(existing) &&
+			existing.magic == marker.magic &&
+			existing.version == marker.version &&
+			RelFileLocatorEquals(existing.rlocator, marker.rlocator) &&
+			TransactionIdEquals(existing.xid, marker.xid) &&
+			EQ_CRC32C(existing.crc, marker.crc))
+		{
+			CloseTransientFile(fd);
+			return;
+		}
+		if (fd >= 0)
+			CloseTransientFile(fd);
+		errno = EEXIST;
+	}
+	if (fd < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not create relation creation marker \"%s\": %m",
+						path)));
+
+	if (write(fd, &marker, sizeof(marker)) != sizeof(marker) ||
+		pg_fsync(fd) != 0)
+	{
+		save_errno = errno;
+		CloseTransientFile(fd);
+		errno = save_errno;
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not write relation creation marker \"%s\": %m",
+						path)));
+	}
+
+	if (CloseTransientFile(fd) != 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not close relation creation marker \"%s\": %m",
+						path)));
+
+	fsync_fname(RELATION_CREATE_MARKER_DIR, true);
+}
+
+void
+RelationCreateMarkerCleanup(const RelFileLocator *rlocator)
+{
+	char		path[MAXPGPATH];
+
+	relation_create_marker_path(path, sizeof(path), rlocator);
+	(void) durable_unlink(path, WARNING);
+}
+
+void
+RelationCreateMarkerCleanupAtEndOfRecovery(void)
+{
+	DIR		   *dir;
+	struct dirent *de;
+
+	dir = AllocateDir(RELATION_CREATE_MARKER_DIR);
+	if (dir == NULL)
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not open relation creation marker directory \"%s\": %m",
+						RELATION_CREATE_MARKER_DIR)));
+
+	while ((de = ReadDir(dir, RELATION_CREATE_MARKER_DIR)) != NULL)
+	{
+		RelationCreateMarker marker;
+		char		path[MAXPGPATH];
+		char		expected_path[MAXPGPATH];
+		int			fd;
+		pg_crc32c	crc;
+
+		if (de->d_name[0] == '.')
+			continue;
+
+		snprintf(path, sizeof(path), RELATION_CREATE_MARKER_DIR "/%s",
+				 de->d_name);
+		fd = OpenTransientFile(path, O_RDONLY | PG_BINARY);
+		if (fd < 0 || read(fd, &marker, sizeof(marker)) != sizeof(marker))
+		{
+			if (fd >= 0)
+				CloseTransientFile(fd);
+			ereport(FATAL,
+					(errcode_for_file_access(),
+					 errmsg("invalid relation creation marker \"%s\"", path)));
+		}
+
+		INIT_CRC32C(crc);
+		COMP_CRC32C(crc, &marker, offsetof(RelationCreateMarker, crc));
+		FIN_CRC32C(crc);
+		relation_create_marker_path(expected_path, sizeof(expected_path),
+								&marker.rlocator);
+		if (marker.magic != RELATION_CREATE_MARKER_MAGIC ||
+			marker.version != RELATION_CREATE_MARKER_VERSION ||
+			!TransactionIdIsValid(marker.xid) ||
+			!EQ_CRC32C(crc, marker.crc) || strcmp(path, expected_path) != 0)
+		{
+			CloseTransientFile(fd);
+			ereport(FATAL,
+					(errcode_for_file_access(),
+					 errmsg("invalid relation creation marker \"%s\"", path)));
+		}
+		if (CloseTransientFile(fd) != 0)
+			ereport(FATAL,
+					(errcode_for_file_access(),
+					 errmsg("could not close relation creation marker \"%s\": %m",
+							path)));
+
+		if (TransactionIdDidCommit(marker.xid))
+		{
+			RelationCreateMarkerCleanup(&marker.rlocator);
+			continue;
+		}
+		if (TwoPhaseTransactionIdIsPrepared(marker.xid))
+			continue;
+
+		{
+			SMgrRelation srel = smgropen(marker.rlocator,
+										  INVALID_PROC_NUMBER);
+
+			smgrdounlinkall(&srel, 1, true);
+			smgrclose(srel);
+			RelationCreateMarkerCleanup(&marker.rlocator);
+		}
+	}
+
+	FreeDir(dir);
+}
 
 /*
  * We keep a list of all relations (represented as RelFileLocator values)
@@ -63,6 +240,7 @@ typedef struct PendingRelDelete
 {
 	RelFileLocator rlocator;	/* relation that may need to be deleted */
 	ProcNumber	procNumber;		/* INVALID_PROC_NUMBER if not a temp rel */
+	TransactionId createXid;	/* XID stored in the creation marker */
 	bool		atCommit;		/* T=delete at commit; F=delete at abort */
 	int			nestLevel;		/* xact nesting level of request */
 	struct PendingRelDelete *next;	/* linked-list link */
@@ -124,6 +302,7 @@ RelationCreateStorage(RelFileLocator rlocator, char relpersistence,
 {
 	SMgrRelation srel;
 	ProcNumber	procNumber;
+	TransactionId createXid = InvalidTransactionId;
 	bool		needs_wal;
 
 	Assert(!IsInParallelMode());	/* couldn't update pendingSyncHash */
@@ -148,9 +327,18 @@ RelationCreateStorage(RelFileLocator rlocator, char relpersistence,
 	}
 
 	srel = smgropen(rlocator, procNumber);
+
+	if (needs_wal && register_delete)
+	{
+		createXid = log_smgrcreate_marker(&srel->smgr_rlocator.locator,
+									  MAIN_FORKNUM);
+		create_relation_create_marker(&rlocator, createXid);
+		ForceSyncCommit();
+	}
+
 	smgrcreate(srel, MAIN_FORKNUM, false);
 
-	if (needs_wal)
+	if (needs_wal && !register_delete)
 		log_smgrcreate(&srel->smgr_rlocator.locator, MAIN_FORKNUM);
 
 	/*
@@ -165,6 +353,7 @@ RelationCreateStorage(RelFileLocator rlocator, char relpersistence,
 			MemoryContextAlloc(TopMemoryContext, sizeof(PendingRelDelete));
 		pending->rlocator = rlocator;
 		pending->procNumber = procNumber;
+		pending->createXid = createXid;
 		pending->atCommit = false;	/* delete if abort */
 		pending->nestLevel = GetCurrentTransactionNestLevel();
 		pending->next = pendingDeletes;
@@ -186,17 +375,35 @@ RelationCreateStorage(RelFileLocator rlocator, char relpersistence,
 void
 log_smgrcreate(const RelFileLocator *rlocator, ForkNumber forkNum)
 {
-	xl_smgr_create xlrec;
+	xl_smgr_create xlrec = {0};
 
 	/*
 	 * Make an XLOG entry reporting the file creation.
 	 */
 	xlrec.rlocator = *rlocator;
 	xlrec.forkNum = forkNum;
+	xlrec.createMarker = false;
 
 	XLogBeginInsert();
 	XLogRegisterData(&xlrec, sizeof(xlrec));
 	XLogInsert(RM_SMGR_ID, XLOG_SMGR_CREATE | XLR_SPECIAL_REL_UPDATE);
+}
+
+TransactionId
+log_smgrcreate_marker(const RelFileLocator *rlocator, ForkNumber forkNum)
+{
+	xl_smgr_create xlrec = {0};
+	TransactionId xid = GetCurrentTransactionId();
+
+	xlrec.rlocator = *rlocator;
+	xlrec.forkNum = forkNum;
+	xlrec.createMarker = true;
+
+	XLogBeginInsert();
+	XLogRegisterData(&xlrec, sizeof(xlrec));
+	XLogInsert(RM_SMGR_ID, XLOG_SMGR_CREATE | XLR_SPECIAL_REL_UPDATE);
+
+	return xid;
 }
 
 /*
@@ -213,6 +420,7 @@ RelationDropStorage(Relation rel)
 		MemoryContextAlloc(TopMemoryContext, sizeof(PendingRelDelete));
 	pending->rlocator = rel->rd_locator;
 	pending->procNumber = rel->rd_backend;
+	pending->createXid = InvalidTransactionId;
 	pending->atCommit = true;	/* delete if commit */
 	pending->nestLevel = GetCurrentTransactionNestLevel();
 	pending->next = pendingDeletes;
@@ -262,6 +470,9 @@ RelationPreserveStorage(RelFileLocator rlocator, bool atCommit)
 		if (RelFileLocatorEquals(rlocator, pending->rlocator)
 			&& pending->atCommit == atCommit)
 		{
+			if (!atCommit && TransactionIdIsValid(pending->createXid))
+				RelationCreateMarkerCleanup(&pending->rlocator);
+
 			/* unlink and delete list entry */
 			if (prev)
 				prev->next = next;
@@ -717,6 +928,8 @@ smgrDoPendingDeletes(bool isCommit)
 
 				srels[nrels++] = srel;
 			}
+			else if (isCommit && TransactionIdIsValid(pending->createXid))
+				RelationCreateMarkerCleanup(&pending->rlocator);
 			/* must explicitly free the list entry */
 			pfree(pending);
 			/* prev does not change */
@@ -990,6 +1203,14 @@ smgr_redo(XLogReaderState *record)
 	{
 		xl_smgr_create *xlrec = (xl_smgr_create *) XLogRecGetData(record);
 		SMgrRelation reln;
+		TransactionId xid = XLogRecGetXid(record);
+
+		if (xlrec->createMarker)
+		{
+			if (!TransactionIdIsValid(xid))
+				elog(PANIC, "relation creation marker WAL record has no transaction ID");
+			create_relation_create_marker(&xlrec->rlocator, xid);
+		}
 
 		reln = smgropen(xlrec->rlocator, INVALID_PROC_NUMBER);
 		smgrcreate(reln, xlrec->forkNum, true);

@@ -29,6 +29,8 @@ smgr_desc(StringInfo buf, XLogReaderState *record)
 
 		appendStringInfoString(buf,
 							   relpathperm(xlrec->rlocator, xlrec->forkNum).str);
+		if (xlrec->createMarker)
+			appendStringInfoString(buf, " with creation marker");
 	}
 	else if (info == XLOG_SMGR_TRUNCATE)
 	{
