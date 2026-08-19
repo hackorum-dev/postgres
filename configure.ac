@@ -1116,6 +1116,181 @@ if test "$with_libnuma" = yes ; then
 fi
 
 #
+# AC_ETHEREAL_LIBLUA_CHECK
+#
+AC_DEFUN([AC_ETHEREAL_LIBLUA_CHECK],[
+
+  if test "x$lua_dir" != "x"
+  then
+    #
+    # The user specified a directory in which liblua resides,
+    # so add the "include" subdirectory of that directory to
+    # the include file search path and the "lib" subdirectory
+    # of that directory to the library search path.
+    #
+    # XXX - if there's also a liblua in a directory that's
+    # already in CFLAGS, CPPFLAGS, or LDFLAGS, this won't
+    # make us find the version in the specified directory,
+    # as the compiler and/or linker will search that other
+    # directory before it searches the specified directory.
+    #
+    ethereal_save_CFLAGS="$CFLAGS"
+    CFLAGS="$CFLAGS -I$lua_dir/include"
+    ethereal_save_CPPFLAGS="$CPPFLAGS"
+    CPPFLAGS="$CPPFLAGS -I$lua_dir/include"
+    ethereal_save_LIBS="$LIBS"
+    LIBS="$LIBS -L$lua_dir/lib -llua"
+    ethereal_save_LDFLAGS="$LDFLAGS"
+    LDFLAGS="$LDFLAGS -L$lua_dir/lib"
+      else
+    #
+    # The user specified no directory in which liblua resides,
+    # so just add "-llua -lliblua" to the used libs.
+    #
+    ethereal_save_CFLAGS="$CFLAGS"
+    ethereal_save_CPPFLAGS="$CPPFLAGS"
+    ethereal_save_LDFLAGS="$LDFLAGS"
+    ethereal_save_LIBS="$LIBS"
+    LIBS="$LIBS -llua"
+  fi
+
+  #
+  # Make sure we have "lua.h", "lualib.h" and "lauxlib.h".  If we don't, it means we probably
+  # don't have liblua, so don't use it.
+  #
+  AC_CHECK_HEADERS(lua.h lualib.h lauxlib.h,,
+  [
+    if test "x$lua_dir" != "x"
+    then
+      #
+      # The user used "--with-lua=" to specify a directory
+      # containing liblua, but we didn't find the header file
+      # there; that either means they didn't specify the
+      # right directory or are confused about whether liblua
+      # is, in fact, installed.  Report the error and give up.
+      #
+      AC_MSG_ERROR([liblua header not found in directory specified in --with-lua])
+    else
+      if test "x$want_lua" = "xyes"
+      then
+        #
+        # The user tried to force us to use the library, but we
+        # couldn't find the header file; report an error.
+        #
+        AC_MSG_ERROR(Header file lua.h not found.)
+      else
+        #
+        # We couldn't find the header file; don't use the
+        # library, as it's probably not present.
+        #
+        want_lua=no
+      fi
+    fi
+  ])
+
+  if test "x$want_lua" != "xno"
+  then
+    #
+    # Well, we at least have the lua header file.
+    #
+    # let's check if the libs are there
+    #
+
+                 # At least on Suse 9.3 systems, liblualib needs linking
+             # against libm.
+             LIBS="$LIBS $LUA_LIBS -lm"
+
+    AC_CHECK_LIB(lua, lua_newstate,
+    [
+      if test "x$lua_dir" != "x"
+      then
+        #
+        # Put the "-I" and "-L" flags for lua at
+        # the beginning of CFLAGS, CPPFLAGS,
+        # LDFLAGS, and LIBS.
+        #
+        LUA_LIBS="-L$lua_dir/lib -llua"
+        LUA_INCLUDES="-I$lua_dir/include"
+      else
+        LUA_LIBS="-llua"
+        LUA_INCLUDES=""
+      fi
+
+      AC_DEFINE(HAVE_LUA, 1, [Define to use Lua])
+
+      #
+      # we got lua, now look for lualib
+      #
+      AC_CHECK_LIB(lualib, luaL_openlib,
+      [
+        #
+        # we have 5.0
+        #
+        LUA_LIBS="$LUA_LIBS -llualib"
+      ],[
+        #
+        # no lualib, in 5.1 there's only liblua
+        # do we have 5.1?
+        #
+
+        LIBS="$ethereal_save_LIBS $LUA_LIBS"
+
+        AC_CHECK_LIB(lua, luaL_register,
+        [
+            #
+            #  Lua 5.1 found
+            #
+            AC_DEFINE(HAVE_LUA_5_1, 1, [Define to use Lua 5.1])
+        ],[
+            #
+            # No, it is not 5.1
+            #
+            if test "x$lua_dir" != "x"
+            then
+                #
+                # Restore the versions of CFLAGS, CPPFLAGS,
+                # LDFLAGS, and LIBS before we added the
+                # "--with-lua=" directory, as we didn't
+                # actually find lua there.
+                #
+                CFLAGS="$ethereal_save_CFLAGS"
+                CPPFLAGS="$ethereal_save_CPPFLAGS"
+                LDFLAGS="$ethereal_save_LDFLAGS"
+                LIBS="$ethereal_save_LIBS"
+            fi
+        ])
+    ])
+    ],[  
+      #
+      # Restore the versions of CFLAGS, CPPFLAGS,
+      # LDFLAGS, and LIBS before we added the
+      # "--with-lua=" directory, as we didn't
+      # actually find lua there.
+      #
+      CFLAGS="$ethereal_save_CFLAGS"
+      CPPFLAGS="$ethereal_save_CPPFLAGS"
+      LDFLAGS="$ethereal_save_LDFLAGS"
+      LIBS="$ethereal_save_LIBS"
+      LUA_LIBS=""
+      # User requested --with-lua but it isn't available
+      if test "x$want_lua" = "xyes"
+      then
+        AC_MSG_ERROR(Linking with liblua failed.)
+      fi
+      want_lua=no
+    ])
+
+  CFLAGS="$ethereal_save_CFLAGS"
+  CPPFLAGS="$ethereal_save_CPPFLAGS"
+  LDFLAGS="$ethereal_save_LDFLAGS"
+  LIBS="$ethereal_save_LIBS"
+  AC_SUBST(LUA_LIBS)
+  AC_SUBST(LUA_INCLUDES)
+  fi
+])
+
+
+#
 # XML
 #
 AC_MSG_CHECKING([whether to build with XML support])
@@ -2475,6 +2650,44 @@ PGAC_PATH_PROGS(XSLTPROC, xsltproc)
 PGAC_PATH_PROGS(FOP, fop)
 PGAC_PATH_PROGS(DBTOEPUB, dbtoepub)
 
+
+dnl lua check
+AC_MSG_CHECKING(whether to use liblua)
+
+AC_ARG_WITH(lua,
+[  --with-lua[[=DIR]]       use liblua (located in directory DIR, if supplied) for the lua scripting plugin.  [[default=no]]],
+[
+  if test $withval = no
+  then
+    with_lua=no
+  elif test $withval = yes
+  then
+    with_lua=yes
+  else
+    with_lua=yes
+    lua_dir=$withval
+  fi
+],[
+  #
+  # Use liblua if it's present, otherwise don't.
+  #
+  with_lua=no
+  lua_dir=
+])
+if test "x$with_lua" = "xno" ; then
+  AC_MSG_RESULT(no)
+else
+  AC_MSG_RESULT(yes)
+  AC_ETHEREAL_LIBLUA_CHECK
+  if test "x$with_lua" = "xno" ; then
+    AC_MSG_RESULT(liblua not found - disabling support for the lua scripting plugin)
+  fi
+fi
+
+AC_SUBST(with_lua)
+
+
+
 #
 # Check for test tools
 #
@@ -2635,3 +2848,5 @@ AC_OUTPUT
 if test "$vpath_build" = "no"; then
   touch meson.build
 fi
+
+

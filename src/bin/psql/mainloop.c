@@ -21,7 +21,6 @@ const PsqlScanCallbacks psqlscan_callbacks = {
 	psql_get_variable,
 };
 
-
 /*
  * Main processing loop for reading lines of input
  *	and sending them to the backend.
