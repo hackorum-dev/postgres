@@ -15,6 +15,9 @@
 #include "fe_utils/psqlscan.h"
 #include "libpq-fe.h"
 
+#include <lualib.h>
+#include <lauxlib.h>
+
 extern bool openQueryOutputFile(const char *fname, FILE **fout, bool *is_pipe);
 extern bool setQFout(const char *fname);
 
@@ -45,5 +48,7 @@ extern void expand_tilde(char **filename);
 extern void clean_extended_state(void);
 
 extern bool recognized_connection_string(const char *connstr);
+
+extern lua_State *lua;
 
 #endif							/* COMMON_H */

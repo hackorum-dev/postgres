@@ -631,6 +631,9 @@ PG_SYSROOT
 PG_VERSION_NUM
 LDFLAGS_EX_BE
 PROVE
+with_lua
+LUA_INCLUDES
+LUA_LIBS
 DBTOEPUB
 FOP
 XSLTPROC
@@ -888,6 +891,10 @@ with_zstd
 with_ssl
 with_openssl
 enable_largefile
+<<<<<<< Updated upstream
+=======
+with_lua
+>>>>>>> Stashed changes
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1607,6 +1614,7 @@ Optional Packages:
   --with-zstd             build with ZSTD support
   --with-ssl=LIB          use LIB for SSL/TLS support (openssl)
   --with-openssl          obsolete spelling of --with-ssl=openssl
+  --with-lua[=DIR]       use liblua (located in directory DIR, if supplied) for the lua scripting plugin.  [default=no]
 
 Some influential environment variables:
   PG_TEST_EXTRA
@@ -9246,6 +9254,12 @@ $as_echo "yes" >&6; }
 
 fi
 fi
+
+#
+# AC_ETHEREAL_LIBLUA_CHECK
+#
+
+
 
 #
 # XML
@@ -19411,6 +19425,358 @@ $as_echo "$DBTOEPUB" >&6; }
 fi
 
 
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to use liblua" >&5
+$as_echo_n "checking whether to use liblua... " >&6; }
+
+
+# Check whether --with-lua was given.
+if test "${with_lua+set}" = set; then :
+  withval=$with_lua;
+  if test $withval = no
+  then
+    with_lua=no
+  elif test $withval = yes
+  then
+    with_lua=yes
+  else
+    with_lua=yes
+    lua_dir=$withval
+  fi
+
+else
+
+  #
+  # Use liblua if it's present, otherwise don't.
+  #
+  with_lua=no
+  lua_dir=
+
+fi
+
+if test "x$with_lua" = "xno" ; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+
+
+  if test "x$lua_dir" != "x"
+  then
+    #
+    # The user specified a directory in which liblua resides,
+    # so add the "include" subdirectory of that directory to
+    # the include file search path and the "lib" subdirectory
+    # of that directory to the library search path.
+    #
+    # XXX - if there's also a liblua in a directory that's
+    # already in CFLAGS, CPPFLAGS, or LDFLAGS, this won't
+    # make us find the version in the specified directory,
+    # as the compiler and/or linker will search that other
+    # directory before it searches the specified directory.
+    #
+    ethereal_save_CFLAGS="$CFLAGS"
+    CFLAGS="$CFLAGS -I$lua_dir/include"
+    ethereal_save_CPPFLAGS="$CPPFLAGS"
+    CPPFLAGS="$CPPFLAGS -I$lua_dir/include"
+    ethereal_save_LIBS="$LIBS"
+    LIBS="$LIBS -L$lua_dir/lib -llua"
+    ethereal_save_LDFLAGS="$LDFLAGS"
+    LDFLAGS="$LDFLAGS -L$lua_dir/lib"
+      else
+    #
+    # The user specified no directory in which liblua resides,
+    # so just add "-llua -lliblua" to the used libs.
+    #
+    ethereal_save_CFLAGS="$CFLAGS"
+    ethereal_save_CPPFLAGS="$CPPFLAGS"
+    ethereal_save_LDFLAGS="$LDFLAGS"
+    ethereal_save_LIBS="$LIBS"
+    LIBS="$LIBS -llua"
+  fi
+
+  #
+  # Make sure we have "lua.h", "lualib.h" and "lauxlib.h".  If we don't, it means we probably
+  # don't have liblua, so don't use it.
+  #
+  for ac_header in lua.h lualib.h lauxlib.h
+do :
+  as_ac_Header=`$as_echo "ac_cv_header_$ac_header" | $as_tr_sh`
+ac_fn_c_check_header_mongrel "$LINENO" "$ac_header" "$as_ac_Header" "$ac_includes_default"
+if eval test \"x\$"$as_ac_Header"\" = x"yes"; then :
+  cat >>confdefs.h <<_ACEOF
+#define `$as_echo "HAVE_$ac_header" | $as_tr_cpp` 1
+_ACEOF
+
+else
+
+    if test "x$lua_dir" != "x"
+    then
+      #
+      # The user used "--with-lua=" to specify a directory
+      # containing liblua, but we didn't find the header file
+      # there; that either means they didn't specify the
+      # right directory or are confused about whether liblua
+      # is, in fact, installed.  Report the error and give up.
+      #
+      as_fn_error $? "liblua header not found in directory specified in --with-lua" "$LINENO" 5
+    else
+      if test "x$want_lua" = "xyes"
+      then
+        #
+        # The user tried to force us to use the library, but we
+        # couldn't find the header file; report an error.
+        #
+        as_fn_error $? "Header file lua.h not found." "$LINENO" 5
+      else
+        #
+        # We couldn't find the header file; don't use the
+        # library, as it's probably not present.
+        #
+        want_lua=no
+      fi
+    fi
+
+fi
+
+done
+
+
+  if test "x$want_lua" != "xno"
+  then
+    #
+    # Well, we at least have the lua header file.
+    #
+    # let's check if the libs are there
+    #
+
+                 # At least on Suse 9.3 systems, liblualib needs linking
+             # against libm.
+             LIBS="$LIBS $LUA_LIBS -lm"
+
+    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for lua_newstate in -llua" >&5
+$as_echo_n "checking for lua_newstate in -llua... " >&6; }
+if ${ac_cv_lib_lua_lua_newstate+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-llua  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char lua_newstate ();
+int
+main ()
+{
+return lua_newstate ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_lua_lua_newstate=yes
+else
+  ac_cv_lib_lua_lua_newstate=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_lua_lua_newstate" >&5
+$as_echo "$ac_cv_lib_lua_lua_newstate" >&6; }
+if test "x$ac_cv_lib_lua_lua_newstate" = xyes; then :
+
+      if test "x$lua_dir" != "x"
+      then
+        #
+        # Put the "-I" and "-L" flags for lua at
+        # the beginning of CFLAGS, CPPFLAGS,
+        # LDFLAGS, and LIBS.
+        #
+        LUA_LIBS="-L$lua_dir/lib -llua"
+        LUA_INCLUDES="-I$lua_dir/include"
+      else
+        LUA_LIBS="-llua"
+        LUA_INCLUDES=""
+      fi
+
+
+$as_echo "#define HAVE_LUA 1" >>confdefs.h
+
+
+      #
+      # we got lua, now look for lualib
+      #
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for luaL_openlib in -llualib" >&5
+$as_echo_n "checking for luaL_openlib in -llualib... " >&6; }
+if ${ac_cv_lib_lualib_luaL_openlib+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-llualib  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char luaL_openlib ();
+int
+main ()
+{
+return luaL_openlib ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_lualib_luaL_openlib=yes
+else
+  ac_cv_lib_lualib_luaL_openlib=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_lualib_luaL_openlib" >&5
+$as_echo "$ac_cv_lib_lualib_luaL_openlib" >&6; }
+if test "x$ac_cv_lib_lualib_luaL_openlib" = xyes; then :
+
+        #
+        # we have 5.0
+        #
+        LUA_LIBS="$LUA_LIBS -llualib"
+
+else
+
+        #
+        # no lualib, in 5.1 there's only liblua
+        # do we have 5.1?
+        #
+
+        LIBS="$ethereal_save_LIBS $LUA_LIBS"
+
+        { $as_echo "$as_me:${as_lineno-$LINENO}: checking for luaL_register in -llua" >&5
+$as_echo_n "checking for luaL_register in -llua... " >&6; }
+if ${ac_cv_lib_lua_luaL_register+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-llua  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char luaL_register ();
+int
+main ()
+{
+return luaL_register ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_lua_luaL_register=yes
+else
+  ac_cv_lib_lua_luaL_register=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_lua_luaL_register" >&5
+$as_echo "$ac_cv_lib_lua_luaL_register" >&6; }
+if test "x$ac_cv_lib_lua_luaL_register" = xyes; then :
+
+            #
+            #  Lua 5.1 found
+            #
+
+$as_echo "#define HAVE_LUA_5_1 1" >>confdefs.h
+
+
+else
+
+            #
+            # No, it is not 5.1
+            #
+            if test "x$lua_dir" != "x"
+            then
+                #
+                # Restore the versions of CFLAGS, CPPFLAGS,
+                # LDFLAGS, and LIBS before we added the
+                # "--with-lua=" directory, as we didn't
+                # actually find lua there.
+                #
+                CFLAGS="$ethereal_save_CFLAGS"
+                CPPFLAGS="$ethereal_save_CPPFLAGS"
+                LDFLAGS="$ethereal_save_LDFLAGS"
+                LIBS="$ethereal_save_LIBS"
+            fi
+
+fi
+
+
+fi
+
+
+else
+
+      #
+      # Restore the versions of CFLAGS, CPPFLAGS,
+      # LDFLAGS, and LIBS before we added the
+      # "--with-lua=" directory, as we didn't
+      # actually find lua there.
+      #
+      CFLAGS="$ethereal_save_CFLAGS"
+      CPPFLAGS="$ethereal_save_CPPFLAGS"
+      LDFLAGS="$ethereal_save_LDFLAGS"
+      LIBS="$ethereal_save_LIBS"
+      LUA_LIBS=""
+      # User requested --with-lua but it isn't available
+      if test "x$want_lua" = "xyes"
+      then
+        as_fn_error $? "Linking with liblua failed." "$LINENO" 5
+      fi
+      want_lua=no
+
+fi
+
+
+  CFLAGS="$ethereal_save_CFLAGS"
+  CPPFLAGS="$ethereal_save_CPPFLAGS"
+  LDFLAGS="$ethereal_save_LDFLAGS"
+  LIBS="$ethereal_save_LIBS"
+
+
+  fi
+
+  if test "x$with_lua" = "xno" ; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: liblua not found - disabling support for the lua scripting plugin" >&5
+$as_echo "liblua not found - disabling support for the lua scripting plugin" >&6; }
+  fi
+fi
+
+
+
+
+
 #
 # Check for test tools
 #
@@ -21174,3 +21540,5 @@ fi
 if test "$vpath_build" = "no"; then
   touch meson.build
 fi
+
+
