@@ -2226,8 +2226,8 @@ remove_self_join_rel(PlannerInfo *root, PlanRowMark *kmark, PlanRowMark *rmark,
  * itself.
  */
 static void
-split_selfjoin_quals(PlannerInfo *root, List *joinquals, List **selfjoinquals,
-					 List **otherjoinquals, int from, int to)
+split_selfjoin_quals(List *joinquals, List **selfjoinquals,
+					 List **otherjoinquals)
 {
 	List	   *sjoinquals = NIL;
 	List	   *ojoinquals = NIL;
@@ -2462,8 +2462,7 @@ remove_self_joins_one_group(PlannerInfo *root, Relids relids)
 			 * other quals. e.g., "x = x" goes to selfjoinquals and "a = b" to
 			 * otherjoinquals.
 			 */
-			split_selfjoin_quals(root, restrictlist, &selfjoinquals,
-								 &otherjoinquals, rrel->relid, krel->relid);
+			split_selfjoin_quals(restrictlist, &selfjoinquals, &otherjoinquals);
 
 			Assert(list_length(restrictlist) ==
 				   (list_length(selfjoinquals) + list_length(otherjoinquals)));
