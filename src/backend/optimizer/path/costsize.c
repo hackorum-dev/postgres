@@ -4650,8 +4650,19 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 			(outer_path_rows - outer_matched_rows) *
 			clamp_row_est(inner_path_rows / virtualbuckets) * 0.05;
 
-		/* Get # of tuples that will pass the basic join */
-		if (path->jpath.jointype == JOIN_ANTI)
+		/*
+		 * Get # of tuples that will pass the basic join.  For
+		 * JOIN_RIGHT_SEMI/JOIN_RIGHT_ANTI, the physical outer and inner
+		 * paths are swapped, while the semi/anti factors above describe
+		 * the canonical orientation.  Applying outer_match_frac to
+		 * outer_path_rows would therefore mix estimates for different
+		 * relations.  Use the symmetric join-pair estimate from
+		 * approx_tuple_count() instead.
+		 */
+		if (path->jpath.jointype == JOIN_RIGHT_SEMI ||
+			path->jpath.jointype == JOIN_RIGHT_ANTI)
+			hashjointuples = approx_tuple_count(root, &path->jpath, hashclauses);
+		else if (path->jpath.jointype == JOIN_ANTI)
 			hashjointuples = outer_path_rows - outer_matched_rows;
 		else
 			hashjointuples = outer_matched_rows;

@@ -3108,6 +3108,102 @@ and t1.fivethous < 5;
 
 rollback;
 --
+-- test candidate-count costing for hash right semi/anti joins when the
+-- physical outer path is swapped relative to the canonical semi/anti join
+--
+begin;
+create temp table hj_small(id int primary key);
+create temp table hj_large(v int);
+insert into hj_small select i from generate_series(1,200)i;
+insert into hj_large select (i % 500) + 11 from generate_series(1,1000)i;
+analyze hj_small, hj_large;
+-- ensure we hash the small side and scan the large one, not the reverse
+explain (costs off)
+select count(*) from hj_small s where exists
+  (select 1 from hj_large r where r.v = s.id);
+                QUERY PLAN                
+------------------------------------------
+ Aggregate
+   ->  Hash Right Semi Join
+         Hash Cond: (r.v = s.id)
+         ->  Seq Scan on hj_large r
+         ->  Hash
+               ->  Seq Scan on hj_small s
+(6 rows)
+
+-- and check we get the expected results
+select count(*) from hj_small s where exists
+  (select 1 from hj_large r where r.v = s.id);
+ count 
+-------
+   190
+(1 row)
+
+-- likewise for a right anti join
+explain (costs off)
+select count(*) from hj_small s where not exists
+  (select 1 from hj_large r where r.v = s.id);
+                QUERY PLAN                
+------------------------------------------
+ Aggregate
+   ->  Hash Right Anti Join
+         Hash Cond: (r.v = s.id)
+         ->  Seq Scan on hj_large r
+         ->  Hash
+               ->  Seq Scan on hj_small s
+(6 rows)
+
+select count(*) from hj_small s where not exists
+  (select 1 from hj_large r where r.v = s.id);
+ count 
+-------
+    10
+(1 row)
+
+rollback;
+--
+-- same, but with a large outer/probe side and a small unique-keyed build
+-- side where only a small fraction of the outer rows can possibly
+-- hash-match: this exercises the inner_unique costing branch with the
+-- widest orientation mismatch between outer_path_rows and the canonical
+-- outer_match_frac, i.e. where the old candidate-count estimate was
+-- wrong by the largest margin
+--
+begin;
+create temp table hj_sparse_small(id int primary key, tag int);
+create temp table hj_sparse_large(v int);
+insert into hj_sparse_small select g, g from generate_series(1, 50) g;
+insert into hj_sparse_large select (g % 50000) + 1 from generate_series(1, 100000) g;
+analyze hj_sparse_small, hj_sparse_large;
+set max_parallel_workers_per_gather = 0;
+set work_mem = '4MB';
+explain (costs off)
+select hj_sparse_small.tag from hj_sparse_small where exists
+  (select 1 from hj_sparse_large where hj_sparse_large.v = hj_sparse_small.id);
+                      QUERY PLAN                       
+-------------------------------------------------------
+ Hash Right Semi Join
+   Hash Cond: (hj_sparse_large.v = hj_sparse_small.id)
+   ->  Seq Scan on hj_sparse_large
+   ->  Hash
+         ->  Seq Scan on hj_sparse_small
+(5 rows)
+
+-- likewise for a right anti join, reusing the same tables
+explain (costs off)
+select hj_sparse_small.tag from hj_sparse_small where not exists
+  (select 1 from hj_sparse_large where hj_sparse_large.v = hj_sparse_small.id);
+                      QUERY PLAN                       
+-------------------------------------------------------
+ Hash Right Anti Join
+   Hash Cond: (hj_sparse_large.v = hj_sparse_small.id)
+   ->  Seq Scan on hj_sparse_large
+   ->  Hash
+         ->  Seq Scan on hj_sparse_small
+(5 rows)
+
+rollback;
+--
 -- regression test for bug #13908 (hash join with skew tuples & nbatch increase)
 --
 set work_mem to '64kB';
