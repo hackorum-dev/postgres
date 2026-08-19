@@ -27,6 +27,15 @@
 #include "portability/instr_time.h"
 #include "settings.h"
 
+#ifdef LUA_SUPPORT
+
+#include <lualib.h>
+#include <lauxlib.h>
+#include "luapgsql.h"
+#include "lua-psql.h"
+
+#endif
+
 /*
  * Global psql options
  */
@@ -86,6 +95,12 @@ static void process_psqlrc(char *argv0);
 static void process_psqlrc_file(char *filename);
 static void showVersion(void);
 static void EstablishVariableSpace(void);
+
+#ifdef LUA_SUPPORT
+
+lua_State	   *lua = NULL;
+
+#endif
 
 #define NOPAGER		0
 
@@ -210,6 +225,31 @@ main(int argc, char *argv[])
 	SetVariable(pset.vars, "PIPELINE_SYNC_COUNT", "0");
 	SetVariable(pset.vars, "PIPELINE_COMMAND_COUNT", "0");
 	SetVariable(pset.vars, "PIPELINE_RESULT_COUNT", "0");
+
+#ifdef LUA_SUPPORT
+
+
+	lua = luaL_newstate();
+	luaopen_base(lua);
+	luaopen_string(lua);
+	lua_setglobal(lua, "string");
+
+	luaopen_table(lua);
+	lua_setglobal(lua, "table");
+
+	luaopen_pgsql(lua);
+	lua_setglobal(lua, "pg");
+
+	luaopen_psql(lua);
+	lua_setglobal(lua, "psql");
+
+	luaopen_io(lua);
+	lua_setglobal(lua, "io");
+
+	/* Initialize lua support */
+	SetVariable(pset.vars, "LUA_RELEASE", LUA_RELEASE);
+
+#endif
 
 	parse_psql_options(argc, argv, &options);
 
@@ -470,6 +510,12 @@ error:
 		initializeInput(options.no_readline ? 0 : 1);
 		successResult = MainLoop(stdin);
 	}
+
+#ifdef LUA_SUPPORT
+
+	lua_close(lua);
+
+#endif
 
 	/* clean up */
 	if (pset.logfile)
