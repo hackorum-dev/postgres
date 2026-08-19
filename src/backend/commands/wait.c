@@ -116,7 +116,7 @@ ExecWaitStmt(ParseState *pstate, WaitStmt *stmt, bool isTopLevel,
 			dval = rint(dval);
 
 			/* Range check */
-			if (unlikely(isnan(dval) || !FLOAT8_FITS_IN_INT64(dval)))
+			if (unlikely(isnan(dval) || !FLOAT8_FITS_IN_INT32(dval)))
 				ereport(ERROR,
 						errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 						errmsg("timeout value is out of range"));
