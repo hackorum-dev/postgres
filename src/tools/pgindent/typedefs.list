@@ -1693,6 +1693,8 @@ LogicalRepRelation
 LogicalRepRollbackPreparedTxnData
 LogicalRepSequenceInfo
 LogicalRepStreamAbortData
+LogicalRepSubFKey
+LogicalRepSubRefKey
 LogicalRepSubUniqueIndex
 LogicalRepTupleData
 LogicalRepTyp
