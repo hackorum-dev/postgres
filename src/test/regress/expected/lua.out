@@ -1,0 +1,58 @@
+\if :{?LUA_RELEASE}
+  \echo "lua is supported"
+"lua is supported"
+\else
+  \echo "lua is not supported"
+  \quit
+\endif
+-- lua commands
+\luacode
+\luacode
+11	ahoj
+\lua foo 10 ahoj
+11	ahoj
+\luaset myvar foo 10 ahoj
+\echo :myvar
+11
+\unset myvar
+create table footable(a int, b int);
+insert into footable values(10, 20);
+insert into footable values(30, 40);
+\luacode
+ a  | b  
+----+----
+ 10 | 20
+ 30 | 40
+(2 rows)
+
+ a  | b  
+----+----
+ 10 | 20
+ 30 | 40
+(2 rows)
+
+\set tablename footable
+\luastr psql.printQuery(psql.exec("select * from " .. :"tablename"))
+ a  | b  
+----+----
+ 10 | 20
+ 30 | 40
+(2 rows)
+
+drop table footable;
+\luacode
+\luaset a,b,c foo 10 20 30
+\echo :a :b :c
+10 20 30
+\luaset a , b , c foo 10 20 30
+\echo :a :b :c
+10 20 30
+\luaset a ,b , c foo 10 20 30
+\echo :a :b :c
+10 20 30
+\luaset a,b , c foo 10 20 30
+\echo :a :b :c
+10 20 30
+\luaset a ,b, c foo 10 20 30
+\echo :a :b :c
+10 20 30
