@@ -4242,6 +4242,22 @@ supportfn(internal) returns internal
    </para>
 
    <para>
+    Aggregate function calls can also be simplified during planning.  For
+    example, <literal>COUNT(<replaceable>x</replaceable>)</literal> can be
+    replaced by <literal>COUNT(*)</literal>
+    when <replaceable>x</replaceable> is known not to be null.  This can be
+    done by a support function that implements
+    the <literal>SupportRequestSimplifyAggref</literal> request type.  The
+    support function will be called for each instance of its target aggregate
+    found in a query parse tree.  If it finds that the particular call can be
+    replaced, it can build and return a new node, usually another aggregate
+    call, leaving the node it was given unmodified.  As with
+    <literal>SupportRequestSimplify</literal>, it is the support function's
+    responsibility that the replacement be equivalent to normal execution of
+    the target aggregate.
+   </para>
+
+   <para>
     For target functions that return <type>boolean</type>, it is often useful to estimate
     the fraction of rows that will be selected by a <literal>WHERE</literal> clause using that
     function.  This can be done by a support function that implements
