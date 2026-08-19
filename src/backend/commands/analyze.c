@@ -1171,6 +1171,12 @@ examine_attribute(Relation onerel, int attnum, Node *index_expr)
 	return stats;
 }
 
+/*
+ * Determine whether the column is analyzable.
+ *
+ * If the column is analyzable, its attstattarget value is returned into the
+ * output parameter p_attstattarget if it isn't NULL.
+ */
 bool
 attribute_is_analyzable(Relation onerel, int attnum, Form_pg_attribute attr,
 						int *p_attstattarget)
