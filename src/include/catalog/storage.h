@@ -27,6 +27,8 @@ extern SMgrRelation RelationCreateStorage(RelFileLocator rlocator,
 										  bool register_delete);
 extern void RelationDropStorage(Relation rel);
 extern void RelationPreserveStorage(RelFileLocator rlocator, bool atCommit);
+extern void RelationCreateMarkerCleanup(const RelFileLocator *rlocator);
+extern void RelationCreateMarkerCleanupAtEndOfRecovery(void);
 extern void RelationPreTruncate(Relation rel);
 extern void RelationTruncate(Relation rel, BlockNumber nblocks);
 extern void RelationCopyStorage(SMgrRelation src, SMgrRelation dst,
