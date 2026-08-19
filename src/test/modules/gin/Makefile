@@ -1,8 +1,8 @@
 # src/test/modules/gin/Makefile
 
-EXTRA_INSTALL = src/test/modules/injection_points
+EXTRA_INSTALL = src/test/modules/injection_points contrib/pageinspect
 
-REGRESS = gin_incomplete_splits
+REGRESS = gin_incomplete_splits gin_vacuum_orphan_page
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config

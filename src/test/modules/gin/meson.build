@@ -11,6 +11,7 @@ tests += {
   'regress': {
     'sql': [
       'gin_incomplete_splits',
+      'gin_vacuum_orphan_page',
     ],
   },
 }
