@@ -58,6 +58,14 @@ ALTER FUNCTION <replaceable>name</replaceable> [ ( [ [ <replaceable class="param
   </para>
 
   <para>
+   The target can also be an aggregate function.  In that case
+   <literal>SUPPORT</literal> is the only action that is allowed, because
+   every other property of an aggregate is fixed by
+   <link linkend="sql-createaggregate"><command>CREATE
+   AGGREGATE</command></link>.
+  </para>
+
+  <para>
    You must own the function to use <command>ALTER FUNCTION</command>.
    To change a function's schema, you must also have <literal>CREATE</literal>
    privilege on the new schema.  To alter the owner, you must be able to
@@ -269,7 +277,8 @@ ALTER FUNCTION <replaceable>name</replaceable> [ ( [ [ <replaceable class="param
      <para>
       This option cannot be used to remove the support function altogether,
       since it must name a new support function.  Use <command>CREATE OR
-      REPLACE FUNCTION</command> if you need to do that.
+      REPLACE FUNCTION</command> if you need to do that.  For an aggregate,
+      use <command>CREATE OR REPLACE AGGREGATE</command>.
      </para>
     </listitem>
    </varlistentry>

@@ -4185,6 +4185,22 @@ supportfn(internal) returns internal
    </para>
 
    <para>
+    An aggregate can also be a target function.  Because an aggregate is
+    created by <link linkend="sql-createaggregate"><command>CREATE
+    AGGREGATE</command></link>, which has no <literal>SUPPORT</literal>
+    clause, attach the support function with
+    <link linkend="sql-alterfunction"><command>ALTER FUNCTION</command></link>
+    instead.
+   </para>
+
+   <para>
+    An aggregate's support function is not preserved by
+    <application>pg_dump</application>, and therefore not
+    by <application>pg_upgrade</application> either.  Set it again after a
+    restore, or arrange for the owning extension to do so.
+   </para>
+
+   <para>
     The details of the API for planner support functions can be found in
     file <filename>src/include/nodes/supportnodes.h</filename> in the
     <productname>PostgreSQL</productname> source code.  Here we provide

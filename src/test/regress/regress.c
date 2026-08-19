@@ -35,10 +35,12 @@
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
+#include "nodes/makefuncs.h"
 #include "nodes/supportnodes.h"
 #include "optimizer/optimizer.h"
 #include "optimizer/plancat.h"
 #include "parser/parse_coerce.h"
+#include "parser/parse_func.h"
 #include "port/atomics.h"
 #include "portability/instr_time.h"
 #include "postmaster/postmaster.h"	/* for MAX_BACKENDS */
@@ -820,6 +822,44 @@ test_support_func(PG_FUNCTION_ARGS)
 	}
 
 	PG_RETURN_POINTER(ret);
+}
+
+PG_FUNCTION_INFO_V1(test_aggref_support);
+Datum
+test_aggref_support(PG_FUNCTION_ARGS)
+{
+	Node	   *rawreq = (Node *) PG_GETARG_POINTER(0);
+
+	if (IsA(rawreq, SupportRequestSimplifyAggref))
+	{
+		/*
+		 * Replace the target with my_count(), a user aggregate that counts
+		 * its input rows in the same way as count(any) does.  That's safe as
+		 * long as we don't attach this to any other aggregate.
+		 */
+		SupportRequestSimplifyAggref *req;
+		Aggref	   *agg;
+		Aggref	   *newagg;
+		Oid			argtypes[1] = {ANYOID};
+		Oid			newfnoid;
+
+		req = (SupportRequestSimplifyAggref *) rawreq;
+		agg = req->aggref;
+
+		newfnoid = LookupFuncName(list_make1(makeString("my_count")),
+								  1, argtypes, true);
+		if (!OidIsValid(newfnoid) || newfnoid == agg->aggfnoid)
+			PG_RETURN_POINTER(NULL);
+
+		/* Build a new Aggref that names my_count, and change nothing else */
+		newagg = makeNode(Aggref);
+		memcpy(newagg, agg, sizeof(Aggref));
+		newagg->aggfnoid = newfnoid;
+
+		PG_RETURN_POINTER(newagg);
+	}
+
+	PG_RETURN_POINTER(NULL);
 }
 
 PG_FUNCTION_INFO_V1(test_inline_in_from_support_func);

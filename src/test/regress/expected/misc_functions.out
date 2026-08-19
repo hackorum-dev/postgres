@@ -681,6 +681,74 @@ EXPLAIN (COSTS OFF) SELECT * FROM foo_from_bar('f1', 'text_tbl', 'doh!');
 (2 rows)
 
 DROP FUNCTION foo_from_bar;
+--
+-- Test adding a support function to an aggregate
+--
+CREATE FUNCTION test_aggref_support(internal)
+    RETURNS internal
+    AS :'regresslib', 'test_aggref_support'
+    LANGUAGE C STRICT;
+-- my_count() counts its input rows in the same way as count(any) does
+CREATE AGGREGATE my_count("any") (
+  SFUNC = int8inc_any, STYPE = int8, INITCOND = '0', PARALLEL = SAFE
+);
+-- SUPPORT is the only attribute an aggregate accepts
+ALTER FUNCTION my_count("any") COST 10;
+ERROR:  attribute "cost" is not allowed for aggregates
+LINE 1: ALTER FUNCTION my_count("any") COST 10;
+                                       ^
+-- Setting the support function records a dependency
+ALTER FUNCTION my_count("any") SUPPORT test_aggref_support;
+DROP FUNCTION test_aggref_support(internal);
+ERROR:  cannot drop function test_aggref_support(internal) because other objects depend on it
+DETAIL:  function my_count("any") depends on function test_aggref_support(internal)
+HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+-- Attach a support function to a built-in aggregate and check that the
+-- planner calls it.
+BEGIN;
+ALTER FUNCTION pg_catalog.count("any") SUPPORT test_aggref_support;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT count(a) FROM generate_series(1,10) AS a;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Aggregate
+   Output: my_count(a)
+   ->  Function Scan on pg_catalog.generate_series a
+         Output: a
+         Function Call: generate_series(1, 10)
+(5 rows)
+
+SELECT count(a) FROM generate_series(1,10) AS a;
+ count 
+-------
+    10
+(1 row)
+
+-- count(*) is a different aggregate, and keeps its own support function
+EXPLAIN (VERBOSE, COSTS OFF) SELECT count(*) FROM generate_series(1,10) AS a;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Aggregate
+   Output: count(*)
+   ->  Function Scan on pg_catalog.generate_series a
+         Output: a
+         Function Call: generate_series(1, 10)
+(5 rows)
+
+ROLLBACK;
+-- After the rollback the built-in support function is in charge again
+EXPLAIN (VERBOSE, COSTS OFF) SELECT count(a) FROM generate_series(1,10) AS a;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Aggregate
+   Output: count(a)
+   ->  Function Scan on pg_catalog.generate_series a
+         Output: a
+         Function Call: generate_series(1, 10)
+(5 rows)
+
+ALTER FUNCTION my_count("any") SUPPORT int8inc_support;
+-- Now we can delete this support function
+DROP FUNCTION test_aggref_support(internal);
 -- Test functions for control data
 SELECT count(*) > 0 AS ok FROM pg_control_checkpoint();
  ok 

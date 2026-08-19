@@ -270,6 +270,46 @@ EXPLAIN (COSTS OFF) SELECT * FROM foo_from_bar('f1', 'text_tbl', 'doh!');
 
 DROP FUNCTION foo_from_bar;
 
+--
+-- Test adding a support function to an aggregate
+--
+
+CREATE FUNCTION test_aggref_support(internal)
+    RETURNS internal
+    AS :'regresslib', 'test_aggref_support'
+    LANGUAGE C STRICT;
+
+-- my_count() counts its input rows in the same way as count(any) does
+CREATE AGGREGATE my_count("any") (
+  SFUNC = int8inc_any, STYPE = int8, INITCOND = '0', PARALLEL = SAFE
+);
+
+-- SUPPORT is the only attribute an aggregate accepts
+ALTER FUNCTION my_count("any") COST 10;
+
+-- Setting the support function records a dependency
+ALTER FUNCTION my_count("any") SUPPORT test_aggref_support;
+DROP FUNCTION test_aggref_support(internal);
+
+-- Attach a support function to a built-in aggregate and check that the
+-- planner calls it.
+BEGIN;
+ALTER FUNCTION pg_catalog.count("any") SUPPORT test_aggref_support;
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT count(a) FROM generate_series(1,10) AS a;
+SELECT count(a) FROM generate_series(1,10) AS a;
+
+-- count(*) is a different aggregate, and keeps its own support function
+EXPLAIN (VERBOSE, COSTS OFF) SELECT count(*) FROM generate_series(1,10) AS a;
+ROLLBACK;
+
+-- After the rollback the built-in support function is in charge again
+EXPLAIN (VERBOSE, COSTS OFF) SELECT count(a) FROM generate_series(1,10) AS a;
+
+ALTER FUNCTION my_count("any") SUPPORT int8inc_support;
+-- Now we can delete this support function
+DROP FUNCTION test_aggref_support(internal);
+
 -- Test functions for control data
 SELECT count(*) > 0 AS ok FROM pg_control_checkpoint();
 SELECT count(*) > 0 AS ok FROM pg_control_init();

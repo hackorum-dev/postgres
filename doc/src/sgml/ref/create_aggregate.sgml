@@ -102,7 +102,8 @@ CREATE [ OR REPLACE ] AGGREGATE <replaceable class="parameter">name</replaceable
    When replacing an existing definition, the argument types, result type,
    and number of direct arguments may not be changed. Also, the new definition
    must be of the same kind (ordinary aggregate, ordered-set aggregate, or
-   hypothetical-set aggregate) as the old one.
+   hypothetical-set aggregate) as the old one.  Replacing an aggregate also
+   resets its planner support function, if it had one.
   </para>
 
   <para>

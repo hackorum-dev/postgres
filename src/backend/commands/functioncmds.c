@@ -516,7 +516,7 @@ interpret_function_parameter_list(ParseState *pstate,
  */
 static bool
 compute_common_attribute(ParseState *pstate,
-						 bool is_procedure,
+						 char prokind,
 						 DefElem *defel,
 						 DefElem **volatility_item,
 						 DefElem **strict_item,
@@ -528,8 +528,13 @@ compute_common_attribute(ParseState *pstate,
 						 DefElem **support_item,
 						 DefElem **parallel_item)
 {
+	bool		is_aggregate = (prokind == PROKIND_AGGREGATE);
+	bool		is_procedure = (prokind == PROKIND_PROCEDURE);
+
 	if (strcmp(defel->defname, "volatility") == 0)
 	{
+		if (is_aggregate)
+			goto aggregate_error;
 		if (is_procedure)
 			goto procedure_error;
 		if (*volatility_item)
@@ -539,6 +544,8 @@ compute_common_attribute(ParseState *pstate,
 	}
 	else if (strcmp(defel->defname, "strict") == 0)
 	{
+		if (is_aggregate)
+			goto aggregate_error;
 		if (is_procedure)
 			goto procedure_error;
 		if (*strict_item)
@@ -548,6 +555,8 @@ compute_common_attribute(ParseState *pstate,
 	}
 	else if (strcmp(defel->defname, "security") == 0)
 	{
+		if (is_aggregate)
+			goto aggregate_error;
 		if (*security_item)
 			errorConflictingDefElem(defel, pstate);
 
@@ -555,6 +564,8 @@ compute_common_attribute(ParseState *pstate,
 	}
 	else if (strcmp(defel->defname, "leakproof") == 0)
 	{
+		if (is_aggregate)
+			goto aggregate_error;
 		if (is_procedure)
 			goto procedure_error;
 		if (*leakproof_item)
@@ -564,10 +575,14 @@ compute_common_attribute(ParseState *pstate,
 	}
 	else if (strcmp(defel->defname, "set") == 0)
 	{
+		if (is_aggregate)
+			goto aggregate_error;
 		*set_items = lappend(*set_items, defel->arg);
 	}
 	else if (strcmp(defel->defname, "cost") == 0)
 	{
+		if (is_aggregate)
+			goto aggregate_error;
 		if (is_procedure)
 			goto procedure_error;
 		if (*cost_item)
@@ -577,6 +592,8 @@ compute_common_attribute(ParseState *pstate,
 	}
 	else if (strcmp(defel->defname, "rows") == 0)
 	{
+		if (is_aggregate)
+			goto aggregate_error;
 		if (is_procedure)
 			goto procedure_error;
 		if (*rows_item)
@@ -595,6 +612,8 @@ compute_common_attribute(ParseState *pstate,
 	}
 	else if (strcmp(defel->defname, "parallel") == 0)
 	{
+		if (is_aggregate)
+			goto aggregate_error;
 		if (is_procedure)
 			goto procedure_error;
 		if (*parallel_item)
@@ -608,10 +627,19 @@ compute_common_attribute(ParseState *pstate,
 	/* Recognized an option */
 	return true;
 
+aggregate_error:
+	ereport(ERROR,
+			(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
+			 errmsg("attribute \"%s\" is not allowed for aggregates",
+					defel->defname),
+			 parser_errposition(pstate, defel->location)));
+	return false;
+
 procedure_error:
 	ereport(ERROR,
 			(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
-			 errmsg("invalid attribute in procedure definition"),
+			 errmsg("attribute \"%s\" is not allowed for procedures",
+					defel->defname),
 			 parser_errposition(pstate, defel->location)));
 	return false;
 }
@@ -730,7 +758,7 @@ interpret_func_support(DefElem *defel)
  */
 static void
 compute_function_attributes(ParseState *pstate,
-							bool is_procedure,
+							char prokind,
 							List *options,
 							List **as,
 							char **language,
@@ -787,15 +815,16 @@ compute_function_attributes(ParseState *pstate,
 		{
 			if (windowfunc_item)
 				errorConflictingDefElem(defel, pstate);
-			if (is_procedure)
+			if (prokind == PROKIND_PROCEDURE)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
-						 errmsg("invalid attribute in procedure definition"),
+						 errmsg("attribute \"%s\" is not allowed for procedures",
+								defel->defname),
 						 parser_errposition(pstate, defel->location)));
 			windowfunc_item = defel;
 		}
 		else if (compute_common_attribute(pstate,
-										  is_procedure,
+										  prokind,
 										  defel,
 										  &volatility_item,
 										  &strict_item,
@@ -1052,6 +1081,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 	List	   *trfoids_list = NIL;
 	ArrayType  *trftypes;
 	Oid			requiredResultType;
+	char		prokind;
 	bool		isWindowFunc,
 				isStrict,
 				security,
@@ -1079,6 +1109,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 	/* Set default attributes */
 	as_clause = NIL;
 	language = NULL;
+	prokind = (stmt->is_procedure ? PROKIND_PROCEDURE : PROKIND_FUNCTION);
 	isWindowFunc = false;
 	isStrict = false;
 	security = false;
@@ -1092,13 +1123,23 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 
 	/* Extract non-default attributes from stmt->options list */
 	compute_function_attributes(pstate,
-								stmt->is_procedure,
+								prokind,
 								stmt->options,
 								&as_clause, &language, &transformDefElem,
 								&isWindowFunc, &volatility,
 								&isStrict, &security, &isLeakProof,
 								&proconfig, &procost, &prorows,
 								&prosupport, &parallel);
+
+	/*
+	 * If we found a WINDOW attribute, change prokind accordingly.  Note that
+	 * as things stand, we must allow all the same attributes for window
+	 * functions as plain functions, since we don't know the difference while
+	 * scanning the options list.  If that ever needs to change, we'd have to
+	 * scan the list twice, the first time just to identify WINDOW.
+	 */
+	if (isWindowFunc)
+		prokind = PROKIND_WINDOW;
 
 	if (!language)
 	{
@@ -1285,7 +1326,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 						   prosrc_str,	/* converted to text later */
 						   probin_str,	/* converted to text later */
 						   prosqlbody,
-						   stmt->is_procedure ? PROKIND_PROCEDURE : (isWindowFunc ? PROKIND_WINDOW : PROKIND_FUNCTION),
+						   prokind,
 						   security,
 						   isLeakProof,
 						   isStrict,
@@ -1366,7 +1407,6 @@ AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt)
 	HeapTuple	tup;
 	Oid			funcOid;
 	Form_pg_proc procForm;
-	bool		is_procedure;
 	Relation	rel;
 	ListCell   *l;
 	DefElem    *volatility_item = NULL;
@@ -1397,21 +1437,13 @@ AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt)
 		aclcheck_error(ACLCHECK_NOT_OWNER, stmt->objtype,
 					   NameListToString(stmt->func->objname));
 
-	if (procForm->prokind == PROKIND_AGGREGATE)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is an aggregate function",
-						NameListToString(stmt->func->objname))));
-
-	is_procedure = (procForm->prokind == PROKIND_PROCEDURE);
-
 	/* Examine requested actions. */
 	foreach(l, stmt->actions)
 	{
 		DefElem    *defel = (DefElem *) lfirst(l);
 
 		if (compute_common_attribute(pstate,
-									 is_procedure,
+									 procForm->prokind,
 									 defel,
 									 &volatility_item,
 									 &strict_item,

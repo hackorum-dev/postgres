@@ -392,11 +392,11 @@ LINE 1: CALL sum(1);
              ^
 HINT:  To call a function, use SELECT.
 CREATE PROCEDURE ptestx() LANGUAGE SQL WINDOW AS $$ INSERT INTO cp_test VALUES (1, 'a') $$;
-ERROR:  invalid attribute in procedure definition
+ERROR:  attribute "window" is not allowed for procedures
 LINE 1: CREATE PROCEDURE ptestx() LANGUAGE SQL WINDOW AS $$ INSERT I...
                                                ^
 CREATE PROCEDURE ptestx() LANGUAGE SQL STRICT AS $$ INSERT INTO cp_test VALUES (1, 'a') $$;
-ERROR:  invalid attribute in procedure definition
+ERROR:  attribute "strict" is not allowed for procedures
 LINE 1: CREATE PROCEDURE ptestx() LANGUAGE SQL STRICT AS $$ INSERT I...
                                                ^
 CREATE PROCEDURE ptestx(a VARIADIC int[], b OUT int) LANGUAGE SQL
@@ -410,7 +410,7 @@ ERROR:  procedure OUT parameters cannot appear after one with a default value
 LINE 1: CREATE PROCEDURE ptestx(a int DEFAULT 42, b OUT int) LANGUAG...
                                                   ^
 ALTER PROCEDURE ptest1(text) STRICT;
-ERROR:  invalid attribute in procedure definition
+ERROR:  attribute "strict" is not allowed for procedures
 LINE 1: ALTER PROCEDURE ptest1(text) STRICT;
                                      ^
 ALTER FUNCTION ptest1(text) VOLATILE;  -- error: not a function

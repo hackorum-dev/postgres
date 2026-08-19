@@ -140,6 +140,13 @@ ALTER AGGREGATE <replaceable>name</replaceable> ( <replaceable>aggregate_signatu
   <title>Notes</title>
 
    <para>
+    An aggregate can have a planner support function, but this command does
+    not set it.  Use
+    <link linkend="sql-alterfunction"><command>ALTER FUNCTION</command></link>
+    with the <literal>SUPPORT</literal> clause for that.
+   </para>
+
+   <para>
     The recommended syntax for referencing an ordered-set aggregate
     is to write <literal>ORDER BY</literal> between the direct and aggregated
     argument specifications, in the same style as in
