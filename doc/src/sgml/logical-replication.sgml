@@ -2286,6 +2286,13 @@ Included in publications:
      and the associated local conflict details (<literal>local_conflicts</literal>), is stored in
      <type>JSON</type> formats for flexible querying and analysis.
     </para>
+
+    <para>
+     Note that virtual generated column values appear as
+     <literal>null</literal> in these JSON columns, because such columns have no
+     stored value on the subscriber. In the server log, such columns are instead
+     shown with the constant value <literal>virtual</literal>.
+    </para>
    </sect3>
 
    <sect3 id="logical-replication-conflict-file-based-logging">
