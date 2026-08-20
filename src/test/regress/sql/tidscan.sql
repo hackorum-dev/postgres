@@ -83,15 +83,17 @@ UPDATE tidscan SET id = -id WHERE CURRENT OF c RETURNING *;
 ROLLBACK;
 
 -- bulk joins on CTID
--- (these plans don't use TID scans, but this still seems like an
--- appropriate place for these tests)
+-- These plans don't use TID scans, but this still seems like an
+-- appropriate place for these tests.  The slightly unusual DISTINCT semi-join
+-- exists to avoid join-order instability.  A more traditional query for such
+-- a self-join would produce the same cost for either join order.
 EXPLAIN (COSTS OFF)
-SELECT count(*) FROM tenk1 t1 JOIN tenk1 t2 ON t1.ctid = t2.ctid;
-SELECT count(*) FROM tenk1 t1 JOIN tenk1 t2 ON t1.ctid = t2.ctid;
+SELECT count(*) FROM tenk1 WHERE ctid IN (SELECT DISTINCT ctid FROM tenk1);
+SELECT count(*) FROM tenk1 WHERE ctid IN (SELECT DISTINCT ctid FROM tenk1);
 SET enable_hashjoin TO off;
 EXPLAIN (COSTS OFF)
-SELECT count(*) FROM tenk1 t1 JOIN tenk1 t2 ON t1.ctid = t2.ctid;
-SELECT count(*) FROM tenk1 t1 JOIN tenk1 t2 ON t1.ctid = t2.ctid;
+SELECT count(*) FROM tenk1 WHERE ctid IN (SELECT DISTINCT ctid FROM tenk1);
+SELECT count(*) FROM tenk1 WHERE ctid IN (SELECT DISTINCT ctid FROM tenk1);
 RESET enable_hashjoin;
 
 -- check predicate lock on CTID
