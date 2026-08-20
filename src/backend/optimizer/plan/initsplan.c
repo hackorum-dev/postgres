@@ -2628,7 +2628,17 @@ compute_semijoin_info(PlannerInfo *root, SpecialJoinInfo *sjinfo, List *clause)
 
 		/* so far so good, keep building lists */
 		semi_operators = lappend_oid(semi_operators, opno);
-		semi_rhs_exprs = lappend(semi_rhs_exprs, copyObject(right_expr));
+
+		/*
+		 * Unique-ification takes collation from the expression, so label
+		 * the RHS with the join's input collation (RelabelType if needed).
+		 * Otherwise Unique may keep values that are still equal under the
+		 * join, and JOIN_UNIQUE_* (as INNER) will duplicate outer rows.
+		 */
+		semi_rhs_exprs = lappend(semi_rhs_exprs,
+								 canonicalize_ec_expression((Expr *) copyObject(right_expr),
+															exprType(right_expr),
+															op->inputcollid));
 	}
 
 	/* Punt if we didn't find at least one column to unique-ify */
