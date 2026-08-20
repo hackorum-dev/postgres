@@ -1356,6 +1356,28 @@ ORDER BY c.relname COLLATE "C";
 (3 rows)
 
 DROP TABLE t;
+-- With no access method on the partitioned table, the new partitions fall
+-- back to default_table_access_method, just as CREATE TABLE ... PARTITION OF
+-- would.
+CREATE TABLE t (i int) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_2 PARTITION OF t FOR VALUES FROM (0) TO (2);
+BEGIN;
+SET LOCAL default_table_access_method = partition_split_heap;
+ALTER TABLE t SPLIT PARTITION tp_0_2 INTO
+  (PARTITION tp_0_1 FOR VALUES FROM (0) TO (1),
+   PARTITION tp_1_2 FOR VALUES FROM (1) TO (2));
+SELECT c.relname, a.amname
+FROM pg_class c JOIN pg_am a ON c.relam = a.oid
+WHERE c.oid IN ('tp_0_1'::regclass, 'tp_1_2'::regclass)
+ORDER BY c.relname COLLATE "C";
+ relname |        amname        
+---------+----------------------
+ tp_0_1  | partition_split_heap
+ tp_1_2  | partition_split_heap
+(2 rows)
+
+COMMIT;
+DROP TABLE t;
 DROP ACCESS METHOD partition_split_heap;
 -- Split partition of a temporary table when one of the partitions after
 -- split has the same name as the partition being split
