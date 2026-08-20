@@ -342,6 +342,38 @@ DOTypeNameCompare(const void *p1, const void *p2)
 		if (cmpval != 0)
 			return cmpval;
 	}
+	else if (obj1->objType == DO_CAST)
+	{
+		CastInfo   *cobj1 = *(CastInfo *const *) p1;
+		CastInfo   *cobj2 = *(CastInfo *const *) p2;
+
+		/*
+		 * The "name" is only the source and target type names, unqualified,
+		 * so two casts tie whenever their types share typnames across
+		 * different schemas.  Break the tie by the source then target types'
+		 * full natural keys.
+		 */
+		cmpval = pgTypeNameCompare(cobj1->castsource, cobj2->castsource);
+		if (cmpval != 0)
+			return cmpval;
+		cmpval = pgTypeNameCompare(cobj1->casttarget, cobj2->casttarget);
+		if (cmpval != 0)
+			return cmpval;
+	}
+	else if (obj1->objType == DO_TRANSFORM)
+	{
+		TransformInfo *tobj1 = *(TransformInfo *const *) p1;
+		TransformInfo *tobj2 = *(TransformInfo *const *) p2;
+
+		/*
+		 * Same unqualified-typname ambiguity as casts.  The language name
+		 * was already compared as part of dobj.name, so trftype is the only
+		 * remaining natural-key field that can break the tie.
+		 */
+		cmpval = pgTypeNameCompare(tobj1->trftype, tobj2->trftype);
+		if (cmpval != 0)
+			return cmpval;
+	}
 	else if (obj1->objType == DO_ATTRDEF)
 	{
 		AttrDefInfo *adobj1 = *(AttrDefInfo *const *) p1;

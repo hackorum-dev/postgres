@@ -2204,6 +2204,42 @@ my %tests = (
 		like => { %full_runs, section_pre_data => 1, },
 	},
 
+	'CREATE CAST to public target type sharing a typname' => {
+		create_order => 51,
+		create_sql => '
+			CREATE SCHEMA dump_cast_schema;
+			CREATE TYPE public.dump_cast_src_for_target_test AS ENUM (\'a\');
+			CREATE TYPE public.dump_cast_tgt AS ENUM (\'a\');
+			CREATE TYPE dump_cast_schema.dump_cast_tgt AS ENUM (\'a\');
+			CREATE TYPE public.dump_cast_src_for_source_test AS ENUM (\'a\');
+			CREATE TYPE dump_cast_schema.dump_cast_src_for_source_test AS ENUM (\'a\');
+			CREATE CAST (public.dump_cast_src_for_target_test AS public.dump_cast_tgt) WITH INOUT;
+			CREATE CAST (public.dump_cast_src_for_target_test AS dump_cast_schema.dump_cast_tgt) WITH INOUT;
+			CREATE CAST (public.dump_cast_src_for_source_test AS public.dump_cast_tgt) WITH INOUT;
+			CREATE CAST (dump_cast_schema.dump_cast_src_for_source_test AS public.dump_cast_tgt) WITH INOUT;',
+		regexp =>
+		  qr/CREATE CAST \(public\.dump_cast_src_for_target_test AS public\.dump_cast_tgt\) WITH INOUT;/m,
+		like => { %full_runs, section_pre_data => 1, },
+	},
+
+	'CREATE CAST to schema-qualified target type sharing a typname' => {
+		regexp =>
+		  qr/CREATE CAST \(public\.dump_cast_src_for_target_test AS dump_cast_schema\.dump_cast_tgt\) WITH INOUT;/m,
+		like => { %full_runs, section_pre_data => 1, },
+	},
+
+	'CREATE CAST from public source type sharing a typname' => {
+		regexp =>
+		  qr/CREATE CAST \(public\.dump_cast_src_for_source_test AS public\.dump_cast_tgt\) WITH INOUT;/m,
+		like => { %full_runs, section_pre_data => 1, },
+	},
+
+	'CREATE CAST from schema-qualified source type sharing a typname' => {
+		regexp =>
+		  qr/CREATE CAST \(dump_cast_schema\.dump_cast_src_for_source_test AS public\.dump_cast_tgt\) WITH INOUT;/m,
+		like => { %full_runs, section_pre_data => 1, },
+	},
+
 	'CREATE DATABASE postgres' => {
 		regexp => qr/^
 			\QCREATE DATABASE postgres WITH TEMPLATE = template0 \E
@@ -2924,6 +2960,25 @@ my %tests = (
 		  'CREATE TRANSFORM FOR int LANGUAGE SQL (FROM SQL WITH FUNCTION prsd_lextype(internal), TO SQL WITH FUNCTION int4recv(internal));',
 		regexp =>
 		  qr/CREATE TRANSFORM FOR integer LANGUAGE sql \(FROM SQL WITH FUNCTION pg_catalog\.prsd_lextype\(internal\), TO SQL WITH FUNCTION pg_catalog\.int4recv\(internal\)\);/m,
+		like => { %full_runs, section_pre_data => 1, },
+	},
+
+	'CREATE TRANSFORM with typname shared across schemas' => {
+		create_order => 34,
+		create_sql => '
+			CREATE SCHEMA dump_trf_schema;
+			CREATE TYPE public.dump_trf_type AS ENUM (\'a\');
+			CREATE TYPE dump_trf_schema.dump_trf_type AS ENUM (\'a\');
+			CREATE TRANSFORM FOR public.dump_trf_type LANGUAGE sql (FROM SQL WITH FUNCTION prsd_lextype(internal));
+			CREATE TRANSFORM FOR dump_trf_schema.dump_trf_type LANGUAGE sql (FROM SQL WITH FUNCTION prsd_lextype(internal));',
+		regexp =>
+		  qr/CREATE TRANSFORM FOR public\.dump_trf_type LANGUAGE sql \(FROM SQL WITH FUNCTION pg_catalog\.prsd_lextype\(internal\)\);/m,
+		like => { %full_runs, section_pre_data => 1, },
+	},
+
+	'CREATE TRANSFORM for schema-qualified type sharing a typname' => {
+		regexp =>
+		  qr/CREATE TRANSFORM FOR dump_trf_schema\.dump_trf_type LANGUAGE sql \(FROM SQL WITH FUNCTION pg_catalog\.prsd_lextype\(internal\)\);/m,
 		like => { %full_runs, section_pre_data => 1, },
 	},
 
