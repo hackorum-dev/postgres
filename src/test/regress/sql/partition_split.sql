@@ -970,6 +970,18 @@ FROM pg_class c JOIN pg_am a ON c.relam = a.oid
 WHERE c.oid IN ('t'::regclass, 'tp_0_1'::regclass, 'tp_1_2'::regclass)
 ORDER BY c.relname COLLATE "C";
 DROP TABLE t;
+CREATE TABLE t (i int) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_2 PARTITION OF t FOR VALUES FROM (0) TO (2);
+BEGIN;
+SET LOCAL default_table_access_method to partition_split_heap;
+ALTER TABLE t SPLIT PARTITION tp_0_2 INTO
+  (PARTITION tp_0_1 FOR VALUES FROM (0) TO (1),
+   PARTITION tp_1_2 FOR VALUES FROM (1) TO (2));
+SELECT c.relname, a.amname FROM pg_class c, pg_am a
+WHERE c.relname IN ('tp_0_1', 'tp_1_2')
+AND a.oid = c.relam;
+COMMIT;
+DROP TABLE t;
 DROP ACCESS METHOD partition_split_heap;
 
 -- Split partition of a temporary table when one of the partitions after

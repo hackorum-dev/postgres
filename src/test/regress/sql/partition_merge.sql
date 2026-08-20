@@ -550,6 +550,17 @@ FROM pg_class c JOIN pg_am a ON c.relam = a.oid
 WHERE c.oid IN ('t'::regclass, 'tp_0_2'::regclass)
 ORDER BY c.relname COLLATE "C";
 DROP TABLE t;
+
+CREATE TABLE t (i int) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
+CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
+BEGIN;
+SET LOCAL default_table_access_method to partitions_merge_heap;
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;
+SELECT c.relname, a.amname FROM pg_class c, pg_am a
+WHERE c.relname = 'tp_0_2' AND a.oid = c.relam;
+COMMIT;
+DROP TABLE t;
 DROP ACCESS METHOD partitions_merge_heap;
 
 -- Test permission checks.  The user needs to own the parent table and all

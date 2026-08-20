@@ -23292,7 +23292,10 @@ createPartitionTable(List **wqueue, RangeVar *newPartName,
 	descriptor = BuildDescForRelation(colList);
 
 	/* Look up the access method for the new relation. */
-	relamId = (parent_relform->relam != InvalidOid) ? parent_relform->relam : HEAP_TABLE_AM_OID;
+	if (OidIsValid(parent_relform->relam))
+		relamId = parent_relform->relam;
+	else
+		relamId = get_table_am_oid(default_table_access_method, false);
 
 	/* Look up the namespace in which we are supposed to create the relation. */
 	namespaceId =
