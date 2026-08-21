@@ -80,6 +80,7 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
 CREATE DOMAIN rgb AS rainbow CHECK (VALUE IN ('red', 'green', 'blue'));
 SELECT JSON_VALUE('"purple"'::jsonb, 'lax $[*]' RETURNING rgb);
 SELECT JSON_VALUE('"purple"'::jsonb, 'lax $[*]' RETURNING rgb ERROR ON ERROR);
+DROP TYPE rgb CASCADE;
 
 SELECT JSON_VALUE(jsonb '[]', '$');
 SELECT JSON_VALUE(jsonb '[]', '$' ERROR ON ERROR);
@@ -320,6 +321,7 @@ SELECT * FROM unnest(JSON_QUERY(jsonb '[{"a": 1, "t": ["foo", []]}, {"a": 2, "jb
 SELECT JSON_QUERY(jsonb '{"a": 1}', '$.a' RETURNING sqljsonb_int_not_null);
 SELECT JSON_QUERY(jsonb '{"a": 1}', '$.b' RETURNING sqljsonb_int_not_null);
 SELECT JSON_QUERY(jsonb '{"a": 1}', '$.b' RETURNING sqljsonb_int_not_null ERROR ON EMPTY ERROR ON ERROR);
+DROP DOMAIN sqljsonb_int_not_null;
 
 -- Test timestamptz passing and output
 SELECT JSON_QUERY(jsonb 'null', '$ts' PASSING timestamptz '2018-02-21 12:34:56 +10' AS ts);
