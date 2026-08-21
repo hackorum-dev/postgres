@@ -4160,6 +4160,22 @@ begin
   raise notice 'a = %', a;
 end$$;
 
+-- Inserting an expanded array should use the same short-varlena packing as a
+-- plain INSERT of the equivalent flat value.
+set plan_cache_mode = force_generic_plan;
+create temp table expanded_short_pack(a text[]);
+insert into expanded_short_pack values ('{aaaaa}');
+create function insert_expanded_short_pack(racl text[]) returns void as $$
+begin
+  insert into expanded_short_pack values (racl);
+end;
+$$ language plpgsql;
+select insert_expanded_short_pack('{aaaaa}');
+select pg_column_size(a) from expanded_short_pack;
+drop function insert_expanded_short_pack(text[]);
+drop table expanded_short_pack;
+reset plan_cache_mode;
+
 
 --
 -- Test access to call stack
