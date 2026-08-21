@@ -1715,6 +1715,7 @@ SELECT JSON_SERIALIZE('123' RETURNING sqljson_char2);
 ERROR:  value too long for type character(2)
 SELECT JSON_SERIALIZE('12' RETURNING sqljson_char2);
 ERROR:  value for domain sqljson_char2 violates check constraint "sqljson_char2_check"
+DROP DOMAIN sqljson_char2;
 -- Bug #18657: JsonValueExpr.raw_expr was not initialized in ExecInitExprRec()
 -- causing the Aggrefs contained in it to also not be initialized, which led
 -- to a crash in ExecBuildAggTrans() as mentioned in the bug report:
