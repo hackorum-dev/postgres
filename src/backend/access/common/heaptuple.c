@@ -88,6 +88,16 @@
 	((att)->attlen == -1 && (att)->attispackable)
 
 /*
+ * Size rule matching VARATT_CAN_MAKE_SHORT, for use with EOH_get_flat_size()
+ * before flattening.  VARATT_CAN_MAKE_SHORT needs a 4-byte-header (4B_U)
+ * varlena.  An expanded-object toast pointer is not one.
+ */
+#define VARATT_SIZE_CAN_MAKE_SHORT(len) \
+	((len) - VARHDRSZ + VARHDRSZ_SHORT <= VARATT_SHORT_MAX)
+#define VARATT_SHORT_SIZE_FROM_4B(len) \
+	((len) - VARHDRSZ + VARHDRSZ_SHORT)
+
+/*
  * Setup for caching pass-by-ref missing attributes in a way that survives
  * tupleDesc destruction.
  */
@@ -248,11 +258,20 @@ heap_compute_data_size(TupleDesc tupleDesc,
 				 VARATT_IS_EXTERNAL_EXPANDED(DatumGetPointer(val)))
 		{
 			/*
-			 * we want to flatten the expanded value so that the constructed
-			 * tuple doesn't depend on it
+			 * Expanded objects will be flattened into a 4-byte-header
+			 * varlena.  If that fits a short header, account for packing
+			 * (no alignment), matching fill_val.
 			 */
-			data_length = att_nominal_alignby(data_length, atti->attalignby);
-			data_length += EOH_get_flat_size(DatumGetEOHP(val));
+			Size		flat_size = EOH_get_flat_size(DatumGetEOHP(val));
+
+			if (COMPACT_ATTR_IS_PACKABLE(atti) &&
+				VARATT_SIZE_CAN_MAKE_SHORT(flat_size))
+				data_length += VARATT_SHORT_SIZE_FROM_4B(flat_size);
+			else
+			{
+				data_length = att_nominal_alignby(data_length, atti->attalignby);
+				data_length += flat_size;
+			}
 		}
 		else
 		{
@@ -329,14 +348,36 @@ fill_val(CompactAttribute *att,
 			if (VARATT_IS_EXTERNAL_EXPANDED(val))
 			{
 				/*
-				 * we want to flatten the expanded value so that the
-				 * constructed tuple doesn't depend on it
+				 * Flatten so the tuple doesn't depend on the expanded
+				 * object.  Flatteners produce a 4-byte-header varlena.
+				 * Convert to short header when possible.
 				 */
 				ExpandedObjectHeader *eoh = DatumGetEOHP(datum);
+				Size		flat_size = EOH_get_flat_size(eoh);
 
-				data = (char *) att_nominal_alignby(data, att->attalignby);
-				data_length = EOH_get_flat_size(eoh);
-				EOH_flatten_into(eoh, data, data_length);
+				if (att->attispackable &&
+					VARATT_SIZE_CAN_MAKE_SHORT(flat_size))
+				{
+					char	   *tmp;
+
+					/*
+					 * Flatten into a temp buffer: EOH_flatten_into needs a
+					 * maxaligned destination, short packing does not.
+					 * Do not pfree(tmp); CurrentMemoryContext may be a bump
+					 * allocator.
+					 */
+					tmp = palloc(flat_size);
+					EOH_flatten_into(eoh, tmp, flat_size);
+					data_length = VARATT_CONVERTED_SHORT_SIZE(tmp);
+					SET_VARSIZE_SHORT(data, data_length);
+					memcpy(data + 1, VARDATA(tmp), data_length - 1);
+				}
+				else
+				{
+					data = (char *) att_nominal_alignby(data, att->attalignby);
+					data_length = flat_size;
+					EOH_flatten_into(eoh, data, data_length);
+				}
 			}
 			else
 			{
