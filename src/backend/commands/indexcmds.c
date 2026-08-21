@@ -25,6 +25,7 @@
 #include "access/tableam.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
+#include "catalog/dependency.h"
 #include "catalog/index.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
@@ -34,6 +35,7 @@
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_extension.h"
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
@@ -107,6 +109,8 @@ static char *ChooseIndexName(const char *tabname, Oid namespaceId,
 							 const List *colnames, const List *exclusionOpNames,
 							 bool primary, bool isconstraint);
 static char *ChooseIndexNameAddition(const List *colnames);
+static void TransferPartitionIndexProps(const IndexStmt *stmt, Oid childRelid,
+										IndexStmt *childStmt);
 static List *ChooseIndexColumnNames(Relation rel, const List *indexElems);
 static char *ChooseIndexExpressionName(Relation rel, Node *indexExpr);
 static bool ChooseIndexExpressionName_walker(Node *node,
@@ -552,6 +556,51 @@ SetIndexStatTargets(Oid indexRelationId, List *stattargets)
 	}
 
 	table_close(attrelation, RowExclusiveLock);
+}
+
+
+/*
+ * Copy this partition's properties not preserved by the cloned rebuild
+ * definition (name, comment, replica identity, cluster-on, per-column stats
+ * targets, tablespace) from the saved descendant properties into the newly
+ * created IndexStmt for the child partition index as part of an ALTER COLUMN
+ * TYPE (or SET EXPRESSION) operation.
+ *
+ * These were saved in a list before dropping the index in an earlier phase.
+ * After we create the child partition index, we'll update the catalog table
+ * entries according to these values.
+ */
+static void
+TransferPartitionIndexProps(const IndexStmt *stmt, Oid childRelid,
+							IndexStmt *childStmt)
+{
+	foreach_node(PartitionIndexProps, props, stmt->oldPartIndexProps)
+	{
+		/*
+		 * Match entries by the partition table's OID (stable), since the old
+		 * index's OID is gone.
+		 */
+		if (props->partrelid != childRelid)
+			continue;
+
+		childStmt->idxname = pstrdup(props->idxname);
+		childStmt->idxcomment = props->idxcomment;
+		childStmt->idxconstraintcomment = props->constraintcomment;
+		childStmt->idxisreplident = props->isreplident;
+		childStmt->idxisclustered = props->isclustered;
+		childStmt->idxstattargets = props->stattargets;
+		childStmt->idxextensionOids = props->extensionOids;
+
+		/*
+		 * Override the parent's reloptions with the descendant's own, so
+		 * independently-set descendant options survive.
+		 */
+		childStmt->options = props->reloptions;
+		childStmt->tableSpace = props->tableSpace ?
+			pstrdup(props->tableSpace) : NULL;
+		childStmt->reset_default_tblspc = stmt->reset_default_tblspc;
+		return;
+	}
 }
 
 
@@ -1372,9 +1421,83 @@ DefineIndex(ParseState *pstate,
 	if (stmt->idxcomment != NULL)
 		CreateComments(indexRelationId, RelationRelationId, 0,
 					   stmt->idxcomment);
+	if (stmt->idxconstraintcomment != NULL)
+		CreateComments(createdConstraintId, ConstraintRelationId, 0,
+					   stmt->idxconstraintcomment);
+
+	if (stmt->idxextensionOids != NIL)
+	{
+		ObjectAddress indexAddress;
+
+		ObjectAddressSet(indexAddress, RelationRelationId, indexRelationId);
+		foreach_oid(extensionOid, stmt->idxextensionOids)
+		{
+			ObjectAddress extensionAddress;
+
+			ObjectAddressSet(extensionAddress, ExtensionRelationId, extensionOid);
+			recordDependencyOn(&indexAddress, &extensionAddress,
+							   DEPENDENCY_AUTO_EXTENSION);
+		}
+	}
 
 	if (stmt->idxstattargets != NIL)
 		SetIndexStatTargets(indexRelationId, stmt->idxstattargets);
+
+	/*
+	 * index_create() has no inputs for indisclustered or indisreplident, so
+	 * restore them with a direct single-row pg_index update.  Don't use
+	 * mark_index_clustered() or relation_mark_replica_identity(), because
+	 * they clear the flag on sibling indexes which are mid-drop here.  That
+	 * is safe to skip because at most one index per table carries each flag
+	 * and it is this newly-created one.  Since this directly alters the new
+	 * index, also invoke the corresponding post-alter hook below.
+	 */
+	if (stmt->idxisclustered || stmt->idxisreplident)
+	{
+		Relation	pg_index;
+		HeapTuple	idxtuple;
+		Form_pg_index indexForm;
+
+		pg_index = table_open(IndexRelationId, RowExclusiveLock);
+		idxtuple = SearchSysCacheCopy1(INDEXRELID,
+									   ObjectIdGetDatum(indexRelationId));
+		if (!HeapTupleIsValid(idxtuple))
+			elog(ERROR, "cache lookup failed for index %u", indexRelationId);
+		indexForm = (Form_pg_index) GETSTRUCT(idxtuple);
+
+		if (stmt->idxisclustered)
+			indexForm->indisclustered = true;
+		if (stmt->idxisreplident)
+			indexForm->indisreplident = true;
+
+		CatalogTupleUpdate(pg_index, &idxtuple->t_self, idxtuple);
+		InvokeObjectPostAlterHookArg(IndexRelationId, indexRelationId, 0,
+									 InvalidOid, !check_rights);
+		heap_freetuple(idxtuple);
+		table_close(pg_index, RowExclusiveLock);
+	}
+
+	/* Replica identity also marks the owning table's relreplident. */
+	if (stmt->idxisreplident)
+	{
+		Relation	pg_class;
+		Oid			heapId = IndexGetRelation(indexRelationId, false);
+		HeapTuple	ctup;
+		Form_pg_class classForm;
+
+		pg_class = table_open(RelationRelationId, RowExclusiveLock);
+		ctup = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(heapId));
+		if (!HeapTupleIsValid(ctup))
+			elog(ERROR, "cache lookup failed for relation %u", heapId);
+		classForm = (Form_pg_class) GETSTRUCT(ctup);
+		if (classForm->relreplident != REPLICA_IDENTITY_INDEX)
+		{
+			classForm->relreplident = REPLICA_IDENTITY_INDEX;
+			CatalogTupleUpdate(pg_class, &ctup->t_self, ctup);
+		}
+		heap_freetuple(ctup);
+		table_close(pg_class, RowExclusiveLock);
+	}
 
 	if (partitioned)
 	{
@@ -1597,6 +1720,17 @@ DefineIndex(ParseState *pstate,
 														parentIndex,
 														attmap,
 														NULL);
+
+					/*
+					 * Transfer properties not preserved by the cloned rebuild
+					 * definition into the child IndexStmt. The child also
+					 * needs a pointer to the list in case it is an
+					 * intermediate partitioned index and needs its own
+					 * children to be able to find their entries upon
+					 * recursing.
+					 */
+					childStmt->oldPartIndexProps = stmt->oldPartIndexProps;
+					TransferPartitionIndexProps(stmt, childRelid, childStmt);
 
 					/*
 					 * Recurse as the starting user ID.  Callee will use that
