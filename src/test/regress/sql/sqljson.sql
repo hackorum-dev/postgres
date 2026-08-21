@@ -700,6 +700,7 @@ SELECT JSON_OBJECTAGG(i: ('111' || i)::bytea FORMAT JSON WITH UNIQUE RETURNING v
 CREATE DOMAIN sqljson_char2 AS char(2) CHECK (VALUE NOT IN ('12'));
 SELECT JSON_SERIALIZE('123' RETURNING sqljson_char2);
 SELECT JSON_SERIALIZE('12' RETURNING sqljson_char2);
+DROP DOMAIN sqljson_char2;
 
 -- Bug #18657: JsonValueExpr.raw_expr was not initialized in ExecInitExprRec()
 -- causing the Aggrefs contained in it to also not be initialized, which led

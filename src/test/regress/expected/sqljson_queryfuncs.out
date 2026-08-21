@@ -337,6 +337,7 @@ SELECT JSON_VALUE('"purple"'::jsonb, 'lax $[*]' RETURNING rgb);
 
 SELECT JSON_VALUE('"purple"'::jsonb, 'lax $[*]' RETURNING rgb ERROR ON ERROR);
 ERROR:  value for domain rgb violates check constraint "rgb_check"
+DROP TYPE rgb CASCADE;
 SELECT JSON_VALUE(jsonb '[]', '$');
  json_value 
 ------------
@@ -1078,6 +1079,7 @@ ERROR:  could not coerce ON EMPTY expression (NULL) to the RETURNING type
 DETAIL:  domain sqljsonb_int_not_null does not allow null values
 SELECT JSON_QUERY(jsonb '{"a": 1}', '$.b' RETURNING sqljsonb_int_not_null ERROR ON EMPTY ERROR ON ERROR);
 ERROR:  no SQL/JSON item found for specified path
+DROP DOMAIN sqljsonb_int_not_null;
 -- Test timestamptz passing and output
 SELECT JSON_QUERY(jsonb 'null', '$ts' PASSING timestamptz '2018-02-21 12:34:56 +10' AS ts);
          json_query          
