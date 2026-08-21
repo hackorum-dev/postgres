@@ -1546,6 +1546,30 @@ select c.relname, d.deptype, e.extname
     and d.refclassid = 'pg_extension'::regclass
   order by c.relname;
 drop table at_reb_extdep;
+-- Per-column statistics targets should still exist after an ALTER COLUMN TYPE
+create table at_reb_plain (id int not null, val int not null);
+create index at_reb_plain_expr on at_reb_plain ((val + 1));
+create unique index at_reb_plain_u on at_reb_plain ((id + 0), (val + 0));
+alter index at_reb_plain_expr alter column 1 set statistics 321;
+alter index at_reb_plain_u alter column 1 set statistics 111;
+alter index at_reb_plain_u alter column 2 set statistics 222;
+alter table at_reb_plain alter column val type bigint;
+select c.relname, a.attnum, a.attstattarget
+  from pg_attribute a join pg_class c on c.oid = a.attrelid
+  where c.relname in ('at_reb_plain_expr', 'at_reb_plain_u') and a.attnum > 0
+  order by c.relname, a.attnum;
+drop table at_reb_plain;
+
+-- Per-column statistics targets should still exist after SET EXPRESSION
+create table at_reb_set (val int not null,
+  gen int generated always as (val + 1) stored);
+create index at_reb_set_idx on at_reb_set ((gen + 1));
+alter index at_reb_set_idx alter column 1 set statistics 654;
+alter table at_reb_set alter column gen set expression as (val + 2);
+select attstattarget
+  from pg_attribute
+  where attrelid = 'at_reb_set_idx'::regclass and attnum = 1;
+drop table at_reb_set;
 
 -- disallow recursive containment of row types
 create temp table recur1 (f1 int);
