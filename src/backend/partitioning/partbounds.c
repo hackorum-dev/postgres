@@ -2918,6 +2918,14 @@ check_new_partition_bound(char *relname, Relation parent,
 				Assert(spec->strategy == PARTITION_STRATEGY_HASH);
 				Assert(spec->remainder >= 0 && spec->remainder < spec->modulus);
 
+                                /* Check needed memory that will be allocated in create_hash_bounds() */
+                                if (spec->modulus * sizeof(int) > MaxAllocSize)
+                                        ereport(ERROR, (errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+                                                (errmsg("hash partitions bounds are too large"),
+                                                 errdetail("Creating hash partitions for modulus %d would require too much memory.", spec->modulus),
+                                                 errhint("Reduce the number of partitions."))));
+
+
 				if (partdesc->nparts > 0)
 				{
 					int			greatest_modulus;
@@ -3030,7 +3038,9 @@ check_new_partition_bound(char *relname, Relation parent,
 						}
 						remainder += spec->modulus;
 					} while (remainder < greatest_modulus);
+
 				}
+
 
 				break;
 			}
