@@ -721,6 +721,19 @@ SELECT * FROM test3cs t1
                 WHERE t1.x = t2.x COLLATE case_insensitive)
 ORDER BY 1;
 
+-- Unique-ification of an IN/semijoin RHS must use the join collation.
+CREATE TABLE t_semi_ci (c1 text COLLATE case_insensitive);
+CREATE TABLE t_semi_cs (c0 text);
+INSERT INTO t_semi_ci VALUES ('a'), ('x'), ('y');
+INSERT INTO t_semi_cs VALUES ('a'), ('a');
+ANALYZE t_semi_ci, t_semi_cs;
+INSERT INTO t_semi_cs VALUES ('A');
+SELECT count(*) FROM t_semi_ci WHERE c1 IN (SELECT c0 FROM t_semi_cs);
+SET enable_hashagg TO off;
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM t_semi_ci WHERE c1 IN (SELECT c0 FROM t_semi_cs);
+RESET enable_hashagg;
+
 CREATE TABLE test1ci (x text COLLATE case_insensitive);
 CREATE TABLE test2ci (x text COLLATE case_insensitive);
 CREATE TABLE test3ci (x text COLLATE case_insensitive);
