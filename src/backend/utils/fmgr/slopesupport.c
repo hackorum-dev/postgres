@@ -3,9 +3,15 @@
 #include <math.h>
 
 #include "c.h"
+#include "catalog/pg_type.h"
 #include "nodes/supportnodes.h"
+#include "parser/scansup.h"
+#include "pgtime.h"
+#include "utils/builtins.h"
+#include "utils/datetime.h"
 #include "utils/fmgrprotos.h"
 #include "utils/numeric.h"
+#include "varatt.h"
 
 /**
  * Extended numeric sign, the usual -1, 0, 1,
@@ -359,4 +365,163 @@ divide_slope_support(PG_FUNCTION_ARGS)
 			PG_RETURN_POINTER(NULL);
 	}
 	PG_RETURN_POINTER(NULL);
+}
+
+/*
+ * Look up a timezone from a constant text argument.
+ */
+static pg_tz *
+get_const_timezone_arg(List *args, int argno)
+{
+	Node	   *tz_arg_node;
+	Const	   *tz_const;
+	text	   *zone;
+	char		tzname[TZ_STRLEN_MAX + 1];
+
+	if (args == NULL || list_length(args) <= argno)
+		return NULL;
+
+	tz_arg_node = list_nth(args, argno);
+	if (!IsA(tz_arg_node, Const))
+		return NULL;
+
+	tz_const = (Const *) tz_arg_node;
+
+	if (tz_const->constisnull || tz_const->consttype != TEXTOID)
+		return NULL;
+
+	zone = DatumGetTextPP(tz_const->constvalue);
+	text_to_cstring_buffer(zone, tzname, sizeof(tzname));
+	return DecodeTimezoneNameToTz(tzname);
+}
+
+/*
+ * Slope support for date(timestamptz)
+ */
+Datum
+timestamptz_date_slope_support(PG_FUNCTION_ARGS)
+{
+	Node	   *rawreq = (Node *) PG_GETARG_POINTER(0);
+
+	if (pg_timezone_is_monotonic(session_timezone, TZ_MONOTONIC_DAY))
+		return monotonic_slope_support(rawreq, 1, asc0_slope);
+	else
+		PG_RETURN_POINTER(NULL);
+}
+
+static Datum
+timestamptz_support_lookup(Node* rawreq, Datum fixed_unit, pg_tz *tzp)
+{
+	text	   *units;
+	int			val;
+	char	   *lowunits;
+	int			type;
+	TZMonotonicityBits tz_unit;
+	
+	units = DatumGetTextPP(fixed_unit);
+
+	lowunits = downcase_truncate_identifier(VARDATA_ANY(units),
+											VARSIZE_ANY_EXHDR(units),
+											false);
+
+	type = DecodeUnits(0, lowunits, &val);
+
+	if (type != UNITS)
+		PG_RETURN_POINTER(NULL);
+
+	switch (val)
+	{
+		case DTK_WEEK:
+			PG_RETURN_POINTER(NULL);
+		case DTK_MILLENNIUM:
+		case DTK_CENTURY:
+		case DTK_DECADE:
+		case DTK_YEAR:
+			tz_unit = TZ_MONOTONIC_YEAR;
+			break;
+		case DTK_QUARTER:
+		case DTK_MONTH:
+			tz_unit = TZ_MONOTONIC_MONTH;
+			break;
+		case DTK_DAY:
+			tz_unit = TZ_MONOTONIC_DAY;
+			break;
+		case DTK_HOUR:
+			tz_unit = TZ_MONOTONIC_HOUR;
+			break;
+		case DTK_MINUTE:
+			tz_unit = TZ_MONOTONIC_MINUTE;
+			break;
+		case DTK_SECOND:
+		case DTK_MILLISEC:
+		case DTK_MICROSEC:
+			tz_unit = TZ_MONOTONIC_SECOND;
+			break;
+		default:
+			PG_RETURN_POINTER(NULL);
+	}
+	if(pg_timezone_is_monotonic(tzp, tz_unit))
+		return monotonic_slope_support(rawreq, 2, asc1_slope);
+	else
+		PG_RETURN_POINTER(NULL);
+}
+
+Datum
+timestamptz_trunc_slope_support(PG_FUNCTION_ARGS)
+{
+	Node	   *rawreq = (Node *) PG_GETARG_POINTER(0);
+	List	   *args = get_arg_list(rawreq);
+	Const	   *unit_arg;
+	pg_tz	   *tzp;
+
+	if (args == NULL)
+		PG_RETURN_POINTER(NULL);
+
+	
+	unit_arg = (Const *) linitial(args);
+	if (list_length(args) > 2)
+		tzp = get_const_timezone_arg(args, 2);
+	else
+		tzp = session_timezone;
+	if (!IsA(unit_arg, Const) || unit_arg->constisnull || tzp == NULL)
+		PG_RETURN_POINTER(NULL);
+
+	return timestamptz_support_lookup(rawreq, unit_arg->constvalue, tzp);
+}
+
+/*
+ * Slope support for timezone(text, timestamptz).
+ */
+Datum
+timestamptz_zone_slope_support(PG_FUNCTION_ARGS)
+{
+	Node	   *rawreq = (Node *) PG_GETARG_POINTER(0);
+	List	   *args = get_arg_list(rawreq);
+	pg_tz	   *tzp;
+
+	if (args == NULL || list_length(args) < 2)
+		PG_RETURN_POINTER(NULL);
+
+	tzp = get_const_timezone_arg(args, 0);
+	if (tzp == NULL)
+		PG_RETURN_POINTER(NULL);
+
+	if (pg_timezone_is_monotonic(tzp, TZ_MONOTONIC_SECOND))
+		return monotonic_slope_support(rawreq, 2, asc1_slope);
+	else
+		PG_RETURN_POINTER(NULL);
+}
+
+/*
+ * Slope support for timezone(timestamptz).
+ */
+Datum
+timestamptz_at_local_slope_support(PG_FUNCTION_ARGS)
+{
+	Node	   *rawreq = (Node *) PG_GETARG_POINTER(0);
+
+	if (pg_timezone_is_monotonic(session_timezone, TZ_MONOTONIC_SECOND))
+		return monotonic_slope_support(rawreq, 1, asc0_slope);
+	else
+		PG_RETURN_POINTER(NULL);
 }

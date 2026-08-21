@@ -1770,6 +1770,17 @@ pg_next_dst_boundary(const pg_time_t *timep,
 }
 
 /*
+ * Determine whether timestamps truncated to the specified
+ * unit is monotonic. The results are precomputed when loading
+ * a timezone
+ */
+bool
+pg_timezone_is_monotonic(const pg_tz *tz, TZMonotonicityBits unit)
+{
+	return tz->state.monotonicity & BITWISE_HI_AT(unit);
+}
+
+/*
  * Identify a timezone abbreviation's meaning in the given zone
  *
  * Determine the GMT offset and DST flag associated with the abbreviation.
