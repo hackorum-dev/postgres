@@ -1624,6 +1624,23 @@
        null if no expiration
       </para></entry>
      </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>rollastupdated</structfield> <type>timestamptz</type>
+      </para>
+      <para>
+       Time at which the most recent <xref linkend="sql-createrole"/> or
+       <xref linkend="sql-alterrole"/> command for this role was executed
+       (including a rename or a role-level configuration parameter
+       change). The timestamp advances whenever such a command completes
+       successfully, even if it did not change any value. Null for roles
+       created during <application>initdb</application> that have never
+       been altered. Not preserved by <application>pg_dumpall</application>
+       or <application>pg_upgrade</application>, which recreate roles in
+       the target cluster.
+      </para></entry>
+     </row>
     </tbody>
    </tgroup>
   </table>

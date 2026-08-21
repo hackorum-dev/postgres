@@ -39,6 +39,7 @@
 #include "utils/catcache.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
+#include "utils/timestamp.h"
 #include "utils/varlena.h"
 
 /*
@@ -116,6 +117,7 @@ static void plan_recursive_revoke(CatCList *memlist,
 								  bool revoke_admin_option_only,
 								  DropBehavior behavior);
 static void InitGrantRoleOptions(GrantRoleOptions *popt);
+static void update_role_lastupdated(Oid roleid);
 
 
 /* Check if current user has createrole privileges */
@@ -462,6 +464,9 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	new_record_nulls[Anum_pg_authid_rolvaliduntil - 1] = validUntil_null;
 
 	new_record[Anum_pg_authid_rolbypassrls - 1] = BoolGetDatum(bypassrls);
+
+	new_record[Anum_pg_authid_rollastupdated - 1] =
+		TimestampTzGetDatum(GetCurrentTimestamp());
 
 	/*
 	 * pg_largeobject_metadata contains pg_authid.oid's, so we use the
@@ -960,6 +965,14 @@ AlterRole(ParseState *pstate, AlterRoleStmt *stmt)
 		new_record_repl[Anum_pg_authid_rolbypassrls - 1] = true;
 	}
 
+	/*
+	 * Record that an ALTER ROLE command was executed for this role.
+	 * The timestamp advances even when the command did not actually change any value.
+	 */
+	new_record[Anum_pg_authid_rollastupdated - 1] =
+		TimestampTzGetDatum(GetCurrentTimestamp());
+	new_record_repl[Anum_pg_authid_rollastupdated - 1] = true;
+
 	new_tuple = heap_modify_tuple(tuple, pg_authid_dsc, new_record,
 								  new_record_nulls, new_record_repl);
 	CatalogTupleUpdate(pg_authid_rel, &tuple->t_self, new_tuple);
@@ -999,6 +1012,48 @@ AlterRole(ParseState *pstate, AlterRoleStmt *stmt)
 	return roleid;
 }
 
+/*
+ * Set pg_authid.rollastupdated for the specified role to the current timestamp.
+ *
+ * Used by auxiliary commands (like ALTER ROLE ... SET) to ensure all role
+ * modifications update the timestamp consistently.
+ *
+ */
+static void
+update_role_lastupdated(Oid roleid)
+{
+	Relation	pg_authid_rel;
+	TupleDesc	pg_authid_dsc;
+	HeapTuple	tuple,
+				new_tuple;
+	Datum		new_record[Natts_pg_authid] = {0};
+	bool		new_record_nulls[Natts_pg_authid] = {0};
+	bool		new_record_repl[Natts_pg_authid] = {0};
+
+	pg_authid_rel = table_open(AuthIdRelationId, RowExclusiveLock);
+	pg_authid_dsc = RelationGetDescr(pg_authid_rel);
+
+	/*
+	 * The caller is expected to have already verified that the role exists
+	 * and locked it, so a cache miss here indicates a bug.
+	 */
+	tuple = SearchSysCache1(AUTHOID, ObjectIdGetDatum(roleid));
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for role %u", roleid);
+
+	new_record[Anum_pg_authid_rollastupdated - 1] =
+		TimestampTzGetDatum(GetCurrentTimestamp());
+	new_record_repl[Anum_pg_authid_rollastupdated - 1] = true;
+
+	new_tuple = heap_modify_tuple(tuple, pg_authid_dsc, new_record,
+								  new_record_nulls, new_record_repl);
+	CatalogTupleUpdate(pg_authid_rel, &tuple->t_self, new_tuple);
+
+	ReleaseSysCache(tuple);
+	heap_freetuple(new_tuple);
+
+	table_close(pg_authid_rel, NoLock);
+}
 
 /*
  * ALTER ROLE ... SET
@@ -1085,6 +1140,13 @@ AlterRoleSet(AlterRoleSetStmt *stmt)
 	}
 
 	AlterSetting(databaseid, roleid, stmt->setstmt);
+
+	/*
+	 * ALTER ROLE ... SET alters role state outside AlterRole(), so update
+	 * rollastupdated here. Ignore if stmt->role is NULL (global/database SET).
+	 */
+	if (OidIsValid(roleid))
+		update_role_lastupdated(roleid);
 
 	return roleid;
 }
@@ -1466,6 +1528,11 @@ RenameRole(const char *oldname, const char *newname)
 		ereport(NOTICE,
 				(errmsg("MD5 password cleared because of role rename")));
 	}
+
+	repl_repl[Anum_pg_authid_rollastupdated - 1] = true;
+	repl_val[Anum_pg_authid_rollastupdated - 1] =
+		TimestampTzGetDatum(GetCurrentTimestamp());
+	repl_null[Anum_pg_authid_rollastupdated - 1] = false;
 
 	newtuple = heap_modify_tuple(oldtuple, dsc, repl_val, repl_null, repl_repl);
 	CatalogTupleUpdate(rel, &oldtuple->t_self, newtuple);
