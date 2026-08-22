@@ -3495,6 +3495,12 @@ ON sj_t1.id = _t2t3t4.id;
 EXPLAIN (COSTS OFF)
 SELECT a1.a FROM sj a1,sj a2 WHERE (a1.a=a2.a) FOR UPDATE;
 
+-- Check that SJE rewrites Vars in a flattened LATERAL UNION ALL
+explain (costs off)
+select count(*) from sj p
+inner join lateral (select p.b union all select p.b) s(x) on (s.x is not null)
+where p.a in (select a from sj);
+
 reset enable_hashjoin;
 reset enable_mergejoin;
 

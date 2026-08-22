@@ -2171,6 +2171,10 @@ remove_self_join_rel(PlannerInfo *root, PlanRowMark *kmark, PlanRowMark *rmark,
 	ChangeVarNodesExtended((Node *) root->parse, toRemove->relid, toKeep->relid,
 						   0, replace_relid_callback);
 
+	/* Replace varno in translated_vars, else they keep the removed relid */
+	ChangeVarNodesExtended((Node *) root->append_rel_list, toRemove->relid,
+						   toKeep->relid, 0, replace_relid_callback);
+
 	/* Replace links in the planner info */
 	remove_rel_from_query(root, toRemove->relid, toKeep->relid, NULL, NULL);
 
