@@ -562,6 +562,12 @@ bucket_loop:
 		Page		page;
 		bool		split_cleanup = false;
 
+		/*
+		 * Check for interrupts before acquiring the cleanup lock on the next
+		 * bucket.
+		 */
+		vacuum_delay_point(false);
+
 		/* Get address of bucket's start page */
 		bucket_blkno = BUCKET_TO_BLKNO(cachedmetap, cur_bucket);
 
