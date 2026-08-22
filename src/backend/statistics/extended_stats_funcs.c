@@ -373,17 +373,17 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 	}
 
 	/* relation arguments */
-	stats_check_required_arg(fcinfo, extarginfo, RELSCHEMA_ARG);
+	stats_check_required_arg(fcinfo->args, extarginfo, RELSCHEMA_ARG);
 	relnspname = TextDatumGetCString(PG_GETARG_DATUM(RELSCHEMA_ARG));
-	stats_check_required_arg(fcinfo, extarginfo, RELNAME_ARG);
+	stats_check_required_arg(fcinfo->args, extarginfo, RELNAME_ARG);
 	relname = TextDatumGetCString(PG_GETARG_DATUM(RELNAME_ARG));
 
 	/* extended statistics arguments */
-	stats_check_required_arg(fcinfo, extarginfo, STATSCHEMA_ARG);
+	stats_check_required_arg(fcinfo->args, extarginfo, STATSCHEMA_ARG);
 	nspname = TextDatumGetCString(PG_GETARG_DATUM(STATSCHEMA_ARG));
-	stats_check_required_arg(fcinfo, extarginfo, STATNAME_ARG);
+	stats_check_required_arg(fcinfo->args, extarginfo, STATNAME_ARG);
 	stxname = TextDatumGetCString(PG_GETARG_DATUM(STATNAME_ARG));
-	stats_check_required_arg(fcinfo, extarginfo, INHERITED_ARG);
+	stats_check_required_arg(fcinfo->args, extarginfo, INHERITED_ARG);
 	inherited = PG_GETARG_BOOL(INHERITED_ARG);
 
 	/*
@@ -1758,17 +1758,17 @@ pg_clear_extended_stats(PG_FUNCTION_ARGS)
 	Oid			locked_table = InvalidOid;
 
 	/* relation arguments */
-	stats_check_required_arg(fcinfo, extarginfo, RELSCHEMA_ARG);
+	stats_check_required_arg(fcinfo->args, extarginfo, RELSCHEMA_ARG);
 	relnspname = TextDatumGetCString(PG_GETARG_DATUM(RELSCHEMA_ARG));
-	stats_check_required_arg(fcinfo, extarginfo, RELNAME_ARG);
+	stats_check_required_arg(fcinfo->args, extarginfo, RELNAME_ARG);
 	relname = TextDatumGetCString(PG_GETARG_DATUM(RELNAME_ARG));
 
 	/* extended statistics arguments */
-	stats_check_required_arg(fcinfo, extarginfo, STATSCHEMA_ARG);
+	stats_check_required_arg(fcinfo->args, extarginfo, STATSCHEMA_ARG);
 	nspname = TextDatumGetCString(PG_GETARG_DATUM(STATSCHEMA_ARG));
-	stats_check_required_arg(fcinfo, extarginfo, STATNAME_ARG);
+	stats_check_required_arg(fcinfo->args, extarginfo, STATNAME_ARG);
 	stxname = TextDatumGetCString(PG_GETARG_DATUM(STATNAME_ARG));
-	stats_check_required_arg(fcinfo, extarginfo, INHERITED_ARG);
+	stats_check_required_arg(fcinfo->args, extarginfo, INHERITED_ARG);
 	inherited = PG_GETARG_BOOL(INHERITED_ARG);
 
 	if (RecoveryInProgress())

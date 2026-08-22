@@ -141,8 +141,8 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 	bool		inherited;
 	Oid			locked_table = InvalidOid;
 
-	stats_check_required_arg(fcinfo, attarginfo, ATTRELSCHEMA_ARG);
-	stats_check_required_arg(fcinfo, attarginfo, ATTRELNAME_ARG);
+	stats_check_required_arg(fcinfo->args, attarginfo, ATTRELSCHEMA_ARG);
+	stats_check_required_arg(fcinfo->args, attarginfo, ATTRELNAME_ARG);
 
 	nspname = TextDatumGetCString(PG_GETARG_DATUM(ATTRELSCHEMA_ARG));
 	relname = TextDatumGetCString(PG_GETARG_DATUM(ATTRELNAME_ARG));
@@ -201,7 +201,7 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 				 errmsg("cannot modify statistics on system column \"%s\"",
 						attname)));
 
-	stats_check_required_arg(fcinfo, attarginfo, INHERITED_ARG);
+	stats_check_required_arg(fcinfo->args, attarginfo, INHERITED_ARG);
 	inherited = PG_GETARG_BOOL(INHERITED_ARG);
 
 	return attribute_statistics_update_internal(reloid, attname, attnum,
@@ -253,31 +253,31 @@ attribute_statistics_update_internal(Oid reloid,
 	 * and set the corresponding argument to NULL in fcinfo.
 	 */
 
-	if (!stats_check_arg_array(fcinfo, attarginfo, MOST_COMMON_FREQS_ARG))
+	if (!stats_check_arg_array(fcinfo->args, attarginfo, MOST_COMMON_FREQS_ARG))
 	{
 		do_mcv = false;
 		result = false;
 	}
 
-	if (!stats_check_arg_array(fcinfo, attarginfo, MOST_COMMON_ELEM_FREQS_ARG))
+	if (!stats_check_arg_array(fcinfo->args, attarginfo, MOST_COMMON_ELEM_FREQS_ARG))
 	{
 		do_mcelem = false;
 		result = false;
 	}
-	if (!stats_check_arg_array(fcinfo, attarginfo, ELEM_COUNT_HISTOGRAM_ARG))
+	if (!stats_check_arg_array(fcinfo->args, attarginfo, ELEM_COUNT_HISTOGRAM_ARG))
 	{
 		do_dechist = false;
 		result = false;
 	}
 
-	if (!stats_check_arg_pair(fcinfo, attarginfo,
+	if (!stats_check_arg_pair(fcinfo->args, attarginfo,
 							  MOST_COMMON_VALS_ARG, MOST_COMMON_FREQS_ARG))
 	{
 		do_mcv = false;
 		result = false;
 	}
 
-	if (!stats_check_arg_pair(fcinfo, attarginfo,
+	if (!stats_check_arg_pair(fcinfo->args, attarginfo,
 							  MOST_COMMON_ELEMS_ARG,
 							  MOST_COMMON_ELEM_FREQS_ARG))
 	{
@@ -285,7 +285,7 @@ attribute_statistics_update_internal(Oid reloid,
 		result = false;
 	}
 
-	if (!stats_check_arg_pair(fcinfo, attarginfo,
+	if (!stats_check_arg_pair(fcinfo->args, attarginfo,
 							  RANGE_LENGTH_HISTOGRAM_ARG,
 							  RANGE_EMPTY_FRAC_ARG))
 	{
@@ -631,10 +631,10 @@ pg_clear_attribute_stats(PG_FUNCTION_ARGS)
 	bool		inherited;
 	Oid			locked_table = InvalidOid;
 
-	stats_check_required_arg(fcinfo, cleararginfo, C_ATTRELSCHEMA_ARG);
-	stats_check_required_arg(fcinfo, cleararginfo, C_ATTRELNAME_ARG);
-	stats_check_required_arg(fcinfo, cleararginfo, C_ATTNAME_ARG);
-	stats_check_required_arg(fcinfo, cleararginfo, C_INHERITED_ARG);
+	stats_check_required_arg(fcinfo->args, cleararginfo, C_ATTRELSCHEMA_ARG);
+	stats_check_required_arg(fcinfo->args, cleararginfo, C_ATTRELNAME_ARG);
+	stats_check_required_arg(fcinfo->args, cleararginfo, C_ATTNAME_ARG);
+	stats_check_required_arg(fcinfo->args, cleararginfo, C_INHERITED_ARG);
 
 	nspname = TextDatumGetCString(PG_GETARG_DATUM(C_ATTRELSCHEMA_ARG));
 	relname = TextDatumGetCString(PG_GETARG_DATUM(C_ATTRELNAME_ARG));

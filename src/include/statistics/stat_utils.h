@@ -25,12 +25,12 @@ struct StatsArgInfo
 	Oid			argtype;
 };
 
-extern void stats_check_required_arg(FunctionCallInfo fcinfo,
+extern void stats_check_required_arg(const NullableDatum *args,
 									 struct StatsArgInfo *arginfo,
 									 int argnum);
-extern bool stats_check_arg_array(FunctionCallInfo fcinfo,
+extern bool stats_check_arg_array(const NullableDatum *args,
 								  struct StatsArgInfo *arginfo, int argnum);
-extern bool stats_check_arg_pair(FunctionCallInfo fcinfo,
+extern bool stats_check_arg_pair(const NullableDatum *args,
 								 struct StatsArgInfo *arginfo,
 								 int argnum1, int argnum2);
 

@@ -51,11 +51,11 @@ static Node *statatt_get_index_expr(Relation rel, int attnum);
  * Ensure that a given argument is not null.
  */
 void
-stats_check_required_arg(FunctionCallInfo fcinfo,
+stats_check_required_arg(const NullableDatum *args,
 						 struct StatsArgInfo *arginfo,
 						 int argnum)
 {
-	if (PG_ARGISNULL(argnum))
+	if (args[argnum].isnull)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("argument \"%s\" must not be null",
@@ -70,16 +70,16 @@ stats_check_required_arg(FunctionCallInfo fcinfo,
  * true.
  */
 bool
-stats_check_arg_array(FunctionCallInfo fcinfo,
+stats_check_arg_array(const NullableDatum *args,
 					  struct StatsArgInfo *arginfo,
 					  int argnum)
 {
 	ArrayType  *arr;
 
-	if (PG_ARGISNULL(argnum))
+	if (args[argnum].isnull)
 		return true;
 
-	arr = DatumGetArrayTypeP(PG_GETARG_DATUM(argnum));
+	arr = DatumGetArrayTypeP(args[argnum].value);
 
 	if (ARR_NDIM(arr) != 1)
 	{
@@ -111,17 +111,17 @@ stats_check_arg_array(FunctionCallInfo fcinfo,
  * true.
  */
 bool
-stats_check_arg_pair(FunctionCallInfo fcinfo,
+stats_check_arg_pair(const NullableDatum *args,
 					 struct StatsArgInfo *arginfo,
 					 int argnum1, int argnum2)
 {
-	if (PG_ARGISNULL(argnum1) && PG_ARGISNULL(argnum2))
+	if (args[argnum1].isnull && args[argnum2].isnull)
 		return true;
 
-	if (PG_ARGISNULL(argnum1) || PG_ARGISNULL(argnum2))
+	if (args[argnum1].isnull || args[argnum2].isnull)
 	{
-		int			nullarg = PG_ARGISNULL(argnum1) ? argnum1 : argnum2;
-		int			otherarg = PG_ARGISNULL(argnum1) ? argnum2 : argnum1;
+		int			nullarg = args[argnum1].isnull ? argnum1 : argnum2;
+		int			otherarg = args[argnum1].isnull ? argnum2 : argnum1;
 
 		ereport(WARNING,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),

@@ -74,8 +74,8 @@ relation_statistics_update(FunctionCallInfo fcinfo)
 	Oid			reloid;
 	Oid			locked_table = InvalidOid;
 
-	stats_check_required_arg(fcinfo, relarginfo, RELSCHEMA_ARG);
-	stats_check_required_arg(fcinfo, relarginfo, RELNAME_ARG);
+	stats_check_required_arg(fcinfo->args, relarginfo, RELSCHEMA_ARG);
+	stats_check_required_arg(fcinfo->args, relarginfo, RELNAME_ARG);
 
 	nspname = TextDatumGetCString(PG_GETARG_DATUM(RELSCHEMA_ARG));
 	relname = TextDatumGetCString(PG_GETARG_DATUM(RELNAME_ARG));
