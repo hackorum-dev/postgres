@@ -157,7 +157,7 @@ WalReceiverMain(const void *startup_data, size_t startup_data_len)
 	char		conninfo[MAXCONNINFO];
 	char	   *tmp_conninfo;
 	char		slotname[NAMEDATALEN];
-	bool		is_temp_slot;
+	bool		create_temp_slot;
 	XLogRecPtr	startpoint;
 	TimeLineID	startpointTLI;
 	TimeLineID	primaryTLI;
@@ -225,15 +225,15 @@ WalReceiverMain(const void *startup_data, size_t startup_data_len)
 	walrcv->ready_to_display = false;
 	strlcpy(conninfo, walrcv->conninfo, MAXCONNINFO);
 	strlcpy(slotname, walrcv->slotname, NAMEDATALEN);
-	is_temp_slot = walrcv->is_temp_slot;
+	create_temp_slot = walrcv->is_temp_slot;
 	startpoint = walrcv->receiveStart;
 	startpointTLI = walrcv->receiveStartTLI;
 
 	/*
-	 * At most one of is_temp_slot and slotname can be set; otherwise,
+	 * At most one of create_temp_slot and slotname can be set; otherwise,
 	 * RequestXLogStreaming messed up.
 	 */
-	Assert(!is_temp_slot || (slotname[0] == '\0'));
+	Assert(!create_temp_slot || (slotname[0] == '\0'));
 
 	/* Initialise to a sanish value */
 	now = GetCurrentTimestamp();
@@ -435,13 +435,16 @@ WalReceiverMain(const void *startup_data, size_t startup_data_len)
 		 * name in shared memory.  (Note the slot name cannot already be set
 		 * in this case.)
 		 */
-		if (is_temp_slot)
+		if (create_temp_slot)
 		{
 			snprintf(slotname, sizeof(slotname),
 					 "pg_walreceiver_%lld",
 					 (long long int) walrcv_get_backend_pid(wrconn));
 
 			walrcv_create_slot(wrconn, slotname, true, false, false, 0, NULL);
+
+			/* Only create once */
+			create_temp_slot = false;
 
 			SpinLockAcquire(&walrcv->mutex);
 			strlcpy(walrcv->slotname, slotname, NAMEDATALEN);
