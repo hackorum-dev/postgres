@@ -233,7 +233,6 @@ static const PGLZ_Strategy strategy_default_data = {
 	10							/* Lower good match size by 10% at every loop
 								 * iteration */
 };
-const PGLZ_Strategy *const PGLZ_strategy_default = &strategy_default_data;
 
 
 static const PGLZ_Strategy strategy_always_data = {
@@ -246,6 +245,7 @@ static const PGLZ_Strategy strategy_always_data = {
 	6							/* Look harder for a good match */
 };
 const PGLZ_Strategy *const PGLZ_strategy_always = &strategy_always_data;
+const PGLZ_Strategy *const PGLZ_strategy_default = &strategy_always_data;
 
 
 /* ----------
