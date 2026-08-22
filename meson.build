@@ -3293,10 +3293,27 @@ cdata.set('MEMSET_LOOP_LIMIT', memset_loop_limit)
 cdata.set_quoted('DLSUFFIX', dlsuffix)
 
 
+# configure substitutes the GNU host triplet into PG_VERSION_STR, and some
+# regression tests match against it: collate.linux.utf8 looks for "linux-gnu",
+# and infinite_recurse looks for "powerpc64[^,]*-linux-gnu".  Meson's own idea
+# of the host is just cpu_family-system, which never contains the ABI suffix,
+# so ask the compiler for the triplet when it can tell us.
+host_tuple = '@0@-@1@'.format(host_machine.cpu_family(), host_system)
+if cc.get_id() in ['gcc', 'clang']
+  # Include c_args: a --target passed there (clang cross-builds) changes
+  # what the compiler actually targets, and -dumpmachine needs to see it
+  # too, or it reports the untargeted default instead.
+  dumpmachine = run_command(cc.cmd_array() + get_option('c_args'),
+                             '-dumpmachine', check: false)
+  if dumpmachine.returncode() == 0 and dumpmachine.stdout().strip() != ''
+    host_tuple = dumpmachine.stdout().strip()
+  endif
+endif
+
 # built later than the rest of the version metadata, we need SIZEOF_VOID_P
 cdata.set_quoted('PG_VERSION_STR',
-  'PostgreSQL @0@ on @1@-@2@, compiled by @3@-@4@, @5@-bit'.format(
-    pg_version, host_machine.cpu_family(), host_system,
+  'PostgreSQL @0@ on @1@, compiled by @2@-@3@, @4@-bit'.format(
+    pg_version, host_tuple,
     cc.get_id(), cc.version(), cdata.get('SIZEOF_VOID_P') * 8,
   )
 )
