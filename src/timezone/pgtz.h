@@ -25,6 +25,7 @@
  */
 #define TZ_RUNTIME_LEAPS 1
 
+
 /*
  * Limit to time zone abbreviation length in proleptic TZ strings.
  * This is distinct from TZ_MAX_CHARS, which limits TZif file contents.
@@ -90,6 +91,7 @@ struct state
 	int			charcnt;
 	bool		goback;
 	bool		goahead;
+	int			monotonicity;
 	pg_time_t	ats[TZ_MAX_TIMES];
 	unsigned char types[TZ_MAX_TIMES];
 	struct ttinfo ttis[TZ_MAX_TYPES];

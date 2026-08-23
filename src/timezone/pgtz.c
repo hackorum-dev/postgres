@@ -217,6 +217,98 @@ init_timezone_hashtable(void)
 }
 
 /*
+ * Check every time transition that moves time backwards
+ * up to which part of the timestamp the effects are observable
+ * on a timestamp truncation fashion. This information will be stored
+ * in the timezone state to assist decisions related to monotonicity
+ * analysis.
+ * 2026-07-02 01:59:59.999999 to 
+ * 2026-07-02 01:00:00.000000
+ * ==== == == == << xx xxxxxx
+ *
+ * would not violate monotonicity for year, month, day, and hour
+ * but would break for minutes and seconds.
+ */
+static void
+inspect_monotonicity(struct pg_tz *tz)
+{
+	struct state	*sp;
+	struct pg_tm	tm_before;
+	struct pg_tm	*p;
+	pg_time_t		t_before;
+	pg_time_t		t_after;
+	int				result;
+
+	sp = &tz->state;
+
+	/* conservative initialization */
+	sp->monotonicity = 0;
+	if (sp == NULL || sp->typecnt <= 0)
+		return;
+	/* Fixed-offset zone: no transitions => fully monotonic */
+	if (sp->timecnt == 0)
+	{
+		sp->monotonicity = BITWISE_HI_RIGHT(TZ_MONOTONIC_NUM_BITS);
+		return;
+	}
+	result = BITWISE_HI_RIGHT(TZ_MONOTONIC_NUM_BITS);
+	for (int i = 0; i < sp->timecnt; i++)
+	{
+		int			old_type;
+		int			new_type;
+
+		t_after  = sp->ats[i];
+		t_before = t_after - 1;
+
+		/*
+		 * Only fall-back transitions can break truncation monotonicity.
+		 * Skip spring-forward and other offset-increase transitions.
+		 */
+		old_type = (i == 0) ? 0 : sp->types[i - 1];
+		new_type = sp->types[i];
+		if (sp->ttis[new_type].tt_utoff >= sp->ttis[old_type].tt_utoff)
+			continue;
+
+		/* determine local time parts at the transition */
+		p = pg_localtime(&t_before, tz);
+		if (p == NULL)
+		{
+			elog(NOTICE, "Failed to get local time on timezone %s", tz->TZname);
+			return;
+		}
+		tm_before = *p;
+		p = pg_localtime(&t_after, tz);
+		if (p == NULL)
+		{
+			elog(NOTICE, "Failed to get local time on timezone %s", tz->TZname);
+			return;
+		}
+		#define mark(field, unit) \
+		do { \
+			if (tm_before.tm_##field > p->tm_##field) \
+			{ \
+				if (TZ_MONOTONIC_##unit == 0) \
+					result = 0; \
+				else \
+					result &= BITWISE_HI_RIGHT(TZ_MONOTONIC_##unit - 1); \
+			} \
+			else if (tm_before.tm_##field < p->tm_##field) \
+				goto next_transition; \
+		} while (0)
+		mark(year, YEAR);
+		mark(mon, MONTH);
+		mark(mday, DAY);
+		mark(hour, HOUR);
+		mark(min, MINUTE);
+		mark(sec, SECOND);
+		#undef mark
+next_transition:
+		;
+	}
+	sp->monotonicity = result;
+}
+
+/*
  * Load a timezone from file or from cache.
  * Does not verify that the timezone is acceptable!
  */
@@ -276,11 +368,11 @@ pg_tzset(const char *tzname)
 									  uppername,
 									  HASH_ENTER,
 									  NULL);
-
+	
 	/* hash_search already copied uppername into the hash key */
 	strcpy(tzp->tz.TZname, canonname);
 	memcpy(&tzp->tz.state, &tzstate, sizeof(tzstate));
-
+	inspect_monotonicity(&tzp->tz);
 	return &tzp->tz;
 }
 

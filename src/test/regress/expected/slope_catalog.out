@@ -133,8 +133,8 @@ JOIN pg_proc sp ON sp.oid = p.prosupport
 WHERE sp.proname LIKE '%slope%'
   AND NOT EXISTS (SELECT 1 FROM pg_operator o WHERE o.oprcode = p.oid)
 ORDER BY sp.proname, p.proname, arguments;
- oid  |   function   |             arguments             |           returns           |       prosupport        
-------+--------------+-----------------------------------+-----------------------------+-------------------------
+ oid  |   function   |             arguments             |           returns           |           prosupport            
+------+--------------+-----------------------------------+-----------------------------+---------------------------------
  2025 | timestamp    | date, time without time zone      | timestamp without time zone | addition_slope_support
  2466 | acosh        | double precision                  | double precision            | arg0_asc_slope_support
  1600 | asin         | double precision                  | double precision            | arg0_asc_slope_support
@@ -184,7 +184,12 @@ ORDER BY sp.proname, p.proname, arguments;
  2732 | acosd        | double precision                  | double precision            | arg0_desc_slope_support
  6220 | erfc         | double precision                  | double precision            | arg0_desc_slope_support
  2020 | date_trunc   | text, timestamp without time zone | timestamp without time zone | arg1_asc_slope_support
-(49 rows)
+ 2069 | timezone     | text, timestamp without time zone | timestamp with time zone    | arg1_asc_slope_support
+ 1178 | date         | timestamp with time zone          | date                        | timestamptz_date_slope_support
+ 6334 | timezone     | timestamp with time zone          | timestamp without time zone | timestamptz_at_local_slope_support
+ 1217 | date_trunc   | text, timestamp with time zone    | timestamp with time zone    | timestamptz_trunc_slope_support
+ 1159 | timezone     | text, timestamp with time zone    | timestamp without time zone | timestamptz_zone_slope_support
+(54 rows)
 
 -- Operators whose name has slope support for some types but not others
 SELECT
@@ -280,9 +285,7 @@ WHERE (u.prosupport = 0 OR NOT EXISTS (
 ORDER BY u.proname, arguments;
  oid  |   function   |              arguments               |           returns           
 ------+--------------+--------------------------------------+-----------------------------
- 1178 | date         | timestamp with time zone             | date
  1218 | date_trunc   | text, interval                       | interval
- 1217 | date_trunc   | text, timestamp with time zone       | timestamp with time zone
  1284 | date_trunc   | text, timestamp with time zone, text | timestamp with time zone
  1736 | log          | numeric, numeric                     | numeric
  2027 | timestamp    | timestamp with time zone             | timestamp without time zone
@@ -292,5 +295,5 @@ ORDER BY u.proname, arguments;
  1778 | to_timestamp | text, text                           | timestamp with time zone
   753 | trunc        | macaddr                              | macaddr
  4112 | trunc        | macaddr8                             | macaddr8
-(12 rows)
+(10 rows)
 

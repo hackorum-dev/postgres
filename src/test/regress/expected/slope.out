@@ -252,21 +252,6 @@ select date_trunc('day', ts), count(*) from src group by 1;
          Output: date_trunc('day'::text, ts)
 (5 rows)
 
--- date_trunc on timestamptz should not use index
-explain (costs off, verbose)
-select date_trunc('day', tstz), count(*) from src group by 1;
-                         QUERY PLAN                          
--------------------------------------------------------------
- GroupAggregate
-   Output: (date_trunc('day'::text, tstz)), count(*)
-   Group Key: (date_trunc('day'::text, src.tstz))
-   ->  Sort
-         Output: (date_trunc('day'::text, tstz))
-         Sort Key: (date_trunc('day'::text, src.tstz))
-         ->  Index Only Scan using src_tstz_idx on slope.src
-               Output: date_trunc('day'::text, tstz)
-(8 rows)
-
 --
 -- Test arithmetic operations
 --
@@ -424,23 +409,6 @@ select -v_int4 from src order by 1;
    ->  Index Only Scan using src_v_int4_idx on slope.src
          Output: (- v_int4)
 (5 rows)
-
---
--- Group and order
---
-explain (costs off, verbose)
-select tstz::date, count(*) from src group by 1 order by 1;
-                         QUERY PLAN                          
--------------------------------------------------------------
- GroupAggregate
-   Output: ((tstz)::date), count(*)
-   Group Key: ((src.tstz)::date)
-   ->  Sort
-         Output: ((tstz)::date)
-         Sort Key: ((src.tstz)::date)
-         ->  Index Only Scan using src_tstz_idx on slope.src
-               Output: (tstz)::date
-(8 rows)
 
 --
 -- Test nested monotonic function
@@ -844,8 +812,98 @@ SELECT v_int4::oid FROM src ORDER BY 1;
    ->  Index Only Scan using src_v_int4_idx on src
 (3 rows)
 
+--
+-- Now that some plans were shown, and we see that in many cases what
+-- we care is whether a plan has a index scan or not. This function will
+-- check that for us and just return 
+--
+CREATE OR REPLACE FUNCTION index_plan (query text) RETURNS BOOLEAN LANGUAGE plpgsql AS $$
+DECLARE
+    plan json;
+BEGIN
+   EXECUTE 'EXPLAIN (COSTS OFF, FORMAT JSON) SELECT ' || query || ' ORDER BY 1' into plan;
+   RETURN  plan->0->'Plan'->>'Node Type' LIKE 'Index%Scan';
+END
+$$;
+--
+-- Functions that take a timezone argument
+--
+EXECUTE query;
+ERROR:  prepared statement "query" does not exist
+SELECT *
+FROM unnest(ARRAY[
+    'Africa/Ouagadougou', 'Europe/London', 'Antarctica/Troll', 'Pacific/Guam', 'America/Goose_Bay'
+]) AS timezones(tz_name),
+LATERAL (
+    SELECT
+        string_agg(unit, ', ') FILTER (
+            WHERE index_plan('date_trunc(''' || unit || ''', tstz, ''' || tz_name || ''') FROM src')
+         ) AS "monotonic date_trunc units"
+    FROM unnest(ARRAY['year', 'month', 'day', 'hour', 'minute', 'second']) AS s(unit)
+) AS trunc,
+LATERAL (
+    SELECT index_plan('timezone(''' || tz_name || ''', tstz) FROM src') AS "timezone"
+) AS tz;
+      tz_name       |       monotonic date_trunc units       | timezone 
+--------------------+----------------------------------------+----------
+ Africa/Ouagadougou | year, month, day, hour, minute, second | t
+ Europe/London      | year, month, day, hour                 | f
+ Antarctica/Troll   | year, month, day                       | f
+ Pacific/Guam       | year, month                            | f
+ America/Goose_Bay  | year                                   | f
+(5 rows)
+
+--
+-- Functions that depends on session timezone
+--
+PREPARE query AS 
+SELECT index_plan($$ tstz::date FROM src $$) date, 
+    (SELECT string_agg( unit, ' ') FILTER (
+        WHERE index_plan($$ date_trunc('$$ || unit || $$', tstz) FROM src $$)
+    ) FROM unnest(ARRAY['year', 'month', 'day', 'hour', 'minute', 'second']) AS s(unit)
+) as "monotonic date_turnc units";
+-- No DST at all
+SET timezone = 'Africa/Ouagadougou';
+EXECUTE query;
+ date |    monotonic date_turnc units     
+------+-----------------------------------
+ t    | year month day hour minute second
+(1 row)
+
+-- The common case: one hour DST
+SET timezone = 'Europe/London';
+EXECUTE query;
+ date | monotonic date_turnc units 
+------+----------------------------
+ t    | year month day hour
+(1 row)
+
+-- DST might affect the hour
+SET timezone = 'Antarctica/Troll';
+EXECUTE query;
+ date | monotonic date_turnc units 
+------+----------------------------
+ t    | year month day
+(1 row)
+
+-- A weird case: used to go back a day
+SET timezone = 'Pacific/Guam';
+EXECUTE query;
+ date | monotonic date_turnc units 
+------+----------------------------
+ f    | year month
+(1 row)
+
+-- Even weirder, went back a month
+SET timezone = 'America/Goose_Bay';
+EXECUTE query;
+ date | monotonic date_turnc units 
+------+----------------------------
+ f    | year
+(1 row)
+
 DROP SCHEMA slope CASCADE;
-NOTICE:  drop cascades to 14 other objects
+NOTICE:  drop cascades to 15 other objects
 DETAIL:  drop cascades to table t
 drop cascades to table u
 drop cascades to operator family test_int4_ops for access method btree
@@ -860,3 +918,4 @@ drop cascades to type non42
 drop cascades to type fp_real
 drop cascades to table numeric_corners
 drop cascades to table inc
+drop cascades to function index_plan(text)
