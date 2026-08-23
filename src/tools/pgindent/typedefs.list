@@ -3555,6 +3555,8 @@ XactLockTableWaitInfo
 XidBoundsViolation
 XidCacheStatus
 XidCommitStatus
+XidHorizonProc
+XidHorizonRow
 XidStatus
 XmlExpr
 XmlExprOp
