@@ -5454,9 +5454,15 @@ RelationCopyStorageUsingBuffer(RelFileLocator srclocator,
 		memcpy(dstPage, srcPage, BLCKSZ);
 		MarkBufferDirty(dstBuf);
 
-		/* WAL-log the copied page. */
+		/*
+		 * WAL-log the copied page.  VM/FSM pages never maintain
+		 * pd_lower/pd_upper, so hole punching would omit their entire
+		 * content from the FPI.
+		 */
 		if (use_wal)
-			log_newpage_buffer(dstBuf, true);
+			log_newpage_buffer(dstBuf,
+							   forkNum != VISIBILITYMAP_FORKNUM &&
+							   forkNum != FSM_FORKNUM);
 
 		END_CRIT_SECTION();
 
