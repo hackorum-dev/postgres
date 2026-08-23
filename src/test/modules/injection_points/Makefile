@@ -32,6 +32,7 @@ ISOLATION = basic \
 	    repack_toast \
 	    ri_fastpath_reindex \
 	    ri_fastpath_snapshot \
+	    serializable-summarization \
 	    syscache-update-pruned \
 	    $(WAIT_CLEANUP_TST) \
 	    heap_lock_update \
