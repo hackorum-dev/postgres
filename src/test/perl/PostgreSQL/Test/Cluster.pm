@@ -1541,10 +1541,25 @@ sub enable_archiving
 	# first. Paths also need to be double-quoted to prevent failures where
 	# the path contains spaces.
 	$path =~ s{\\}{\\\\}g if ($PostgreSQL::Test::Utils::windows_os);
-	my $copy_command =
-	  $PostgreSQL::Test::Utils::windows_os
-	  ? qq{copy "%p" "$path\\\\%f"}
-	  : qq{cp "%p" "$path/%f"};
+	# Copy to a temporary file in the archive directory, then publish it under
+	# the name expected by restore_command.  In particular, don't leave a
+	# partially-copied file visible if the archive command is interrupted.
+	# Generate the suffix here so that all commands use exactly the same name.
+	my $temp_suffix = sprintf("%08x", int(rand(0x7fffffff)));
+	my $copy_command;
+
+	if ($PostgreSQL::Test::Utils::windows_os)
+	{
+		my $temp_path = "$path\\\\.%f.tmp.$temp_suffix";
+		$copy_command = qq{copy /Y "%p" "$temp_path"}
+		  . qq{ && move /Y "$temp_path" "$path\\\\%f"};
+	}
+	else
+	{
+		my $temp_path = "$path/.%f.tmp.$temp_suffix.\$\$";
+		$copy_command = qq{cp "%p" "$temp_path"}
+		  . qq{ && mv -f "$temp_path" "$path/%f"};
+	}
 
 	# Enable archive_mode and archive_command on node
 	$self->append_conf(
