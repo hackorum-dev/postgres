@@ -3185,13 +3185,22 @@ else
   socket_dep = not_found_dep
 endif
 
+# copy_file_range() is incomplete on Linux before 5.3 (EINVAL).
+# Non-Linux skips this compile probe and keeps a plain function check.
+have_linux_5_3_headers = host_system != 'linux' or cc.compiles('''
+#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 3, 0)
+#error "Linux kernel headers older than 5.3"
+#endif
+''', name: '<linux/version.h> is 5.3 or later', args: test_c_args)
+
 # XXX: Might be worth conditioning some checks on the OS, to avoid doing
 # unnecessary checks over and over, particularly on windows.
 func_checks = [
   ['backtrace_symbols', {'dependencies': [execinfo_dep]}],
   ['clock_gettime', {'dependencies': [rt_dep], 'define': false}],
   ['copyfile'],
-  ['copy_file_range'],
+  ['copy_file_range', {'skip': not have_linux_5_3_headers}],
   # gcc/clang's sanitizer helper library provides dlopen but not dlsym, thus
   # when enabling asan the dlopen check doesn't notice that -ldl is actually
   # required. Just checking for dlsym() ought to suffice.

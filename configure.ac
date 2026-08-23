@@ -1851,7 +1851,6 @@ LIBS=`echo "$LIBS" | sed -e 's/-ledit//g' -e 's/-lreadline//g'`
 AC_CHECK_FUNCS(m4_normalize([
 	backtrace_symbols
 	copyfile
-	copy_file_range
 	elf_aux_info
 	explicit_memset
 	getauxval
@@ -1873,6 +1872,28 @@ AC_CHECK_FUNCS(m4_normalize([
 	uselocale
 	wcstombs_l
 ]))
+
+# copy_file_range() can fail with EINVAL on Linux before 5.3.
+# Other platforms only require the function to be available.
+pgac_check_copy_file_range=yes
+case $host_os in
+  linux*)
+    AC_CACHE_CHECK([whether <linux/version.h> is 5.3 or later],
+                   [pgac_cv_linux_headers_5_3],
+    [AC_COMPILE_IFELSE(
+       [AC_LANG_PROGRAM(
+          [[#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 3, 0)
+#error "Linux kernel headers older than 5.3"
+#endif]],
+          [[]])],
+       [pgac_cv_linux_headers_5_3=yes],
+       [pgac_cv_linux_headers_5_3=no])])
+    test "$pgac_cv_linux_headers_5_3" = yes || pgac_check_copy_file_range=no
+    ;;
+esac
+AS_IF([test "$pgac_check_copy_file_range" = yes],
+      [AC_CHECK_FUNCS([copy_file_range])])
 
 # These typically are compiler builtins, for which AC_CHECK_FUNCS fails.
 PGAC_CHECK_BUILTIN_FUNC([__builtin_bswap16], [int x])

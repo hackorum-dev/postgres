@@ -210,7 +210,7 @@ PostgreSQL documentation
         copying.  On some file systems this gives results similar to
         <option>--clone</option>, sharing physical disk blocks, while on others
         it may still copy blocks, but do so via an optimized path.  At present,
-        it is supported on Linux and FreeBSD.
+        it is supported on Linux (kernel 5.3 and later) and FreeBSD.
        </para>
 
        <para>
