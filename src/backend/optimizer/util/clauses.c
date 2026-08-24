@@ -1197,6 +1197,43 @@ contain_nonstrict_functions_walker(Node *node, void *context)
 		return true;
 	else if (IsA(node, JsonConstructorExpr))
 		return true;
+	else if (IsA(node, JsonExpr))
+	{
+		JsonExpr   *jsexpr = (JsonExpr *) node;
+
+		/*
+		 * A NULL context item or path specification makes JSON_EXISTS,
+		 * JSON_QUERY, and JSON_VALUE return NULL, except that when the result
+		 * is coerced via json_populate_type() (use_json_coercion), the NULL
+		 * is still coerced to the RETURNING type.  If that type is a domain
+		 * that rejects NULLs, the coercion fails, and the result is then
+		 * either an error or whatever the ON ERROR behavior supplies --
+		 * neither of which is a NULL result.  A NULL PASSING argument doesn't
+		 * force a NULL result at all; it merely becomes a jsonpath variable
+		 * containing a JSON null.
+		 *
+		 * So treat the construct as non-strict if it coerces the result to a
+		 * domain type via json_populate_type(), if it has any PASSING
+		 * arguments, or if either its ON EMPTY or ON ERROR behavior is other
+		 * than NULL, UNKNOWN (which is the same as NULL), or ERROR. Otherwise
+		 * just check its inputs.
+		 */
+		if (jsexpr->use_json_coercion &&
+			get_typtype(jsexpr->returning->typid) == TYPTYPE_DOMAIN)
+			return true;
+		if (jsexpr->passing_values != NIL)
+			return true;
+		if (jsexpr->on_empty &&
+			jsexpr->on_empty->btype != JSON_BEHAVIOR_NULL &&
+			jsexpr->on_empty->btype != JSON_BEHAVIOR_UNKNOWN &&
+			jsexpr->on_empty->btype != JSON_BEHAVIOR_ERROR)
+			return true;
+		if (jsexpr->on_error &&
+			jsexpr->on_error->btype != JSON_BEHAVIOR_NULL &&
+			jsexpr->on_error->btype != JSON_BEHAVIOR_UNKNOWN &&
+			jsexpr->on_error->btype != JSON_BEHAVIOR_ERROR)
+			return true;
+	}
 	else
 	{
 		/* Check other function-containing nodes */
