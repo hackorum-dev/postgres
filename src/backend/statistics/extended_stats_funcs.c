@@ -121,6 +121,31 @@ static const char *extexprargname[NUM_ATTRIBUTE_STATS_ELEMS] =
 	"range_bounds_histogram"
 };
 
+/*
+ * Positional argument numbers, names, and types for
+ * pg_clear_extended_stats().
+ */
+
+enum clear_extended_stats_argnum
+{
+	C_RELSCHEMA_ARG = 0,
+	C_RELNAME_ARG,
+	C_STATSCHEMA_ARG,
+	C_STATNAME_ARG,
+	C_INHERITED_ARG,
+	C_NUM_EXTENDED_STATS_ARGS
+};
+
+static struct StatsArgInfo cleararginfo[] =
+{
+	[C_RELSCHEMA_ARG] = {"schemaname", TEXTOID},
+	[C_RELNAME_ARG] = {"relname", TEXTOID},
+	[C_STATSCHEMA_ARG] = {"statistics_schemaname", TEXTOID},
+	[C_STATNAME_ARG] = {"statistics_name", TEXTOID},
+	[C_INHERITED_ARG] = {"inherited", BOOLOID},
+	[C_NUM_EXTENDED_STATS_ARGS] = {0}
+};
+
 static bool extended_statistics_update(const NullableDatum *args);
 
 static HeapTuple get_pg_statistic_ext(Relation pg_stext, Oid nspoid,
@@ -1755,18 +1780,18 @@ pg_clear_extended_stats(PG_FUNCTION_ARGS)
 	Oid			locked_table = InvalidOid;
 
 	/* relation arguments */
-	stats_check_required_arg(fcinfo->args, extarginfo, RELSCHEMA_ARG);
-	relnspname = TextDatumGetCString(PG_GETARG_DATUM(RELSCHEMA_ARG));
-	stats_check_required_arg(fcinfo->args, extarginfo, RELNAME_ARG);
-	relname = TextDatumGetCString(PG_GETARG_DATUM(RELNAME_ARG));
+	stats_check_required_arg(fcinfo->args, cleararginfo, C_RELSCHEMA_ARG);
+	relnspname = TextDatumGetCString(PG_GETARG_DATUM(C_RELSCHEMA_ARG));
+	stats_check_required_arg(fcinfo->args, cleararginfo, C_RELNAME_ARG);
+	relname = TextDatumGetCString(PG_GETARG_DATUM(C_RELNAME_ARG));
 
 	/* extended statistics arguments */
-	stats_check_required_arg(fcinfo->args, extarginfo, STATSCHEMA_ARG);
-	nspname = TextDatumGetCString(PG_GETARG_DATUM(STATSCHEMA_ARG));
-	stats_check_required_arg(fcinfo->args, extarginfo, STATNAME_ARG);
-	stxname = TextDatumGetCString(PG_GETARG_DATUM(STATNAME_ARG));
-	stats_check_required_arg(fcinfo->args, extarginfo, INHERITED_ARG);
-	inherited = PG_GETARG_BOOL(INHERITED_ARG);
+	stats_check_required_arg(fcinfo->args, cleararginfo, C_STATSCHEMA_ARG);
+	nspname = TextDatumGetCString(PG_GETARG_DATUM(C_STATSCHEMA_ARG));
+	stats_check_required_arg(fcinfo->args, cleararginfo, C_STATNAME_ARG);
+	stxname = TextDatumGetCString(PG_GETARG_DATUM(C_STATNAME_ARG));
+	stats_check_required_arg(fcinfo->args, cleararginfo, C_INHERITED_ARG);
+	inherited = PG_GETARG_BOOL(C_INHERITED_ARG);
 
 	if (RecoveryInProgress())
 	{
