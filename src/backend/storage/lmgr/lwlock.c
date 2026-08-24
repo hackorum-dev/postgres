@@ -760,7 +760,7 @@ GetLWLockIdentifier(uint32 classId, uint16 eventId)
  *
  * Returns true if the lock isn't free and we need to wait.
  */
-static bool
+static pg_always_inline bool
 LWLockAttemptLock(LWLock *lock, LWLockMode mode)
 {
 	uint32		old_state;
@@ -1152,6 +1152,7 @@ LWLockAcquireCommon(LWLock *lock, LWLockMode mode)
 	PGPROC	   *proc = MyProc;
 	bool		result = true;
 	int			extraWaits = 0;
+	bool		queued;
 #ifdef LWLOCK_STATS
 	lwlock_stats *lwstats;
 
@@ -1216,8 +1217,30 @@ LWLockAcquireCommon(LWLock *lock, LWLockMode mode)
 
 		if (!mustwait)
 		{
-			LOG_LWDEBUG("LWLockAcquire", lock, "immediately acquired lock");
-			break;				/* got the lock */
+			if (TRACE_POSTGRESQL_LWLOCK_ACQUIRE_ENABLED())
+				TRACE_POSTGRESQL_LWLOCK_ACQUIRE(T_NAME(lock), mode);
+
+			/* Add lock to list of locks held by this backend */
+			held_lwlocks[num_held_lwlocks++] = lock;
+
+			/*
+			* Fix the process wait semaphore's count for any absorbed wakeups.
+			*/
+			while (extraWaits-- > 0)
+				PGSemaphoreUnlock(proc->sem);
+
+			if(!queued)
+			{
+				LOG_LWDEBUG("LWLockAcquire", lock, "immediately acquired lock");
+				return result;
+			}
+			else
+			{
+				LOG_LWDEBUG("LWLockAcquire", lock, "acquired, undoing queue");
+
+				LWLockDequeueSelf(lock);
+				return result;
+			}
 		}
 
 		/*
@@ -1230,20 +1253,11 @@ LWLockAcquireCommon(LWLock *lock, LWLockMode mode)
 		 * other locker will see our queue entries when releasing since they
 		 * existed before we checked for the lock.
 		 */
-
-		/* add to the queue */
-		LWLockQueueSelf(lock, mode);
-
-		/* we're now guaranteed to be woken up if necessary */
-		mustwait = LWLockAttemptLock(lock, mode);
-
-		/* ok, grabbed the lock the second time round, need to undo queueing */
-		if (!mustwait)
+		if(!queued)
 		{
-			LOG_LWDEBUG("LWLockAcquire", lock, "acquired, undoing queue");
-
-			LWLockDequeueSelf(lock);
-			break;
+			/* add to the queue */
+			LWLockQueueSelf(lock, mode);
+			continue;
 		}
 
 		/*
@@ -1287,26 +1301,13 @@ LWLockAcquireCommon(LWLock *lock, LWLockMode mode)
 		if (TRACE_POSTGRESQL_LWLOCK_WAIT_DONE_ENABLED())
 			TRACE_POSTGRESQL_LWLOCK_WAIT_DONE(T_NAME(lock), mode);
 		LWLockReportWaitEnd();
-
+		queued = false;
 		LOG_LWDEBUG("LWLockAcquire", lock, "awakened");
 
 		/* Now loop back and try to acquire lock again. */
 		result = false;
 	}
 
-	if (TRACE_POSTGRESQL_LWLOCK_ACQUIRE_ENABLED())
-		TRACE_POSTGRESQL_LWLOCK_ACQUIRE(T_NAME(lock), mode);
-
-	/* Add lock to list of locks held by this backend */
-	held_lwlocks[num_held_lwlocks++] = lock;
-
-	/*
-	 * Fix the process wait semaphore's count for any absorbed wakeups.
-	 */
-	while (extraWaits-- > 0)
-		PGSemaphoreUnlock(proc->sem);
-
-	return result;
 }
 bool LWLockAcquireX(LWLock *lock, LWLockMode mode)
 {
