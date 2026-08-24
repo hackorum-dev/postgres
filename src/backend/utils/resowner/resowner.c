@@ -392,7 +392,7 @@ ResourceOwnerReleaseAll(ResourceOwner owner, ResourceReleasePhase phase,
 			res_str = kind->DebugPrint ?
 				kind->DebugPrint(value)
 				: psprintf("%s %p", kind->name, DatumGetPointer(value));
-			elog(WARNING, "resource was not closed: %s", res_str);
+			elog(BUG_WARNING, "resource was not closed: %s", res_str);
 			pfree(res_str);
 		}
 

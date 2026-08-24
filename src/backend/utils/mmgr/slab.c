@@ -1054,7 +1054,7 @@ SlabCheck(MemoryContext context)
 		SlabBlock  *block = dlist_container(SlabBlock, node, iter.cur);
 
 		if (block->nfree != slab->chunksPerBlock)
-			elog(WARNING, "problem in slab %s: empty block %p should have %d free chunks but has %d chunks free",
+			elog(BUG_WARNING, "problem in slab %s: empty block %p should have %d free chunks but has %d chunks free",
 				 name, block, slab->chunksPerBlock, block->nfree);
 	}
 
@@ -1075,17 +1075,17 @@ SlabCheck(MemoryContext context)
 			 * matches the position in the blocklist.
 			 */
 			if (SlabBlocklistIndex(slab, block->nfree) != i)
-				elog(WARNING, "problem in slab %s: block %p is on blocklist %d but should be on blocklist %d",
+				elog(BUG_WARNING, "problem in slab %s: block %p is on blocklist %d but should be on blocklist %d",
 					 name, block, i, SlabBlocklistIndex(slab, block->nfree));
 
 			/* make sure the block is not empty */
 			if (block->nfree >= slab->chunksPerBlock)
-				elog(WARNING, "problem in slab %s: empty block %p incorrectly stored on blocklist element %d",
+				elog(BUG_WARNING, "problem in slab %s: empty block %p incorrectly stored on blocklist element %d",
 					 name, block, i);
 
 			/* make sure the slab pointer correctly points to this context */
 			if (block->slab != slab)
-				elog(WARNING, "problem in slab %s: bogus slab link in block %p",
+				elog(BUG_WARNING, "problem in slab %s: bogus slab link in block %p",
 					 name, block);
 
 			/* reset the array of free chunks for this block */
@@ -1105,7 +1105,7 @@ SlabCheck(MemoryContext context)
 				if (cur_chunk < SlabBlockGetChunk(slab, block, 0) ||
 					cur_chunk > SlabBlockGetChunk(slab, block, slab->chunksPerBlock - 1) ||
 					SlabChunkMod(slab, block, cur_chunk) != 0)
-					elog(WARNING, "problem in slab %s: bogus free list link %p in block %p",
+					elog(BUG_WARNING, "problem in slab %s: bogus free list link %p in block %p",
 						 name, cur_chunk, block);
 
 				/* count the chunk and mark it free on the free chunk array */
@@ -1120,7 +1120,7 @@ SlabCheck(MemoryContext context)
 			/* check that the unused pointer matches what nunused claims */
 			if (SlabBlockGetChunk(slab, block, slab->chunksPerBlock - block->nunused) !=
 				block->unused)
-				elog(WARNING, "problem in slab %s: mismatch detected between nunused chunks and unused pointer in block %p",
+				elog(BUG_WARNING, "problem in slab %s: mismatch detected between nunused chunks and unused pointer in block %p",
 					 name, block);
 
 			/*
@@ -1162,13 +1162,13 @@ SlabCheck(MemoryContext context)
 					 * the block
 					 */
 					if (chunkblock != block)
-						elog(WARNING, "problem in slab %s: bogus block link in block %p, chunk %p",
+						elog(BUG_WARNING, "problem in slab %s: bogus block link in block %p, chunk %p",
 							 name, block, chunk);
 
 					/* check the sentinel byte is intact */
 					Assert(slab->chunkSize < (slab->fullChunkSize - Slab_CHUNKHDRSZ));
 					if (!sentinel_ok(chunk, Slab_CHUNKHDRSZ + slab->chunkSize))
-						elog(WARNING, "problem in slab %s: detected write past chunk end in block %p, chunk %p",
+						elog(BUG_WARNING, "problem in slab %s: detected write past chunk end in block %p, chunk %p",
 							 name, block, chunk);
 				}
 			}
@@ -1178,7 +1178,7 @@ SlabCheck(MemoryContext context)
 			 * in the block header).
 			 */
 			if (nfree != block->nfree)
-				elog(WARNING, "problem in slab %s: nfree in block %p is %d but %d chunk were found as free",
+				elog(BUG_WARNING, "problem in slab %s: nfree in block %p is %d but %d chunk were found as free",
 					 name, block, block->nfree, nfree);
 
 			nblocks++;

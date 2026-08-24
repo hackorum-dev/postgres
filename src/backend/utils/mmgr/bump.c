@@ -786,7 +786,7 @@ BumpCheck(MemoryContext context)
 
 		/* check block belongs to the correct context */
 		if (block->context != bump)
-			elog(WARNING, "problem in Bump %s: bogus context link in block %p",
+			elog(BUG_WARNING, "problem in Bump %s: bogus context link in block %p",
 				 name, block);
 
 		/* now walk through the chunks and count them */
@@ -821,12 +821,12 @@ BumpCheck(MemoryContext context)
 
 			/* chunks have both block and context pointers, so check both */
 			if (chunkblock != block)
-				elog(WARNING, "problem in Bump %s: bogus block link in block %p, chunk %p",
+				elog(BUG_WARNING, "problem in Bump %s: bogus block link in block %p, chunk %p",
 					 name, block, chunk);
 		}
 
 		if (has_external_chunk && nchunks > 1)
-			elog(WARNING, "problem in Bump %s: external chunk on non-dedicated block %p",
+			elog(BUG_WARNING, "problem in Bump %s: external chunk on non-dedicated block %p",
 				 name, block);
 
 	}
