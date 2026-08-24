@@ -2289,6 +2289,14 @@ check_index_only(RelOptInfo *rel, IndexOptInfo *index)
 	/* Do we have all the necessary attributes? */
 	result = bms_is_subset(attrs_used, index_canreturn_attrs);
 
+	/*
+	 * bms_is_subset() is true when attrs_used is empty, even if the index
+	 * returns nothing.  That would allow a broken index-only scan for AMs
+	 * with amcanreturn == NULL.
+	 */
+	if (result && bms_is_empty(index_canreturn_attrs))
+		result = false;
+
 	bms_free(attrs_used);
 	bms_free(index_canreturn_attrs);
 
