@@ -43,3 +43,8 @@ lib*.pc
 /Release/
 /tmp_install/
 /portlock/
+
+# Nix (see flake.nix)
+/flake.lock
+/result
+/result-*
