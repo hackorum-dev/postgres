@@ -1308,7 +1308,10 @@ LWLockAcquireCommon(LWLock *lock, LWLockMode mode)
 
 	return result;
 }
-
+bool LWLockAcquireX(LWLock *lock, LWLockMode mode)
+{
+	return LWLockAcquireCommon(lock, mode);
+}
 /*
  * LWLockAcquireExclusive - acquire an exclusive lock
  *
@@ -1914,6 +1917,13 @@ LWLockReleaseCommon(LWLock *lock, LWLockMode mode)
 
 	LWLockReleaseInternal(lock, mode);
 }
+
+extern void
+LWLockReleaseX(LWLock *lock, LWLockMode mode)
+{
+	LWLockReleaseCommon(lock, mode);
+}
+
 /*
  * LWLockReleaseExclusive
  *
