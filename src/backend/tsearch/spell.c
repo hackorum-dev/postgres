@@ -1034,30 +1034,40 @@ parse_affentry(const char *str, char *mask, char *find, char *repl)
 }
 
 /*
+ * Parse an affix flag written in the "num" flag mode.
+ */
+static uint32
+parseNumericAffixFlag(const char *s)
+{
+	char	   *next;
+	int			i;
+
+	errno = 0;
+	i = strtol(s, &next, 10);
+	if (s == next || errno == ERANGE)
+		ereport(ERROR,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg("invalid affix flag \"%s\"", s)));
+	if (i < 0 || i > FLAGNUM_MAXSIZE)
+		ereport(ERROR,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg("affix flag \"%s\" is out of range", s)));
+
+	return i;
+}
+
+/*
  * Sets a Hunspell options depending on flag type.
+ *
+ * Conf->flagMode must already have its final value, since it decides which
+ * member of the entry's union is written.  See finalizeCompoundAffixFlags().
  */
 static void
 setCompoundAffixFlagValue(IspellDict *Conf, CompoundAffixFlag *entry,
-						  char *s, uint32 val)
+						  const char *s, uint32 val)
 {
 	if (Conf->flagMode == FM_NUM)
-	{
-		char	   *next;
-		int			i;
-
-		errno = 0;
-		i = strtol(s, &next, 10);
-		if (s == next || errno == ERANGE)
-			ereport(ERROR,
-					(errcode(ERRCODE_CONFIG_FILE_ERROR),
-					 errmsg("invalid affix flag \"%s\"", s)));
-		if (i < 0 || i > FLAGNUM_MAXSIZE)
-			ereport(ERROR,
-					(errcode(ERRCODE_CONFIG_FILE_ERROR),
-					 errmsg("affix flag \"%s\" is out of range", s)));
-
-		entry->flag.i = i;
-	}
+		entry->flag.i = parseNumericAffixFlag(s);
 	else
 		entry->flag.s = cpstrdup(Conf, s);
 
@@ -1120,10 +1130,52 @@ addCompoundAffixFlagValue(IspellDict *Conf, const char *s, uint32 val)
 
 	newValue = Conf->CompoundAffixFlags + Conf->nCompoundAffixFlag;
 
-	setCompoundAffixFlagValue(Conf, newValue, sbuf, val);
+	/*
+	 * Only remember the flag as a string for now.  The FLAG option that says
+	 * how flags are spelled may appear anywhere in the affix file, including
+	 * after the compound flags themselves, so the final representation cannot
+	 * be chosen until the whole file has been read.  See
+	 * finalizeCompoundAffixFlags(), which fills in flagMode as well.
+	 *
+	 * The interim copy goes in the short-lived build context, since the final
+	 * representation may well not be a string at all.
+	 */
+	newValue->flag.s = MemoryContextStrdup(Conf->buildCxt, sbuf);
+	newValue->value = val;
 
 	Conf->usecompound = true;
 	Conf->nCompoundAffixFlag++;
+}
+
+/*
+ * Convert the compound flags collected by addCompoundAffixFlagValue() to the
+ * representation implied by the flag mode the affix file ended up declaring.
+ *
+ * This must run before the flags are sorted or searched.  Doing the conversion
+ * here rather than while reading the file makes the position of the FLAG line
+ * irrelevant, which is how the flags on AF, SFX and PFX lines are already
+ * treated: those are parsed in a second pass over the file, and so always use
+ * the final flag mode.
+ */
+static void
+finalizeCompoundAffixFlags(IspellDict *Conf)
+{
+	for (int i = 0; i < Conf->nCompoundAffixFlag; i++)
+	{
+		CompoundAffixFlag *entry = Conf->CompoundAffixFlags + i;
+
+		/*
+		 * Replace the interim string with the representation the flag mode
+		 * calls for.  In both cases the old value is read before the new one
+		 * is stored, so overwriting the union in place is safe.
+		 */
+		if (Conf->flagMode == FM_NUM)
+			entry->flag.i = parseNumericAffixFlag(entry->flag.s);
+		else
+			entry->flag.s = cpstrdup(Conf, entry->flag.s);
+
+		entry->flagMode = Conf->flagMode;
+	}
 }
 
 /*
@@ -1301,6 +1353,9 @@ NIImportOOAffixes(IspellDict *Conf, const char *filename)
 		pfree(recoded);
 	}
 	tsearch_readline_end(&trst);
+
+	/* Conf->flagMode is final now, so the compound flags can be converted */
+	finalizeCompoundAffixFlags(Conf);
 
 	if (Conf->nCompoundAffixFlag > 1)
 		qsort(Conf->CompoundAffixFlags, Conf->nCompoundAffixFlag,
@@ -1576,6 +1631,12 @@ nextline:
 		pfree(pstr);
 	}
 	tsearch_readline_end(&trst);
+
+	/*
+	 * The old file format has no FLAG command, so the mode is still FM_CHAR
+	 * here, but the flags collected above must be converted all the same.
+	 */
+	finalizeCompoundAffixFlags(Conf);
 	return;
 
 isnewformat:
