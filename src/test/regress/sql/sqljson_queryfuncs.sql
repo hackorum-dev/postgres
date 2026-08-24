@@ -149,6 +149,11 @@ SELECT JSON_VALUE(jsonb 'null', '$ts' PASSING timestamptz '2018-02-21 12:34:56 +
 select json_value('{"a": 1.234}', '$.a' returning int error on error);
 select json_value('{"a": "1.234"}', '$.a' returning int error on error);
 
+-- Test JSON_VALUE DEFAULT ON ERROR boolean expressions
+SELECT JSON_VALUE('{"a":"abc"}', 'strict $.b' DEFAULT false ON ERROR);
+SELECT JSON_VALUE('{"a":"abc"}', 'strict $.b' DEFAULT true ON ERROR);
+SELECT JSON_VALUE('{"a":"abc"}', 'strict $.b' DEFAULT (1=1) ON ERROR);
+
 -- JSON_QUERY
 
 SELECT JSON_VALUE(NULL::jsonb, '$');
