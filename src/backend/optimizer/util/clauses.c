@@ -1197,6 +1197,35 @@ contain_nonstrict_functions_walker(Node *node, void *context)
 		return true;
 	else if (IsA(node, JsonConstructorExpr))
 		return true;
+	else if (IsA(node, JsonExpr))
+	{
+		JsonExpr   *jsexpr = (JsonExpr *) node;
+
+		/*
+		 * JSON_EXISTS, JSON_QUERY, and JSON_VALUE return NULL without
+		 * evaluating anything else if the context item or the path
+		 * specification is NULL, so they are strict with respect to those.
+		 * They are not strict with respect to their PASSING arguments: a NULL
+		 * PASSING value merely becomes a jsonpath variable containing a JSON
+		 * null, so the result can still be non-NULL.  Likewise, inputs
+		 * appearing within the ON EMPTY/ON ERROR expressions need not affect
+		 * the result at all.  So treat the construct as non-strict if it has
+		 * any PASSING arguments or any non-constant ON EMPTY/ON ERROR
+		 * expression, and otherwise check just the context item and the path
+		 * specification.
+		 */
+		if (jsexpr->passing_values != NIL)
+			return true;
+		if (jsexpr->on_empty && jsexpr->on_empty->expr &&
+			!IsA(jsexpr->on_empty->expr, Const))
+			return true;
+		if (jsexpr->on_error && jsexpr->on_error->expr &&
+			!IsA(jsexpr->on_error->expr, Const))
+			return true;
+		return contain_nonstrict_functions_walker(jsexpr->formatted_expr,
+												  context) ||
+			contain_nonstrict_functions_walker(jsexpr->path_spec, context);
+	}
 	else
 	{
 		/* Check other function-containing nodes */

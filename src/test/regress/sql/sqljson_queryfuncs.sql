@@ -561,3 +561,41 @@ SELECT JSON_VALUE(jsonb '1234', '$' RETURNING bit(3)  DEFAULT 1 ON ERROR);
 SELECT JSON_VALUE(jsonb '1234', '$' RETURNING bit(3)  DEFAULT 1::bit(3) ON ERROR);
 SELECT JSON_VALUE(jsonb '"111"', '$.a'  RETURNING bit(3) DEFAULT '1111' ON EMPTY);
 DROP DOMAIN queryfuncs_d_varbit3;
+
+-- Test the planner's strictness check for JsonExpr: JSON_VALUE() etc. are
+-- strict with respect to the context item, but can return non-NULL even when
+-- their PASSING arguments or the inputs of their ON EMPTY / ON ERROR
+-- expressions are NULL.
+
+-- When pulling up a subquery underneath an outer join, its JsonExpr output
+-- must be wrapped in a PlaceHolderVar; this must return NULL, not '1'.
+SELECT v FROM (VALUES (1)) a
+LEFT JOIN (SELECT JSON_VALUE('1', '$' PASSING y AS p) v
+           FROM (VALUES (1), (2)) b(y)) ss ON false;
+
+-- A STRICT SQL function must not be inlined if its JsonExpr isn't strict in
+-- the function's parameters; these must return NULL for the NULL row.
+CREATE TEMP TABLE jsonexpr_strict_args (x int);
+INSERT INTO jsonexpr_strict_args VALUES (NULL), (1);
+CREATE FUNCTION jsonexpr_strict_passing(int) RETURNS text
+  LANGUAGE sql IMMUTABLE STRICT
+  AS $$ SELECT JSON_VALUE(jsonb '1', '$' PASSING $1 AS p) $$;
+SELECT x, jsonexpr_strict_passing(x) FROM jsonexpr_strict_args ORDER BY x;
+CREATE FUNCTION jsonexpr_strict_default(int) RETURNS int
+  LANGUAGE sql IMMUTABLE STRICT
+  AS $$ SELECT JSON_VALUE(jsonb '1', '$' RETURNING int
+                          DEFAULT $1 + 0 ON EMPTY) $$;
+SELECT x, jsonexpr_strict_default(x) FROM jsonexpr_strict_args ORDER BY x;
+
+-- But one that only depends on the context item is strict, and can be inlined.
+CREATE FUNCTION jsonexpr_strict_ctx(text) RETURNS text
+  LANGUAGE sql IMMUTABLE STRICT
+  AS $$ SELECT JSON_VALUE($1::jsonb, '$') $$;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT jsonexpr_strict_ctx(x::text) FROM jsonexpr_strict_args;
+SELECT x, jsonexpr_strict_ctx(x::text) FROM jsonexpr_strict_args ORDER BY x;
+
+DROP FUNCTION jsonexpr_strict_passing(int);
+DROP FUNCTION jsonexpr_strict_default(int);
+DROP FUNCTION jsonexpr_strict_ctx(text);
+DROP TABLE jsonexpr_strict_args;
