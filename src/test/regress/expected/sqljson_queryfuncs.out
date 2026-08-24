@@ -554,6 +554,25 @@ select json_value('{"a": 1.234}', '$.a' returning int error on error);
 ERROR:  invalid input syntax for type integer: "1.234"
 select json_value('{"a": "1.234"}', '$.a' returning int error on error);
 ERROR:  invalid input syntax for type integer: "1.234"
+-- Test JSON_VALUE DEFAULT ON ERROR boolean expressions
+SELECT JSON_VALUE('{"a":"abc"}', 'strict $.b' DEFAULT false ON ERROR);
+ json_value 
+------------
+ false
+(1 row)
+
+SELECT JSON_VALUE('{"a":"abc"}', 'strict $.b' DEFAULT true ON ERROR);
+ json_value 
+------------
+ true
+(1 row)
+
+SELECT JSON_VALUE('{"a":"abc"}', 'strict $.b' DEFAULT (1=1) ON ERROR);
+ json_value 
+------------
+ true
+(1 row)
+
 -- JSON_QUERY
 SELECT JSON_VALUE(NULL::jsonb, '$');
  json_value 
