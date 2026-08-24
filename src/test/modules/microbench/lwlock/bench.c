@@ -99,6 +99,16 @@ bench_lwlock(PG_FUNCTION_ARGS)
 		}
 		END_TIMING;
 
+
+		BEGIN_TIMING("LWLock-X", n)
+		{
+			LWLock	   *lock = locks[i];
+
+			LWLockAcquireX(lock, LW_SHARED);
+			LWLockReleaseX(lock, LW_SHARED);
+		}
+		END_TIMING;
+
 		BEGIN_TIMING("lw-ex-mode", n)
 		{
 			LWLock	   *lock = locks[i];

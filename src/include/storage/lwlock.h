@@ -123,6 +123,8 @@ inline bool LWLockAcquire(LWLock *lock, LWLockMode mode)
 	else
 		return LWLockAcquireShared(lock);
 }
+bool LWLockAcquireX(LWLock *lock, LWLockMode mode);
+void LWLockReleaseX(LWLock *lock, LWLockMode mode);
 
 extern bool LWLockConditionalAcquire(LWLock *lock, LWLockMode mode);
 extern bool LWLockAcquireOrWait(LWLock *lock, LWLockMode mode);
