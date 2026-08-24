@@ -52,6 +52,12 @@ pgstat_index_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 							   sizeof(struct PgStat_IndexCounts)))
 		return true;
 
+	/*
+	 * Do this before mutating shared stats, so an ERROR leaves no partial
+	 * flush.
+	 */
+	dbentry = pgstat_prep_database_pending(dboid);
+
 	if (!pgstat_lock_entry(entry_ref, nowait))
 		return false;
 
@@ -74,7 +80,6 @@ pgstat_index_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 	pgstat_unlock_entry(entry_ref);
 
 	/* The entry was successfully flushed, add the same to database stats */
-	dbentry = pgstat_prep_database_pending(dboid);
 	dbentry->tuples_returned += lstats->idx.tuples_returned;
 	dbentry->tuples_fetched += lstats->idx.tuples_fetched;
 	dbentry->blocks_fetched += lstats->idx.blocks_fetched;

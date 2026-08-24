@@ -902,6 +902,12 @@ pgstat_relation_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 							   sizeof(struct PgStat_TableCounts)))
 		return true;
 
+	/*
+	 * Do this before mutating shared stats, so an ERROR leaves no partial
+	 * flush.
+	 */
+	dbentry = pgstat_prep_database_pending(dboid);
+
 	if (!pgstat_lock_entry(entry_ref, nowait))
 		return false;
 
@@ -958,7 +964,6 @@ pgstat_relation_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 	pgstat_unlock_entry(entry_ref);
 
 	/* The entry was successfully flushed, add the same to database stats */
-	dbentry = pgstat_prep_database_pending(dboid);
 	dbentry->tuples_returned += lstats->tab.counts.tuples_returned;
 	dbentry->tuples_fetched += lstats->tab.counts.tuples_fetched;
 	dbentry->tuples_inserted += lstats->tab.counts.tuples_inserted;
