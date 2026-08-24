@@ -684,8 +684,13 @@ GetSubscriptionRelations(Oid subid, bool tables, bool sequences,
 
 		subrel = (Form_pg_subscription_rel) GETSTRUCT(tup);
 
-		/* Relation is either a sequence or a table */
 		relkind = get_rel_relkind(subrel->srrelid);
+
+		/* The relation may have been dropped concurrently. */
+		if (relkind == '\0')
+			continue;
+
+		/* Relation is either a sequence or a table */
 		Assert(relkind == RELKIND_SEQUENCE || relkind == RELKIND_RELATION ||
 			   relkind == RELKIND_PARTITIONED_TABLE);
 
