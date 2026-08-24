@@ -7651,8 +7651,11 @@ FROM pg_stat_get_backend_idset() AS backendid;
   <para>
    Whenever <command>VACUUM</command> is running, the
    <structname>pg_stat_progress_vacuum</structname> view will contain
-   one row for each backend (including autovacuum worker processes) that is
-   currently vacuuming.  The tables below describe the information
+   one row for each backend (including autovacuum worker processes and
+   parallel workers launched for
+   <link linkend="sql-vacuum">parallel vacuum</link>) that is currently
+   vacuuming; see the note following the view for the columns reported on
+   parallel worker rows. The tables below describe the information
    that will be reported and provide information about how to interpret it.
    Progress for <command>VACUUM FULL</command> commands is reported via
    <structname>pg_stat_progress_repack</structname>, and is also visible via
@@ -7910,9 +7913,58 @@ FROM pg_stat_get_backend_idset() AS backendid;
        </itemizedlist>
       </para></entry>
      </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>current_index_relid</structfield> <type>oid</type>
+      </para>
+      <para>
+       If <command>VACUUM</command> is currently processing an index, this
+       column shows the OID of the index being vacuumed. The value is set
+       when the phase is <literal>vacuuming indexes</literal> or
+       <literal>cleaning up indexes</literal> and is reset to 0 when all
+       indexes have been processed. During parallel index vacuum, each
+       parallel worker row shows the index that particular worker is
+       processing.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>leader_pid</structfield> <type>integer</type>
+      </para>
+      <para>
+       Process ID of the parallel vacuum leader, if this row is for one of its
+       parallel workers; <literal>NULL</literal> on the leader row itself and
+       for a non-parallel vacuum. This column is obtained by joining
+       <link linkend="monitoring-pg-stat-activity-view"><structname>pg_stat_activity</structname></link>,
+       so it follows the same visibility rules as the
+       <structfield>leader_pid</structfield> column there.
+      </para></entry>
+     </row>
+
     </tbody>
    </tgroup>
   </table>
+
+  <note>
+   <para>
+    During a parallel vacuum, each participating backend (the leader and each
+    parallel worker) reports its own row. Only a subset of the columns is
+    meaningful on a worker row: <structfield>phase</structfield>,
+    <structfield>current_index_relid</structfield> and
+    <structfield>leader_pid</structfield>. The remaining columns track
+    command-level heap progress and are maintained only on the leader row;
+    they read as zero on worker rows. <structfield>leader_pid</structfield> is
+    <literal>NULL</literal> on the leader row (and for a non-parallel vacuum)
+    and the leader's PID on the worker rows, so it distinguishes the two.
+    Because the worker rows are separate backends, a role that does not have
+    privileges of the <literal>pg_read_all_stats</literal> role and does not
+    own those backends sees only their <structfield>pid</structfield>, with the
+    remaining columns <literal>NULL</literal>, just as in
+    <structname>pg_stat_activity</structname>.
+   </para>
+  </note>
 
   <table id="vacuum-phases">
    <title>VACUUM Phases</title>
