@@ -58,6 +58,18 @@ struct Node;
 #define PANIC		24			/* take down the other backends with me */
 
 /*
+ * Some elog/ereports that we report a WARNING for are likely to be caused by
+ * buggy code.  These may go unnoticed by some of our test suites (e.g. TAP
+ * tests).  Here we define a macro which can be used in selected places where
+ * we don't want the given WARNING to not be noticed.
+ */
+#ifdef USE_ASSERT_CHECKING
+#define BUG_WARNING		ERROR
+#else
+#define BUG_WARNING		WARNING
+#endif
+
+/*
  * NOTE: the alternate names PGWARNING and PGERROR are useful for dealing
  * with third-party headers that make other definitions of WARNING and/or
  * ERROR.  One can, for example, re-define ERROR as PGERROR after including
