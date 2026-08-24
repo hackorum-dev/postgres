@@ -1152,12 +1152,12 @@ GenerationCheck(MemoryContext context)
 		 * might completely empty if it's the freeblock.
 		 */
 		if (block->nfree > block->nchunks)
-			elog(WARNING, "problem in Generation %s: number of free chunks %d in block %p exceeds %d allocated",
+			elog(BUG_WARNING, "problem in Generation %s: number of free chunks %d in block %p exceeds %d allocated",
 				 name, block->nfree, block, block->nchunks);
 
 		/* check block belongs to the correct context */
 		if (block->context != gen)
-			elog(WARNING, "problem in Generation %s: bogus context link in block %p",
+			elog(BUG_WARNING, "problem in Generation %s: bogus context link in block %p",
 				 name, block);
 
 		/* Now walk through the chunks and count them. */
@@ -1193,7 +1193,7 @@ GenerationCheck(MemoryContext context)
 
 			/* chunks have both block and context pointers, so check both */
 			if (chunkblock != block)
-				elog(WARNING, "problem in Generation %s: bogus block link in block %p, chunk %p",
+				elog(BUG_WARNING, "problem in Generation %s: bogus block link in block %p, chunk %p",
 					 name, block, chunk);
 
 
@@ -1203,13 +1203,13 @@ GenerationCheck(MemoryContext context)
 				/* now make sure the chunk size is correct */
 				if (chunksize < chunk->requested_size ||
 					chunksize != MAXALIGN(chunksize))
-					elog(WARNING, "problem in Generation %s: bogus chunk size in block %p, chunk %p",
+					elog(BUG_WARNING, "problem in Generation %s: bogus chunk size in block %p, chunk %p",
 						 name, block, chunk);
 
 				/* check sentinel */
 				Assert(chunk->requested_size < chunksize);
 				if (!sentinel_ok(chunk, Generation_CHUNKHDRSZ + chunk->requested_size))
-					elog(WARNING, "problem in Generation %s: detected write past chunk end in block %p, chunk %p",
+					elog(BUG_WARNING, "problem in Generation %s: detected write past chunk end in block %p, chunk %p",
 						 name, block, chunk);
 			}
 			else
@@ -1225,15 +1225,15 @@ GenerationCheck(MemoryContext context)
 		 * (as tracked in the block header).
 		 */
 		if (nchunks != block->nchunks)
-			elog(WARNING, "problem in Generation %s: number of allocated chunks %d in block %p does not match header %d",
+			elog(BUG_WARNING, "problem in Generation %s: number of allocated chunks %d in block %p does not match header %d",
 				 name, nchunks, block, block->nchunks);
 
 		if (nfree != block->nfree)
-			elog(WARNING, "problem in Generation %s: number of free chunks %d in block %p does not match header %d",
+			elog(BUG_WARNING, "problem in Generation %s: number of free chunks %d in block %p does not match header %d",
 				 name, nfree, block, block->nfree);
 
 		if (has_external_chunk && nchunks > 1)
-			elog(WARNING, "problem in Generation %s: external chunk on non-dedicated block %p",
+			elog(BUG_WARNING, "problem in Generation %s: external chunk on non-dedicated block %p",
 				 name, block);
 
 	}

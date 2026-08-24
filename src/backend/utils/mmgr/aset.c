@@ -1706,7 +1706,7 @@ AllocSetCheck(MemoryContext context)
 		if (!blk_used)
 		{
 			if (!IsKeeperBlock(set, block))
-				elog(WARNING, "problem in alloc set %s: empty block %p",
+				elog(BUG_WARNING, "problem in alloc set %s: empty block %p",
 					 name, block);
 		}
 
@@ -1717,7 +1717,7 @@ AllocSetCheck(MemoryContext context)
 			block->prev != prevblock ||
 			block->freeptr < bpoz ||
 			block->freeptr > block->endptr)
-			elog(WARNING, "problem in alloc set %s: corrupt header in block %p",
+			elog(BUG_WARNING, "problem in alloc set %s: corrupt header in block %p",
 				 name, block);
 
 		/*
@@ -1739,7 +1739,7 @@ AllocSetCheck(MemoryContext context)
 
 				/* make sure this chunk consumes the entire block */
 				if (chsize + ALLOC_CHUNKHDRSZ != blk_used)
-					elog(WARNING, "problem in alloc set %s: bad single-chunk %p in block %p",
+					elog(BUG_WARNING, "problem in alloc set %s: bad single-chunk %p in block %p",
 						 name, chunk, block);
 			}
 			else
@@ -1747,7 +1747,7 @@ AllocSetCheck(MemoryContext context)
 				int			fidx = MemoryChunkGetValue(chunk);
 
 				if (!FreeListIdxIsValid(fidx))
-					elog(WARNING, "problem in alloc set %s: bad chunk size for chunk %p in block %p",
+					elog(BUG_WARNING, "problem in alloc set %s: bad chunk size for chunk %p in block %p",
 						 name, chunk, block);
 
 				chsize = GetChunkSizeFromFreeListIdx(fidx); /* aligned chunk size */
@@ -1757,7 +1757,7 @@ AllocSetCheck(MemoryContext context)
 				 * block.
 				 */
 				if (block != MemoryChunkGetBlock(chunk))
-					elog(WARNING, "problem in alloc set %s: bad block offset for chunk %p in block %p",
+					elog(BUG_WARNING, "problem in alloc set %s: bad block offset for chunk %p in block %p",
 						 name, chunk, block);
 			}
 			dsize = chunk->requested_size;	/* real data */
@@ -1769,7 +1769,7 @@ AllocSetCheck(MemoryContext context)
 
 			/* chsize must not be smaller than the first freelist's size */
 			if (chsize < (1 << ALLOC_MINBITS))
-				elog(WARNING, "problem in alloc set %s: bad size %zu for chunk %p in block %p",
+				elog(BUG_WARNING, "problem in alloc set %s: bad size %zu for chunk %p in block %p",
 					 name, chsize, chunk, block);
 
 			/*
@@ -1777,7 +1777,7 @@ AllocSetCheck(MemoryContext context)
 			 */
 			if (dsize != InvalidAllocSize && dsize < chsize &&
 				!sentinel_ok(chunk, ALLOC_CHUNKHDRSZ + dsize))
-				elog(WARNING, "problem in alloc set %s: detected write past chunk end in block %p, chunk %p",
+				elog(BUG_WARNING, "problem in alloc set %s: detected write past chunk end in block %p, chunk %p",
 					 name, block, chunk);
 
 			/* if chunk is allocated, disallow access to the chunk header */
@@ -1791,11 +1791,11 @@ AllocSetCheck(MemoryContext context)
 		}
 
 		if ((blk_data + (nchunks * ALLOC_CHUNKHDRSZ)) != blk_used)
-			elog(WARNING, "problem in alloc set %s: found inconsistent memory block %p",
+			elog(BUG_WARNING, "problem in alloc set %s: found inconsistent memory block %p",
 				 name, block);
 
 		if (has_external_chunk && nchunks > 1)
-			elog(WARNING, "problem in alloc set %s: external chunk on non-dedicated block %p",
+			elog(BUG_WARNING, "problem in alloc set %s: external chunk on non-dedicated block %p",
 				 name, block);
 	}
 
