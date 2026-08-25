@@ -253,18 +253,21 @@ attribute_statistics_update_internal(Oid reloid,
 	 * and skip the corresponding statistics kind, reporting back a failure.
 	 */
 
-	if (!stats_check_arg_array(fcinfo, attarginfo, MOST_COMMON_FREQS_ARG))
+	if (!stats_check_arg_array(fcinfo, attarginfo, MOST_COMMON_FREQS_ARG) ||
+		!stats_check_arg_array_finite(fcinfo, attarginfo, MOST_COMMON_FREQS_ARG))
 	{
 		do_mcv = false;
 		result = false;
 	}
 
-	if (!stats_check_arg_array(fcinfo, attarginfo, MOST_COMMON_ELEM_FREQS_ARG))
+	if (!stats_check_arg_array(fcinfo, attarginfo, MOST_COMMON_ELEM_FREQS_ARG) ||
+		!stats_check_arg_array_finite(fcinfo, attarginfo, MOST_COMMON_ELEM_FREQS_ARG))
 	{
 		do_mcelem = false;
 		result = false;
 	}
-	if (!stats_check_arg_array(fcinfo, attarginfo, ELEM_COUNT_HISTOGRAM_ARG))
+	if (!stats_check_arg_array(fcinfo, attarginfo, ELEM_COUNT_HISTOGRAM_ARG) ||
+		!stats_check_arg_array_finite(fcinfo, attarginfo, ELEM_COUNT_HISTOGRAM_ARG))
 	{
 		do_dechist = false;
 		result = false;
@@ -288,6 +291,37 @@ attribute_statistics_update_internal(Oid reloid,
 	if (!stats_check_arg_pair(fcinfo, attarginfo,
 							  RANGE_LENGTH_HISTOGRAM_ARG,
 							  RANGE_EMPTY_FRAC_ARG))
+	{
+		do_range_length_histogram = false;
+		result = false;
+	}
+
+	/*
+	 * Reject non-finite scalar values.  Done after the pair check so that
+	 * clearing a bad range_empty_frac does not trip that check.  null_frac and
+	 * n_distinct are read via PG_ARGISNULL() at storage time, so nulling the
+	 * argument suffices; correlation and range_empty_frac are gated by the "do"
+	 * flags above, which must be cleared instead.
+	 */
+	if (!stats_check_arg_finite(fcinfo, attarginfo, NULL_FRAC_ARG))
+	{
+		fcinfo->args[NULL_FRAC_ARG].isnull = true;
+		result = false;
+	}
+
+	if (!stats_check_arg_finite(fcinfo, attarginfo, N_DISTINCT_ARG))
+	{
+		fcinfo->args[N_DISTINCT_ARG].isnull = true;
+		result = false;
+	}
+
+	if (!stats_check_arg_finite(fcinfo, attarginfo, CORRELATION_ARG))
+	{
+		do_correlation = false;
+		result = false;
+	}
+
+	if (!stats_check_arg_finite(fcinfo, attarginfo, RANGE_EMPTY_FRAC_ARG))
 	{
 		do_range_length_histogram = false;
 		result = false;
