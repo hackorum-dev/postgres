@@ -565,6 +565,68 @@ SELECT pg_catalog.pg_restore_attribute_stats(
     'inherited', NULL::boolean,
     'null_frac', 0.1::real);
 
+-- error: non-finite scalar values are rejected with a WARNING and skipped
+SELECT pg_catalog.pg_restore_attribute_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'attname', 'id',
+    'inherited', false::boolean,
+    'null_frac', 'NaN'::real);
+
+SELECT pg_catalog.pg_restore_attribute_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'attname', 'id',
+    'inherited', false::boolean,
+    'n_distinct', 'Infinity'::real);
+
+SELECT pg_catalog.pg_restore_attribute_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'attname', 'id',
+    'inherited', false::boolean,
+    'correlation', '-Infinity'::real);
+
+SELECT pg_catalog.pg_restore_attribute_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'attname', 'id',
+    'inherited', false::boolean,
+    'range_empty_frac', 'NaN'::real,
+    'range_length_histogram', '{399,499,Infinity}'::text);
+
+-- error: a non-finite element in any of the float4[] arguments is rejected
+SELECT pg_catalog.pg_restore_attribute_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'attname', 'id',
+    'inherited', false::boolean,
+    'most_common_vals', '{1,2,3}'::text,
+    'most_common_freqs', '{0.1,Infinity,0.2}'::real[]);
+
+SELECT pg_catalog.pg_restore_attribute_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'attname', 'id',
+    'inherited', false::boolean,
+    'most_common_elems', '{1,2,3}'::text,
+    'most_common_elem_freqs', '{0.1,0.2,NaN}'::real[]);
+
+SELECT pg_catalog.pg_restore_attribute_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'attname', 'tags',
+    'inherited', false::boolean,
+    'elem_count_histogram', '{1,1,-Infinity,1}'::real[]);
+
+-- ok: a negative n_distinct is a ratio, not a count, and is still accepted
+SELECT pg_catalog.pg_restore_attribute_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'attname', 'id',
+    'inherited', false::boolean,
+    'n_distinct', '-0.5'::real);
+
 -- ok: just the fixed values, with version, no stakinds
 SELECT pg_catalog.pg_restore_attribute_stats(
     'schemaname', 'stats_import',

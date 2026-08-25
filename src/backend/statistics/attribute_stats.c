@@ -293,6 +293,38 @@ attribute_statistics_update_internal(Oid reloid,
 		result = false;
 	}
 
+	/*
+	 * Reject non-finite scalar values.  This runs after the pair check above
+	 * so that suppressing a bad range_empty_frac does not make the pair check
+	 * complain that its companion argument is missing.  null_frac and
+	 * n_distinct are consumed through PG_ARGISNULL() at storage time, so
+	 * clearing the argument suffices; correlation and range_empty_frac are
+	 * gated by the "do" flags computed above, which must be cleared instead.
+	 */
+	if (!stats_check_arg_finite(fcinfo, attarginfo, NULL_FRAC_ARG))
+	{
+		fcinfo->args[NULL_FRAC_ARG].isnull = true;
+		result = false;
+	}
+
+	if (!stats_check_arg_finite(fcinfo, attarginfo, N_DISTINCT_ARG))
+	{
+		fcinfo->args[N_DISTINCT_ARG].isnull = true;
+		result = false;
+	}
+
+	if (!stats_check_arg_finite(fcinfo, attarginfo, CORRELATION_ARG))
+	{
+		do_correlation = false;
+		result = false;
+	}
+
+	if (!stats_check_arg_finite(fcinfo, attarginfo, RANGE_EMPTY_FRAC_ARG))
+	{
+		do_range_length_histogram = false;
+		result = false;
+	}
+
 	/* derive information from attribute */
 	statatt_get_type(reloid, attnum,
 					 &atttypid, &atttypmod,

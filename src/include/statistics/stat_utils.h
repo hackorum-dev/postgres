@@ -30,6 +30,8 @@ extern void stats_check_required_arg(FunctionCallInfo fcinfo,
 									 int argnum);
 extern bool stats_check_arg_array(FunctionCallInfo fcinfo,
 								  struct StatsArgInfo *arginfo, int argnum);
+extern bool stats_check_arg_finite(FunctionCallInfo fcinfo,
+								   struct StatsArgInfo *arginfo, int argnum);
 extern bool stats_check_arg_pair(FunctionCallInfo fcinfo,
 								 struct StatsArgInfo *arginfo,
 								 int argnum1, int argnum2);

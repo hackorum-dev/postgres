@@ -16,6 +16,8 @@
 
 #include "postgres.h"
 
+#include <math.h>
+
 #include "access/htup_details.h"
 #include "access/relation.h"
 #include "catalog/index.h"
@@ -63,8 +65,42 @@ stats_check_required_arg(FunctionCallInfo fcinfo,
 }
 
 /*
+ * Check that a float argument is either NULL or a finite value.
+ *
+ * Statistics produced by ANALYZE are always finite, and non-finite values
+ * are not neutralized by the planner's CLAMP_PROBABILITY() (which is a pair
+ * of comparisons, both false for NaN), so they would propagate into
+ * selectivity and cost estimates.  Reject them, in the same non-fatal way as
+ * the other checks.  This mirrors the reltuples handling in
+ * pg_restore_relation_stats().
+ *
+ * If a problem is found, emit a WARNING, and return false. Otherwise return
+ * true.
+ */
+bool
+stats_check_arg_finite(FunctionCallInfo fcinfo,
+					   struct StatsArgInfo *arginfo,
+					   int argnum)
+{
+	if (PG_ARGISNULL(argnum))
+		return true;
+
+	if (!isfinite(DatumGetFloat4(PG_GETARG_DATUM(argnum))))
+	{
+		ereport(WARNING,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("argument \"%s\" must be a finite value",
+						arginfo[argnum].argname)));
+		return false;
+	}
+
+	return true;
+}
+
+/*
  * Check that argument is either NULL or a one dimensional array with no
- * NULLs.
+ * NULLs.  A float4[] must additionally contain only finite values; see
+ * stats_check_arg_finite() for why.
  *
  * If a problem is found, emit a WARNING, and return false. Otherwise return
  * true.
@@ -97,6 +133,24 @@ stats_check_arg_array(FunctionCallInfo fcinfo,
 				 errmsg("argument \"%s\" array must not contain null values",
 						arginfo[argnum].argname)));
 		return false;
+	}
+
+	if (ARR_ELEMTYPE(arr) == FLOAT4OID)
+	{
+		float4	   *elems = (float4 *) ARR_DATA_PTR(arr);
+		int			nelems = ArrayGetNItems(ARR_NDIM(arr), ARR_DIMS(arr));
+
+		for (int i = 0; i < nelems; i++)
+		{
+			if (!isfinite(elems[i]))
+			{
+				ereport(WARNING,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("argument \"%s\" array must not contain non-finite values",
+								arginfo[argnum].argname)));
+				return false;
+			}
+		}
 	}
 
 	return true;
