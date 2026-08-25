@@ -46,6 +46,7 @@ tests += {
       't/020_cascade_divergence.pl',
       't/021_rewind_state.pl',
       't/022_rewind_standby_target.pl',
+      't/023_combinebackup_mixed.pl',
     ],
   },
 }
