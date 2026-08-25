@@ -451,7 +451,8 @@ libpqsrv_get_result(PGconn *conn, uint32 wait_event_info)
 
 /*
  * Submit a cancel request to the given connection, waiting only until
- * the given time.
+ * the given time.  wait_event_info identifies the wait event to report while
+ * waiting for the server.
  *
  * We sleep interruptibly until we receive confirmation that the cancel
  * request has been accepted, and if it is, return NULL; if the cancel
@@ -465,7 +466,7 @@ libpqsrv_get_result(PGconn *conn, uint32 wait_event_info)
  * libpq errors.  Make sure to call it in a transient memory context.
  */
 static inline const char *
-libpqsrv_cancel(PGconn *conn, TimestampTz endtime)
+libpqsrv_cancel(PGconn *conn, TimestampTz endtime, uint32 wait_event_info)
 {
 	PGcancelConn *cancel_conn;
 	const char *error = NULL;
@@ -519,7 +520,7 @@ libpqsrv_cancel(PGconn *conn, TimestampTz endtime)
 
 			/* Sleep until there's something to do */
 			WaitLatchOrSocket(MyLatch, waitEvents, PQcancelSocket(cancel_conn),
-							  cur_timeout, PG_WAIT_CLIENT);
+							  cur_timeout, wait_event_info);
 
 			ResetLatch(MyLatch);
 
