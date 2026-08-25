@@ -188,7 +188,14 @@ pq_sendint(StringInfo buf, uint32 i, int b)
 }
 
 
+/*
+ * Size hint used by pq_begintypsend().  With the length word and the
+ * terminating NUL added, the buffer is STRINGINFO_DEFAULT_SIZE bytes.
+ */
+#define PQ_TYPSEND_DEFAULT_SIZE (STRINGINFO_DEFAULT_SIZE - VARHDRSZ - 1)
+
 extern void pq_begintypsend(StringInfo buf);
+extern void pq_begintypsend_with_size(StringInfo buf, int size);
 extern bytea *pq_endtypsend(StringInfo buf);
 
 extern void pq_puttextmessage(char msgtype, const char *str);

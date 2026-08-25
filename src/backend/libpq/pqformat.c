@@ -49,6 +49,7 @@
  *
  * typsend support (construct a bytea value containing external binary data):
  *		pq_begintypsend - initialize StringInfo buffer
+ *		pq_begintypsend_with_size - initialize StringInfo buffer with a size hint
  *		pq_endtypsend	- return the completed string as a "bytea*"
  *
  * Special-case message output:
@@ -77,6 +78,7 @@
 #include "libpq/pqformat.h"
 #include "mb/pg_wchar.h"
 #include "port/pg_bswap.h"
+#include "utils/memutils.h"
 #include "varatt.h"
 
 
@@ -319,17 +321,45 @@ pq_endmessage_reuse(StringInfo buf)
 
 /* --------------------------------
  *		pq_begintypsend		- initialize for constructing a bytea result
+ *
+ * Callers that can cheaply determine how large their result will be should
+ * use pq_begintypsend_with_size() instead.
  * --------------------------------
  */
 void
 pq_begintypsend(StringInfo buf)
 {
-	initStringInfo(buf);
-	/* Reserve four bytes for the bytea length word */
-	appendStringInfoCharMacro(buf, '\0');
-	appendStringInfoCharMacro(buf, '\0');
-	appendStringInfoCharMacro(buf, '\0');
-	appendStringInfoCharMacro(buf, '\0');
+	pq_begintypsend_with_size(buf, PQ_TYPSEND_DEFAULT_SIZE);
+}
+
+/* --------------------------------
+ *		pq_begintypsend_with_size - like pq_begintypsend, but with size hint
+ *
+ * 'size' is the number of bytes the caller expects to append, not counting
+ * the length word.  It is a hint, not a limit.
+ * --------------------------------
+ */
+void
+pq_begintypsend_with_size(StringInfo buf, int size)
+{
+	Assert(size >= 0);
+
+	/*
+	 * Add room for the length word and the terminating NUL.  Clamp the result
+	 * to MaxAllocSize, which initStringInfoExt() requires.  A larger value
+	 * then fails when it is appended, in enlargeStringInfo().
+	 */
+	size = Min(size, (int) MaxAllocSize - VARHDRSZ - 1);
+	initStringInfoExt(buf, size + VARHDRSZ + 1);
+
+	/*
+	 * Reserve space for the length word, which pq_endtypsend() fills in.
+	 * Zero it, so that a send function that never calls pq_endtypsend()
+	 * produces a zero length, which callers reject.
+	 */
+	memset(buf->data, 0, VARHDRSZ);
+	buf->len = VARHDRSZ;
+	buf->data[VARHDRSZ] = '\0';
 }
 
 /* --------------------------------
