@@ -714,7 +714,8 @@ check_new_cluster(void)
 
 	check_new_cluster_subscription_configuration();
 
-	check_new_cluster_pg_commit_ts();
+	if (user_opts.do_copy_pg_commit_ts)
+		check_new_cluster_pg_commit_ts();
 
 }
 
