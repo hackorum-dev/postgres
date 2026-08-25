@@ -67,9 +67,23 @@ step vacuumer_nonaggressive_vacuum
 {
   VACUUM smalltbl;
 }
+step vacuumer_aggressive_vacuum
+{
+  VACUUM (FREEZE) smalltbl;
+}
 step vacuumer_pg_class_stats
 {
   SELECT relpages, reltuples FROM pg_class WHERE oid = 'smalltbl'::regclass;
+}
+step vacuumer_horizon_is_old
+{
+  SELECT age(relfrozenxid) > 5 AS old FROM pg_class
+  WHERE oid = 'smalltbl'::regclass;
+}
+step vacuumer_horizon_is_advanced
+{
+  SELECT age(relfrozenxid) <= 2 AS frozen FROM pg_class
+  WHERE oid = 'smalltbl'::regclass;
 }
 
 # Test VACUUM's reltuples counting mechanism.
@@ -122,6 +136,24 @@ permutation
     # count here:
     vacuumer_pg_class_stats
     pinholder_commit  # order doesn't matter
+
+# Test that aggressive VACUUM can freeze an old tuple without waiting for a
+# cleanup lock.  The cursor keeps a pin on the only heap page until after the
+# freeze and check complete.
+permutation
+    dml_insert
+    dml_insert
+    dml_insert
+    dml_insert
+    dml_insert
+    dml_insert
+    dml_insert
+    dml_insert
+    vacuumer_horizon_is_old
+    pinholder_cursor
+    vacuumer_aggressive_vacuum
+    vacuumer_horizon_is_advanced
+    pinholder_commit
 
 # Test VACUUM's mechanism for skipping MultiXact freezing.
 #
