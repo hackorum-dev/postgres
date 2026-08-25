@@ -4714,7 +4714,17 @@ text_right(PG_FUNCTION_ARGS)
 	int			off;
 
 	if (n < 0)
-		n = -n;
+	{
+		/*
+		 * Negate n to get the number of characters to skip.  When that would
+		 * overflow (the most negative n), clamp to PG_INT32_MAX instead.  Any
+		 * n whose absolute value is at least the string's length skips the
+		 * whole string, and len can't exceed PG_INT32_MAX, so this is
+		 * equivalent.
+		 */
+		if (pg_neg_s32_overflow(n, &n))
+			n = PG_INT32_MAX;
+	}
 	else
 		n = pg_mbstrlen_with_len(p, len) - n;
 	off = pg_mbcharcliplen(p, len, n);
