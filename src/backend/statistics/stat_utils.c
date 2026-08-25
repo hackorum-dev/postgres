@@ -16,6 +16,8 @@
 
 #include "postgres.h"
 
+#include <math.h>
+
 #include "access/htup_details.h"
 #include "access/relation.h"
 #include "catalog/index.h"
@@ -60,6 +62,72 @@ stats_check_required_arg(FunctionCallInfo fcinfo,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("argument \"%s\" must not be null",
 						arginfo[argnum].argname)));
+}
+
+/*
+ * Check that a float argument is either NULL or a finite value.
+ *
+ * If a problem is found, emit a WARNING, and return false. Otherwise return
+ * true.
+ */
+bool
+stats_check_arg_finite(FunctionCallInfo fcinfo,
+					   struct StatsArgInfo *arginfo,
+					   int argnum)
+{
+	if (PG_ARGISNULL(argnum))
+		return true;
+
+	if (!isfinite(DatumGetFloat4(PG_GETARG_DATUM(argnum))))
+	{
+		ereport(WARNING,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("argument \"%s\" must be a finite value",
+						arginfo[argnum].argname)));
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * Check that a float4[] argument is either NULL or contains only finite
+ * values.
+ *
+ * If a problem is found, emit a WARNING, and return false. Otherwise return
+ * true.
+ */
+bool
+stats_check_arg_array_finite(FunctionCallInfo fcinfo,
+							 struct StatsArgInfo *arginfo,
+							 int argnum)
+{
+	ArrayType  *arr;
+	float4	   *elems;
+	int			nelems;
+
+	if (PG_ARGISNULL(argnum))
+		return true;
+
+	arr = DatumGetArrayTypeP(PG_GETARG_DATUM(argnum));
+	Assert(ARR_ELEMTYPE(arr) == FLOAT4OID);
+
+	elems = (float4 *) ARR_DATA_PTR(arr);
+	nelems = ArrayGetNItems(ARR_NDIM(arr), ARR_DIMS(arr));
+
+	for (int i = 0; i < nelems; i++)
+	{
+		if (!isfinite(elems[i]))
+		{
+			ereport(WARNING,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("argument \"%s\" array must not contain non-finite values",
+							arginfo[argnum].argname)));
+			return false;
+		}
+	}
+
+	return true;
 }
 
 /*
