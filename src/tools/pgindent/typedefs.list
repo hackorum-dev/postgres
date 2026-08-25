@@ -2456,6 +2456,7 @@ PublicationRelKind
 PublicationSchemaInfo
 PublicationTable
 PublishGencolsType
+PubOpts
 PullFilter
 PullFilterOps
 PushFilter
