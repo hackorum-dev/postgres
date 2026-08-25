@@ -192,6 +192,17 @@ explain (costs off) select * from mc2p where a is null and b = 1;
 explain (costs off) select * from mc2p where a is null;
 explain (costs off) select * from mc2p where b is null;
 
+create table mc2ap (a int, b int) partition by range (a, b);
+create table mc2ap1 partition of mc2ap for values from (1, 4) to (1, 7);
+create table mc2ap2 partition of mc2ap for values from (1, 7) to (3, 8);
+create table mc2ap3 partition of mc2ap for values from (4, 8) to (6, 9);
+create table mc2ap_def partition of mc2ap default;
+
+-- Ensure we scan all partitions apart from mc2ap3
+explain (costs off) select count(*) from mc2ap where a <= 1;
+
+drop table mc2ap;
+
 -- boolean partitioning
 create table boolpart (a bool) partition by list (a);
 create table boolpart_default partition of boolpart default;
