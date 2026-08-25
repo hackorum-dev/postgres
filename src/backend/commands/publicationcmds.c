@@ -61,6 +61,28 @@ typedef struct rf_context
 	Oid			parentid;		/* relid of the parent relation */
 } rf_context;
 
+/*
+ * Options that can be specified by the user in CREATE/ALTER PUBLICATION
+ * command.
+ */
+#define PUBOPT_PUBLISH						0x00000001
+#define PUBOPT_PUBLISH_VIA_PARTITION_ROOT	0x00000002
+#define PUBOPT_PUBLISH_GENERATED_COLUMNS	0x00000004
+
+/* check if the 'val' has 'bits' set */
+#define IsSet(val, bits)  (((val) & (bits)) == (bits))
+
+/*
+ * Structure to hold CREATE/ALTER PUBLICATION command options.
+ */
+typedef struct PubOpts
+{
+	uint32		specified_opts;
+	PublicationActions pubactions;
+	bool		publish_via_partition_root;
+	char		publish_generated_columns;
+} PubOpts;
+
 static List *OpenTableList(List *tables);
 static void CloseTableList(List *rels);
 static void LockSchemaList(List *schemalist);
@@ -74,28 +96,20 @@ static char defGetGeneratedColsOption(DefElem *def);
 
 
 static void
-parse_publication_options(ParseState *pstate,
-						  List *options,
-						  bool *publish_given,
-						  PublicationActions *pubactions,
-						  bool *publish_via_partition_root_given,
-						  bool *publish_via_partition_root,
-						  bool *publish_generated_columns_given,
-						  char *publish_generated_columns)
+parse_publication_options(ParseState *pstate, List *options, PubOpts *opts)
 {
 	ListCell   *lc;
 
-	*publish_given = false;
-	*publish_via_partition_root_given = false;
-	*publish_generated_columns_given = false;
+	/* Start out with cleared opts. */
+	memset(opts, 0, sizeof(PubOpts));
 
-	/* defaults */
-	pubactions->pubinsert = true;
-	pubactions->pubupdate = true;
-	pubactions->pubdelete = true;
-	pubactions->pubtruncate = true;
-	*publish_via_partition_root = false;
-	*publish_generated_columns = PUBLISH_GENCOLS_NONE;
+	/* Set default values for supported options */
+	opts->pubactions.pubinsert = true;
+	opts->pubactions.pubupdate = true;
+	opts->pubactions.pubdelete = true;
+	opts->pubactions.pubtruncate = true;
+	opts->publish_via_partition_root = false;
+	opts->publish_generated_columns = PUBLISH_GENCOLS_NONE;
 
 	/* Parse options */
 	foreach(lc, options)
@@ -108,19 +122,19 @@ parse_publication_options(ParseState *pstate,
 			List	   *publish_list;
 			ListCell   *lc2;
 
-			if (*publish_given)
+			if (IsSet(opts->specified_opts, PUBOPT_PUBLISH))
 				errorConflictingDefElem(defel, pstate);
 
 			/*
 			 * If publish option was given only the explicitly listed actions
 			 * should be published.
 			 */
-			pubactions->pubinsert = false;
-			pubactions->pubupdate = false;
-			pubactions->pubdelete = false;
-			pubactions->pubtruncate = false;
+			opts->pubactions.pubinsert = false;
+			opts->pubactions.pubupdate = false;
+			opts->pubactions.pubdelete = false;
+			opts->pubactions.pubtruncate = false;
 
-			*publish_given = true;
+			opts->specified_opts |= PUBOPT_PUBLISH;
 
 			/*
 			 * SplitIdentifierString destructively modifies its input, so make
@@ -140,13 +154,13 @@ parse_publication_options(ParseState *pstate,
 				char	   *publish_opt = (char *) lfirst(lc2);
 
 				if (strcmp(publish_opt, "insert") == 0)
-					pubactions->pubinsert = true;
+					opts->pubactions.pubinsert = true;
 				else if (strcmp(publish_opt, "update") == 0)
-					pubactions->pubupdate = true;
+					opts->pubactions.pubupdate = true;
 				else if (strcmp(publish_opt, "delete") == 0)
-					pubactions->pubdelete = true;
+					opts->pubactions.pubdelete = true;
 				else if (strcmp(publish_opt, "truncate") == 0)
-					pubactions->pubtruncate = true;
+					opts->pubactions.pubtruncate = true;
 				else
 					ereport(ERROR,
 							(errcode(ERRCODE_SYNTAX_ERROR),
@@ -156,17 +170,19 @@ parse_publication_options(ParseState *pstate,
 		}
 		else if (strcmp(defel->defname, "publish_via_partition_root") == 0)
 		{
-			if (*publish_via_partition_root_given)
+			if (IsSet(opts->specified_opts, PUBOPT_PUBLISH_VIA_PARTITION_ROOT))
 				errorConflictingDefElem(defel, pstate);
-			*publish_via_partition_root_given = true;
-			*publish_via_partition_root = defGetBoolean(defel);
+
+			opts->specified_opts |= PUBOPT_PUBLISH_VIA_PARTITION_ROOT;
+			opts->publish_via_partition_root = defGetBoolean(defel);
 		}
 		else if (strcmp(defel->defname, "publish_generated_columns") == 0)
 		{
-			if (*publish_generated_columns_given)
+			if (IsSet(opts->specified_opts, PUBOPT_PUBLISH_GENERATED_COLUMNS))
 				errorConflictingDefElem(defel, pstate);
-			*publish_generated_columns_given = true;
-			*publish_generated_columns = defGetGeneratedColsOption(defel);
+
+			opts->specified_opts |= PUBOPT_PUBLISH_GENERATED_COLUMNS;
+			opts->publish_generated_columns = defGetGeneratedColsOption(defel);
 		}
 		else
 			ereport(ERROR,
@@ -840,13 +856,8 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 	Oid			puboid;
 	bool		nulls[Natts_pg_publication];
 	Datum		values[Natts_pg_publication];
+	PubOpts		opts;
 	HeapTuple	tup;
-	bool		publish_given;
-	PublicationActions pubactions;
-	bool		publish_via_partition_root_given;
-	bool		publish_via_partition_root;
-	bool		publish_generated_columns_given;
-	char		publish_generated_columns;
 	AclResult	aclresult;
 	List	   *relations = NIL;
 	List	   *exceptrelations = NIL;
@@ -886,17 +897,12 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 		DirectFunctionCall1(namein, CStringGetDatum(stmt->pubname));
 	values[Anum_pg_publication_pubowner - 1] = ObjectIdGetDatum(GetUserId());
 
-	parse_publication_options(pstate,
-							  stmt->options,
-							  &publish_given, &pubactions,
-							  &publish_via_partition_root_given,
-							  &publish_via_partition_root,
-							  &publish_generated_columns_given,
-							  &publish_generated_columns);
+	parse_publication_options(pstate, stmt->options, &opts);
 
 	if (stmt->for_all_sequences &&
-		(publish_given || publish_via_partition_root_given ||
-		 publish_generated_columns_given))
+		(IsSet(opts.specified_opts, PUBOPT_PUBLISH) ||
+		 IsSet(opts.specified_opts, PUBOPT_PUBLISH_VIA_PARTITION_ROOT) ||
+		 IsSet(opts.specified_opts, PUBOPT_PUBLISH_GENERATED_COLUMNS)))
 		ereport(NOTICE,
 				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				errmsg("publication parameters are not applicable to sequence synchronization and will be ignored for sequences"));
@@ -909,17 +915,17 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 	values[Anum_pg_publication_puballsequences - 1] =
 		BoolGetDatum(stmt->for_all_sequences);
 	values[Anum_pg_publication_pubinsert - 1] =
-		BoolGetDatum(pubactions.pubinsert);
+		BoolGetDatum(opts.pubactions.pubinsert);
 	values[Anum_pg_publication_pubupdate - 1] =
-		BoolGetDatum(pubactions.pubupdate);
+		BoolGetDatum(opts.pubactions.pubupdate);
 	values[Anum_pg_publication_pubdelete - 1] =
-		BoolGetDatum(pubactions.pubdelete);
+		BoolGetDatum(opts.pubactions.pubdelete);
 	values[Anum_pg_publication_pubtruncate - 1] =
-		BoolGetDatum(pubactions.pubtruncate);
+		BoolGetDatum(opts.pubactions.pubtruncate);
 	values[Anum_pg_publication_pubviaroot - 1] =
-		BoolGetDatum(publish_via_partition_root);
+		BoolGetDatum(opts.publish_via_partition_root);
 	values[Anum_pg_publication_pubgencols - 1] =
-		CharGetDatum(publish_generated_columns);
+		CharGetDatum(opts.publish_generated_columns);
 
 	tup = heap_form_tuple(RelationGetDescr(rel), values, nulls);
 
@@ -971,11 +977,11 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 
 			rels = OpenTableList(relations);
 			TransformPubWhereClauses(rels, pstate->p_sourcetext,
-									 publish_via_partition_root);
+									 opts.publish_via_partition_root);
 
 			CheckPubRelationColumnList(stmt->pubname, rels,
 									   schemaidlist != NIL,
-									   publish_via_partition_root);
+									   opts.publish_via_partition_root);
 
 			PublicationAddTables(puboid, rels, true, NULL);
 			CloseTableList(rels);
@@ -1020,12 +1026,7 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 	bool		nulls[Natts_pg_publication];
 	bool		replaces[Natts_pg_publication];
 	Datum		values[Natts_pg_publication];
-	bool		publish_given;
-	PublicationActions pubactions;
-	bool		publish_via_partition_root_given;
-	bool		publish_via_partition_root;
-	bool		publish_generated_columns_given;
-	char		publish_generated_columns;
+	PubOpts		opts;
 	ObjectAddress obj;
 	Form_pg_publication pubform;
 	List	   *root_relids = NIL;
@@ -1033,17 +1034,12 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 
 	pubform = (Form_pg_publication) GETSTRUCT(tup);
 
-	parse_publication_options(pstate,
-							  stmt->options,
-							  &publish_given, &pubactions,
-							  &publish_via_partition_root_given,
-							  &publish_via_partition_root,
-							  &publish_generated_columns_given,
-							  &publish_generated_columns);
+	parse_publication_options(pstate, stmt->options, &opts);
 
 	if (pubform->puballsequences &&
-		(publish_given || publish_via_partition_root_given ||
-		 publish_generated_columns_given))
+		(IsSet(opts.specified_opts, PUBOPT_PUBLISH) ||
+		 IsSet(opts.specified_opts, PUBOPT_PUBLISH_VIA_PARTITION_ROOT) ||
+		 IsSet(opts.specified_opts, PUBOPT_PUBLISH_GENERATED_COLUMNS)))
 		ereport(NOTICE,
 				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				errmsg("publication parameters are not applicable to sequence synchronization and will be ignored for sequences"));
@@ -1054,8 +1050,9 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 	 * disallow using WHERE clause and column lists on partitioned table in
 	 * this case.
 	 */
-	if (!pubform->puballtables && publish_via_partition_root_given &&
-		!publish_via_partition_root)
+	if (!pubform->puballtables &&
+		IsSet(opts.specified_opts, PUBOPT_PUBLISH_VIA_PARTITION_ROOT) &&
+		!opts.publish_via_partition_root)
 	{
 		/*
 		 * Lock the publication so nobody else can do anything with it. This
@@ -1133,30 +1130,30 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 	memset(nulls, false, sizeof(nulls));
 	memset(replaces, false, sizeof(replaces));
 
-	if (publish_given)
+	if (IsSet(opts.specified_opts, PUBOPT_PUBLISH))
 	{
-		values[Anum_pg_publication_pubinsert - 1] = BoolGetDatum(pubactions.pubinsert);
+		values[Anum_pg_publication_pubinsert - 1] = BoolGetDatum(opts.pubactions.pubinsert);
 		replaces[Anum_pg_publication_pubinsert - 1] = true;
 
-		values[Anum_pg_publication_pubupdate - 1] = BoolGetDatum(pubactions.pubupdate);
+		values[Anum_pg_publication_pubupdate - 1] = BoolGetDatum(opts.pubactions.pubupdate);
 		replaces[Anum_pg_publication_pubupdate - 1] = true;
 
-		values[Anum_pg_publication_pubdelete - 1] = BoolGetDatum(pubactions.pubdelete);
+		values[Anum_pg_publication_pubdelete - 1] = BoolGetDatum(opts.pubactions.pubdelete);
 		replaces[Anum_pg_publication_pubdelete - 1] = true;
 
-		values[Anum_pg_publication_pubtruncate - 1] = BoolGetDatum(pubactions.pubtruncate);
+		values[Anum_pg_publication_pubtruncate - 1] = BoolGetDatum(opts.pubactions.pubtruncate);
 		replaces[Anum_pg_publication_pubtruncate - 1] = true;
 	}
 
-	if (publish_via_partition_root_given)
+	if (IsSet(opts.specified_opts, PUBOPT_PUBLISH_VIA_PARTITION_ROOT))
 	{
-		values[Anum_pg_publication_pubviaroot - 1] = BoolGetDatum(publish_via_partition_root);
+		values[Anum_pg_publication_pubviaroot - 1] = BoolGetDatum(opts.publish_via_partition_root);
 		replaces[Anum_pg_publication_pubviaroot - 1] = true;
 	}
 
-	if (publish_generated_columns_given)
+	if (IsSet(opts.specified_opts, PUBOPT_PUBLISH_GENERATED_COLUMNS))
 	{
-		values[Anum_pg_publication_pubgencols - 1] = CharGetDatum(publish_generated_columns);
+		values[Anum_pg_publication_pubgencols - 1] = CharGetDatum(opts.publish_generated_columns);
 		replaces[Anum_pg_publication_pubgencols - 1] = true;
 	}
 
