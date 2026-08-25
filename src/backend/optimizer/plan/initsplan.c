@@ -2652,6 +2652,106 @@ compute_semijoin_info(PlannerInfo *root, SpecialJoinInfo *sjinfo, List *clause)
 }
 
 /*
+ * add_semijoin_not_null_quals
+ *	  Reject righthand rows whose semijoin key is NULL
+ *
+ * A semijoin's righthand side is often unique-ified before the join runs, and
+ * unique-ification reads every righthand row.  A row whose key is NULL never
+ * matches.  We should reject such rows upfront.
+ *
+ * set_base_rel_sizes() must see these quals, so this runs before the join
+ * search begins.
+ */
+void
+add_semijoin_not_null_quals(PlannerInfo *root)
+{
+	ListCell   *lc;
+
+	foreach(lc, root->join_info_list)
+	{
+		SpecialJoinInfo *sjinfo = (SpecialJoinInfo *) lfirst(lc);
+		ListCell   *lc2;
+
+		if (sjinfo->jointype != JOIN_SEMI)
+			continue;
+
+		/* Nothing reads the whole RHS unless it can be unique-ified */
+		if (!sjinfo->semi_can_btree && !sjinfo->semi_can_hash)
+			continue;
+
+		foreach(lc2, sjinfo->semi_rhs_exprs)
+		{
+			Expr	   *expr = (Expr *) lfirst(lc2);
+			Relids		relids;
+			RelOptInfo *rel;
+			NullTest   *ntest;
+			RestrictInfo *rinfo;
+
+			/*
+			 * A baserestriction keeps rows out of the scan, so the expression
+			 * must belong to one relation.  pull_varnos() counts outer-join
+			 * relids too, so a key nulled by an outer join drops out here as
+			 * well.
+			 */
+			relids = pull_varnos(root, (Node *) expr);
+			if (bms_membership(relids) != BMS_SINGLETON)
+				continue;
+			rel = root->simple_rel_array[bms_singleton_member(relids)];
+			if (rel == NULL)
+				continue;
+
+			/*
+			 * A subquery has not been planned yet, so the key's nullability is
+			 * unknown.
+			 */
+			if (rel->rtekind != RTE_RELATION)
+				continue;
+
+
+			/* The catalog already forbids nulls */
+			if (IsA(expr, Var))
+			{
+				Var		   *var = (Var *) expr;
+
+				if (var->varattno > 0 &&
+					bms_is_member(var->varattno, rel->notnullattnums))
+					continue;
+			}
+
+			ntest = makeNode(NullTest);
+			ntest->arg = copyObject(expr);
+			ntest->nulltesttype = IS_NOT_NULL;
+			ntest->argisrow = false;	/* correct even if composite arg */
+			ntest->location = -1;
+
+			/*
+			 * Statistics say there is nothing to reject.  This also covers a
+			 * righthand side the catalog check above cannot see into, such as
+			 * a subquery that survived pullup.
+			 */
+			if (clause_selectivity(root, (Node *) ntest, 0,
+								   JOIN_INNER, NULL) >= 1.0)
+				continue;
+
+			/*
+			 * A strict qual on the same expression rejects these rows already,
+			 * and adding a second test would count its selectivity twice.
+			 */
+			if (predicate_implied_by(list_make1(ntest),
+									 extract_actual_clauses(rel->baserestrictinfo,
+															false),
+									 false))
+				continue;
+
+			rinfo = make_restrictinfo(root, (Expr *) ntest, true, false, false,
+									  false, root->qual_security_level,
+									  relids, NULL, NULL);
+			distribute_restrictinfo_to_rels(root, rinfo);
+		}
+	}
+}
+
+/*
  * deconstruct_distribute_oj_quals
  *	  Adjust LEFT JOIN quals to be suitable for commuted-left-join cases,
  *	  then push them into the joinqual lists and EquivalenceClass structures.

@@ -242,6 +242,13 @@ query_planner(PlannerInfo *root,
 	joinlist = remove_useless_self_joins(root, joinlist);
 
 	/*
+	 * Every semijoin now known can reject righthand rows whose join key is
+	 * NULL.  This has to precede appendrel expansion so that a child relation
+	 * inherits the restriction.
+	 */
+	add_semijoin_not_null_quals(root);
+
+	/*
 	 * Now distribute "placeholders" to base rels as needed.  This has to be
 	 * done after join removal because removal could change whether a
 	 * placeholder is evaluable at a base rel.
