@@ -158,6 +158,27 @@ ALTER PROPERTY GRAPH gx ALTER EDGE TABLE te1 ALTER LABEL e1 DROP PROPERTIES (p1)
 DROP PROPERTY GRAPH gx;
 DROP TABLE tv1, tv2, te1;
 
+-- GRANT/REVOKE ON PROPERTY GRAPH with pg_event_trigger_ddl_commands()
+CREATE FUNCTION event_trigger_report_grant() RETURNS event_trigger
+LANGUAGE plpgsql AS $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT * FROM pg_event_trigger_ddl_commands()
+    LOOP
+        RAISE NOTICE 'END: command_tag=% type=%',
+            r.command_tag, r.object_type;
+    END LOOP;
+END; $$;
+CREATE EVENT TRIGGER regress_event_trigger_report_grant ON ddl_command_end
+    WHEN TAG IN ('GRANT', 'REVOKE')
+    EXECUTE FUNCTION event_trigger_report_grant();
+CREATE PROPERTY GRAPH pg_evt_grant;
+GRANT SELECT ON PROPERTY GRAPH pg_evt_grant TO public;
+REVOKE SELECT ON PROPERTY GRAPH pg_evt_grant FROM public;
+DROP PROPERTY GRAPH pg_evt_grant;
+DROP EVENT TRIGGER regress_event_trigger_report_grant;
+DROP FUNCTION event_trigger_report_grant();
+
 -- alter owner to non-superuser should fail
 alter event trigger regress_event_trigger owner to regress_evt_user;
 
