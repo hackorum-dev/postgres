@@ -158,6 +158,7 @@ WalReceiverMain(const void *startup_data, size_t startup_data_len)
 	char	   *tmp_conninfo;
 	char		slotname[NAMEDATALEN];
 	bool		is_temp_slot;
+	bool		temp_slot_created = false;
 	XLogRecPtr	startpoint;
 	TimeLineID	startpointTLI;
 	TimeLineID	primaryTLI;
@@ -431,17 +432,24 @@ WalReceiverMain(const void *startup_data, size_t startup_data_len)
 		WalRcvFetchTimeLineHistoryFiles(startpointTLI, primaryTLI);
 
 		/*
-		 * Create temporary replication slot if requested, and update slot
-		 * name in shared memory.  (Note the slot name cannot already be set
-		 * in this case.)
+		 * Create a temporary replication slot if requested.  This only needs
+		 * to be done for the first stream because the slot remains available
+		 * while this connection is reused for subsequent timelines.  Update
+		 * the slot name in shared memory each time because
+		 * RequestXLogStreaming() clears it when restarting on a new timeline.
 		 */
 		if (is_temp_slot)
 		{
-			snprintf(slotname, sizeof(slotname),
-					 "pg_walreceiver_%lld",
-					 (long long int) walrcv_get_backend_pid(wrconn));
+			if (!temp_slot_created)
+			{
+				snprintf(slotname, sizeof(slotname),
+						 "pg_walreceiver_%lld",
+						 (long long int) walrcv_get_backend_pid(wrconn));
 
-			walrcv_create_slot(wrconn, slotname, true, false, false, 0, NULL);
+				walrcv_create_slot(wrconn, slotname, true, false, false, 0, NULL);
+
+				temp_slot_created = true;
+			}
 
 			SpinLockAcquire(&walrcv->mutex);
 			strlcpy(walrcv->slotname, slotname, NAMEDATALEN);
