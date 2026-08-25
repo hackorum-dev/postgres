@@ -274,6 +274,7 @@ typedef struct
 static bool firstNumaTouch = true;
 
 static void CallShmemCallbacksAfterStartup(const ShmemCallbacks *callbacks);
+static void ProcessShmemRequestsAfterStartup(const ShmemCallbacks *callbacks);
 static void InitShmemIndexEntry(ShmemRequest *request);
 static bool AttachShmemIndexEntry(ShmemRequest *request, bool missing_ok);
 
@@ -897,26 +898,44 @@ RegisterShmemCallbacks(const ShmemCallbacks *callbacks)
 static void
 CallShmemCallbacksAfterStartup(const ShmemCallbacks *callbacks)
 {
+	Assert(shmem_request_state == SRS_DONE);
+	Assert(pending_shmem_requests == NIL);
+
+	PG_TRY();
+	{
+		/*
+		 * Call the request callback first.  The callback makes
+		 * ShmemRequest*() calls for each shmem area, adding them to
+		 * pending_shmem_requests.
+		 */
+		shmem_request_state = SRS_REQUESTING;
+		if (callbacks->request_fn)
+			callbacks->request_fn(callbacks->opaque_arg);
+
+		/* Process all the requests */
+		shmem_request_state = SRS_AFTER_STARTUP_ATTACH_OR_INIT;
+		if (pending_shmem_requests != NIL)
+			ProcessShmemRequestsAfterStartup(callbacks);
+	}
+	PG_FINALLY();
+	{
+		shmem_request_state = SRS_DONE;
+		pending_shmem_requests = NIL;
+	}
+	PG_END_TRY();
+}
+
+static void
+ProcessShmemRequestsAfterStartup(const ShmemCallbacks *callbacks)
+{
 	bool		found_any;
 	bool		notfound_any;
 
-	Assert(shmem_request_state == SRS_DONE);
-	shmem_request_state = SRS_REQUESTING;
+	/* There should be some requests to process */
+	Assert(pending_shmem_requests != NIL);
 
-	/*
-	 * Call the request callback first.  The callback makes ShmemRequest*()
-	 * calls for each shmem area, adding them to pending_shmem_requests.
-	 */
-	Assert(pending_shmem_requests == NIL);
-	if (callbacks->request_fn)
-		callbacks->request_fn(callbacks->opaque_arg);
-	shmem_request_state = SRS_AFTER_STARTUP_ATTACH_OR_INIT;
-
-	if (pending_shmem_requests == NIL)
-	{
-		shmem_request_state = SRS_DONE;
-		return;
-	}
+	/* Caller manages the global state variable */
+	Assert(shmem_request_state == SRS_AFTER_STARTUP_ATTACH_OR_INIT);
 
 	/*
 	 * Hold ShmemIndexLock while we allocate all the shmem entries and run all
@@ -934,7 +953,11 @@ CallShmemCallbacksAfterStartup(const ShmemCallbacks *callbacks)
 	found_any = notfound_any = false;
 	foreach_ptr(ShmemRequest, request, pending_shmem_requests)
 	{
-		if (hash_search(ShmemIndex, request->options->name, HASH_FIND, NULL))
+		ShmemIndexEnt *index_entry;
+
+		index_entry = (ShmemIndexEnt *)
+			hash_search(ShmemIndex, request->options->name, HASH_FIND, NULL);
+		if (index_entry)
 			found_any = true;
 		else
 			notfound_any = true;
@@ -952,11 +975,7 @@ CallShmemCallbacksAfterStartup(const ShmemCallbacks *callbacks)
 			AttachShmemIndexEntry(request, false);
 		else
 			InitShmemIndexEntry(request);
-
-		pfree(request->options);
 	}
-	list_free_deep(pending_shmem_requests);
-	pending_shmem_requests = NIL;
 
 	/* Finish by calling the appropriate subsystem-specific callback */
 	if (found_any)
@@ -971,7 +990,6 @@ CallShmemCallbacksAfterStartup(const ShmemCallbacks *callbacks)
 	}
 
 	LWLockRelease(ShmemIndexLock);
-	shmem_request_state = SRS_DONE;
 }
 
 /*
