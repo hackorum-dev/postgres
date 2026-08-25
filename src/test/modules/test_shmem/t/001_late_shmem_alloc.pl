@@ -25,6 +25,11 @@ my $attach_count2 =
   $node->safe_psql("postgres", "SELECT get_test_shmem_attach_count();");
 cmp_ok($attach_count2, '>', $attach_count1,
 	"attach callback is called in each backend");
+
+# Test a shared memory hash table too.
+my $result = $node->safe_psql("postgres", "SELECT test_shmem_hash_overflow();");
+ok($result eq "", "shmem hash works");
+
 $node->stop;
 
 ###
@@ -77,6 +82,10 @@ else
 		"attach callback is not called when loaded via shared_preload_libraries"
 	);
 }
+
+# Test a shared memory hash table too.
+$result = $node->safe_psql("postgres", "SELECT test_shmem_hash_overflow();");
+ok($result eq "", "shmem hash works");
 
 $node->stop;
 done_testing();

@@ -7,3 +7,7 @@
 CREATE FUNCTION get_test_shmem_attach_count()
 RETURNS pg_catalog.int4 STRICT
 AS 'MODULE_PATHNAME' LANGUAGE C;
+
+CREATE FUNCTION test_shmem_hash_overflow()
+RETURNS void STRICT
+AS 'MODULE_PATHNAME' LANGUAGE C;
