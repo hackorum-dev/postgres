@@ -669,6 +669,33 @@ LockHeldByMe(const LOCKTAG *locktag,
 	return false;
 }
 
+/*
+ * BackendHoldsGrantedHeavyweightLock -- check whether this backend owns any
+ *		granted heavyweight lock represented in the local lock table.
+ *
+ * A LOCALLOCK entry can remain after an unsuccessful lock acquisition, so
+ * only entries with a positive local hold count represent locks we own.
+ */
+bool
+BackendHoldsGrantedHeavyweightLock(void)
+{
+	HASH_SEQ_STATUS status;
+	LOCALLOCK  *locallock;
+
+	hash_seq_init(&status, LockMethodLocalHash);
+
+	while ((locallock = (LOCALLOCK *) hash_seq_search(&status)) != NULL)
+	{
+		if (locallock->nLocks > 0)
+		{
+			hash_seq_term(&status);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 #ifdef USE_ASSERT_CHECKING
 /*
  * GetLockMethodLocalHash -- return the hash of local locks, for modules that

@@ -226,6 +226,19 @@ WAIT FOR LSN '<replaceable class="parameter">lsn</replaceable>'
   </para>
 
   <para>
+   While recovery is in progress, an unsatisfied wait in
+   <literal>standby_replay</literal> (the default),
+   <literal>standby_write</literal>, or <literal>standby_flush</literal>
+   mode is rejected when the session already holds a heavyweight lock.  Such
+   a lock could make recovery depend, directly or indirectly, on the waiting
+   session.  Write and flush waits can also depend on recovery during archive
+   recovery or when WAL reception needs to be restarted.  This conservative
+   restriction also applies during streaming replication.  Execute
+   <command>WAIT FOR</command> before acquiring heavyweight locks, or release
+   them before waiting.
+  </para>
+
+  <para>
    <command>WAIT FOR</command> waits until the specified
    <parameter>lsn</parameter> is reached according to the specified
    <parameter>mode</parameter>. The <literal>standby_replay</literal> mode
