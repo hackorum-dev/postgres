@@ -2796,6 +2796,7 @@ SYSTEM_INFO
 SampleScan
 SampleScanGetSampleSize_function
 SampleScanState
+SavedSelectivities
 SavedTransactionCharacteristics
 ScalarArrayOpExpr
 ScalarArrayOpExprHashEntry

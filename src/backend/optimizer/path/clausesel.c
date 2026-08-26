@@ -975,3 +975,75 @@ clause_selectivity_ext(PlannerInfo *root,
 
 	return s1;
 }
+
+/*
+ * The selectivities taken off a clause list, held together with the list they
+ * came from.
+ */
+struct SavedSelectivities
+{
+	List	   *clauses;
+	Selectivity selec[FLEXIBLE_ARRAY_MEMBER];
+};
+
+/*
+ * hide_clause_selectivities
+ *	  Take the cached selectivities off a clause list and return them.
+ *
+ * A clause holds one cached selectivity for JOIN_INNER and one for whatever
+ * other join type it is examined under, which suffices because a clause belongs
+ * to a single join.  A caller that costs one clause list a second time, under a
+ * join type of its own choosing, has to set the cache aside for the duration
+ * and hand it back with restore_clause_selectivities(), or it will both read
+ * estimates meant for the real join and leave its own behind for that join to
+ * find.
+ *
+ * Hiding a list that is already hidden loses the original selectivities, so a
+ * caller must reach the matching restore before it costs the list again.
+ */
+SavedSelectivities *
+hide_clause_selectivities(List *clauses)
+{
+	SavedSelectivities *saved;
+	int			i = 0;
+	ListCell   *lc;
+
+	saved = (SavedSelectivities *) palloc(offsetof(SavedSelectivities, selec) +
+										  list_length(clauses) * 2 *
+										  sizeof(Selectivity));
+	saved->clauses = clauses;
+
+	foreach(lc, clauses)
+	{
+		RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
+
+		saved->selec[i++] = rinfo->norm_selec;
+		saved->selec[i++] = rinfo->outer_selec;
+		rinfo->norm_selec = -1;
+		rinfo->outer_selec = -1;
+	}
+
+	return saved;
+}
+
+/*
+ * restore_clause_selectivities
+ *	  Put back what hide_clause_selectivities() took off, discarding whatever
+ *	  was cached in the meantime.
+ */
+void
+restore_clause_selectivities(SavedSelectivities *saved)
+{
+	int			i = 0;
+	ListCell   *lc;
+
+	foreach(lc, saved->clauses)
+	{
+		RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
+
+		rinfo->norm_selec = saved->selec[i++];
+		rinfo->outer_selec = saved->selec[i++];
+	}
+
+	pfree(saved);
+}

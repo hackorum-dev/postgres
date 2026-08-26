@@ -44,6 +44,8 @@ typedef struct HeapTupleData *HeapTuple;
 
 /* in path/clausesel.c: */
 
+typedef struct SavedSelectivities SavedSelectivities;
+
 extern Selectivity clause_selectivity(PlannerInfo *root,
 									  Node *clause,
 									  int varRelid,
@@ -66,6 +68,8 @@ extern Selectivity clauselist_selectivity_ext(PlannerInfo *root,
 											  JoinType jointype,
 											  SpecialJoinInfo *sjinfo,
 											  bool use_extended_stats);
+extern SavedSelectivities *hide_clause_selectivities(List *clauses);
+extern void restore_clause_selectivities(SavedSelectivities *saved);
 
 /* in path/costsize.c: */
 
