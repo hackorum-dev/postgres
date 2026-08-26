@@ -829,13 +829,10 @@ synchronize_one_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 		if (slot->data.invalidated == RS_INVAL_NONE &&
 			remote_slot->invalidated != RS_INVAL_NONE)
 		{
-			SpinLockAcquire(&slot->mutex);
-			slot->data.invalidated = remote_slot->invalidated;
-			SpinLockRelease(&slot->mutex);
-
-			/* Make sure the invalidated state persists across server restart */
-			ReplicationSlotMarkDirty();
-			ReplicationSlotSave();
+			LWLockAcquire(&slot->io_in_progress_lock, LW_EXCLUSIVE);
+			ReplicationSlotPersistInvalidation(remote_slot->invalidated, false);
+			ReplicationSlotsComputeRequiredXmin(false);
+			ReplicationSlotsComputeRequiredLSN();
 
 			slot_updated = true;
 		}
@@ -2006,6 +2003,13 @@ slotsync_failure_callback(int code, Datum arg)
 	 * and cleanup to avoid any dangling temporary slots or active slots
 	 * before it marks itself as finished syncing.
 	 */
+
+	/*
+	 * A failed invalidation can still hold the slot's I/O lock. Release it
+	 * before slot cleanup acquires ReplicationSlotAllocationLock, which
+	 * checkpoints hold while acquiring slot I/O locks.
+	 */
+	LWLockReleaseAll();
 
 	/* Make sure active replication slots are released */
 	if (MyReplicationSlot != NULL)
