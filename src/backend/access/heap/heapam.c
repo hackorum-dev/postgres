@@ -412,9 +412,16 @@ initscan(HeapScanDesc scan, ScanKey key, bool keep_startblock)
 	else
 	{
 		if (scan->rs_strategy != NULL)
+		{
+			if (scan->rs_read_stream != NULL)
+				read_stream_set_strategy(scan->rs_read_stream, NULL);
 			FreeAccessStrategy(scan->rs_strategy);
+		}
 		scan->rs_strategy = NULL;
 	}
+
+	if (scan->rs_read_stream != NULL && scan->rs_strategy != NULL)
+		read_stream_set_strategy(scan->rs_read_stream, scan->rs_strategy);
 
 	if (scan->rs_base.rs_parallel != NULL)
 	{
@@ -1204,6 +1211,7 @@ heap_beginscan(Relation relation, Snapshot snapshot,
 	scan->rs_base.rs_parallel = parallel_scan;
 	scan->rs_base.rs_instrument = NULL;
 	scan->rs_strategy = NULL;	/* set in initscan */
+	scan->rs_read_stream = NULL;
 	scan->rs_cbuf = InvalidBuffer;
 
 	/*
@@ -1269,8 +1277,6 @@ heap_beginscan(Relation relation, Snapshot snapshot,
 		scan->rs_base.rs_key = NULL;
 
 	initscan(scan, key, false);
-
-	scan->rs_read_stream = NULL;
 
 	/*
 	 * Set up a read stream for sequential scans and TID range scans. This
