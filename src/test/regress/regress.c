@@ -1494,7 +1494,9 @@ test_pglz_decompress(PG_FUNCTION_ARGS)
 	dlen = pglz_decompress(source, slen, VARDATA(result),
 						   rawsize, check_complete);
 	if (dlen < 0)
-		elog(ERROR, "pglz_decompress failed");
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("pglz_decompress failed")));
 
 	SET_VARSIZE(result, dlen + VARHDRSZ);
 	PG_RETURN_BYTEA_P(result);

@@ -336,7 +336,9 @@ get_range_io_data(FunctionCallInfo fcinfo, Oid rngtypid, IOFuncSelector func)
 												   sizeof(RangeIOData));
 		cache->typcache = lookup_type_cache(rngtypid, TYPECACHE_RANGE_INFO);
 		if (cache->typcache->rngelemtype == NULL)
-			elog(ERROR, "type %u is not a range type", rngtypid);
+			ereport(ERROR,
+					(errcode(ERRCODE_DATATYPE_MISMATCH),
+					 errmsg("type %u is not a range type", rngtypid)));
 
 		/* get_type_io_data does more than we need, but is convenient */
 		get_type_io_data(cache->typcache->rngelemtype->type_id,

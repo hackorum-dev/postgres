@@ -541,8 +541,12 @@ coerce_type(ParseState *pstate, Node *node,
 		return (Node *) r;
 	}
 	/* If we get here, caller blew it */
-	elog(ERROR, "failed to find conversion function from %s to %s",
-		 format_type_be(inputTypeId), format_type_be(targetTypeId));
+	ereport(ERROR,
+			(errcode(ERRCODE_CANNOT_COERCE),
+			 errmsg("failed to find conversion function from %s to %s",
+					format_type_be(inputTypeId), format_type_be(targetTypeId))));
+
+
 	return NULL;				/* keep compiler quiet */
 }
 

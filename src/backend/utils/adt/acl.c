@@ -996,7 +996,9 @@ acldefault_sql(PG_FUNCTION_ARGS)
 			objtype = OBJECT_TYPE;
 			break;
 		default:
-			elog(ERROR, "unrecognized object type abbreviation: %c", objtypec);
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("unrecognized object type abbreviation: %c", objtypec)));
 	}
 
 	PG_RETURN_ACL_P(acldefault(objtype, owner));

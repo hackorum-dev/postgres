@@ -59,7 +59,9 @@ relation_open(Oid relationId, LOCKMODE lockmode)
 	r = RelationIdGetRelation(relationId);
 
 	if (!RelationIsValid(r))
-		elog(ERROR, "could not open relation with OID %u", relationId);
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("could not open relation with OID %u", relationId)));
 
 	/*
 	 * If we didn't get the lock ourselves, assert that caller holds one,
@@ -113,7 +115,9 @@ try_relation_open(Oid relationId, LOCKMODE lockmode)
 	r = RelationIdGetRelation(relationId);
 
 	if (!RelationIsValid(r))
-		elog(ERROR, "could not open relation with OID %u", relationId);
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("could not open relation with OID %u", relationId)));
 
 	/* If we didn't get the lock ourselves, assert that caller holds one */
 	Assert(lockmode != NoLock ||
