@@ -501,6 +501,9 @@ struct PlannerInfo
 	/* list of GroupingExprInfos */
 	List	   *group_expr_list;
 
+	/* the SortGroupClauses the grouping expressions were derived from */
+	List	   *eager_group_clause;
+
 	/* list of plain Vars contained in targetlist and havingQual */
 	List	   *tlist_vars;
 
