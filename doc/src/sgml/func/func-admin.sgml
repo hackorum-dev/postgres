@@ -896,7 +896,11 @@ postgres=# SELECT '0/0'::pg_lsn + pd.segment_number * ps.setting::int + :offset 
     linkend="functions-upgrade-boundary-table"/> control the marking of an
     <firstterm>upgrade boundary</firstterm>: a shutdown checkpoint that is
     the deliberate end of the current major version's write-ahead log,
-    written in preparation for an in-place major version upgrade.
+    written in preparation for an in-place major version upgrade.  When a
+    standby server replays an upgrade boundary, it stops streaming and
+    pauses recovery, since it cannot read WAL written by a later major version.
+    The paused standby can then be shut down to have its binaries upgraded,
+    or promoted, keeping the cluster on the old major version.
    </para>
 
    <table id="functions-upgrade-boundary-table">
@@ -967,6 +971,23 @@ postgres=# SELECT '0/0'::pg_lsn + pd.segment_number * ps.setting::int + :offset 
         <literal>false</literal>.
        </para></entry>
       </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>pg_upgrade_boundary_lsn</primary>
+        </indexterm>
+        <function>pg_upgrade_boundary_lsn</function> ()
+        <returnvalue>pg_lsn</returnvalue>
+       </para>
+       <para>
+        Returns the location of the upgrade boundary checkpoint record that
+        recovery is paused at, or <literal>NULL</literal> if it is not
+        paused at one.  This distinguishes a standby paused at an upgrade
+        boundary from one paused with
+        <function>pg_wal_replay_pause</function>.
+       </para></entry>
+      </row>
      </tbody>
     </tgroup>
    </table>
@@ -974,7 +995,11 @@ postgres=# SELECT '0/0'::pg_lsn + pd.segment_number * ps.setting::int + :offset 
    <para>
     If a server that was shut down at an upgrade boundary is started
     again with the same major version, the boundary is cancelled: writing
-    new write-ahead log on the same timeline supersedes it.
+    new write-ahead log on the same timeline supersedes it, and standby
+    servers paused at the boundary can be resumed with
+    <function>pg_wal_replay_resume</function>.  Unlike resuming from a pause
+    at a recovery target, resuming from an upgrade boundary does not promote
+    the standby; it simply continues replay.
    </para>
 
   </sect2>

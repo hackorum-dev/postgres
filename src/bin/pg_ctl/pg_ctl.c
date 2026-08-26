@@ -1007,6 +1007,7 @@ do_start(void)
 				exit(1);
 				break;
 			case POSTMASTER_SHUTDOWN_IN_RECOVERY:
+				/* WIP: need separate message for upgrade boundary? */
 				print_msg(_(" done\n"));
 				print_msg(_("server shut down because of recovery target settings\n"));
 				break;

@@ -8534,6 +8534,22 @@ RecoveryRestartPoint(const CheckPoint *checkPoint, XLogReaderState *record)
 }
 
 /*
+ * A boundary flag in the control file tells a new binary started here that
+ * this node is parked at the boundary.  Once replay moves past the boundary,
+ * as after a rollback, the flag is stale: the boundary checkpoint stays the
+ * restartpoint until the next checkpoint record is replayed.
+ *
+ * Callers must hold ControlFileLock exclusively and write the control file.
+ */
+static void
+ClearSupersededUpgradeBoundary(void)
+{
+	if (ControlFile->checkPointCopy.upgradeFlag == UPGRADE_FLAG_BOUNDARY &&
+		GetXLogReplayReadRecPtr() > ControlFile->checkPoint)
+		ControlFile->checkPointCopy.upgradeFlag = UPGRADE_FLAG_NONE;
+}
+
+/*
  * Establish a restartpoint if possible.
  *
  * This is similar to CreateCheckPoint, but is used during WAL recovery
@@ -8641,6 +8657,7 @@ CreateRestartPoint(int flags)
 
 			LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
 			ControlFile->state = DB_SHUTDOWNED_IN_RECOVERY;
+			ClearSupersededUpgradeBoundary();
 			if (catchUpChecksums)
 			{
 				ControlFile->data_checksum_version = checksum_state;
@@ -8755,6 +8772,8 @@ CreateRestartPoint(int flags)
 			if (flags & CHECKPOINT_IS_SHUTDOWN)
 				ControlFile->state = DB_SHUTDOWNED_IN_RECOVERY;
 		}
+
+		ClearSupersededUpgradeBoundary();
 
 		/*
 		 * Persist the data checksum state of this node.  Not the state of the

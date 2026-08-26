@@ -281,6 +281,21 @@ pg_upgrade_boundary_requested(PG_FUNCTION_ARGS)
 }
 
 /*
+ * pg_upgrade_boundary_lsn: location of the upgrade boundary if recovery
+ * is paused at one, or NULL otherwise.
+ */
+Datum
+pg_upgrade_boundary_lsn(PG_FUNCTION_ARGS)
+{
+	XLogRecPtr	lsn = GetUpgradeBoundaryLSN();
+
+	if (XLogRecPtrIsInvalid(lsn))
+		PG_RETURN_NULL();
+
+	PG_RETURN_LSN(lsn);
+}
+
+/*
  * pg_log_standby_snapshot: call LogStandbySnapshot()
  *
  * Permission checking for this function is managed through the normal

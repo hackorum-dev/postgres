@@ -174,6 +174,9 @@ static TimeLineID CheckPointTLI = 0;
 static XLogRecPtr RedoStartLSN = InvalidXLogRecPtr;
 static TimeLineID RedoStartTLI = 0;
 
+/* Is the checkpoint we start recovery from an upgrade boundary? */
+static bool CheckPointIsUpgradeBoundary = false;
+
 /*
  * Local copy of SharedHotStandbyActive variable. False actually means "not
  * known, need to check the shared state".
@@ -361,6 +364,8 @@ static void verifyBackupPageConsistency(XLogReaderState *record);
 
 static bool recoveryStopsBefore(XLogReaderState *record);
 static bool recoveryStopsAfter(XLogReaderState *record);
+static void UpgradeBoundaryReached(XLogRecPtr lsn);
+static void CheckForUpgradeBoundary(XLogReaderState *record);
 static char *getRecoveryStopReason(void);
 static void recoveryPausesHere(bool endOfRecovery);
 static bool recoveryApplyDelay(XLogReaderState *record);
@@ -978,6 +983,8 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	 */
 	abortedRecPtr = InvalidXLogRecPtr;
 	missingContrecPtr = InvalidXLogRecPtr;
+
+	CheckPointIsUpgradeBoundary = (checkPoint.upgradeFlag == UPGRADE_FLAG_BOUNDARY);
 
 	*wasShutdown_ptr = wasShutdown;
 	*haveBackupLabel_ptr = haveBackupLabel;
@@ -1670,6 +1677,19 @@ PerformWalRecovery(void)
 	CheckRecoveryConsistency();
 
 	/*
+	 * A standby restarted while paused at an upgrade boundary starts recovery
+	 * from the boundary checkpoint, so pause again before fetching any WAL.
+	 *
+	 * Don't pause if replay had already passed the boundary before shutdown,
+	 * as after a rollback.  The boundary checkpoint is still the last
+	 * restartpoint until the next checkpoint record is replayed, but
+	 * minRecoveryPoint has moved past it.
+	 */
+	if (CheckPointIsUpgradeBoundary &&
+		minRecoveryPoint <= XLogRecoveryCtl->lastReplayedEndRecPtr)
+		UpgradeBoundaryReached(CheckPointLoc);
+
+	/*
 	 * Find the first record that logically follows the checkpoint --- it
 	 * might physically precede it, though.
 	 */
@@ -1807,6 +1827,14 @@ PerformWalRecovery(void)
 						  XLogRecoveryCtl->lastReplayedEndRecPtr);
 			WaitLSNWakeup(WAIT_LSN_TYPE_STANDBY_FLUSH,
 						  XLogRecoveryCtl->lastReplayedEndRecPtr);
+
+			/*
+			 * If the record just applied marked an upgrade boundary, stop
+			 * fetching WAL and pause here.  This must happen before we try to
+			 * read the next record, since this server version may not be able
+			 * read it.
+			 */
+			CheckForUpgradeBoundary(xlogreader);
 
 			/* Exit loop if we reached inclusive recovery target */
 			if (recoveryStopsAfter(xlogreader))
@@ -2907,6 +2935,93 @@ getRecoveryStopReason(void)
 }
 
 /*
+ * Check whether the record just replayed was a shutdown checkpoint marked
+ * as an upgrade boundary, and if so, stop streaming and pause recovery.
+ *
+ * An upgrade boundary is the end of the WAL of the binary that wrote it.
+ * Subsequent WAL is normally written by binary of a later major version,
+ * which we presume this server cannot read.
+ *
+ * Pausing allows the operator to act appropriately:
+ *   - shut down cleanly to swap in the new binaries
+ *   - resume replay if the upgrade was abandoned
+ *   - promote to fail over, keeping this major version
+ *
+ * Unlike at a recovery target, resuming does not promote.
+ *
+ * If hot standby is not active, nobody can resume us, so shut down
+ * cleanly instead of pausing, as with a recovery target with
+ * recovery_target_action=shutdown.
+ */
+static void
+CheckForUpgradeBoundary(XLogReaderState *record)
+{
+	CheckPoint	checkPoint;
+
+	if (XLogRecGetRmid(record) != RM_XLOG_ID ||
+		(XLogRecGetInfo(record) & ~XLR_INFO_MASK) != XLOG_CHECKPOINT_SHUTDOWN)
+		return;
+
+	memcpy(&checkPoint, XLogRecGetData(record), sizeof(CheckPoint));
+	if (checkPoint.upgradeFlag != UPGRADE_FLAG_BOUNDARY)
+		return;
+
+	UpgradeBoundaryReached(record->ReadRecPtr);
+}
+
+/*
+ * Recovery has reached an upgrade boundary: stop streaming and pause, or
+ * shut down if hot standby is not active.  Called after replaying a boundary
+ * checkpoint record, or at the start of recovery when the starting checkpoint
+ * is a boundary.
+ */
+static void
+UpgradeBoundaryReached(XLogRecPtr lsn)
+{
+	/* Upgrade boundaries are not relevant to plain crash recovery */
+	if (!ArchiveRecoveryRequested)
+		return;
+
+	/* Make the boundary visible to pg_upgrade_boundary_lsn() */
+	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	XLogRecoveryCtl->upgradeBoundaryLSN = lsn;
+	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+
+	ereport(LOG,
+			(errmsg("recovery has reached an upgrade boundary at %X/%08X",
+					LSN_FORMAT_ARGS(lsn))));
+
+	/*
+	 * Stop streaming, so that nothing past the boundary accumulates in
+	 * pg_wal.  If replay is later resumed, streaming is restarted on demand.
+	 */
+	XLogShutdownWalRcv();
+
+	if (!LocalHotStandbyActive)
+	{
+		ereport(LOG,
+				(errmsg("shutting down at upgrade boundary")));
+
+		/*
+		 * exit with special return code to request shutdown of postmaster.
+		 * Log messages issued from postmaster.
+		 */
+		proc_exit(3);
+	}
+
+	SetRecoveryPause(true);
+	recoveryPausesHere(false);
+
+	/*
+	 * Replay was resumed or promotion requested: either way, recovery is no
+	 * longer paused at the boundary.
+	 */
+	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	XLogRecoveryCtl->upgradeBoundaryLSN = InvalidXLogRecPtr;
+	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+}
+
+/*
  * Wait until shared recoveryPauseState is set to RECOVERY_NOT_PAUSED.
  *
  * endOfRecovery is true if the recovery target is reached and
@@ -3092,6 +3207,22 @@ SetRecoveryPause(bool recoveryPause)
 
 	if (!recoveryPause)
 		ConditionVariableBroadcast(&XLogRecoveryCtl->recoveryNotPausedCV);
+}
+
+/*
+ * Get the location of the upgrade boundary if recovery is paused at one, or
+ * InvalidXLogRecPtr otherwise.
+ */
+XLogRecPtr
+GetUpgradeBoundaryLSN(void)
+{
+	XLogRecPtr	lsn;
+
+	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	lsn = XLogRecoveryCtl->upgradeBoundaryLSN;
+	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+
+	return lsn;
 }
 
 /*
@@ -4580,6 +4711,22 @@ HotStandbyActiveInReplay(void)
 {
 	Assert(AmStartupProcess() || !IsPostmasterEnvironment);
 	return LocalHotStandbyActive;
+}
+
+/*
+ * Get the start of the last record replayed, or InvalidXLogRecPtr if
+ * recovery started at a checkpoint's redo point rather than at its record.
+ */
+XLogRecPtr
+GetXLogReplayReadRecPtr(void)
+{
+	XLogRecPtr	recptr;
+
+	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	recptr = XLogRecoveryCtl->lastReplayedReadRecPtr;
+	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+
+	return recptr;
 }
 
 /*

@@ -126,6 +126,13 @@ typedef struct XLogRecoveryCtlData
 	RecoveryPauseState recoveryPauseState;
 	ConditionVariable recoveryNotPausedCV;
 
+	/*
+	 * Location of the upgrade boundary checkpoint record that recovery is
+	 * paused at, or InvalidXLogRecPtr if it is not paused at one.  Protected
+	 * by info_lck.
+	 */
+	XLogRecPtr	upgradeBoundaryLSN;
+
 	slock_t		info_lck;		/* locks shared variables shown above */
 } XLogRecoveryCtlData;
 
@@ -217,8 +224,10 @@ extern void RemovePromoteSignalFiles(void);
 
 extern bool HotStandbyActive(void);
 extern XLogRecPtr GetXLogReplayRecPtr(TimeLineID *replayTLI);
+extern XLogRecPtr GetXLogReplayReadRecPtr(void);
 extern RecoveryPauseState GetRecoveryPauseState(void);
 extern void SetRecoveryPause(bool recoveryPause);
+extern XLogRecPtr GetUpgradeBoundaryLSN(void);
 extern void GetXLogReceiptTime(TimestampTz *rtime, bool *fromStream);
 extern TimestampTz GetLatestXTime(void);
 extern TimestampTz GetCurrentChunkReplayStartTime(void);

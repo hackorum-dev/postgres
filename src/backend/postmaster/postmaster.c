@@ -2294,6 +2294,7 @@ process_pm_child_exit(void)
 
 			if (EXIT_STATUS_3(exitstatus))
 			{
+				/* WIP: this is misleading if shutdown at a version boundary */
 				ereport(LOG,
 						(errmsg("shutdown at recovery target")));
 				StartupStatus = STARTUP_NOT_RUNNING;
