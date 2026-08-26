@@ -504,6 +504,9 @@ struct PlannerInfo
 	/* the SortGroupClauses the grouping expressions were derived from */
 	List	   *eager_group_clause;
 
+	/* true if a deduplication is pushed down, with the aggregates above it */
+	bool		eager_dedup_only;
+
 	/* base rels supplying nothing the query outputs, or NULL if none */
 	Relids		filter_only_rels;
 

@@ -4413,6 +4413,37 @@ create_ordinary_grouping_paths(PlannerInfo *root, RelOptInfo *input_rel,
 							  partially_grouped_rel, agg_costs, gd,
 							  extra);
 
+	/*
+	 * Where the grouping keys come from the aggregates, eager aggregation may
+	 * push a deduplication below the joins.  Every aggregate here ignores how
+	 * often a row arrives, so the deduplicated rows yield the same results as
+	 * the join's rows.  Aggregate them as a path.
+	 */
+	if (root->eager_dedup_only &&
+		input_rel->grouped_rel != NULL &&
+		!IS_DUMMY_REL(input_rel->grouped_rel) &&
+		input_rel->grouped_rel->pathlist != NIL)
+	{
+		RelOptInfo *dedup_rel;
+		ListCell   *lc;
+
+		dedup_rel = copy_rel_without_paths(input_rel);
+
+		foreach(lc, input_rel->grouped_rel->pathlist)
+		{
+			Path	   *path = (Path *) lfirst(lc);
+
+			add_path(dedup_rel,
+					 (Path *) create_projection_path(root, dedup_rel,
+													 complete_dedup_path(path),
+													 input_rel->reltarget));
+		}
+
+		set_cheapest(dedup_rel);
+		add_paths_to_grouping_rel(root, dedup_rel, grouped_rel, NULL,
+								  agg_costs, gd, extra);
+	}
+
 	/* Give a helpful error if we failed to find any implementation */
 	if (grouped_rel->pathlist == NIL)
 		ereport(ERROR,
@@ -7661,9 +7692,12 @@ create_partial_grouping_paths(PlannerInfo *root,
 
 	/*
 	 * Check whether any partially aggregated paths have been generated
-	 * through eager aggregation.
+	 * through eager aggregation.  Where the grouping keys come from the
+	 * aggregates, the pushdown is a deduplication rather than a partial
+	 * aggregate, and create_ordinary_grouping_paths() aggregates it.
 	 */
-	if (input_rel->grouped_rel &&
+	if (!root->eager_dedup_only &&
+		input_rel->grouped_rel &&
 		!IS_DUMMY_REL(input_rel->grouped_rel) &&
 		input_rel->grouped_rel->pathlist != NIL)
 		eager_agg_rel = input_rel->grouped_rel;
