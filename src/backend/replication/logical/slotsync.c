@@ -672,6 +672,38 @@ reserve_wal_for_local_slot(XLogRecPtr restart_lsn)
 }
 
 /*
+ * Persist the invalidated state of the acquired synchronized slot.
+ *
+ * On ERROR, release slot ownership before making the I/O lock available to
+ * concurrent invalidators. The I/O lock must be released before higher-level
+ * error cleanup, which may acquire ReplicationSlotAllocationLock.
+ */
+static void
+persist_slot_invalidation(ReplicationSlotInvalidationCause cause)
+{
+	ReplicationSlot *slot = MyReplicationSlot;
+
+	Assert(slot != NULL);
+
+	LWLockAcquire(&slot->io_in_progress_lock, LW_EXCLUSIVE);
+
+	PG_TRY();
+	{
+		ReplicationSlotPersistInvalidation(cause, false);
+	}
+	PG_CATCH();
+	{
+		HOLD_INTERRUPTS();		/* match the upcoming RESUME_INTERRUPTS */
+		ReplicationSlotRelease();
+		LWLockRelease(&slot->io_in_progress_lock);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+
+	LWLockRelease(&slot->io_in_progress_lock);
+}
+
+/*
  * If the remote restart_lsn and catalog_xmin have caught up with the
  * local ones, then update the LSNs and persist the local synced slot for
  * future synchronization; otherwise, do nothing.
@@ -829,13 +861,9 @@ synchronize_one_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 		if (slot->data.invalidated == RS_INVAL_NONE &&
 			remote_slot->invalidated != RS_INVAL_NONE)
 		{
-			SpinLockAcquire(&slot->mutex);
-			slot->data.invalidated = remote_slot->invalidated;
-			SpinLockRelease(&slot->mutex);
-
-			/* Make sure the invalidated state persists across server restart */
-			ReplicationSlotMarkDirty();
-			ReplicationSlotSave();
+			persist_slot_invalidation(remote_slot->invalidated);
+			ReplicationSlotsComputeRequiredXmin(false);
+			ReplicationSlotsComputeRequiredLSN();
 
 			slot_updated = true;
 		}
