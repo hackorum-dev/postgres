@@ -4261,6 +4261,8 @@ show_scan_io_usage(ScanState *planstate, ExplainState *es)
 
 				break;
 			}
+		case T_SampleScan:
+			break;
 		default:
 			/* ignore other plans */
 			return;
