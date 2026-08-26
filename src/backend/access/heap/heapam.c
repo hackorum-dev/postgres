@@ -1322,11 +1322,12 @@ heap_beginscan(Relation relation, Snapshot snapshot,
 	}
 
 	/* enable read stream instrumentation */
-	if ((flags & SO_SCAN_INSTRUMENT) && (scan->rs_read_stream != NULL))
+	if (flags & SO_SCAN_INSTRUMENT)
 	{
 		scan->rs_base.rs_instrument = palloc0_object(TableScanInstrumentation);
-		read_stream_enable_stats(scan->rs_read_stream,
-								 &scan->rs_base.rs_instrument->io);
+		if (scan->rs_read_stream != NULL)
+			read_stream_enable_stats(scan->rs_read_stream,
+									 &scan->rs_base.rs_instrument->io);
 	}
 
 	scan->rs_vmbuffer = InvalidBuffer;
