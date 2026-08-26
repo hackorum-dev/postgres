@@ -829,13 +829,29 @@ synchronize_one_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 		if (slot->data.invalidated == RS_INVAL_NONE &&
 			remote_slot->invalidated != RS_INVAL_NONE)
 		{
-			SpinLockAcquire(&slot->mutex);
-			slot->data.invalidated = remote_slot->invalidated;
-			SpinLockRelease(&slot->mutex);
+			LWLockAcquire(&slot->io_in_progress_lock, LW_EXCLUSIVE);
 
-			/* Make sure the invalidated state persists across server restart */
-			ReplicationSlotMarkDirty();
-			ReplicationSlotSave();
+			PG_TRY();
+			{
+				ReplicationSlotPersistInvalidation(remote_slot->invalidated,
+												   false);
+			}
+			PG_CATCH();
+			{
+				/*
+				 * Release ownership before making the I/O lock available to
+				 * concurrent invalidators.
+				 */
+				HOLD_INTERRUPTS();	/* match the upcoming RESUME_INTERRUPTS */
+				ReplicationSlotRelease();
+				LWLockRelease(&slot->io_in_progress_lock);
+				PG_RE_THROW();
+			}
+			PG_END_TRY();
+
+			LWLockRelease(&slot->io_in_progress_lock);
+			ReplicationSlotsComputeRequiredXmin(false);
+			ReplicationSlotsComputeRequiredLSN();
 
 			slot_updated = true;
 		}
