@@ -226,6 +226,15 @@ WAIT FOR LSN '<replaceable class="parameter">lsn</replaceable>'
   </para>
 
   <para>
+   The default mode is <literal>standby_replay</literal>.  While recovery is
+   in progress, an unsatisfied wait in this mode is rejected when the session
+   already holds a heavyweight lock, because that lock could make recovery
+   depend, directly or indirectly, on the waiting session.  Execute
+   <command>WAIT FOR</command> before acquiring heavyweight locks, or release
+   them before waiting.
+  </para>
+
+  <para>
    <command>WAIT FOR</command> waits until the specified
    <parameter>lsn</parameter> is reached according to the specified
    <parameter>mode</parameter>. The <literal>standby_replay</literal> mode

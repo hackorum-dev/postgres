@@ -431,6 +431,32 @@ $node_standby->psql(
 ok( $stderr =~ /conflicting or redundant options/,
 	"get error for duplicate MODE parameter");
 
+# An unsatisfied standby_replay wait must be rejected when the backend holds
+# a heavyweight lock.  The relation lock covers the direct two-process cycle,
+# while the advisory lock is the return edge in the indirect three-process
+# cycle.  The short timeout keeps these tests bounded if the check regresses.
+$node_standby->psql(
+	'postgres', qq[
+	BEGIN;
+	SELECT count(*) FROM wait_test;
+	WAIT FOR LSN '${lsn3}' WITH (timeout '100ms');],
+	stderr => \$stderr);
+like(
+	$stderr,
+	qr/cannot wait for standby replay while holding heavyweight locks/,
+	"reject replay wait while holding a relation lock");
+
+$node_standby->psql(
+	'postgres', qq[
+	BEGIN;
+	SELECT pg_advisory_xact_lock(42);
+	WAIT FOR LSN '${lsn3}' WITH (timeout '100ms', no_throw);],
+	stderr => \$stderr);
+like(
+	$stderr,
+	qr/cannot wait for standby replay while holding heavyweight locks/,
+	"reject replay wait while holding an advisory lock");
+
 # 7a. Check the scenario of multiple standby_replay waiters.  We make 5
 # background psql sessions each waiting for a corresponding insertion.  When
 # waiting is finished, stored procedures logs if there are visible as many

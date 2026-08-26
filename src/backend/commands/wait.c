@@ -23,6 +23,7 @@
 #include "commands/wait.h"
 #include "executor/executor.h"
 #include "parser/parse_node.h"
+#include "storage/lock.h"
 #include "storage/proc.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
@@ -193,6 +194,21 @@ ExecWaitStmt(ParseState *pstate, WaitStmt *stmt, bool isTopLevel,
 					 errhint("Waiting for primary_flush can only be done on a primary server. "
 							 "Use standby_flush mode on a standby server.")));
 	}
+
+	/*
+	 * An unsatisfied standby replay wait must not retain heavyweight locks.
+	 * Such a lock could make recovery depend, directly or indirectly, on this
+	 * backend while this backend is waiting for recovery to advance.
+	 */
+	if (lsnType == WAIT_LSN_TYPE_STANDBY_REPLAY &&
+		RecoveryInProgress() &&
+		lsn > GetCurrentLSNForWaitType(lsnType) &&
+		BackendHoldsGrantedHeavyweightLock())
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("cannot wait for standby replay while holding heavyweight locks"),
+				 errdetail("A heavyweight lock held by this session could participate in a cycle that prevents recovery from reaching the target LSN."),
+				 errhint("Release the locks, or execute WAIT FOR before acquiring them.")));
 
 	/* Now wait for the LSN */
 	waitLSNResult = WaitForLSN(lsnType, lsn, timeout);
