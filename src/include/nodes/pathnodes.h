@@ -504,6 +504,9 @@ struct PlannerInfo
 	/* the SortGroupClauses the grouping expressions were derived from */
 	List	   *eager_group_clause;
 
+	/* base rels supplying nothing the query outputs, or NULL if none */
+	Relids		filter_only_rels;
+
 	/* list of plain Vars contained in targetlist and havingQual */
 	List	   *tlist_vars;
 
