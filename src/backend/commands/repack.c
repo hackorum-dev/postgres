@@ -886,6 +886,15 @@ check_concurrent_repack_requirements(Relation rel, Oid *ident_idx_p)
 				errhint("%s is not supported for catalog relations.",
 						"REPACK (CONCURRENTLY)"));
 
+	/* The CONCURRENTLY path does not write logical rewrite mappings. */
+	if (RelationIsUsedAsCatalogTable(rel))
+		ereport(ERROR,
+				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				errmsg("cannot execute %s on relation \"%s\"",
+					   "REPACK (CONCURRENTLY)", RelationGetRelationName(rel)),
+				errhint("%s is not supported for tables used as catalog tables.",
+						"REPACK (CONCURRENTLY)"));
+
 	/*
 	 * reorderbuffer.c does not seem to handle processing of TOAST relation
 	 * alone.
