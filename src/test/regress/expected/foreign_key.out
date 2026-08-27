@@ -4021,6 +4021,147 @@ SELECT * FROM fp_same_fk;
 DROP TRIGGER fp_reentry_same_constraint_trg ON fp_same_fk;
 DROP FUNCTION fp_reentry_same_constraint();
 DROP TABLE fp_same_fk, fp_same_pk;
+-- SET CONSTRAINTS fires queued events without opening a query level, so a
+-- SET CONSTRAINTS ... IMMEDIATE issued from an AFTER trigger runs a firing
+-- cycle nested at the enclosing cycle's query depth.  Each cycle must flush
+-- its own fast-path checks before it ends, and must leave the other cycle's
+-- checks alone.
+CREATE TABLE fp_sc_pk (id int PRIMARY KEY);
+INSERT INTO fp_sc_pk VALUES (1);
+CREATE TABLE fp_sc_fk (
+    a int REFERENCES fp_sc_pk (id),
+    b int CONSTRAINT fp_sc_deferred REFERENCES fp_sc_pk (id)
+        DEFERRABLE INITIALLY DEFERRED);
+CREATE FUNCTION fp_sc_check_now() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    BEGIN
+        SET CONSTRAINTS fp_sc_deferred IMMEDIATE;
+    EXCEPTION WHEN foreign_key_violation THEN
+        RAISE NOTICE 'caught by SET CONSTRAINTS';
+    END;
+    RETURN NEW;
+END$$;
+-- The trigger name must sort after the RI trigger for column a, so that a's
+-- check is already buffered in the enclosing cycle's batch when this fires.
+CREATE TRIGGER zz_fp_sc_check_now AFTER INSERT ON fp_sc_fk
+    FOR EACH ROW EXECUTE FUNCTION fp_sc_check_now();
+-- Deferred constraint violated: the nested SET CONSTRAINTS must raise, the
+-- EXCEPTION block must catch it, and rolling the subtransaction back must
+-- restore the deferred state so the violation surfaces again at commit.
+BEGIN;
+INSERT INTO fp_sc_fk VALUES (1, 999);
+NOTICE:  caught by SET CONSTRAINTS
+COMMIT;
+ERROR:  insert or update on table "fp_sc_fk" violates foreign key constraint "fp_sc_deferred"
+DETAIL:  Key (b)=(999) is not present in table "fp_sc_pk".
+SELECT count(*) FROM fp_sc_fk;
+ count 
+-------
+     0
+(1 row)
+
+-- Nothing violated: the nested cycle flushes, its subtransaction commits,
+-- and the enclosing cycle's own check still runs when it ends.
+BEGIN;
+INSERT INTO fp_sc_fk VALUES (1, 1);
+COMMIT;
+SELECT count(*) FROM fp_sc_fk;
+ count 
+-------
+     1
+(1 row)
+
+-- A key the enclosing cycle is responsible for is missing: its check must
+-- still run once the nested cycle has finished.
+BEGIN;
+INSERT INTO fp_sc_fk VALUES (999, 1);
+ERROR:  insert or update on table "fp_sc_fk" violates foreign key constraint "fp_sc_fk_a_fkey"
+DETAIL:  Key (a)=(999) is not present in table "fp_sc_pk".
+COMMIT;
+SELECT count(*) FROM fp_sc_fk;
+ count 
+-------
+     1
+(1 row)
+
+DROP TRIGGER zz_fp_sc_check_now ON fp_sc_fk;
+-- The same, from a trigger deferred to commit.  That firing cycle runs
+-- outside any query level, so its batch callbacks are owned by the
+-- after-trigger state itself rather than by a query level.
+CREATE CONSTRAINT TRIGGER zz_fp_sc_at_commit AFTER INSERT ON fp_sc_fk
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION fp_sc_check_now();
+BEGIN;
+INSERT INTO fp_sc_fk VALUES (1, 1);
+COMMIT;
+SELECT count(*) FROM fp_sc_fk;
+ count 
+-------
+     2
+(1 row)
+
+DROP TRIGGER zz_fp_sc_at_commit ON fp_sc_fk;
+DROP FUNCTION fp_sc_check_now();
+DROP TABLE fp_sc_fk, fp_sc_pk;
+-- SET CONSTRAINTS from a cast function invoked during a fast-path flush.
+-- The nested cycle runs inside FireAfterTriggerBatchCallbacks(), at the
+-- flushing cycle's query depth.  The flush guard sends its FK checks down the
+-- per-row path, so it creates no entries and fires an empty callback list; the
+-- flush it interrupted must still complete.
+CREATE TABLE fp_sc_cast_pk (id int PRIMARY KEY);
+INSERT INTO fp_sc_cast_pk VALUES (1);
+CREATE TABLE fp_sc_cast_defpk (id int PRIMARY KEY);
+INSERT INTO fp_sc_cast_defpk VALUES (1);
+CREATE TABLE fp_sc_cast_deffk (a int CONSTRAINT fp_sc_cast_def
+    REFERENCES fp_sc_cast_defpk (id) DEFERRABLE INITIALLY DEFERRED);
+CREATE TYPE fp_sc_vch AS (v int);
+CREATE FUNCTION fp_sc_vcast(fp_sc_vch) RETURNS int LANGUAGE plpgsql AS $$
+BEGIN
+    BEGIN
+        SET CONSTRAINTS fp_sc_cast_def IMMEDIATE;
+    EXCEPTION WHEN foreign_key_violation THEN
+        NULL;
+    END;
+    RETURN $1.v;
+END$$;
+CREATE CAST (fp_sc_vch AS int) WITH FUNCTION fp_sc_vcast(fp_sc_vch) AS IMPLICIT;
+CREATE TABLE fp_sc_cast_fk (a fp_sc_vch REFERENCES fp_sc_cast_pk (id));
+-- Fill exactly one batch so the flush fires the cast.  Nothing is violated, so
+-- the cast's subtransaction commits and the constraint stays immediate: the
+-- next violating row must be rejected right away rather than at commit.  That
+-- is what shows the cast's SET CONSTRAINTS actually took effect.
+BEGIN;
+INSERT INTO fp_sc_cast_deffk VALUES (1);
+INSERT INTO fp_sc_cast_fk SELECT row(1)::fp_sc_vch FROM generate_series(1, 64);
+SELECT count(*) FROM fp_sc_cast_fk;
+ count 
+-------
+    64
+(1 row)
+
+INSERT INTO fp_sc_cast_deffk VALUES (999);
+ERROR:  insert or update on table "fp_sc_cast_deffk" violates foreign key constraint "fp_sc_cast_def"
+DETAIL:  Key (a)=(999) is not present in table "fp_sc_cast_defpk".
+ROLLBACK;
+-- Now the deferred row is already violating when the cast runs.  Its
+-- SET CONSTRAINTS raises, the cast's subtransaction rolls back, and that
+-- restores the deferred state, so the violation surfaces at commit instead.
+BEGIN;
+INSERT INTO fp_sc_cast_deffk VALUES (999);
+INSERT INTO fp_sc_cast_fk SELECT row(1)::fp_sc_vch FROM generate_series(1, 64);
+COMMIT;
+ERROR:  insert or update on table "fp_sc_cast_deffk" violates foreign key constraint "fp_sc_cast_def"
+DETAIL:  Key (a)=(999) is not present in table "fp_sc_cast_defpk".
+SELECT count(*) FROM fp_sc_cast_fk;
+ count 
+-------
+     0
+(1 row)
+
+DROP TABLE fp_sc_cast_fk, fp_sc_cast_deffk, fp_sc_cast_pk, fp_sc_cast_defpk;
+DROP CAST (fp_sc_vch AS int);
+DROP FUNCTION fp_sc_vcast(fp_sc_vch);
+DROP TYPE fp_sc_vch;
 -- An AFTER trigger runs a query of its own, and that query inserts into a
 -- second table with a fast-path foreign key.  The entry the nested INSERT
 -- creates belongs to the cursor's portal, which is gone by the time the
