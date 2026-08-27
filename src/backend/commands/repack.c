@@ -924,32 +924,32 @@ check_concurrent_repack_requirements(Relation rel, Oid *ident_idx_p)
 						  "REPLICA IDENTITY NOTHING" : "REPLICA IDENTITY FULL"));
 
 	/*
-	 * Obtain the replica identity index -- either one that has been set
-	 * explicitly, or a non-deferrable primary key.  If none of these cases
-	 * apply, the table cannot be repacked concurrently.  It might be possible
-	 * to have repack work with a FULL replica identity; however that requires
-	 * more work and is not implemented yet.
+	 * Obtain the replica identity index.  We require the actual index
+	 * responsible for being the logical identity; because AMs use that
+	 * same index to determine which identity to include in WAL.
 	 */
-	ident_idx = GetRelationIdentityOrPK(rel);
+	ident_idx = RelationGetReplicaIndex(rel);
 	if (!OidIsValid(ident_idx))
 	{
-		/* This special case warrants its own error message */
-		if (OidIsValid(rel->rd_pkindex) && rel->rd_ispkdeferrable)
-			ereport(ERROR,
-					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					errmsg("cannot execute %s on relation \"%s\"",
-						   "REPACK (CONCURRENTLY)",
-						   RelationGetRelationName(rel)),
-					errdetail("%s does not support deferrable primary keys.",
-							  "REPACK (CONCURRENTLY)"),
-					errhint("Use ALTER TABLE ... REPLICA IDENTITY USING INDEX to designate another index as replica identity."));
-
 		ereport(ERROR,
 				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				errmsg("cannot execute %s on relation \"%s\"",
 					   "REPACK (CONCURRENTLY)", RelationGetRelationName(rel)),
 				errhint("Relation \"%s\" has no identity index.",
 						RelationGetRelationName(rel)));
+	}
+
+	/* This special case warrants its own error message */
+	if (!OidIsValid(RelationGetPrimaryKeyIndex(rel, false)))
+	{
+		ereport(ERROR,
+				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				errmsg("cannot execute %s on relation \"%s\"",
+					   "REPACK (CONCURRENTLY)",
+					   RelationGetRelationName(rel)),
+				errdetail("%s does not support deferrable primary keys.",
+						  "REPACK (CONCURRENTLY)"),
+				errhint("Use ALTER TABLE ... REPLICA IDENTITY USING INDEX to designate another index as replica identity."));
 	}
 
 	*ident_idx_p = ident_idx;
