@@ -50,8 +50,8 @@ extern Node *transformAssignmentIndirection(ParseState *pstate,
 											int location);
 extern List *checkInsertTargets(ParseState *pstate, List *cols,
 								List **attrnos);
-extern TupleDesc expandRecordVariable(ParseState *pstate, Var *var,
-									  int levelsup);
+extern TupleDesc expandRecordExpr(ParseState *pstate, Node *expr,
+								  int levelsup);
 extern char *FigureColname(Node *node);
 
 #endif							/* PARSE_TARGET_H */
