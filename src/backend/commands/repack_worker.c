@@ -101,8 +101,15 @@ RepackWorkerMain(Datum main_arg)
 	pq_set_parallel_leader(shared->backend_pid,
 						   shared->backend_proc_number);
 
-	/* Connect to the database. LOGIN is not required. */
+	/*
+	 * Connect to the database. Like parallel workers do, we skip the
+	 * connection authorization checks. The backend that launched us is
+	 * already connected to this database, and the role we run as is the owner
+	 * of the table being repacked, which needs neither the LOGIN attribute
+	 * nor the CONNECT privilege for our purposes.
+	 */
 	BackgroundWorkerInitializeConnectionByOid(shared->dbid, shared->roleid,
+											  BGWORKER_BYPASS_ALLOWCONN |
 											  BGWORKER_BYPASS_ROLELOGINCHECK);
 
 	/*
