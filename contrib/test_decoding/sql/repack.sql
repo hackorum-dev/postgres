@@ -24,6 +24,18 @@ SELECT a.relname, a.relfilenode=b.relfilenode FROM pg_class a
 DROP TABLE ptnowner;
 DROP ROLE regress_ptnowner;
 
+-- The decoding worker runs as the owner of the table being repacked, but it
+-- should not need the CONNECT privilege on the database.
+CREATE ROLE regress_repack_noconn NOLOGIN;
+CREATE TABLE repack_noconn (i int PRIMARY KEY);
+ALTER TABLE repack_noconn OWNER TO regress_repack_noconn;
+SELECT current_database() AS datname \gset
+REVOKE CONNECT ON DATABASE :"datname" FROM PUBLIC;
+REPACK (CONCURRENTLY) repack_noconn;
+GRANT CONNECT ON DATABASE :"datname" TO PUBLIC;
+DROP TABLE repack_noconn;
+DROP ROLE regress_repack_noconn;
+
 -- Verify that REPACK (CONCURRENTLY) doesn't lose "attmissingval" columns
 CREATE TABLE rpk_missing (id int PRIMARY KEY);
 INSERT INTO rpk_missing SELECT generate_series(1, 3);
