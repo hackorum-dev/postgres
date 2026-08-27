@@ -290,6 +290,7 @@
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
 #include "utils/guc.h"
+#include "utils/injection_point.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -610,18 +611,22 @@ static void apply_handle_update_internal(ApplyExecutionData *edata,
 										 ResultRelInfo *relinfo,
 										 TupleTableSlot *remoteslot,
 										 LogicalRepTupleData *newtup,
-										 Oid localindexoid);
+										 Oid localindexoid,
+										 bool isidentity);
 static void apply_handle_delete_internal(ApplyExecutionData *edata,
 										 ResultRelInfo *relinfo,
 										 TupleTableSlot *remoteslot,
-										 Oid localindexoid);
+										 Oid localindexoid,
+										 bool isidentity);
 static bool FindReplTupleInLocalRel(ApplyExecutionData *edata, Relation localrel,
 									LogicalRepRelation *remoterel,
 									Oid localidxoid,
+									bool isidentity,
 									TupleTableSlot *remoteslot,
 									TupleTableSlot **localslot);
 static bool FindDeletedTupleInLocalRel(Relation localrel,
 									   Oid localidxoid,
+									   bool isidentity,
 									   TupleTableSlot *remoteslot,
 									   TransactionId *delete_xid,
 									   ReplOriginId *delete_origin,
@@ -2925,7 +2930,8 @@ apply_handle_update(StringInfo s)
 								   remoteslot, &newtup, CMD_UPDATE);
 	else
 		apply_handle_update_internal(edata, edata->targetRelInfo,
-									 remoteslot, &newtup, rel->localindexoid);
+									 remoteslot, &newtup, rel->localindexoid,
+									 rel->isidentity);
 
 	finish_edata(edata);
 
@@ -2950,7 +2956,7 @@ apply_handle_update_internal(ApplyExecutionData *edata,
 							 ResultRelInfo *relinfo,
 							 TupleTableSlot *remoteslot,
 							 LogicalRepTupleData *newtup,
-							 Oid localindexoid)
+							 Oid localindexoid, bool isidentity)
 {
 	EState	   *estate = edata->estate;
 	LogicalRepRelMapEntry *relmapentry = edata->targetRel;
@@ -2962,11 +2968,14 @@ apply_handle_update_internal(ApplyExecutionData *edata,
 	MemoryContext oldctx;
 
 	EvalPlanQualInit(&epqstate, estate, NULL, NIL, -1, NIL);
+
+	INJECTION_POINT("apply-update-before-open-indices", NULL);
+
 	ExecOpenIndices(relinfo, false);
 
 	found = FindReplTupleInLocalRel(edata, localrel,
 									&relmapentry->remoterel,
-									localindexoid,
+									localindexoid, isidentity,
 									remoteslot, &localslot);
 
 	/*
@@ -3020,7 +3029,8 @@ apply_handle_update_internal(ApplyExecutionData *edata,
 		 * Detecting whether the tuple was recently deleted or never existed
 		 * is crucial to avoid misleading the user during conflict handling.
 		 */
-		if (FindDeletedTupleInLocalRel(localrel, localindexoid, remoteslot,
+		if (FindDeletedTupleInLocalRel(localrel, localindexoid, isidentity,
+									   remoteslot,
 									   &conflicttuple.xmin,
 									   &conflicttuple.origin,
 									   &conflicttuple.ts) &&
@@ -3122,7 +3132,8 @@ apply_handle_delete(StringInfo s)
 
 		ExecOpenIndices(relinfo, false);
 		apply_handle_delete_internal(edata, relinfo,
-									 remoteslot, rel->localindexoid);
+									 remoteslot, rel->localindexoid,
+									 rel->isidentity);
 		ExecCloseIndices(relinfo);
 	}
 
@@ -3148,7 +3159,7 @@ static void
 apply_handle_delete_internal(ApplyExecutionData *edata,
 							 ResultRelInfo *relinfo,
 							 TupleTableSlot *remoteslot,
-							 Oid localindexoid)
+							 Oid localindexoid, bool isidentity)
 {
 	EState	   *estate = edata->estate;
 	Relation	localrel = relinfo->ri_RelationDesc;
@@ -3166,6 +3177,7 @@ apply_handle_delete_internal(ApplyExecutionData *edata,
 		   RelationGetIndexList(localrel) == NIL);
 
 	found = FindReplTupleInLocalRel(edata, localrel, remoterel, localindexoid,
+									isidentity,
 									remoteslot, &localslot);
 
 	/* If found delete it. */
@@ -3216,6 +3228,7 @@ static bool
 FindReplTupleInLocalRel(ApplyExecutionData *edata, Relation localrel,
 						LogicalRepRelation *remoterel,
 						Oid localidxoid,
+						bool isidentity,
 						TupleTableSlot *remoteslot,
 						TupleTableSlot **localslot)
 {
@@ -3239,14 +3252,14 @@ FindReplTupleInLocalRel(ApplyExecutionData *edata, Relation localrel,
 		Relation	idxrel = index_open(localidxoid, AccessShareLock);
 
 		/* Index must be PK, RI, or usable for REPLICA IDENTITY FULL tables */
-		Assert(GetRelationIdentityOrPK(localrel) == localidxoid ||
+		Assert(isidentity ||
 			   (remoterel->replident == REPLICA_IDENTITY_FULL &&
 				IsIndexUsableForReplicaIdentityFull(idxrel,
 													edata->targetRel->attrmap)));
 		index_close(idxrel, AccessShareLock);
 #endif
 
-		found = RelationFindReplTupleByIndex(localrel, localidxoid,
+		found = RelationFindReplTupleByIndex(localrel, localidxoid, isidentity,
 											 LockTupleExclusive,
 											 remoteslot, *localslot);
 	}
@@ -3308,7 +3321,7 @@ IsIndexUsableForFindingDeletedTuple(Oid localindexoid,
  * '*delete_origin', and '*delete_time' respectively.
  */
 static bool
-FindDeletedTupleInLocalRel(Relation localrel, Oid localidxoid,
+FindDeletedTupleInLocalRel(Relation localrel, Oid localidxoid, bool isidentity,
 						   TupleTableSlot *remoteslot,
 						   TransactionId *delete_xid, ReplOriginId *delete_origin,
 						   TimestampTz *delete_time)
@@ -3377,6 +3390,7 @@ FindDeletedTupleInLocalRel(Relation localrel, Oid localidxoid,
 	if (OidIsValid(localidxoid) &&
 		IsIndexUsableForFindingDeletedTuple(localidxoid, oldestxmin))
 		return RelationFindDeletedTupleInfoByIndex(localrel, localidxoid,
+												   isidentity,
 												   remoteslot, oldestxmin,
 												   delete_xid, delete_origin,
 												   delete_time);
@@ -3479,7 +3493,8 @@ apply_handle_tuple_routing(ApplyExecutionData *edata,
 		case CMD_DELETE:
 			apply_handle_delete_internal(edata, partrelinfo,
 										 remoteslot_part,
-										 part_entry->localindexoid);
+										 part_entry->localindexoid,
+										 part_entry->isidentity);
 			break;
 
 		case CMD_UPDATE:
@@ -3502,6 +3517,7 @@ apply_handle_tuple_routing(ApplyExecutionData *edata,
 				found = FindReplTupleInLocalRel(edata, partrel,
 												&part_entry->remoterel,
 												part_entry->localindexoid,
+												part_entry->isidentity,
 												remoteslot_part, &localslot);
 				if (!found)
 				{
@@ -3515,6 +3531,7 @@ apply_handle_tuple_routing(ApplyExecutionData *edata,
 					 */
 					if (FindDeletedTupleInLocalRel(partrel,
 												   part_entry->localindexoid,
+												   part_entry->isidentity,
 												   remoteslot_part,
 												   &conflicttuple.xmin,
 												   &conflicttuple.origin,
