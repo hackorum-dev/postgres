@@ -4043,6 +4043,38 @@ complete_dedup_path(Path *path)
 }
 
 /*
+ * dedup_groups_as_query_does
+ *	  Does this deduplication group on exactly the query's grouping keys?
+ *
+ * The caller's grouping Agg groups on those keys again, so it can take the
+ * path's subpath instead.
+ */
+static bool
+dedup_groups_as_query_does(PlannerInfo *root, Path *path)
+{
+	AggPath    *aggpath;
+	ListCell   *lc;
+
+	if (!IsA(path, AggPath))
+		return false;
+
+	aggpath = (AggPath *) path;
+
+	if (aggpath->groupClause == NIL ||
+		list_length(aggpath->groupClause) !=
+		list_length(root->processed_groupClause))
+		return false;
+
+	foreach(lc, aggpath->groupClause)
+	{
+		if (!list_member_ptr(root->processed_groupClause, lfirst(lc)))
+			return false;
+	}
+
+	return true;
+}
+
+/*
  * create_grouping_paths
  *
  * Build a new upperrel containing Paths for grouping and/or aggregation.
@@ -4433,9 +4465,23 @@ create_ordinary_grouping_paths(PlannerInfo *root, RelOptInfo *input_rel,
 		{
 			Path	   *path = (Path *) lfirst(lc);
 
+			/*
+			 * The aggregate above repeats a deduplication on the query's own
+			 * keys, so take its input instead.  Any projection under it goes
+			 * too, since we project onto the target we want here anyway.
+			 */
+			if (dedup_groups_as_query_does(root, path))
+			{
+				path = ((AggPath *) path)->subpath;
+				if (IsA(path, ProjectionPath))
+					path = ((ProjectionPath *) path)->subpath;
+			}
+			else
+				path = complete_dedup_path(path);
+
 			add_path(dedup_rel,
 					 (Path *) create_projection_path(root, dedup_rel,
-													 complete_dedup_path(path),
+													 path,
 													 input_rel->reltarget));
 		}
 

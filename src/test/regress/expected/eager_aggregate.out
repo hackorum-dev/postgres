@@ -2917,31 +2917,29 @@ HAVING count(*) > 5;
                      ->  Seq Scan on eager_distinct_a1 a1
 (10 rows)
 
--- A DISTINCT aggregate beside a grouping clause of the query's own is no
--- obstacle, though at this size the plain join still costs less
+-- A DISTINCT aggregate beside a grouping clause of the query's own adds its
+-- argument as a further key, and the deduplication goes down as usual
 EXPLAIN (COSTS OFF)
 SELECT a1.id, count(DISTINCT a1.title)
   FROM eager_distinct_a1 a1
   JOIN eager_distinct_a2 a2 ON a2.a1_id = a1.id
  WHERE a2.flag
  GROUP BY a1.id;
-                           QUERY PLAN                           
-----------------------------------------------------------------
+                        QUERY PLAN                        
+----------------------------------------------------------
  GroupAggregate
    Group Key: a1.id
    ->  Sort
          Sort Key: a1.id, a1.title
-         ->  HashAggregate
-               Group Key: a1.id
-               ->  Hash Join
-                     Hash Cond: (a2.a1_id = a1.id)
-                     ->  Partial HashAggregate
-                           Group Key: a2.a1_id
-                           ->  Seq Scan on eager_distinct_a2 a2
-                                 Filter: flag
-                     ->  Hash
-                           ->  Seq Scan on eager_distinct_a1 a1
-(14 rows)
+         ->  Hash Join
+               Hash Cond: (a2.a1_id = a1.id)
+               ->  Partial HashAggregate
+                     Group Key: a2.a1_id
+                     ->  Seq Scan on eager_distinct_a2 a2
+                           Filter: flag
+               ->  Hash
+                     ->  Seq Scan on eager_distinct_a1 a1
+(12 rows)
 
 -- The deduplication threshold governs the derived keys too
 SET min_eager_distinct_group_size TO 8;

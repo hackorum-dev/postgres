@@ -908,8 +908,8 @@ SELECT count(DISTINCT a1.id)
  WHERE a2.flag
 HAVING count(*) > 5;
 
--- A DISTINCT aggregate beside a grouping clause of the query's own is no
--- obstacle, though at this size the plain join still costs less
+-- A DISTINCT aggregate beside a grouping clause of the query's own adds its
+-- argument as a further key, and the deduplication goes down as usual
 EXPLAIN (COSTS OFF)
 SELECT a1.id, count(DISTINCT a1.title)
   FROM eager_distinct_a1 a1
