@@ -169,11 +169,13 @@ cash_div_int64(Cash c, int64 i)
 	 */
 	if (i == -1)
 	{
-		if (unlikely(c == PG_INT64_MIN))
+		Cash		result;
+
+		if (unlikely(pg_neg_s64_overflow(c, &result)))
 			ereport(ERROR,
 					(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 					 errmsg("money out of range")));
-		return -c;
+		return result;
 	}
 
 	/* No overflow is possible */
@@ -379,12 +381,11 @@ cash_in(PG_FUNCTION_ARGS)
 	 */
 	if (sgn > 0)
 	{
-		if (value == PG_INT64_MIN)
+		if (pg_neg_s64_overflow(value, &result))
 			ereturn(escontext, (Datum) 0,
 					(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 					 errmsg("value \"%s\" is out of range for type %s",
 							str, "money")));
-		result = -value;
 	}
 	else
 		result = value;
