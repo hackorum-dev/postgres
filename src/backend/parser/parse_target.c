@@ -1461,18 +1461,15 @@ ExpandRowReference(ParseState *pstate, Node *expr,
 	 * (This can be pretty inefficient if the expression involves nontrivial
 	 * computation :-(.)
 	 *
-	 * Verify it's a composite type, and get the tupdesc.
-	 * get_expr_result_tupdesc() handles this conveniently.
+	 * Verify it's a composite type, and get the tupdesc. That task is handled
+	 * by expandRecordExpr().
 	 *
 	 * If it's a Var of type RECORD, we have to work even harder: we have to
-	 * find what the Var refers to, and pass that to get_expr_result_tupdesc.
-	 * That task is handled by expandRecordVariable().
+	 * find what the Var refers to.  We also look through scalar SubLinks that
+	 * relay anonymous RECORD.  Other cases still go through
+	 * get_expr_result_tupdesc() underneath.
 	 */
-	if (IsA(expr, Var) &&
-		((Var *) expr)->vartype == RECORDOID)
-		tupleDesc = expandRecordVariable(pstate, (Var *) expr, 0);
-	else
-		tupleDesc = get_expr_result_tupdesc(expr, false);
+	tupleDesc = expandRecordExpr(pstate, expr, 0);
 	Assert(tupleDesc);
 
 	/* Generate a list of references to the individual fields */
@@ -1512,29 +1509,61 @@ ExpandRowReference(ParseState *pstate, Node *expr,
 }
 
 /*
- * expandRecordVariable
- *		Get the tuple descriptor for a Var of type RECORD, if possible.
+ * expandRecordExpr
+ *		Get the tuple descriptor for a composite-valued expression.
  *
- * Since no actual table or view column is allowed to have type RECORD, such
- * a Var must refer to a JOIN or FUNCTION RTE or to a subquery output.  We
- * drill down to find the ultimate defining expression and attempt to infer
- * the tupdesc from it.  We ereport if we can't determine the tupdesc.
+ * Looks through scalar SubLinks (EXPR_SUBLINK) so that an anonymous RECORD
+ * value relayed as (SELECT ...) can be resolved from the subquery's output
+ * expression.  For a Var of type RECORD, drills down through JOIN / subquery
+ * / CTE RTEs to the defining expression (no table or view column may have
+ * type RECORD).  Other composites fall through to get_expr_result_tupdesc().
+ * We ereport if we can't determine the tupdesc.
  *
  * levelsup is an extra offset to interpret the Var's varlevelsup correctly
  * when recursing.  Outside callers should pass zero.
  */
 TupleDesc
-expandRecordVariable(ParseState *pstate, Var *var, int levelsup)
+expandRecordExpr(ParseState *pstate, Node *expr, int levelsup)
 {
 	TupleDesc	tupleDesc;
 	int			netlevelsup;
 	RangeTblEntry *rte;
 	AttrNumber	attnum;
-	Node	   *expr;
+	Var		   *var;
 
-	/* Check my caller didn't mess up */
-	Assert(IsA(var, Var));
-	Assert(var->vartype == RECORDOID);
+	/* Look through scalar SubLinks. */
+	if (expr && IsA(expr, SubLink) &&
+		((SubLink *) expr)->subLinkType == EXPR_SUBLINK)
+	{
+		SubLink    *sublink = (SubLink *) expr;
+		Query	   *subselect = castNode(Query, sublink->subselect);
+		TargetEntry *ste;
+		ParseState	subpstate = {0};
+
+		/* EXPR_SUBLINK has a single non-junk output column. */
+		ste = get_tle_by_resno(subselect->targetList, 1);
+		if (ste == NULL || ste->resjunk)
+			elog(ERROR, "EXPR_SUBLINK subquery has no non-junk output column");
+
+		/*
+		 * Recurse with a ParseState for the SubLink subquery, so that Vars
+		 * (and nested SubLinks) inside it are interpreted correctly.
+		 */
+		subpstate.parentParseState = pstate;
+		subpstate.p_rtable = subselect->rtable;
+
+		return expandRecordExpr(&subpstate, (Node *) ste->expr, 0);
+	}
+
+	/*
+	 * If it's not a Var of type RECORD, get_expr_result_tupdesc can handle
+	 * named composites, RowExpr, etc.
+	 */
+	if (!expr || !IsA(expr, Var) ||
+		((Var *) expr)->vartype != RECORDOID)
+		return get_expr_result_tupdesc(expr, false);
+
+	var = (Var *) expr;
 
 	/*
 	 * Note: it's tempting to use GetNSItemByRangeTablePosn here so that we
@@ -1607,28 +1636,25 @@ expandRecordVariable(ParseState *pstate, Var *var, int levelsup)
 					elog(ERROR, "subquery %s does not have attribute %d",
 						 rte->eref->aliasname, attnum);
 				expr = (Node *) ste->expr;
-				if (IsA(expr, Var))
-				{
-					/*
-					 * Recurse into the sub-select to see what its Var refers
-					 * to.  We have to build an additional level of ParseState
-					 * to keep in step with varlevelsup in the subselect;
-					 * furthermore, the subquery RTE might be from an outer
-					 * query level, in which case the ParseState for the
-					 * subselect must have that outer level as parent.
-					 */
-					ParseState	mypstate = {0};
 
-					/* this loop must work, since GetRTEByRangeTablePosn did */
-					for (int level = 0; level < netlevelsup; level++)
-						pstate = pstate->parentParseState;
-					mypstate.parentParseState = pstate;
-					mypstate.p_rtable = rte->subquery->rtable;
-					/* don't bother filling the rest of the fake pstate */
+				/*
+				 * Recurse into the sub-select on its output expression.
+				 * We have to build an additional level of ParseState to keep
+				 * in step with varlevelsup in the subselect.  Furthermore, the
+				 * subquery RTE might be from an outer query level, in which
+				 * case the ParseState for the subselect must have that outer
+				 * level as parent.
+				 */
+				ParseState	mypstate = {0};
 
-					return expandRecordVariable(&mypstate, (Var *) expr, 0);
-				}
-				/* else fall through to inspect the expression */
+				/* this loop must work, since GetRTEByRangeTablePosn did */
+				for (int level = 0; level < netlevelsup; level++)
+					pstate = pstate->parentParseState;
+				mypstate.parentParseState = pstate;
+				mypstate.p_rtable = rte->subquery->rtable;
+				/* don't bother filling the rest of the fake pstate */
+
+				return expandRecordExpr(&mypstate, expr, 0);
 			}
 			break;
 		case RTE_JOIN:
@@ -1636,11 +1662,8 @@ expandRecordVariable(ParseState *pstate, Var *var, int levelsup)
 			Assert(attnum > 0 && attnum <= list_length(rte->joinaliasvars));
 			expr = (Node *) list_nth(rte->joinaliasvars, attnum - 1);
 			Assert(expr != NULL);
-			/* We intentionally don't strip implicit coercions here */
-			if (IsA(expr, Var))
-				return expandRecordVariable(pstate, (Var *) expr, netlevelsup);
-			/* else fall through to inspect the expression */
-			break;
+			/* may be a coerced Var or COALESCE, leave it wrapped */
+			return expandRecordExpr(pstate, expr, netlevelsup);
 		case RTE_FUNCTION:
 
 			/*
@@ -1666,28 +1689,25 @@ expandRecordVariable(ParseState *pstate, Var *var, int levelsup)
 					elog(ERROR, "CTE %s does not have attribute %d",
 						 rte->eref->aliasname, attnum);
 				expr = (Node *) ste->expr;
-				if (IsA(expr, Var))
-				{
-					/*
-					 * Recurse into the CTE to see what its Var refers to. We
-					 * have to build an additional level of ParseState to keep
-					 * in step with varlevelsup in the CTE; furthermore it
-					 * could be an outer CTE (compare SUBQUERY case above).
-					 */
-					ParseState	mypstate = {0};
 
-					/* this loop must work, since GetCTEForRTE did */
-					for (Index level = 0;
-						 level < rte->ctelevelsup + netlevelsup;
-						 level++)
-						pstate = pstate->parentParseState;
-					mypstate.parentParseState = pstate;
-					mypstate.p_rtable = ((Query *) cte->ctequery)->rtable;
-					/* don't bother filling the rest of the fake pstate */
+				/*
+				 * Recurse into the CTE on its output expression.  We have to
+				 * build an additional level of ParseState to keep in step
+				 * with varlevelsup in the CTE.  Furthermore it could be an
+				 * outer CTE (compare SUBQUERY case above).
+				 */
+				ParseState	mypstate = {0};
 
-					return expandRecordVariable(&mypstate, (Var *) expr, 0);
-				}
-				/* else fall through to inspect the expression */
+				/* this loop must work, since GetCTEForRTE did */
+				for (Index level = 0;
+					 level < rte->ctelevelsup + netlevelsup;
+					 level++)
+					pstate = pstate->parentParseState;
+				mypstate.parentParseState = pstate;
+				mypstate.p_rtable = ((Query *) cte->ctequery)->rtable;
+				/* don't bother filling the rest of the fake pstate */
+
+				return expandRecordExpr(&mypstate, expr, 0);
 			}
 			break;
 		case RTE_GROUP:

@@ -2109,8 +2109,8 @@ ParseComplexProjection(ParseState *pstate, const char *funcname, Node *first_arg
 	 * result can omit the whole-row Var and just be a Var for the selected
 	 * field.
 	 *
-	 * This case could be handled by expandRecordVariable, but it's more
-	 * efficient to do it this way when possible.
+	 * This case could be handled by expandRecordExpr, but it's more efficient
+	 * to do it this way when possible.
 	 */
 	if (IsA(first_arg, Var) &&
 		((Var *) first_arg)->varattno == InvalidAttrNumber)
@@ -2129,11 +2129,11 @@ ParseComplexProjection(ParseState *pstate, const char *funcname, Node *first_arg
 	 *
 	 * If it's a Var of type RECORD, we have to work even harder: we have to
 	 * find what the Var refers to, and pass that to get_expr_result_tupdesc.
-	 * That task is handled by expandRecordVariable().
+	 * That task is handled by expandRecordExpr().
 	 */
 	if (IsA(first_arg, Var) &&
 		((Var *) first_arg)->vartype == RECORDOID)
-		tupdesc = expandRecordVariable(pstate, (Var *) first_arg, 0);
+		tupdesc = expandRecordExpr(pstate, first_arg, 0);
 	else
 		tupdesc = get_expr_result_tupdesc(first_arg, true);
 	if (!tupdesc)

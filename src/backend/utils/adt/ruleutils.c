@@ -8568,6 +8568,9 @@ resolve_special_varno(Node *node, deparse_context *context,
  *
  * Similarly, a PARAM of type RECORD has to refer to some expression of
  * a determinable composite type.
+ *
+ * We also look through scalar SubLinks (EXPR_SUBLINK) that relay anonymous
+ * RECORD, paralleling expandRecordExpr() in the parser.
  */
 static const char *
 get_name_for_var_field(Var *var, int fieldno,
@@ -8616,6 +8619,35 @@ get_name_for_var_field(Var *var, int fieldno,
 			pop_ancestor_plan(dpns, &save_dpns);
 			return result;
 		}
+	}
+
+	/* Look through scalar SubLinks (see expandRecordExpr). */
+	if (IsA(var, SubLink) &&
+		((SubLink *) var)->subLinkType == EXPR_SUBLINK)
+	{
+		SubLink    *sublink = (SubLink *) var;
+		Query	   *subselect = castNode(Query, sublink->subselect);
+		TargetEntry *ste;
+		List	   *save_nslist = context->namespaces;
+		deparse_namespace mydpns;
+		const char *result;
+
+		/* EXPR_SUBLINK has a single non-junk output column. */
+		ste = get_tle_by_resno(subselect->targetList, 1);
+		if (ste == NULL || ste->resjunk)
+			elog(ERROR, "EXPR_SUBLINK subquery has no non-junk output column");
+
+		/*
+		 * Recurse with a deparse namespace for the SubLink subquery, so that
+		 * Vars (and nested SubLinks) inside it are interpreted correctly.
+		 */
+		set_deparse_for_query(&mydpns, subselect, context->namespaces);
+		context->namespaces = lcons(&mydpns, context->namespaces);
+
+		result = get_name_for_var_field((Var *) ste->expr, fieldno, 0, context);
+
+		context->namespaces = save_nslist;
+		return result;
 	}
 
 	/*
@@ -8737,7 +8769,7 @@ get_name_for_var_field(Var *var, int fieldno,
 
 	/*
 	 * This part has essentially the same logic as the parser's
-	 * expandRecordVariable() function, but we are dealing with a different
+	 * expandRecordExpr() function, but we are dealing with a different
 	 * representation of the input context, and we only need one field name
 	 * not a TupleDesc.  Also, we need special cases for finding subquery and
 	 * CTE subplans when deparsing Plan trees.
@@ -8770,38 +8802,35 @@ get_name_for_var_field(Var *var, int fieldno,
 						elog(ERROR, "subquery %s does not have attribute %d",
 							 rte->eref->aliasname, attnum);
 					expr = (Node *) ste->expr;
-					if (IsA(expr, Var))
-					{
-						/*
-						 * Recurse into the sub-select to see what its Var
-						 * refers to. We have to build an additional level of
-						 * namespace to keep in step with varlevelsup in the
-						 * subselect; furthermore, the subquery RTE might be
-						 * from an outer query level, in which case the
-						 * namespace for the subselect must have that outer
-						 * level as parent namespace.
-						 */
-						List	   *save_nslist = context->namespaces;
-						List	   *parent_namespaces;
-						deparse_namespace mydpns;
-						const char *result;
 
-						parent_namespaces = list_copy_tail(context->namespaces,
-														   netlevelsup);
+					/*
+					 * Recurse into the sub-select on its output expression.
+					 * We have to build an additional level of namespace to
+					 * keep in step with varlevelsup in the subselect.
+					 * Furthermore, the subquery RTE might be from an outer
+					 * query level, in which case the namespace for the
+					 * subselect must have that outer level as parent
+					 * namespace.
+					 */
+					List	   *save_nslist = context->namespaces;
+					List	   *parent_namespaces;
+					deparse_namespace mydpns;
+					const char *result;
 
-						set_deparse_for_query(&mydpns, rte->subquery,
-											  parent_namespaces);
+					parent_namespaces = list_copy_tail(context->namespaces,
+													   netlevelsup);
 
-						context->namespaces = lcons(&mydpns, parent_namespaces);
+					set_deparse_for_query(&mydpns, rte->subquery,
+										  parent_namespaces);
 
-						result = get_name_for_var_field((Var *) expr, fieldno,
-														0, context);
+					context->namespaces = lcons(&mydpns, parent_namespaces);
 
-						context->namespaces = save_nslist;
+					result = get_name_for_var_field((Var *) expr, fieldno,
+													0, context);
 
-						return result;
-					}
-					/* else fall through to inspect the expression */
+					context->namespaces = save_nslist;
+
+					return result;
 				}
 				else
 				{
@@ -8855,13 +8884,10 @@ get_name_for_var_field(Var *var, int fieldno,
 			Assert(attnum > 0 && attnum <= list_length(rte->joinaliasvars));
 			expr = (Node *) list_nth(rte->joinaliasvars, attnum - 1);
 			Assert(expr != NULL);
-			/* we intentionally don't strip implicit coercions here */
-			if (IsA(expr, Var))
-				return get_name_for_var_field((Var *) expr, fieldno,
-											  var->varlevelsup + levelsup,
-											  context);
-			/* else fall through to inspect the expression */
-			break;
+			/* may be a coerced Var or COALESCE, leave it wrapped */
+			return get_name_for_var_field((Var *) expr, fieldno,
+										  var->varlevelsup + levelsup,
+										  context);
 		case RTE_FUNCTION:
 		case RTE_TABLEFUNC:
 
@@ -8906,36 +8932,32 @@ get_name_for_var_field(Var *var, int fieldno,
 						elog(ERROR, "CTE %s does not have attribute %d",
 							 rte->eref->aliasname, attnum);
 					expr = (Node *) ste->expr;
-					if (IsA(expr, Var))
-					{
-						/*
-						 * Recurse into the CTE to see what its Var refers to.
-						 * We have to build an additional level of namespace
-						 * to keep in step with varlevelsup in the CTE;
-						 * furthermore it could be an outer CTE (compare
-						 * SUBQUERY case above).
-						 */
-						List	   *save_nslist = context->namespaces;
-						List	   *parent_namespaces;
-						deparse_namespace mydpns;
-						const char *result;
 
-						parent_namespaces = list_copy_tail(context->namespaces,
-														   ctelevelsup);
+					/*
+					 * Recurse into the CTE on its output expression.  We have
+					 * to build an additional level of namespace to keep in
+					 * step with varlevelsup in the CTE.  Furthermore it could
+					 * be an outer CTE (compare SUBQUERY case above).
+					 */
+					List	   *save_nslist = context->namespaces;
+					List	   *parent_namespaces;
+					deparse_namespace mydpns;
+					const char *result;
 
-						set_deparse_for_query(&mydpns, ctequery,
-											  parent_namespaces);
+					parent_namespaces = list_copy_tail(context->namespaces,
+													   ctelevelsup);
 
-						context->namespaces = lcons(&mydpns, parent_namespaces);
+					set_deparse_for_query(&mydpns, ctequery,
+										  parent_namespaces);
 
-						result = get_name_for_var_field((Var *) expr, fieldno,
-														0, context);
+					context->namespaces = lcons(&mydpns, parent_namespaces);
 
-						context->namespaces = save_nslist;
+					result = get_name_for_var_field((Var *) expr, fieldno,
+													0, context);
 
-						return result;
-					}
-					/* else fall through to inspect the expression */
+					context->namespaces = save_nslist;
+
+					return result;
 				}
 				else
 				{

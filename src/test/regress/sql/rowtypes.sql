@@ -521,6 +521,46 @@ select pg_get_viewdef('composite_v', true);
 drop view composite_v;
 
 --
+-- Check field expansion after scalar-subquery relay of anonymous RECORD
+-- (bug #19498)
+--
+select (c).f1
+from (
+  select (select z.c from (select row(1, 2) as c) z) as c
+) s;
+
+select (c).*
+from (
+  select (select z.c from (select row(1, 2) as c) z) as c
+) s;
+
+select f1(c)
+from (
+  select (select z.c from (select row(1, 2) as c) z) as c
+) s;
+
+-- Same via CTE, but re-exported through a scalar subquery.
+with cte(c) as materialized (select row(1, 2)),
+     cte2(c) as (select (select c from cte) as c)
+select (c).f1
+from cte2;
+
+-- Nested scalar subquery relay.
+select (c).f1
+from (
+  select (select (select z.c from (select row(1, 2) as c) z)) as c
+) s;
+
+-- Deparse of field expansion over a SubLink relay.
+create view composite_sublink_v as
+select (c).f1 as f1
+from (
+  select (select z.c from (select row(1, 2) as c) z) as c
+) s;
+select pg_get_viewdef('composite_sublink_v', true);
+drop view composite_sublink_v;
+
+--
 -- Check cases where the composite comes from a proven-dummy rel (bug #18576)
 --
 explain (verbose, costs off)
