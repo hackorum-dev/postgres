@@ -315,6 +315,19 @@ ExecRepack(ParseState *pstate, RepackStmt *stmt, bool isTopLevel)
 		PreventInTransactionBlock(isTopLevel, "REPACK (CONCURRENTLY)");
 	}
 
+	if ((params.options & CLUOPT_ANALYZE) != 0)
+	{
+		/*
+		 * REPACK (ANALYZE) switches transaction command state and active
+		 * snapshots between repacking the table and analyzing it, so it must
+		 * not run inside a function.
+		 */
+		if (!isTopLevel)
+			ereport(ERROR,
+					(errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
+					 errmsg("REPACK (ANALYZE) cannot be executed from a function or procedure")));
+	}
+
 	/*
 	 * If a single relation is specified, process it and we're done ... unless
 	 * the relation is a partitioned table, in which case we fall through.
