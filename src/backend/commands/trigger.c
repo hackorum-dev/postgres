@@ -4026,6 +4026,7 @@ static SetConstraintState SetConstraintStateAddItem(SetConstraintState state,
 static void cancel_prior_stmt_triggers(Oid relid, CmdType cmdType, int tgevent);
 
 static void FireAfterTriggerBatchCallbacks(List *callbacks);
+static List **afterTriggerBatchCallbackList(int query_depth);
 
 /*
  * Get the FDW tuplestore for the current trigger query level, creating it
@@ -6159,44 +6160,77 @@ AfterTriggerSetState(ConstraintsSetStmt *stmt)
 	{
 		AfterTriggerEventList *events = &afterTriggers.events;
 		bool		snapshot_set = false;
+		int			cb_depth = afterTriggers.query_depth;
+		List	   *save_batch_callbacks;
+
+		/*
+		 * This starts a trigger-firing cycle nested inside whatever cycle is
+		 * already running, but unlike AfterTriggerEndQuery() it opens no query
+		 * level.  Batch callbacks registered by the triggers fired below would
+		 * therefore land in the same list as the enclosing cycle's, which
+		 * fires that list at its own end.  Swap in an empty list so this cycle
+		 * fires and frees only its own callbacks: firing the enclosing cycle's
+		 * here would flush its batch early, under a resource owner that can go
+		 * away before the batch is used again, and leave it with nothing to
+		 * flush when it does end.
+		 *
+		 * The restore must happen even if a trigger throws, because the error
+		 * may be caught by a PL/pgSQL EXCEPTION block and the enclosing cycle
+		 * then carries on and must still find its callbacks.
+		 */
+		save_batch_callbacks = *afterTriggerBatchCallbackList(cb_depth);
+		*afterTriggerBatchCallbackList(cb_depth) = NIL;
 
 		afterTriggers.firing_depth++;
-		while (afterTriggerMarkEvents(events, NULL, true))
-		{
-			CommandId	firing_id = afterTriggers.firing_counter++;
 
-			/*
-			 * Make sure a snapshot has been established in case trigger
-			 * functions need one.  Note that we avoid setting a snapshot if
-			 * we don't find at least one trigger that has to be fired now.
-			 * This is so that BEGIN; SET CONSTRAINTS ...; SET TRANSACTION
-			 * ISOLATION LEVEL SERIALIZABLE; ... works properly.  (If we are
-			 * at the start of a transaction it's not possible for any trigger
-			 * events to be queued yet.)
-			 */
-			if (!snapshot_set)
+		PG_TRY();
+		{
+			while (afterTriggerMarkEvents(events, NULL, true))
 			{
-				PushActiveSnapshot(GetTransactionSnapshot());
-				snapshot_set = true;
+				CommandId	firing_id = afterTriggers.firing_counter++;
+
+				/*
+				 * Make sure a snapshot has been established in case trigger
+				 * functions need one.  Note that we avoid setting a snapshot if
+				 * we don't find at least one trigger that has to be fired now.
+				 * This is so that BEGIN; SET CONSTRAINTS ...; SET TRANSACTION
+				 * ISOLATION LEVEL SERIALIZABLE; ... works properly.  (If we are
+				 * at the start of a transaction it's not possible for any trigger
+				 * events to be queued yet.)
+				 */
+				if (!snapshot_set)
+				{
+					PushActiveSnapshot(GetTransactionSnapshot());
+					snapshot_set = true;
+				}
+
+				/*
+				 * We can delete fired events if we are at top transaction level,
+				 * but we'd better not if inside a subtransaction, since the
+				 * subtransaction could later get rolled back.
+				 */
+				if (afterTriggerInvokeEvents(events, firing_id, NULL,
+											 !IsSubTransaction()))
+					break;			/* all fired */
 			}
 
 			/*
-			 * We can delete fired events if we are at top transaction level,
-			 * but we'd better not if inside a subtransaction, since the
-			 * subtransaction could later get rolled back.
+			 * Flush any fast-path batches accumulated by the triggers just
+			 * fired.  SET CONSTRAINTS ... IMMEDIATE means "check these now", so
+			 * nothing may be left buffered here: a pending batch would report
+			 * success for a constraint that was never actually checked.
 			 */
-			if (afterTriggerInvokeEvents(events, firing_id, NULL,
-										 !IsSubTransaction()))
-				break;			/* all fired */
+			FireAfterTriggerBatchCallbacks(*afterTriggerBatchCallbackList(cb_depth));
 		}
+		PG_FINALLY();
+		{
+			List	  **cb_list = afterTriggerBatchCallbackList(cb_depth);
 
-		/*
-		 * Flush any fast-path batches accumulated by the triggers just fired.
-		 */
-		FireAfterTriggerBatchCallbacks(afterTriggers.batch_callbacks);
-		afterTriggers.firing_depth--;
-		list_free_deep(afterTriggers.batch_callbacks);
-		afterTriggers.batch_callbacks = NIL;
+			list_free_deep(*cb_list);
+			*cb_list = save_batch_callbacks;
+			afterTriggers.firing_depth--;
+		}
+		PG_END_TRY();
 
 		if (snapshot_set)
 			PopActiveSnapshot();
@@ -6912,6 +6946,7 @@ RegisterAfterTriggerBatchCallback(AfterTriggerBatchCallback callback,
 {
 	AfterTriggerCallbackItem *item;
 	MemoryContext oldcxt;
+	List	  **cb_list;
 
 	/*
 	 * Allocate in TopTransactionContext so the item survives for the duration
@@ -6926,17 +6961,32 @@ RegisterAfterTriggerBatchCallback(AfterTriggerBatchCallback callback,
 	item = palloc_object(AfterTriggerCallbackItem);
 	item->callback = callback;
 	item->arg = arg;
-	if (afterTriggers.query_depth >= 0)
-	{
-		AfterTriggersQueryData *qs =
-			&afterTriggers.query_stack[afterTriggers.query_depth];
-
-		qs->batch_callbacks = lappend(qs->batch_callbacks, item);
-	}
-	else
-		afterTriggers.batch_callbacks =
-			lappend(afterTriggers.batch_callbacks, item);
+	cb_list = afterTriggerBatchCallbackList(afterTriggers.query_depth);
+	*cb_list = lappend(*cb_list, item);
 	MemoryContextSwitchTo(oldcxt);
+}
+
+/*
+ * afterTriggerBatchCallbackList
+ *		Return the list batch callbacks registered at the given query depth
+ *		belong to.
+ *
+ * Callbacks registered inside a query level are owned by that level and fired
+ * by AfterTriggerEndQuery(); those registered outside any query level (a
+ * deferred-trigger firing at transaction end) are owned by afterTriggers
+ * itself.
+ *
+ * Callers must re-derive the pointer rather than hold it across trigger
+ * firing: query_stack is repalloc'd when a nested AfterTriggerBeginQuery()
+ * grows it.
+ */
+static List **
+afterTriggerBatchCallbackList(int query_depth)
+{
+	if (query_depth >= 0)
+		return &afterTriggers.query_stack[query_depth].batch_callbacks;
+
+	return &afterTriggers.batch_callbacks;
 }
 
 /*
@@ -6964,15 +7014,17 @@ FireAfterTriggerBatchCallbacks(List *callbacks)
 }
 
 /*
- * AfterTriggerCurrentQueryDepth
- *		Return the current after-trigger query nesting depth.
+ * AfterTriggerCurrentFiringDepth
+ *		Return the current trigger-firing cycle nesting depth.
  *
  * Lets a batch-callback registrant (e.g. the RI fast path) associate cached
  * state with the firing cycle that created it, so a nested cycle's callback
- * acts only on its own entries.  Returns -1 outside any query level.
+ * acts only on its own entries.  The query depth cannot serve here:
+ * AfterTriggerSetState() fires queued events without opening a query level,
+ * so its cycle runs at the same query depth as the cycle containing it.
  */
 int
-AfterTriggerCurrentQueryDepth(void)
+AfterTriggerCurrentFiringDepth(void)
 {
-	return afterTriggers.query_depth;
+	return afterTriggers.firing_depth;
 }
