@@ -3333,6 +3333,18 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
        ID of role
       </para></entry>
      </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>rolupdated</structfield> <type>timestamptz</type>
+      </para>
+      <para>
+       Time at which the most recent <xref linkend="sql-createrole"/> or
+       <xref linkend="sql-alterrole"/> command for this role was executed,
+       even if it did not change any value. Null for roles created during
+       <application>initdb</application> that have never been altered
+      </para></entry>
+     </row>
     </tbody>
    </tgroup>
   </table>
@@ -4163,6 +4175,18 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
       </para>
       <para>
        Session defaults for run-time configuration variables
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>updated</structfield> <type>timestamptz</type>
+      </para>
+      <para>
+       Time at which the most recent <xref linkend="sql-createrole"/> or
+       <xref linkend="sql-alterrole"/> command for this role was executed,
+       even if it did not change any value. Null for roles created during
+       <application>initdb</application> that have never been altered
       </para></entry>
      </row>
     </tbody>
@@ -5527,6 +5551,18 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
       </para>
       <para>
        Session defaults for run-time configuration variables
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>updated</structfield> <type>timestamptz</type>
+      </para>
+      <para>
+       Time at which the most recent <xref linkend="sql-createrole"/> or
+       <xref linkend="sql-alterrole"/> command for this role was executed,
+       even if it did not change any value; null for roles created during
+       <application>initdb</application> that have never been altered
       </para></entry>
      </row>
     </tbody>

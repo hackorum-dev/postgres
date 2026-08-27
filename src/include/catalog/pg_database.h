@@ -87,6 +87,9 @@ CATALOG(pg_database,1262,DatabaseRelationId) BKI_SHARED_RELATION BKI_ROWTYPE_OID
 
 	/* access permissions */
 	aclitem		datacl[1];
+
+	/* time of last CREATE DATABASE / ALTER DATABASE on this database, if any */
+	timestamptz datupdated;
 #endif
 } FormData_pg_database;
 

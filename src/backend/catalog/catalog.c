@@ -25,6 +25,7 @@
 #include "access/table.h"
 #include "access/transam.h"
 #include "catalog/catalog.h"
+#include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_auth_members.h"
 #include "catalog/pg_authid.h"
@@ -47,6 +48,7 @@
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "utils/timestamp.h"
 
 /*
  * Parameters to determine when to emit a log message in
@@ -655,6 +657,130 @@ GetNewRelFileNumber(Oid reltablespace, Relation pg_class, char relpersistence)
 	} while (collides);
 
 	return rlocator.locator.relNumber;
+}
+
+/*
+ * Catalogs that track the time of the last DDL command affecting each of
+ * their objects.
+ *
+ * Only global (shared) object types appear here.  Objects living in a
+ * database are deliberately excluded: DDL on them can already be observed
+ * with an event trigger, whereas event triggers do not fire for shared
+ * objects (see EventTriggerSupportsObjectType()), and the per-database
+ * catalogs are also the ones where the storage cost of an extra column
+ * would be significant.
+ */
+static const struct
+{
+	Oid			class_oid;		/* catalog holding the objects */
+	SysCacheIdentifier oid_cache_id;	/* syscache on the oid column */
+	AttrNumber	attnum_updated; /* the timestamp column */
+}			ModificationTrackedCatalogs[] =
+{
+	{
+		AuthIdRelationId, AUTHOID, Anum_pg_authid_rolupdated
+	},
+	{
+		DatabaseRelationId, DATABASEOID, Anum_pg_database_datupdated
+	},
+	{
+		TableSpaceRelationId, TABLESPACEOID, Anum_pg_tablespace_spcupdated
+	},
+};
+
+/*
+ * GetObjectUpdatedAttnum
+ *		Attribute number of a catalog's "last updated" column, or
+ *		InvalidAttrNumber if the catalog does not track modification times.
+ *
+ * Generic DDL code that builds a replacement tuple can use this to stamp the
+ * column alongside whatever else it is changing.
+ */
+AttrNumber
+GetObjectUpdatedAttnum(Oid classId)
+{
+	for (int i = 0; i < lengthof(ModificationTrackedCatalogs); i++)
+	{
+		if (ModificationTrackedCatalogs[i].class_oid == classId)
+			return ModificationTrackedCatalogs[i].attnum_updated;
+	}
+
+	return InvalidAttrNumber;
+}
+
+/*
+ * RecordObjectModification
+ *		Stamp the current time on a global object's "last updated" column.
+ *
+ * This is only for DDL that changes an object's state without otherwise
+ * rewriting its catalog row, such as ALTER ROLE ... SET and
+ * ALTER DATABASE ... SET, whose settings live in pg_db_role_setting.
+ *
+ * A command that does update the row itself must instead set the column in
+ * the tuple it is already building.  Calling this afterwards would both read
+ * a stale tuple from the syscache and update the same row twice in one
+ * command, which fails in simple_heap_update() with "tuple already updated
+ * by self".
+ *
+ * Does nothing if the catalog does not track modification times.  The caller
+ * is expected to have already verified that the object exists and locked it,
+ * so a cache miss indicates a bug.
+ *
+ * No post-alter hook is invoked here; the calling command reports its own
+ * alteration, and this update is only internal bookkeeping.
+ */
+void
+RecordObjectModification(Oid classId, Oid objectId)
+{
+	Relation	rel;
+	HeapTuple	tuple,
+				newtuple;
+	SysCacheIdentifier cacheId = SYSCACHEID_INVALID;
+	AttrNumber	attnum = InvalidAttrNumber;
+	Datum	   *values;
+	bool	   *nulls;
+	bool	   *replaces;
+	int			natts;
+
+	attnum = GetObjectUpdatedAttnum(classId);
+	if (attnum == InvalidAttrNumber)
+		return;					/* catalog does not track modifications */
+
+	for (int i = 0; i < lengthof(ModificationTrackedCatalogs); i++)
+	{
+		if (ModificationTrackedCatalogs[i].class_oid == classId)
+		{
+			cacheId = ModificationTrackedCatalogs[i].oid_cache_id;
+			break;
+		}
+	}
+
+	rel = table_open(classId, RowExclusiveLock);
+
+	tuple = SearchSysCache1(cacheId, ObjectIdGetDatum(objectId));
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for object %u in catalog \"%s\"",
+			 objectId, RelationGetRelationName(rel));
+
+	natts = RelationGetDescr(rel)->natts;
+	values = palloc0(natts * sizeof(Datum));
+	nulls = palloc0(natts * sizeof(bool));
+	replaces = palloc0(natts * sizeof(bool));
+
+	values[attnum - 1] = TimestampTzGetDatum(GetCurrentTimestamp());
+	replaces[attnum - 1] = true;
+
+	newtuple = heap_modify_tuple(tuple, RelationGetDescr(rel),
+								 values, nulls, replaces);
+	CatalogTupleUpdate(rel, &tuple->t_self, newtuple);
+
+	ReleaseSysCache(tuple);
+	heap_freetuple(newtuple);
+	pfree(values);
+	pfree(nulls);
+	pfree(replaces);
+
+	table_close(rel, NoLock);
 }
 
 /*

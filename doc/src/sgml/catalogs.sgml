@@ -1624,6 +1624,23 @@
        null if no expiration
       </para></entry>
      </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>rolupdated</structfield> <type>timestamptz</type>
+      </para>
+      <para>
+       Time at which the most recent <xref linkend="sql-createrole"/> or
+       <xref linkend="sql-alterrole"/> command for this role was executed
+       (including a rename or a role-level configuration parameter
+       change). The timestamp advances whenever such a command completes
+       successfully, even if it did not change any value. Null for roles
+       created during <application>initdb</application> that have never
+       been altered. Not preserved by <application>pg_dumpall</application>
+       or <application>pg_upgrade</application>, which recreate roles in
+       the target cluster.
+      </para></entry>
+     </row>
     </tbody>
    </tgroup>
   </table>
@@ -3251,6 +3268,23 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       </para>
       <para>
        Access privileges; see <xref linkend="ddl-priv"/> for details
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>datupdated</structfield> <type>timestamptz</type>
+      </para>
+      <para>
+       Time at which the most recent <xref linkend="sql-createdatabase"/> or
+       <xref linkend="sql-alterdatabase"/> command for this database was
+       executed. The timestamp advances whenever such a command completes
+       successfully, even if it did not change any value. Null for
+       <literal>template1</literal>, which is created during bootstrap and
+       has never been altered. Not preserved by
+       <application>pg_dumpall</application> or
+       <application>pg_upgrade</application>, which recreate databases in the
+       target cluster.
       </para></entry>
      </row>
     </tbody>
@@ -8995,6 +9029,24 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       </para>
       <para>
        Tablespace-level options, as <quote>keyword=value</quote> strings
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>spcupdated</structfield> <type>timestamptz</type>
+      </para>
+      <para>
+       Time at which the most recent <xref linkend="sql-createtablespace"/> or
+       <xref linkend="sql-altertablespace"/> command for this tablespace was
+       executed. The timestamp advances whenever such a command completes
+       successfully, even if it did not change any value. Null for the
+       tablespaces created during bootstrap
+       (<literal>pg_default</literal> and <literal>pg_global</literal>) if
+       they have never been altered. Not preserved by
+       <application>pg_dumpall</application> or
+       <application>pg_upgrade</application>, which recreate tablespaces in
+       the target cluster.
       </para></entry>
      </row>
     </tbody>

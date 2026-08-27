@@ -33,7 +33,8 @@ CREATE VIEW pg_roles AS
         rolvaliduntil,
         rolbypassrls,
         setconfig as rolconfig,
-        pg_authid.oid
+        pg_authid.oid,
+        rolupdated
     FROM pg_authid LEFT JOIN pg_db_role_setting s
     ON (pg_authid.oid = setrole AND setdatabase = 0);
 
@@ -47,7 +48,8 @@ CREATE VIEW pg_shadow AS
         rolbypassrls AS usebypassrls,
         rolpassword AS passwd,
         rolvaliduntil AS valuntil,
-        setconfig AS useconfig
+        setconfig AS useconfig,
+        rolupdated AS updated
     FROM pg_authid LEFT JOIN pg_db_role_setting s
     ON (pg_authid.oid = setrole AND setdatabase = 0)
     WHERE rolcanlogin;
@@ -72,7 +74,8 @@ CREATE VIEW pg_user AS
         usebypassrls,
         '********'::text as passwd,
         valuntil,
-        useconfig
+        useconfig,
+        updated
     FROM pg_shadow;
 
 CREATE VIEW pg_policies AS

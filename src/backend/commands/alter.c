@@ -17,6 +17,7 @@
 #include "access/htup_details.h"
 #include "access/relation.h"
 #include "access/table.h"
+#include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
@@ -65,6 +66,7 @@
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
+#include "utils/timestamp.h"
 
 static Oid	AlterObjectNamespace_internal(Relation rel, Oid objid, Oid nspOid);
 
@@ -944,6 +946,7 @@ AlterObjectOwner_internal(Oid classId, Oid objectId, Oid new_ownerId)
 	AttrNumber	Anum_namespace = get_object_attnum_namespace(catalogId);
 	AttrNumber	Anum_acl = get_object_attnum_acl(catalogId);
 	AttrNumber	Anum_name = get_object_attnum_name(catalogId);
+	AttrNumber	Anum_updated = GetObjectUpdatedAttnum(catalogId);
 	Relation	rel;
 	HeapTuple	oldtup;
 	Datum		datum;
@@ -1029,6 +1032,17 @@ AlterObjectOwner_internal(Oid classId, Oid objectId, Oid new_ownerId)
 		replaces = palloc0_array(bool, nattrs);
 		values[Anum_owner - 1] = ObjectIdGetDatum(new_ownerId);
 		replaces[Anum_owner - 1] = true;
+
+		/*
+		 * If this catalog records when its objects were last changed, stamp
+		 * that here too, while we are already building the new tuple.
+		 */
+		if (Anum_updated != InvalidAttrNumber)
+		{
+			values[Anum_updated - 1] =
+				TimestampTzGetDatum(GetCurrentTimestamp());
+			replaces[Anum_updated - 1] = true;
+		}
 
 		/*
 		 * Determine the modified ACL for the new owner.  This is only

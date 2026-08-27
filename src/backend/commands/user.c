@@ -39,6 +39,7 @@
 #include "utils/catcache.h"
 #include "utils/fmgroids.h"
 #include "utils/syscache.h"
+#include "utils/timestamp.h"
 #include "utils/varlena.h"
 
 /*
@@ -462,6 +463,9 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	new_record_nulls[Anum_pg_authid_rolvaliduntil - 1] = validUntil_null;
 
 	new_record[Anum_pg_authid_rolbypassrls - 1] = BoolGetDatum(bypassrls);
+
+	new_record[Anum_pg_authid_rolupdated - 1] =
+		TimestampTzGetDatum(GetCurrentTimestamp());
 
 	/*
 	 * pg_largeobject_metadata contains pg_authid.oid's, so we use the
@@ -960,6 +964,14 @@ AlterRole(ParseState *pstate, AlterRoleStmt *stmt)
 		new_record_repl[Anum_pg_authid_rolbypassrls - 1] = true;
 	}
 
+	/*
+	 * Record that an ALTER ROLE command was executed for this role.
+	 * The timestamp advances even when the command did not actually change any value.
+	 */
+	new_record[Anum_pg_authid_rolupdated - 1] =
+		TimestampTzGetDatum(GetCurrentTimestamp());
+	new_record_repl[Anum_pg_authid_rolupdated - 1] = true;
+
 	new_tuple = heap_modify_tuple(tuple, pg_authid_dsc, new_record,
 								  new_record_nulls, new_record_repl);
 	CatalogTupleUpdate(pg_authid_rel, &tuple->t_self, new_tuple);
@@ -998,7 +1010,6 @@ AlterRole(ParseState *pstate, AlterRoleStmt *stmt)
 
 	return roleid;
 }
-
 
 /*
  * ALTER ROLE ... SET
@@ -1085,6 +1096,13 @@ AlterRoleSet(AlterRoleSetStmt *stmt)
 	}
 
 	AlterSetting(databaseid, roleid, stmt->setstmt);
+
+	/*
+	 * ALTER ROLE ... SET alters role state outside AlterRole(), so update
+	 * rolupdated here. Ignore if stmt->role is NULL (global/database SET).
+	 */
+	if (OidIsValid(roleid))
+		RecordObjectModification(AuthIdRelationId, roleid);
 
 	return roleid;
 }
@@ -1466,6 +1484,11 @@ RenameRole(const char *oldname, const char *newname)
 		ereport(NOTICE,
 				(errmsg("MD5 password cleared because of role rename")));
 	}
+
+	repl_repl[Anum_pg_authid_rolupdated - 1] = true;
+	repl_val[Anum_pg_authid_rolupdated - 1] =
+		TimestampTzGetDatum(GetCurrentTimestamp());
+	repl_null[Anum_pg_authid_rolupdated - 1] = false;
 
 	newtuple = heap_modify_tuple(oldtuple, dsc, repl_val, repl_null, repl_repl);
 	CatalogTupleUpdate(rel, &oldtuple->t_self, newtuple);

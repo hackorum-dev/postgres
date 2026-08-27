@@ -71,6 +71,7 @@
 #include "utils/relmapper.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "utils/timestamp.h"
 #include "utils/wait_event.h"
 
 /*
@@ -1533,6 +1534,9 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 	 */
 	new_record_nulls[Anum_pg_database_datacl - 1] = true;
 
+	new_record[Anum_pg_database_datupdated - 1] =
+		TimestampTzGetDatum(GetCurrentTimestamp());
+
 	tuple = heap_form_tuple(RelationGetDescr(pg_database_rel),
 							new_record, new_record_nulls);
 
@@ -2032,7 +2036,28 @@ RenameDatabase(const char *oldname, const char *newname)
 		elog(ERROR, "cache lookup failed for database %u", db_id);
 	otid = newtup->t_self;
 	namestrcpy(&(((Form_pg_database) GETSTRUCT(newtup))->datname), newname);
-	CatalogTupleUpdate(rel, &otid, newtup);
+
+	/*
+	 * datupdated sits past the fixed-length fields, so it cannot be set
+	 * through GETSTRUCT like datname above; build a replacement tuple.  It
+	 * has to happen here rather than afterwards, since updating the row a
+	 * second time in the same command would fail.
+	 */
+	{
+		Datum		values[Natts_pg_database] = {0};
+		bool		nulls[Natts_pg_database] = {0};
+		bool		replaces[Natts_pg_database] = {0};
+		HeapTuple	stamped;
+
+		values[Anum_pg_database_datupdated - 1] =
+			TimestampTzGetDatum(GetCurrentTimestamp());
+		replaces[Anum_pg_database_datupdated - 1] = true;
+
+		stamped = heap_modify_tuple(newtup, RelationGetDescr(rel),
+									values, nulls, replaces);
+		CatalogTupleUpdate(rel, &otid, stamped);
+		heap_freetuple(stamped);
+	}
 	UnlockTuple(rel, &otid, InplaceUpdateTupleLock);
 
 	InvokeObjectPostAlterHook(DatabaseRelationId, db_id, 0);
@@ -2286,6 +2311,10 @@ movedb(const char *dbname, const char *tblspcname)
 
 		new_record[Anum_pg_database_dattablespace - 1] = ObjectIdGetDatum(dst_tblspcoid);
 		new_record_repl[Anum_pg_database_dattablespace - 1] = true;
+
+		new_record[Anum_pg_database_datupdated - 1] =
+			TimestampTzGetDatum(GetCurrentTimestamp());
+		new_record_repl[Anum_pg_database_datupdated - 1] = true;
 
 		newtuple = heap_modify_tuple(oldtuple, RelationGetDescr(pgdbrel),
 									 new_record,
@@ -2570,6 +2599,10 @@ AlterDatabase(ParseState *pstate, AlterDatabaseStmt *stmt, bool isTopLevel)
 		new_record_repl[Anum_pg_database_datconnlimit - 1] = true;
 	}
 
+	new_record[Anum_pg_database_datupdated - 1] =
+		TimestampTzGetDatum(GetCurrentTimestamp());
+	new_record_repl[Anum_pg_database_datupdated - 1] = true;
+
 	newtuple = heap_modify_tuple(tuple, RelationGetDescr(rel), new_record,
 								 new_record_nulls, new_record_repl);
 	CatalogTupleUpdate(rel, &tuple->t_self, newtuple);
@@ -2660,6 +2693,9 @@ AlterDatabaseRefreshColl(AlterDatabaseRefreshCollStmt *stmt)
 
 		values[Anum_pg_database_datcollversion - 1] = CStringGetTextDatum(newversion);
 		replaces[Anum_pg_database_datcollversion - 1] = true;
+		values[Anum_pg_database_datupdated - 1] =
+			TimestampTzGetDatum(GetCurrentTimestamp());
+		replaces[Anum_pg_database_datupdated - 1] = true;
 
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(rel),
 									 values, nulls, replaces);
@@ -2702,6 +2738,12 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 					   stmt->dbname);
 
 	AlterSetting(datid, InvalidOid, stmt->setstmt);
+
+	/*
+	 * ALTER DATABASE ... SET stores the setting in pg_db_role_setting rather
+	 * than pg_database, so stamp the modification time separately.
+	 */
+	RecordObjectModification(DatabaseRelationId, datid);
 
 	UnlockSharedObject(DatabaseRelationId, datid, 0, AccessShareLock);
 
@@ -2785,6 +2827,10 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 
 		repl_repl[Anum_pg_database_datdba - 1] = true;
 		repl_val[Anum_pg_database_datdba - 1] = ObjectIdGetDatum(newOwnerId);
+
+		repl_repl[Anum_pg_database_datupdated - 1] = true;
+		repl_val[Anum_pg_database_datupdated - 1] =
+			TimestampTzGetDatum(GetCurrentTimestamp());
 
 		/*
 		 * Determine the modified ACL for the new owner.  This is only

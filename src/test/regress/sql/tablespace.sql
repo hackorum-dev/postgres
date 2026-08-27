@@ -17,6 +17,13 @@ CREATE TABLESPACE regress_tblspacewith LOCATION '' WITH (random_page_cost = 3.0)
 -- check to see the parameter was used
 SELECT spcoptions FROM pg_tablespace WHERE spcname = 'regress_tblspacewith';
 
+-- pg_default is created during bootstrap, so it has no modification time,
+-- whereas CREATE TABLESPACE records one
+SELECT spcupdated IS NULL AS pg_default_is_null
+    FROM pg_tablespace WHERE spcname = 'pg_default';
+SELECT spcupdated IS NOT NULL AS create_sets_updated
+    FROM pg_tablespace WHERE spcname = 'regress_tblspacewith';
+
 -- drop the tablespace so we can re-use the location
 DROP TABLESPACE regress_tblspacewith;
 
@@ -26,7 +33,13 @@ SELECT regexp_replace(pg_tablespace_location(oid), '(pg_tblspc)/(\d+)', '\1/NNN'
   FROM pg_tablespace  WHERE spcname = 'regress_tblspace';
 
 -- try setting and resetting some properties for the new tablespace
+SELECT spcupdated AS ts_before_set
+    FROM pg_tablespace WHERE spcname = 'regress_tblspace' \gset
+SELECT spcname FROM pg_tablespace
+    WHERE spcname = 'regress_tblspace' AND spcupdated > :'ts_before_set';
 ALTER TABLESPACE regress_tblspace SET (random_page_cost = 1.0, seq_page_cost = 1.1);
+SELECT spcname FROM pg_tablespace
+    WHERE spcname = 'regress_tblspace' AND spcupdated > :'ts_before_set';
 ALTER TABLESPACE regress_tblspace SET (some_nonexistent_parameter = true);  -- fail
 ALTER TABLESPACE regress_tblspace RESET (random_page_cost = 2.0); -- fail
 ALTER TABLESPACE regress_tblspace RESET (random_page_cost, effective_io_concurrency); -- ok
@@ -406,7 +419,11 @@ CREATE ROLE regress_tablespace_user1 login;
 CREATE ROLE regress_tablespace_user2 login;
 GRANT USAGE ON SCHEMA testschema TO regress_tablespace_user2;
 
+SELECT spcupdated AS ts_before_owner
+    FROM pg_tablespace WHERE spcname = 'regress_tblspace' \gset
 ALTER TABLESPACE regress_tblspace OWNER TO regress_tablespace_user1;
+SELECT spcname FROM pg_tablespace
+    WHERE spcname = 'regress_tblspace' AND spcupdated > :'ts_before_owner';
 
 CREATE TABLE testschema.tablespace_acl (c int);
 -- new owner lacks permission to create this index from scratch
@@ -420,7 +437,12 @@ REINDEX (TABLESPACE regress_tblspace) TABLE tablespace_table; -- fail
 REINDEX (TABLESPACE regress_tblspace, CONCURRENTLY) TABLE tablespace_table; -- fail
 RESET ROLE;
 
+SELECT spcupdated AS ts_before_rename
+    FROM pg_tablespace WHERE spcname = 'regress_tblspace' \gset
 ALTER TABLESPACE regress_tblspace RENAME TO regress_tblspace_renamed;
+SELECT spcname FROM pg_tablespace
+    WHERE spcname = 'regress_tblspace_renamed'
+      AND spcupdated > :'ts_before_rename';
 
 ALTER TABLE ALL IN TABLESPACE regress_tblspace_renamed SET TABLESPACE pg_default;
 ALTER INDEX ALL IN TABLESPACE regress_tblspace_renamed SET TABLESPACE pg_default;

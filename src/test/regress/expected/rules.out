@@ -1525,7 +1525,8 @@ pg_roles| SELECT pg_authid.rolname,
     pg_authid.rolvaliduntil,
     pg_authid.rolbypassrls,
     s.setconfig AS rolconfig,
-    pg_authid.oid
+    pg_authid.oid,
+    pg_authid.rolupdated
    FROM (pg_authid
      LEFT JOIN pg_db_role_setting s ON (((pg_authid.oid = s.setrole) AND (s.setdatabase = (0)::oid))));
 pg_rules| SELECT n.nspname AS schemaname,
@@ -1763,7 +1764,8 @@ pg_shadow| SELECT pg_authid.rolname AS usename,
     pg_authid.rolbypassrls AS usebypassrls,
     pg_authid.rolpassword AS passwd,
     pg_authid.rolvaliduntil AS valuntil,
-    s.setconfig AS useconfig
+    s.setconfig AS useconfig,
+    pg_authid.rolupdated AS updated
    FROM (pg_authid
      LEFT JOIN pg_db_role_setting s ON (((pg_authid.oid = s.setrole) AND (s.setdatabase = (0)::oid))))
   WHERE pg_authid.rolcanlogin;
@@ -2876,7 +2878,8 @@ pg_user| SELECT usename,
     usebypassrls,
     '********'::text AS passwd,
     valuntil,
-    useconfig
+    useconfig,
+    updated
    FROM pg_shadow;
 pg_user_mappings| SELECT u.oid AS umid,
     s.oid AS srvid,

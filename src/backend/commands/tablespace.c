@@ -79,6 +79,7 @@
 #include "utils/guc_hooks.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
+#include "utils/timestamp.h"
 #include "utils/varlena.h"
 
 /* GUC variables */
@@ -349,6 +350,9 @@ CreateTableSpace(CreateTableSpaceStmt *stmt)
 		values[Anum_pg_tablespace_spcoptions - 1] = newOptions;
 	else
 		nulls[Anum_pg_tablespace_spcoptions - 1] = true;
+
+	values[Anum_pg_tablespace_spcupdated - 1] =
+		TimestampTzGetDatum(GetCurrentTimestamp());
 
 	tuple = heap_form_tuple(rel->rd_att, values, nulls);
 
@@ -1011,6 +1015,28 @@ RenameTableSpace(const char *oldname, const char *newname)
 	/* OK, update the entry */
 	namestrcpy(&(newform->spcname), newname);
 
+	/*
+	 * spcupdated sits past the fixed-length fields, so it cannot be set
+	 * through the Form like spcname above; build a replacement tuple.  It has
+	 * to happen here rather than afterwards, since updating the row a second
+	 * time in the same command would fail.
+	 */
+	{
+		Datum		repl_val[Natts_pg_tablespace] = {0};
+		bool		repl_null[Natts_pg_tablespace] = {0};
+		bool		repl_repl[Natts_pg_tablespace] = {0};
+		HeapTuple	stamped;
+
+		repl_val[Anum_pg_tablespace_spcupdated - 1] =
+			TimestampTzGetDatum(GetCurrentTimestamp());
+		repl_repl[Anum_pg_tablespace_spcupdated - 1] = true;
+
+		stamped = heap_modify_tuple(newtuple, RelationGetDescr(rel),
+									repl_val, repl_null, repl_repl);
+		heap_freetuple(newtuple);
+		newtuple = stamped;
+	}
+
 	CatalogTupleUpdate(rel, &newtuple->t_self, newtuple);
 
 	InvokeObjectPostAlterHook(TableSpaceRelationId, tspId, 0);
@@ -1079,6 +1105,9 @@ AlterTableSpaceOptions(AlterTableSpaceOptionsStmt *stmt)
 	else
 		repl_null[Anum_pg_tablespace_spcoptions - 1] = true;
 	repl_repl[Anum_pg_tablespace_spcoptions - 1] = true;
+	repl_val[Anum_pg_tablespace_spcupdated - 1] =
+		TimestampTzGetDatum(GetCurrentTimestamp());
+	repl_repl[Anum_pg_tablespace_spcupdated - 1] = true;
 	newtuple = heap_modify_tuple(tup, RelationGetDescr(rel), repl_val,
 								 repl_null, repl_repl);
 

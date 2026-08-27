@@ -41,6 +41,9 @@ extern bool IsSharedRelation(Oid relationId);
 
 extern bool IsPinnedObject(Oid classId, Oid objectId);
 
+extern AttrNumber GetObjectUpdatedAttnum(Oid classId);
+extern void RecordObjectModification(Oid classId, Oid objectId);
+
 extern Oid	GetNewOidWithIndex(Relation relation, Oid indexId,
 							   AttrNumber oidcolumn);
 extern RelFileNumber GetNewRelFileNumber(Oid reltablespace,

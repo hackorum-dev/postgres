@@ -47,6 +47,8 @@ CATALOG(pg_authid,1260,AuthIdRelationId) BKI_SHARED_RELATION BKI_ROWTYPE_OID(284
 #ifdef CATALOG_VARLEN			/* variable-length fields start here */
 	text		rolpassword;	/* password, if any */
 	timestamptz rolvaliduntil;	/* password expiration time, if any */
+	timestamptz rolupdated;		/* time of last CREATE ROLE / ALTER ROLE on
+								 * this role, if any */
 #endif
 } FormData_pg_authid;
 
