@@ -3595,9 +3595,9 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 					if (*field[i] == '-')
 					{
 						/* flip the sign on time field */
-						if (itm_in->tm_usec == PG_INT64_MIN)
+						if (pg_neg_s64_overflow(itm_in->tm_usec,
+												&itm_in->tm_usec))
 							return DTERR_FIELD_OVERFLOW;
-						itm_in->tm_usec = -itm_in->tm_usec;
 					}
 
 					if (force_negative &&
@@ -3880,16 +3880,11 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 	/* finally, AGO negates everything */
 	if (is_before)
 	{
-		if (itm_in->tm_usec == PG_INT64_MIN ||
-			itm_in->tm_mday == INT_MIN ||
-			itm_in->tm_mon == INT_MIN ||
-			itm_in->tm_year == INT_MIN)
+		if (pg_neg_s64_overflow(itm_in->tm_usec, &itm_in->tm_usec) ||
+			pg_neg_s32_overflow(itm_in->tm_mday, &itm_in->tm_mday) ||
+			pg_neg_s32_overflow(itm_in->tm_mon, &itm_in->tm_mon) ||
+			pg_neg_s32_overflow(itm_in->tm_year, &itm_in->tm_year))
 			return DTERR_FIELD_OVERFLOW;
-
-		itm_in->tm_usec = -itm_in->tm_usec;
-		itm_in->tm_mday = -itm_in->tm_mday;
-		itm_in->tm_mon = -itm_in->tm_mon;
-		itm_in->tm_year = -itm_in->tm_year;
 	}
 
 	return 0;

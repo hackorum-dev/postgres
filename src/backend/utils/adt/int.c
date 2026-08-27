@@ -800,12 +800,13 @@ Datum
 int4um(PG_FUNCTION_ARGS)
 {
 	int32		arg = PG_GETARG_INT32(0);
+	int32		result;
 
-	if (unlikely(arg == PG_INT32_MIN))
+	if (pg_neg_s32_overflow(arg, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("integer out of range")));
-	PG_RETURN_INT32(-arg);
+	PG_RETURN_INT32(result);
 }
 
 Datum
@@ -882,11 +883,10 @@ int4div(PG_FUNCTION_ARGS)
 	 */
 	if (arg2 == -1)
 	{
-		if (unlikely(arg1 == PG_INT32_MIN))
+		if (pg_neg_s32_overflow(arg1, &result))
 			ereport(ERROR,
 					(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 					 errmsg("integer out of range")));
-		result = -arg1;
 		PG_RETURN_INT32(result);
 	}
 
@@ -915,12 +915,13 @@ Datum
 int2um(PG_FUNCTION_ARGS)
 {
 	int16		arg = PG_GETARG_INT16(0);
+	int16		result;
 
-	if (unlikely(arg == PG_INT16_MIN))
+	if (pg_neg_s16_overflow(arg, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("smallint out of range")));
-	PG_RETURN_INT16(-arg);
+	PG_RETURN_INT16(result);
 }
 
 Datum
@@ -998,11 +999,10 @@ int2div(PG_FUNCTION_ARGS)
 	 */
 	if (arg2 == -1)
 	{
-		if (unlikely(arg1 == PG_INT16_MIN))
+		if (pg_neg_s16_overflow(arg1, &result))
 			ereport(ERROR,
 					(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 					 errmsg("smallint out of range")));
-		result = -arg1;
 		PG_RETURN_INT16(result);
 	}
 
@@ -1140,11 +1140,10 @@ int42div(PG_FUNCTION_ARGS)
 	 */
 	if (arg2 == -1)
 	{
-		if (unlikely(arg1 == PG_INT32_MIN))
+		if (pg_neg_s32_overflow(arg1, &result))
 			ereport(ERROR,
 					(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 					 errmsg("integer out of range")));
-		result = -arg1;
 		PG_RETURN_INT32(result);
 	}
 
@@ -1223,11 +1222,15 @@ int4abs(PG_FUNCTION_ARGS)
 	int32		arg1 = PG_GETARG_INT32(0);
 	int32		result;
 
-	if (unlikely(arg1 == PG_INT32_MIN))
-		ereport(ERROR,
-				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
-				 errmsg("integer out of range")));
-	result = (arg1 < 0) ? -arg1 : arg1;
+	if (arg1 < 0)
+	{
+		if (pg_neg_s32_overflow(arg1, &result))
+			ereport(ERROR,
+					(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+					 errmsg("integer out of range")));
+	}
+	else
+		result = arg1;
 	PG_RETURN_INT32(result);
 }
 
@@ -1237,11 +1240,15 @@ int2abs(PG_FUNCTION_ARGS)
 	int16		arg1 = PG_GETARG_INT16(0);
 	int16		result;
 
-	if (unlikely(arg1 == PG_INT16_MIN))
-		ereport(ERROR,
-				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
-				 errmsg("smallint out of range")));
-	result = (arg1 < 0) ? -arg1 : arg1;
+	if (arg1 < 0)
+	{
+		if (pg_neg_s16_overflow(arg1, &result))
+			ereport(ERROR,
+					(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+					 errmsg("smallint out of range")));
+	}
+	else
+		result = arg1;
 	PG_RETURN_INT16(result);
 }
 
@@ -1361,13 +1368,10 @@ int4lcm(PG_FUNCTION_ARGS)
 				 errmsg("integer out of range")));
 
 	/* If the result is INT_MIN, it cannot be represented. */
-	if (unlikely(result == PG_INT32_MIN))
+	if (result < 0 && pg_neg_s32_overflow(result, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("integer out of range")));
-
-	if (result < 0)
-		result = -result;
 
 	PG_RETURN_INT32(result);
 }
