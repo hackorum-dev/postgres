@@ -87,7 +87,7 @@ static int	RestoringToDB(ArchiveHandle *AH);
 static void dump_lo_buf(ArchiveHandle *AH);
 static void dumpTimestamp(ArchiveHandle *AH, const char *msg, time_t tim);
 static void SetOutput(ArchiveHandle *AH, const char *filename,
-					  const pg_compress_specification compression_spec);
+					  const pg_compress_specification compression_spec, bool append_data);
 static CompressFileHandle *SaveOutput(ArchiveHandle *AH);
 static void RestoreOutput(ArchiveHandle *AH, CompressFileHandle *savedOutput);
 
@@ -340,9 +340,14 @@ ProcessArchiveRestoreOptions(Archive *AHX)
 		StrictNamesCheck(ropt);
 }
 
-/* Public */
+/*
+ * RestoreArchive
+ *
+ * If append_data is set, then append data into file as we are restoring dump
+ * of multiple databases which was taken by pg_dumpall.
+ */
 void
-RestoreArchive(Archive *AHX)
+RestoreArchive(Archive *AHX, bool append_data)
 {
 	ArchiveHandle *AH = (ArchiveHandle *) AHX;
 	RestoreOptions *ropt = AH->public.ropt;
@@ -459,7 +464,7 @@ RestoreArchive(Archive *AHX)
 	 */
 	sav = SaveOutput(AH);
 	if (ropt->filename || ropt->compression_spec.algorithm != PG_COMPRESSION_NONE)
-		SetOutput(AH, ropt->filename, ropt->compression_spec);
+		SetOutput(AH, ropt->filename, ropt->compression_spec, append_data);
 
 	ahprintf(AH, "--\n-- PostgreSQL database dump\n--\n\n");
 
@@ -516,11 +521,20 @@ RestoreArchive(Archive *AHX)
 			 * because at this point we're connected to the wrong database.
 			 * (The DATABASE PROPERTIES entry, if any, should be treated like
 			 * the DATABASE entry.)
+			 *
+			 * ROLE, ROLE PROPERTIES, TABLESPACE, and DROP_GLOBAL entries are
+			 * exempt: they are cluster-wide, not scoped to any database, so
+			 * dropping them is safe regardless of which database we're
+			 * connected to.
 			 */
 			if (ropt->createDB)
 			{
 				if (strcmp(te->desc, "DATABASE") != 0 &&
-					strcmp(te->desc, "DATABASE PROPERTIES") != 0)
+					strcmp(te->desc, "DATABASE PROPERTIES") != 0 &&
+					strcmp(te->desc, "ROLE") != 0 &&
+					strcmp(te->desc, "ROLE PROPERTIES") != 0 &&
+					strcmp(te->desc, "TABLESPACE") != 0 &&
+					strcmp(te->desc, "DROP_GLOBAL") != 0)
 					continue;
 			}
 
@@ -1317,7 +1331,7 @@ PrintTOCSummary(Archive *AHX)
 
 	sav = SaveOutput(AH);
 	if (ropt->filename)
-		SetOutput(AH, ropt->filename, out_compression_spec);
+		SetOutput(AH, ropt->filename, out_compression_spec, false);
 
 	if (strftime(stamp_str, sizeof(stamp_str), PGDUMP_STRFTIME_FMT,
 				 localtime(&AH->createDate)) == 0)
@@ -1692,11 +1706,15 @@ archprintf(Archive *AH, const char *fmt, ...)
 
 /*******************************
  * Stuff below here should be 'private' to the archiver routines
+ *
+ * If append_data is set, then append data into file as we are restoring dump
+ * of multiple databases which was taken by pg_dumpall.
  *******************************/
 
 static void
 SetOutput(ArchiveHandle *AH, const char *filename,
-		  const pg_compress_specification compression_spec)
+		  const pg_compress_specification compression_spec,
+		  bool append_data)
 {
 	CompressFileHandle *CFH;
 	const char *mode;
@@ -1716,7 +1734,7 @@ SetOutput(ArchiveHandle *AH, const char *filename,
 	else
 		fn = fileno(stdout);
 
-	if (AH->mode == archModeAppend)
+	if (append_data || AH->mode == archModeAppend)
 		mode = PG_BINARY_A;
 	else
 		mode = PG_BINARY_W;
@@ -3028,6 +3046,24 @@ _tocEntryRequired(TocEntry *te, teSection curSection, ArchiveHandle *AH)
 			return 0;
 	}
 
+	/* In --no-tablespaces mode, skip creating tablespaces outright. */
+	if (ropt->noTablespace && strcmp(te->desc, "TABLESPACE") == 0)
+		return 0;
+
+	/*
+	 * Global object TOC entries (e.g., ROLEs or TABLESPACEs) must not be
+	 * ignored.  They have no te->namespace, so without this, the
+	 * --schema/--exclude-schema checks below would exclude them entirely.
+	 * DROP_GLOBAL (pg_dumpall's cross-database drops) is included here
+	 * rather than above with DATABASE/DATABASE PROPERTIES because it must
+	 * be gated on dropSchema, not createDB.
+	 */
+	if (strcmp(te->desc, "ROLE") == 0 ||
+		strcmp(te->desc, "ROLE PROPERTIES") == 0 ||
+		strcmp(te->desc, "TABLESPACE") == 0 ||
+		strcmp(te->desc, "DROP_GLOBAL") == 0)
+		return REQ_SCHEMA;
+
 	/*
 	 * Process exclusions that affect certain classes of TOC entries.
 	 */
@@ -3063,6 +3099,14 @@ _tocEntryRequired(TocEntry *te, teSection curSection, ArchiveHandle *AH)
 		if (ropt->no_subscriptions &&
 			strncmp(te->tag, "SUBSCRIPTION", strlen("SUBSCRIPTION")) == 0)
 			return 0;
+
+		/*
+		 * Comments on global objects (ROLEs or TABLESPACEs) should not be
+		 * skipped, since global objects themselves are never skipped.
+		 */
+		if (strncmp(te->tag, "ROLE", strlen("ROLE")) == 0 ||
+			strncmp(te->tag, "TABLESPACE", strlen("TABLESPACE")) == 0)
+			return REQ_SCHEMA;
 	}
 
 	/*
@@ -3092,6 +3136,14 @@ _tocEntryRequired(TocEntry *te, teSection curSection, ArchiveHandle *AH)
 		if (ropt->no_subscriptions &&
 			strncmp(te->tag, "SUBSCRIPTION", strlen("SUBSCRIPTION")) == 0)
 			return 0;
+
+		/*
+		 * Security labels on global objects (ROLEs or TABLESPACEs) should not
+		 * be skipped, since global objects themselves are never skipped.
+		 */
+		if (strncmp(te->tag, "ROLE", strlen("ROLE")) == 0 ||
+			strncmp(te->tag, "TABLESPACE", strlen("TABLESPACE")) == 0)
+			return REQ_SCHEMA;
 	}
 
 	/* If it's a subscription, maybe ignore it */
@@ -3908,8 +3960,11 @@ _getObjectDescription(PQExpBuffer buf, const TocEntry *te)
 			 strcmp(type, "CONSTRAINT") == 0 ||
 			 strcmp(type, "DATABASE PROPERTIES") == 0 ||
 			 strcmp(type, "DEFAULT") == 0 ||
+			 strcmp(type, "DROP_GLOBAL") == 0 ||
 			 strcmp(type, "FK CONSTRAINT") == 0 ||
 			 strcmp(type, "INDEX") == 0 ||
+			 strcmp(type, "ROLE") == 0 ||
+			 strcmp(type, "ROLE PROPERTIES") == 0 ||
 			 strcmp(type, "RULE") == 0 ||
 			 strcmp(type, "TRIGGER") == 0 ||
 			 strcmp(type, "ROW SECURITY") == 0 ||
