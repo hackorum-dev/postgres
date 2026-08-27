@@ -33,6 +33,11 @@ typedef struct LogicalRepRelMapEntry
 	AttrMap    *attrmap;		/* map of local attributes to remote ones */
 	bool		updatable;		/* Can apply updates/deletes? */
 	Oid			localindexoid;	/* which index to use, or InvalidOid if none */
+	bool		isidentity;		/* localindexoid was chosen as the
+								 * relation's replica identity or
+								 * primary key, rather than as one
+								 * usable for a REPLICA IDENTITY
+								 * FULL remote relation */
 
 	/* Sync state. */
 	char		state;
