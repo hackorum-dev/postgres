@@ -314,6 +314,20 @@ ExecRepack(ParseState *pstate, RepackStmt *stmt, bool isTopLevel)
 		 */
 		PreventInTransactionBlock(isTopLevel, "REPACK (CONCURRENTLY)");
 	}
+	else if ((params.options & CLUOPT_ANALYZE) != 0)
+	{
+		/*
+		 * Technically, transaction block is not a problem for REPACK
+		 * (ANALYZE), but if it's called from a pl/pgsql function,
+		 * cluster_rel() might start a new transaction while SPI session is in
+		 * progress. Make sure ERROR is raised instead.
+		 *
+		 * This way we also prohibit execution in a transaction block, but
+		 * that's just consistent with VACUUM (FULL, ANALYZE), which is a
+		 * synonym for REPACK (ANALYZE).
+		 */
+		PreventInTransactionBlock(isTopLevel, "REPACK (ANALYZE)");
+	}
 
 	/*
 	 * If a single relation is specified, process it and we're done ... unless
