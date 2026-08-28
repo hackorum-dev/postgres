@@ -1637,6 +1637,39 @@ AND attname = 'arange';
      0
 (1 row)
 
+--
+-- pg_clear_attribute_stats() is not strict, so it checks its required
+-- arguments itself.  Verify that each one is reported under its own
+-- SQL-visible name.
+--
+-- error: schemaname null
+SELECT pg_catalog.pg_clear_attribute_stats(
+    schemaname => NULL,
+    relname => 'test',
+    attname => 'arange',
+    inherited => false);
+ERROR:  argument "schemaname" must not be null
+-- error: relname null
+SELECT pg_catalog.pg_clear_attribute_stats(
+    schemaname => 'stats_import',
+    relname => NULL,
+    attname => 'arange',
+    inherited => false);
+ERROR:  argument "relname" must not be null
+-- error: attname null
+SELECT pg_catalog.pg_clear_attribute_stats(
+    schemaname => 'stats_import',
+    relname => 'test',
+    attname => NULL,
+    inherited => false);
+ERROR:  argument "attname" must not be null
+-- error: inherited null
+SELECT pg_catalog.pg_clear_attribute_stats(
+    schemaname => 'stats_import',
+    relname => 'test',
+    attname => 'arange',
+    inherited => NULL);
+ERROR:  argument "inherited" must not be null
 -- temp tables
 CREATE TEMP TABLE stats_temp(i int);
 SELECT pg_restore_relation_stats(
