@@ -133,6 +133,10 @@ SELECT count(*) FROM pg_index WHERE indrelid = 'test_replica_identity'::regclass
      1
 (1 row)
 
+-- An explicitly selected replica identity index cannot be dropped.
+DROP INDEX test_replica_identity_keyab_key;
+ERROR:  cannot drop index "test_replica_identity_keyab_key" because it is used as replica identity
+HINT:  Use ALTER TABLE ... REPLICA IDENTITY to change the table's replica identity first.
 ----
 -- Make sure non index cases work
 ----
@@ -143,6 +147,7 @@ SELECT relreplident FROM pg_class WHERE oid = 'test_replica_identity'::regclass;
  d
 (1 row)
 
+DROP INDEX test_replica_identity_keyab_key;
 SELECT count(*) FROM pg_index WHERE indrelid = 'test_replica_identity'::regclass AND indisreplident;
  count 
 -------
@@ -169,7 +174,6 @@ Indexes:
     "test_replica_identity_expr" UNIQUE, btree (keya, keyb, (3))
     "test_replica_identity_hash" hash (nonkey)
     "test_replica_identity_keyab" btree (keya, keyb)
-    "test_replica_identity_keyab_key" UNIQUE, btree (keya, keyb)
     "test_replica_identity_nonkey" UNIQUE, btree (keya, nonkey)
     "test_replica_identity_partial" UNIQUE, btree (keya, keyb) WHERE keyb <> '3'::text
     "test_replica_identity_unique_defer" UNIQUE CONSTRAINT, btree (keya, keyb) DEFERRABLE
@@ -200,7 +204,6 @@ Indexes:
     "test_replica_identity_expr" UNIQUE, btree (keya, keyb, (3))
     "test_replica_identity_hash" hash (nonkey)
     "test_replica_identity_keyab" btree (keya, keyb)
-    "test_replica_identity_keyab_key" UNIQUE, btree (keya, keyb)
     "test_replica_identity_nonkey" UNIQUE, btree (keya, nonkey)
     "test_replica_identity_partial" UNIQUE, btree (keya, keyb) WHERE keyb <> '3'::text
     "test_replica_identity_unique_defer" UNIQUE CONSTRAINT, btree (keya, keyb) DEFERRABLE

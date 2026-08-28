@@ -1686,6 +1686,17 @@ RemoveRelations(DropStmt *drop)
 		}
 
 		/*
+		 * An explicitly selected replica identity must remain available until
+		 * the table's replica identity is changed.
+		 */
+		if (drop->removeType == OBJECT_INDEX && get_index_isreplident(relOid))
+			ereport(ERROR,
+					errcode(ERRCODE_DEPENDENT_OBJECTS_STILL_EXIST),
+					errmsg("cannot drop index \"%s\" because it is used as replica identity",
+						   rel->relname),
+					errhint("Use ALTER TABLE ... REPLICA IDENTITY to change the table's replica identity first."));
+
+		/*
 		 * Decide if concurrent mode needs to be used here or not.  The
 		 * callback retrieved the rel's persistence for us.
 		 */

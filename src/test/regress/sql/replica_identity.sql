@@ -65,11 +65,15 @@ SELECT relreplident FROM pg_class WHERE oid = 'test_replica_identity'::regclass;
 \d test_replica_identity
 SELECT count(*) FROM pg_index WHERE indrelid = 'test_replica_identity'::regclass AND indisreplident;
 
+-- An explicitly selected replica identity index cannot be dropped.
+DROP INDEX test_replica_identity_keyab_key;
+
 ----
 -- Make sure non index cases work
 ----
 ALTER TABLE test_replica_identity REPLICA IDENTITY DEFAULT;
 SELECT relreplident FROM pg_class WHERE oid = 'test_replica_identity'::regclass;
+DROP INDEX test_replica_identity_keyab_key;
 SELECT count(*) FROM pg_index WHERE indrelid = 'test_replica_identity'::regclass AND indisreplident;
 
 ALTER TABLE test_replica_identity REPLICA IDENTITY FULL;
