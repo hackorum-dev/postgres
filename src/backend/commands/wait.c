@@ -35,7 +35,7 @@ ExecWaitStmt(ParseState *pstate, WaitStmt *stmt, bool isTopLevel,
 			 DestReceiver *dest)
 {
 	XLogRecPtr	lsn;
-	int64		timeout = 0;
+	int			timeout = 0;
 	WaitLSNResult waitLSNResult;
 	WaitLSNType lsnType = WAIT_LSN_TYPE_STANDBY_REPLAY; /* default */
 	bool		throw = true;
@@ -108,25 +108,29 @@ ExecWaitStmt(ParseState *pstate, WaitStmt *stmt, bool isTopLevel,
 						hintmsg ? errhint("%s", _(hintmsg)) : 0);
 			}
 
-			/*
-			 * Get rid of any fractional part in the input. This is so we
-			 * don't fail on just-out-of-range values that would round into
-			 * range.
-			 */
-			dval = rint(dval);
-
-			/* Range check */
-			if (unlikely(isnan(dval) || !FLOAT8_FITS_IN_INT64(dval)))
-				ereport(ERROR,
-						errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
-						errmsg("timeout value is out of range"));
-
-			if (dval < 0)
+			if (dval < 0.0)
 				ereport(ERROR,
 						errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						errmsg("timeout cannot be negative"));
 
-			timeout = (int64) dval;
+			/*
+			 * Get rid of any fractional part in the input. This is so we
+			 * don't fail on just-out-of-range values that would round into
+			 * range.  Round values in (0, 1) up to 1 to avoid treating them as
+			 * zero, which means waiting indefinitely.
+			 */
+			if (dval > 0.0 && dval < 1.0)
+				dval = 1.0;
+			else
+				dval = rint(dval);
+
+			/* Range check */
+			if (unlikely(isnan(dval) || !FLOAT8_FITS_IN_INT32(dval)))
+				ereport(ERROR,
+						errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+						errmsg("timeout value is out of range"));
+
+			timeout = (int) dval;
 		}
 		else if (strcmp(defel->defname, "no_throw") == 0)
 		{
