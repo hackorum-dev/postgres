@@ -275,6 +275,8 @@
 #commit_delay = 0                       # range 0-100000, in microseconds
 #commit_siblings = 5                    # range 0-1000
 
+#max_concurrent_backups = 10            # range 1-MAX_BACKENDS  
+
 # - Checkpoints -
 
 #checkpoint_timeout = 5min              # range 30s-1d

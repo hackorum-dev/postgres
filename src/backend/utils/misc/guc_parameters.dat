@@ -1983,6 +1983,14 @@
   max => 'MAX_BACKENDS',
 },
 
+{ name => 'max_concurrent_backups', type => 'int', context => 'PGC_POSTMASTER', group => 'REPLICATION_SENDING',
+  short_desc => 'Sets the maximum number of simultaneously running basebackups.',
+  variable => 'max_concurrent_backups',
+  boot_val => '10',
+  min => '1',
+  max => 'MAX_BACKENDS',
+},
+
 { name => 'max_connections', type => 'int', context => 'PGC_POSTMASTER', group => 'CONN_AUTH_SETTINGS',
   short_desc => 'Sets the maximum number of concurrent connections.',
   variable => 'MaxConnections',
