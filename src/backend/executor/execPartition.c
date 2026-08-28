@@ -512,6 +512,15 @@ IsIndexCompatibleAsArbiter(Relation arbiterIndexRelation,
 	if (arbiterIndexInfo->ii_Unique != indexInfo->ii_Unique)
 		return false;
 
+	/*
+	 * Constraint enforcement timing must match, or we could end up choosing
+	 * a deferrable index as arbiter, which ExecCheckIndexConstraints
+	 * rejects.
+	 */
+	if (arbiterIndexRelation->rd_index->indimmediate !=
+		indexRelation->rd_index->indimmediate)
+		return false;
+
 	/* No support currently for comparing exclusion indexes. */
 	if (arbiterIndexInfo->ii_ExclusionOps != NULL ||
 		indexInfo->ii_ExclusionOps != NULL)

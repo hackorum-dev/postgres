@@ -619,6 +619,20 @@ insert into parted_conflict_1 values (40, 'cuarenta')
   on conflict (a) do update set b = excluded.b;
 drop table parted_conflict;
 
+-- a partition-local deferrable unique constraint on the arbiter columns
+-- must not be picked up as an additional arbiter for routed inserts
+create table parted_conflict (a int, b text, primary key (a)) partition by range (a);
+create table parted_conflict_1 partition of parted_conflict for values from (0) to (1000);
+alter table parted_conflict_1 add constraint parted_conflict_1_a_def unique (a) deferrable;
+insert into parted_conflict values (40, 'forty');
+insert into parted_conflict values (40, 'cuarenta')
+  on conflict (a) do update set b = excluded.b;
+insert into parted_conflict values (41, 'forty-one')
+  on conflict (a) do update set b = excluded.b;
+insert into parted_conflict values (42, 'forty-two') on conflict (a) do nothing;
+select * from parted_conflict order by a;
+drop table parted_conflict;
+
 -- test whole-row Vars in ON CONFLICT expressions
 create table parted_conflict (a int, b text, c int) partition by range (a);
 create table parted_conflict_1 (drp text, c int, a int, b text);
