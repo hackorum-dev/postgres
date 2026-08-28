@@ -1808,6 +1808,47 @@ SELECT count(*) FROM pht3 t1 JOIN pht4 t2 ON t1.d = t2.d WHERE t1.c = '0002' AND
 
 RESET enable_hashjoin;
 RESET enable_mergejoin;
+-- outer join on a partition key that is an expression wrapped in a RelabelType
+CREATE TABLE pht5 (a int, c varchar(40)) PARTITION BY HASH ((c::text));
+CREATE TABLE pht5_p1 PARTITION OF pht5 FOR VALUES WITH (MODULUS 2, REMAINDER 0);
+CREATE TABLE pht5_p2 PARTITION OF pht5 FOR VALUES WITH (MODULUS 2, REMAINDER 1);
+INSERT INTO pht5 SELECT i, to_char(i/50, 'FM0000') FROM generate_series(0, 599, 2) i;
+ANALYZE pht5;
+CREATE TABLE pht6 (a int, c varchar(40)) PARTITION BY HASH ((c::text));
+CREATE TABLE pht6_p1 PARTITION OF pht6 FOR VALUES WITH (MODULUS 2, REMAINDER 0);
+CREATE TABLE pht6_p2 PARTITION OF pht6 FOR VALUES WITH (MODULUS 2, REMAINDER 1);
+INSERT INTO pht6 SELECT i, to_char(i/50, 'FM0000') FROM generate_series(0, 599, 3) i;
+ANALYZE pht6;
+-- avoid hash and merge joins, whose costs here are close enough to the
+-- partitionwise nested loop's to make the test output unstable
+SET enable_hashjoin = off;
+SET enable_mergejoin = off;
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM pht5 t1 LEFT JOIN pht6 t2 ON t1.c::text = t2.c::text;
+                          QUERY PLAN                          
+--------------------------------------------------------------
+ Aggregate
+   ->  Append
+         ->  Nested Loop Left Join
+               Join Filter: ((t1_1.c)::text = (t2_1.c)::text)
+               ->  Seq Scan on pht5_p1 t1_1
+               ->  Materialize
+                     ->  Seq Scan on pht6_p1 t2_1
+         ->  Nested Loop Left Join
+               Join Filter: ((t1_2.c)::text = (t2_2.c)::text)
+               ->  Seq Scan on pht5_p2 t1_2
+               ->  Materialize
+                     ->  Seq Scan on pht6_p2 t2_2
+(12 rows)
+
+SELECT count(*) FROM pht5 t1 LEFT JOIN pht6 t2 ON t1.c::text = t2.c::text;
+ count 
+-------
+  5000
+(1 row)
+
+RESET enable_hashjoin;
+RESET enable_mergejoin;
 -- test default partition behavior for range
 ALTER TABLE prt1 DETACH PARTITION prt1_p3;
 ALTER TABLE prt1 ATTACH PARTITION prt1_p3 DEFAULT;
