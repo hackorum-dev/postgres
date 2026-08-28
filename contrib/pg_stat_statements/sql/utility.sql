@@ -365,6 +365,15 @@ DROP TABLE pgss_select_into;
 
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
 
+-- WAIT FOR LSN
+-- Different target LSNs should be normalized into one entry.
+WAIT FOR LSN '0/0' WITH (MODE 'primary_flush');
+WAIT FOR LSN '0/1' WITH (MODE 'primary_flush');
+SELECT calls, rows, query
+  FROM pg_stat_statements
+  WHERE query LIKE 'WAIT FOR LSN%';
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+
 -- Special cases.  Keep these ones at the end to avoid conflicts.
 SET SCHEMA 'foo';
 SET SCHEMA 'public';

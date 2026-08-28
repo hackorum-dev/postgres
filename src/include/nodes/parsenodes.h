@@ -4606,8 +4606,11 @@ typedef struct DropSubscriptionStmt
 typedef struct WaitStmt
 {
 	NodeTag		type;
-	char	   *lsn_literal;	/* LSN string from grammar */
+	/* LSN string from grammar */
+	char	   *lsn_literal pg_node_attr(query_jumble_ignore);
 	List	   *options;		/* List of DefElem nodes */
+	/* token location, or -1 if unknown */
+	ParseLoc	lsn_location pg_node_attr(query_jumble_location);
 } WaitStmt;
 
 

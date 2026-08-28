@@ -719,6 +719,34 @@ SELECT pg_stat_statements_reset() IS NOT NULL AS t;
  t
 (1 row)
 
+-- WAIT FOR LSN
+-- Different target LSNs should be normalized into one entry.
+WAIT FOR LSN '0/0' WITH (MODE 'primary_flush');
+ status  
+---------
+ success
+(1 row)
+
+WAIT FOR LSN '0/1' WITH (MODE 'primary_flush');
+ status  
+---------
+ success
+(1 row)
+
+SELECT calls, rows, query
+  FROM pg_stat_statements
+  WHERE query LIKE 'WAIT FOR LSN%';
+ calls | rows |                    query                    
+-------+------+---------------------------------------------
+     2 |    0 | WAIT FOR LSN $1 WITH (MODE 'primary_flush')
+(1 row)
+
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
 -- Special cases.  Keep these ones at the end to avoid conflicts.
 SET SCHEMA 'foo';
 SET SCHEMA 'public';
