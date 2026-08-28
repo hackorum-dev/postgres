@@ -246,6 +246,7 @@ check_copy_file_range(void)
 	{
 		int			src_fd;
 		int			dest_fd;
+		ssize_t		nbytes;
 
 		if ((src_fd = open(existing_file, O_RDONLY | PG_BINARY, 0)) < 0)
 			pg_fatal("could not open file \"%s\": %m",
@@ -256,8 +257,13 @@ check_copy_file_range(void)
 			pg_fatal("could not create file \"%s\": %m",
 					 new_link_file);
 
-		if (copy_file_range(src_fd, NULL, dest_fd, NULL, SSIZE_MAX, 0) < 0)
-			pg_fatal("could not copy file range between old and new data directories: %m");
+		do
+		{
+			nbytes = copy_file_range(src_fd, NULL, dest_fd, NULL, SSIZE_MAX, 0);
+			if (nbytes < 0)
+				pg_fatal("could not copy file range between old and new data directories: %m");
+		}
+		while (nbytes > 0);
 
 		close(src_fd);
 		close(dest_fd);
