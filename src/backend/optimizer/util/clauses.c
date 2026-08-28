@@ -63,6 +63,7 @@
 #include "utils/rel.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
+#include "utils/xml.h"
 
 typedef struct
 {
@@ -115,6 +116,7 @@ static bool contain_agg_clause_walker(Node *node, void *context);
 static bool find_window_functions_walker(Node *node, WindowFuncLists *lists);
 static bool contain_subplans_walker(Node *node, void *context);
 static bool contain_mutable_functions_walker(Node *node, void *context);
+static bool xmlexpr_is_immutable(XmlExpr *xexpr);
 static bool contain_volatile_functions_walker(Node *node, void *context);
 static bool contain_volatile_functions_not_nextval_walker(Node *node, void *context);
 static bool max_parallel_hazard_walker(Node *node,
@@ -494,6 +496,49 @@ contain_mutable_functions_walker(Node *node, void *context)
 	}
 	return expression_tree_walker(node, contain_mutable_functions_walker,
 								  context);
+}
+
+/*
+ * xmlexpr_is_immutable
+ *	  True if this XmlExpr is immutable.
+ *
+ * XMLELEMENT and XMLFOREST go through map_sql_value_to_xml_value(), which
+ * may depend on session settings (e.g. TimeZone, xmlbinary) or on type
+ * output functions.  Other XmlExprOps only manipulate xml/text.
+ */
+static bool
+xmlexpr_is_immutable(XmlExpr *xexpr)
+{
+	ListCell   *lc;
+	List	   *arglists[2];
+	int			i;
+
+	switch (xexpr->op)
+	{
+		case IS_XMLCONCAT:
+		case IS_XMLPARSE:
+		case IS_XMLPI:
+		case IS_XMLROOT:
+		case IS_XMLSERIALIZE:
+		case IS_DOCUMENT:
+			return true;
+
+		case IS_XMLELEMENT:
+		case IS_XMLFOREST:
+			arglists[0] = xexpr->named_args;
+			arglists[1] = xexpr->args;
+			for (i = 0; i < lengthof(arglists); i++)
+			{
+				foreach(lc, arglists[i])
+				{
+					if (!map_sql_value_to_xml_is_immutable(exprType(lfirst(lc))))
+						return false;
+				}
+			}
+			return true;
+	}
+
+	return false;
 }
 
 /*
@@ -3699,6 +3744,14 @@ eval_const_expressions_mutator(Node *node,
 				node = ece_generic_processing(node);
 				/* If all arguments are Consts, we can fold to a constant */
 				if (ece_all_arguments_const(node))
+					return ece_evaluate_expr(node);
+				return node;
+			}
+		case T_XmlExpr:
+			{
+				node = ece_generic_processing(node);
+				if (ece_all_arguments_const(node) &&
+					xmlexpr_is_immutable((XmlExpr *) node))
 					return ece_evaluate_expr(node);
 				return node;
 			}

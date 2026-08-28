@@ -83,6 +83,7 @@
 #include "access/table.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_class.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "executor/spi.h"
 #include "executor/tablefunc.h"
@@ -2724,6 +2725,43 @@ map_sql_value_to_xml_value(Datum value, Oid type, bool xml_escape_strings)
 
 		/* otherwise, translate special characters as needed */
 		return escape_xml(str);
+	}
+}
+
+/*
+ * map_sql_value_to_xml_is_immutable
+ *	  True if mapping this type to XML text is immutable.
+ *
+ * Mirrors the special cases in map_sql_value_to_xml_value(): bool/date/timestamp
+ * use fixed formatting rather than DateStyle-sensitive output, and bytea uses
+ * xmlbinary rather than byteaout (which is marked immutable).
+ */
+bool
+map_sql_value_to_xml_is_immutable(Oid type)
+{
+	Oid			typeOut;
+	bool		isvarlena;
+
+	if (type_is_array_domain(type))
+		return map_sql_value_to_xml_is_immutable(get_base_element_type(type));
+
+	type = getBaseType(type);
+
+	switch (type)
+	{
+		case BOOLOID:
+		case DATEOID:
+		case TIMESTAMPOID:
+			/* Fixed formatting, not type output / DateStyle */
+			return true;
+
+		case BYTEAOID:
+			/* Uses xmlbinary, not byteaout (marked immutable) */
+			return false;
+
+		default:
+			getTypeOutputInfo(type, &typeOut, &isvarlena);
+			return (func_volatile(typeOut) == PROVOLATILE_IMMUTABLE);
 	}
 }
 

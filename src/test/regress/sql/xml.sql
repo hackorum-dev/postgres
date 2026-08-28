@@ -185,6 +185,39 @@ SELECT xml '<abc/>' IS NOT DOCUMENT;
 SELECT xml 'abc' IS NOT DOCUMENT;
 SELECT '<>' IS NOT DOCUMENT;
 
+--
+-- Constant-folding of XmlExpr
+--
+-- Fold IS DOCUMENT so CASE does not simplify unused xpath() at plan time.
+SELECT CASE WHEN ('2019-12-16T00:00:00.000'::xml) IS DOCUMENT
+	THEN (xpath('/*/text()', '2019-12-16T00:00:00.000'::xml))[1]::text
+	ELSE ('2019-12-16T00:00:00.000'::xml)::text
+END;
+
+-- XMLFOREST must not fold when map_sql_value_to_xml_value() is mutable.
+-- timestamptz follows TimeZone.
+PREPARE xmlforest_tz AS SELECT xmlforest('2026-08-28 12:00 UTC'::timestamptz AS foo);
+SET timezone = 'America/New_York';
+EXECUTE xmlforest_tz;
+SET timezone = 'America/Chicago';
+EXECUTE xmlforest_tz;
+DEALLOCATE xmlforest_tz;
+SET timezone = 'GMT';
+-- bytea follows xmlbinary.
+PREPARE xmlforest_bin AS SELECT xmlforest(bytea 'bar' AS foo);
+SET xmlbinary TO base64;
+EXECUTE xmlforest_bin;
+SET xmlbinary TO hex;
+EXECUTE xmlforest_bin;
+DEALLOCATE xmlforest_bin;
+-- interval follows IntervalStyle (via type output).
+PREPARE xmlforest_iv AS SELECT xmlforest(interval '1 year 2 mons 3 days 04:05:06' AS foo);
+SET intervalstyle TO postgres;
+EXECUTE xmlforest_iv;
+SET intervalstyle TO iso_8601;
+EXECUTE xmlforest_iv;
+DEALLOCATE xmlforest_iv;
+RESET intervalstyle;
 
 SELECT xmlagg(data) FROM xmltest;
 SELECT xmlagg(data) FROM xmltest WHERE id > 10;
