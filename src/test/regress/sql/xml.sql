@@ -185,6 +185,11 @@ SELECT xml '<abc/>' IS NOT DOCUMENT;
 SELECT xml 'abc' IS NOT DOCUMENT;
 SELECT '<>' IS NOT DOCUMENT;
 
+-- Fold IS DOCUMENT constants so CASE does not run unused xpath() at plan time.
+SELECT CASE WHEN ('2019-12-16T00:00:00.000'::xml) IS DOCUMENT
+	THEN (xpath('/*/text()', '2019-12-16T00:00:00.000'::xml))[1]::text
+	ELSE ('2019-12-16T00:00:00.000'::xml)::text
+END;
 
 SELECT xmlagg(data) FROM xmltest;
 SELECT xmlagg(data) FROM xmltest WHERE id > 10;

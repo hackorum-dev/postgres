@@ -3679,6 +3679,7 @@ eval_const_expressions_mutator(Node *node,
 		case T_ArrayExpr:
 		case T_RowExpr:
 		case T_MinMaxExpr:
+		case T_XmlExpr:
 			{
 				/*
 				 * Generic handling for node types whose own processing is
@@ -3693,6 +3694,11 @@ eval_const_expressions_mutator(Node *node,
 				 * Treating MinMaxExpr this way amounts to assuming that the
 				 * btree comparison function it calls is immutable; see the
 				 * reasoning in contain_mutable_functions_walker.
+				 *
+				 * XmlExpr is treated as immutable by that walker too, so fold
+				 * it here.  Otherwise a constant IS DOCUMENT left in CASE
+				 * WHEN can still allow unused arms (e.g. xpath()) to be
+				 * simplified and fail at plan time.
 				 */
 
 				/* Copy the node and const-simplify its arguments */
