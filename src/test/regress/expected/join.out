@@ -9067,6 +9067,24 @@ SELECT a1.a FROM sj a1,sj a2 WHERE (a1.a=a2.a) FOR UPDATE;
          Filter: (a IS NOT NULL)
 (3 rows)
 
+-- Check that SJE rewrites Vars in a flattened LATERAL UNION ALL
+explain (costs off)
+select count(*) from sj p
+inner join lateral (select p.b union all select p.b) s(x) on (s.x is not null)
+where p.a in (select a from sj);
+                       QUERY PLAN                        
+---------------------------------------------------------
+ Aggregate
+   ->  Nested Loop
+         ->  Seq Scan on sj
+               Filter: (a IS NOT NULL)
+         ->  Append
+               ->  Result
+                     One-Time Filter: (sj.b IS NOT NULL)
+               ->  Result
+                     One-Time Filter: (sj.b IS NOT NULL)
+(9 rows)
+
 reset enable_hashjoin;
 reset enable_mergejoin;
 --
