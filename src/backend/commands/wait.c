@@ -35,7 +35,7 @@ ExecWaitStmt(ParseState *pstate, WaitStmt *stmt, bool isTopLevel,
 			 DestReceiver *dest)
 {
 	XLogRecPtr	lsn;
-	int64		timeout = 0;
+	int			timeout = 0;
 	WaitLSNResult waitLSNResult;
 	WaitLSNType lsnType = WAIT_LSN_TYPE_STANDBY_REPLAY; /* default */
 	bool		throw = true;
@@ -105,28 +105,42 @@ ExecWaitStmt(ParseState *pstate, WaitStmt *stmt, bool isTopLevel,
 				ereport(ERROR,
 						errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						errmsg("invalid timeout value: \"%s\"", timeout_str),
-						hintmsg ? errhint("%s", _(hintmsg)) : 0);
+						hintmsg ? errhint("%s", _(hintmsg)) : 0,
+						parser_errposition(pstate, defel->location));
 			}
 
-			/*
-			 * Get rid of any fractional part in the input. This is so we
-			 * don't fail on just-out-of-range values that would round into
-			 * range.
-			 */
-			dval = rint(dval);
-
-			/* Range check */
-			if (unlikely(isnan(dval) || !FLOAT8_FITS_IN_INT64(dval)))
-				ereport(ERROR,
-						errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
-						errmsg("timeout value is out of range"));
-
-			if (dval < 0)
+			if (dval < 0.0)
 				ereport(ERROR,
 						errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						errmsg("timeout cannot be negative"));
+						errmsg("timeout cannot be negative"),
+						parser_errposition(pstate, defel->location));
 
-			timeout = (int64) dval;
+			if (dval > 0.0 && dval < 1.0)
+			{
+				/*
+				 * Round values in (0, 1) up to 1 to avoid treating them as
+				 * zero, which means waiting indefinitely.
+				 */
+				dval = 1.0;
+			}
+			else
+			{
+				/*
+				 * Get rid of any fractional part in the input. This is so we
+				 * don't fail on just-out-of-range values that would round
+				 * into range.
+				 */
+				dval = rint(dval);
+			}
+
+			/* Range check */
+			if (unlikely(isnan(dval) || !FLOAT8_FITS_IN_INT32(dval)))
+				ereport(ERROR,
+						errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+						errmsg("timeout value is out of range"),
+						parser_errposition(pstate, defel->location));
+
+			timeout = (int) dval;
 		}
 		else if (strcmp(defel->defname, "no_throw") == 0)
 		{

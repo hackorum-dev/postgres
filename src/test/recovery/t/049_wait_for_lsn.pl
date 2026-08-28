@@ -343,6 +343,20 @@ $node_standby->psql(
 	stderr => \$stderr);
 ok($stderr =~ /timeout cannot be negative/, "get error for negative timeout");
 
+# Test negative timeout in [-0.5, 0)
+$node_standby->psql(
+	'postgres',
+	"WAIT FOR LSN '${test_lsn}' WITH (timeout '-0.1ms');",
+	stderr => \$stderr);
+ok($stderr =~ /timeout cannot be negative/, "get error for negative timeout");
+
+# Test timeout out of range
+$node_standby->psql(
+	'postgres',
+	"WAIT FOR LSN '${test_lsn}' WITH (timeout '2147483648ms');",
+	stderr => \$stderr);
+ok($stderr =~ /timeout value is out of range/, "get error for out of range timeout");
+
 # Test unknown parameter with WITH clause
 $node_standby->psql(
 	'postgres',
@@ -406,6 +420,19 @@ $output = $node_standby->safe_psql(
 	WAIT FOR LSN '${lsn3}' WITH (timeout 100, no_throw);]);
 ok($output eq "timeout",
 	"WAIT FOR WITH clause returns correct timeout status");
+
+# Test maximum timeout
+$output = $node_standby->safe_psql(
+	'postgres', qq[
+	WAIT FOR LSN '${lsn2}' WITH (timeout '2147483647ms', no_throw);]);
+ok($output eq "success", "maximum timeout value is accepted");
+
+# Test sub-millisecond timeout doesn't become an indefinite wait
+$output = $node_standby->safe_psql(
+	'postgres', qq[
+	SET statement_timeout = '1s';
+	WAIT FOR LSN '${lsn3}' WITH (timeout '0.1ms', no_throw);]);
+ok($output eq "timeout", "sub-millisecond timeout works correctly");
 
 # Test WITH clause error case - invalid option
 $node_standby->psql(
