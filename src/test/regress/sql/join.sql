@@ -2581,6 +2581,15 @@ full join
   ) as rhs
 on lhs.id = rhs.id;
 
+-- check handling of a removed Var that's pushed down into a subquery
+-- (fallout from the fix for bug #19560)
+explain (verbose, costs off)
+select c1, c2
+from (select case when false then remov.id end as c1
+      from int4_tbl i41 left join a remov on i41.f1 = remov.id) ss1
+     right join int4_tbl i42 on false,
+     lateral (select ss1.c1 as c2 from int4_tbl i43 offset 0) ss2;
+
 -- More tests of correct placement of pseudoconstant quals
 
 -- simple constant-false condition

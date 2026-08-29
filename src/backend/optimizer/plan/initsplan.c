@@ -1118,9 +1118,9 @@ extract_lateral_references(PlannerInfo *root, RelOptInfo *brel, Index rtindex)
 	newvars = NIL;
 	foreach(lc, vars)
 	{
-		Node	   *node = (Node *) lfirst(lc);
+		Node	   *orig_node = (Node *) lfirst(lc);
+		Node	   *node = copyObject(orig_node);
 
-		node = copyObject(node);
 		if (IsA(node, Var))
 		{
 			Var		   *var = (Var *) node;
@@ -1141,9 +1141,27 @@ extract_lateral_references(PlannerInfo *root, RelOptInfo *brel, Index rtindex)
 			 * If we pulled the PHV out of a subquery RTE, its expression
 			 * needs to be preprocessed.  subquery_planner() already did this
 			 * for level-zero PHVs in function and values RTEs, though.
+			 *
+			 * Furthermore, we modify the subquery by putting the preprocessed
+			 * expression back into the subquery's PHV, after reversing the
+			 * levelsup adjustment again.  This is rather grotty: it'd be
+			 * better if this processing didn't modify the subquery.  However,
+			 * it's essential for some optimization scenarios.  For example,
+			 * if the PHV contains a Var of our level that is deleted during
+			 * preprocessing (say, by simplifying a CASE with constant test
+			 * expression), join simplification may decide that it can remove
+			 * the rel that is the source of the Var.  If the subquery still
+			 * contains a reference to that Var, trouble will ensue.
 			 */
 			if (levelsup > 0)
+			{
+				Expr	   *repl_expr;
+
 				phv->phexpr = preprocess_phv_expression(root, phv->phexpr);
+				repl_expr = copyObject(phv->phexpr);
+				IncrementVarSublevelsUp((Node *) repl_expr, levelsup, 0);
+				((PlaceHolderVar *) orig_node)->phexpr = repl_expr;
+			}
 		}
 		else
 			Assert(false);
