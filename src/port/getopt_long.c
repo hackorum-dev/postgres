@@ -65,6 +65,7 @@ getopt_long(int argc, char *const argv[],
 	const char *oli;			/* option letter list index */
 	static int	nonopt_start = -1;
 	static bool force_nonopt = false;
+	int			argend;
 
 	if (!*place)
 	{							/* update scanning pointer */
@@ -135,11 +136,18 @@ retry:
 
 					if (has_arg != no_argument)
 					{
+						/*
+						 * Non-options already moved to the back of argv
+						 * preceded this option, so they cannot be its
+						 * argument.
+						 */
+						argend = (nonopt_start == -1) ? argc : nonopt_start;
+
 						if (place[namelen] == '=')
 							optarg = place + namelen + 1;
 						else if (has_arg == optional_argument)
 							optarg = NULL;
-						else if (optind < argc - 1)
+						else if (optind < argend - 1)
 						{
 							optind++;
 							optarg = argv[optind];
@@ -213,9 +221,11 @@ retry:
 	}
 	else
 	{							/* need an argument */
+		argend = (nonopt_start == -1) ? argc : nonopt_start;
+
 		if (*place)				/* no white space */
 			optarg = place;
-		else if (argc <= ++optind)
+		else if (argend <= ++optind)
 		{						/* no arg */
 			place = EMSG;
 			if (*optstring == ':')
