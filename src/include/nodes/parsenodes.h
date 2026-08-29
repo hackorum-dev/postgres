@@ -864,6 +864,8 @@ typedef struct DefElem
 								 * TypeName */
 	DefElemAction defaction;	/* unspecified action, or SET/ADD/DROP */
 	ParseLoc	location;		/* token location, or -1 if unknown */
+	/* argument location, or -1 if unknown */
+	ParseLoc	arg_location;
 } DefElem;
 
 /*
