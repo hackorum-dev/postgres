@@ -877,6 +877,15 @@ check_concurrent_repack_requirements(Relation rel, Oid *ident_idx_p)
 				errdetail("%s requires \"wal_level\" to be set to \"replica\" or higher.",
 						  "REPACK (CONCURRENTLY)"));
 
+	/* A materialized view produces no logically decoded changes. */
+	if (rel->rd_rel->relkind == RELKIND_MATVIEW)
+		ereport(ERROR,
+				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				errmsg("cannot execute %s on relation \"%s\"",
+					   "REPACK (CONCURRENTLY)", RelationGetRelationName(rel)),
+				errhint("%s is not supported for materialized views.",
+						"REPACK (CONCURRENTLY)"));
+
 	/* Data changes in system relations are not logically decoded. */
 	if (IsCatalogRelation(rel))
 		ereport(ERROR,

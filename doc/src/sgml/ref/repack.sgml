@@ -281,6 +281,12 @@ REPACK [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] USING
 
        <listitem>
         <para>
+          The relation is a materialized view.
+        </para>
+       </listitem>
+
+       <listitem>
+        <para>
           The table is a system catalog or a <acronym>TOAST</acronym> table.
         </para>
        </listitem>
