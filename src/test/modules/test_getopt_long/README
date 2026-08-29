@@ -1,0 +1,18 @@
+Module `test_getopt_long`
+=========================
+
+This module tests the getopt_long() implementation in src/port/getopt_long.c.
+Most platforms provide their own getopt_long() and libpgport does not include
+the port version there, so the test program compiles the port source in
+directly and thus exercises it everywhere. `test_getopt_long_system` is the
+same program without it, so the tests also run against the system
+getopt_long() and check the two agree.
+
+`test_getopt_long OPTSTRING LONGOPTS [ARG ...]` parses ARGs with the given
+short option string and long option list and prints one line per
+getopt_long() return, followed by a line listing the remaining non-option
+arguments. See the header comment in test_getopt_long.c for the format. The
+TAP test compares that output against the expected sequence for a range of
+argument layouts: attached and separate values, optional arguments in first,
+middle and last position, missing arguments, "--", a bare "-", and
+non-option reordering.
