@@ -137,31 +137,23 @@ retry:
 					{
 						if (place[namelen] == '=')
 							optarg = place + namelen + 1;
-						else if (optind < argc - 1 &&
-								 has_arg == required_argument)
+						else if (has_arg == optional_argument)
+							optarg = NULL;
+						else if (optind < argc - 1)
 						{
 							optind++;
 							optarg = argv[optind];
 						}
 						else
 						{
+							/* required argument missing */
 							optind++;
-							if (optstring[0] == ':')
-							{
-								place = EMSG;
-								return BADARG;
-							}
-
-							if (opterr && has_arg == required_argument)
+							if (opterr && optstring[0] != ':')
 								fprintf(stderr,
 										"%s: option requires an argument -- %s\n",
 										argv[0], place);
-
 							place = EMSG;
-
-							if (has_arg == required_argument)
-								return BADCH;
-							optarg = NULL;
+							return optstring[0] == ':' ? BADARG : BADCH;
 						}
 					}
 					else
