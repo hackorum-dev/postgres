@@ -70,6 +70,7 @@ static void FlushPendingNulls(JumbleState *jstate);
 static void RecordConstLocation(JumbleState *jstate,
 								bool extern_param,
 								int location, int len);
+static void JumbleDefElemOptions(JumbleState *jstate, List *options);
 static void _jumbleNode(JumbleState *jstate, Node *node);
 static void _jumbleList(JumbleState *jstate, Node *node);
 static void _jumbleElements(JumbleState *jstate, List *elements, Node *node);
@@ -79,6 +80,9 @@ static void _jumbleVariableSetStmt(JumbleState *jstate, Node *node);
 static void _jumbleRangeTblEntry_eref(JumbleState *jstate,
 									  RangeTblEntry *rte,
 									  Alias *expr);
+static void _jumbleWaitStmt_options(JumbleState *jstate,
+									WaitStmt *ws,
+									List *options);
 
 /*
  * Given a possibly multi-statement source string, confine our attention to the
@@ -772,6 +776,30 @@ _jumbleRangeTblEntry_eref(JumbleState *jstate,
 	 * This includes only the table name, the list of column names is ignored.
 	 */
 	JUMBLE_STRING(aliasname);
+}
+
+static void
+JumbleDefElemOptions(JumbleState *jstate, List *options)
+{
+	ListCell   *l;
+
+	foreach(l, options)
+	{
+		DefElem    *expr = lfirst_node(DefElem, l);
+
+		JUMBLE_STRING(defnamespace);
+		JUMBLE_STRING(defname);
+		JUMBLE_FIELD(defaction);
+		RecordConstLocation(jstate, false, expr->arg_location, -1);
+	}
+}
+
+static void
+_jumbleWaitStmt_options(JumbleState *jstate,
+						WaitStmt *ws,
+						List *options)
+{
+	JumbleDefElemOptions(jstate, options);
 }
 
 /*

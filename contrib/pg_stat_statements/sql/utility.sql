@@ -365,6 +365,12 @@ DROP TABLE pgss_select_into;
 
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
 
+-- WAIT FOR
+WAIT FOR LSN 'FFFFFFFF/FFFFFFFF' WITH (MODE 'primary_flush', TIMEOUT '1ms', NO_THROW);
+WAIT FOR LSN 'FFFFFFFE/FFFFFFFF' WITH (MODE 'primary_flush', TIMEOUT '2ms', NO_THROW);
+SELECT calls, rows, query FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+
 -- Special cases.  Keep these ones at the end to avoid conflicts.
 SET SCHEMA 'foo';
 SET SCHEMA 'public';
