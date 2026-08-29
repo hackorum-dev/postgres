@@ -625,6 +625,8 @@ StartDataChecksumsWorkerLauncher(DataChecksumsWorkerOperation op,
 {
 	BackgroundWorker bgw;
 	BackgroundWorkerHandle *bgw_handle;
+	BgwHandleStatus status;
+	pid_t		pid;
 	bool		running;
 
 #ifdef USE_ASSERT_CHECKING
@@ -689,6 +691,14 @@ StartDataChecksumsWorkerLauncher(DataChecksumsWorkerOperation op,
 			ereport(ERROR,
 					errcode(ERRCODE_INSUFFICIENT_RESOURCES),
 					errmsg("failed to start background worker to process data checksums"));
+
+		/* Wait for a background worker to start up. */
+		status = WaitForBackgroundWorkerStartup(bgw_handle, &pid);
+		if (status != BGWH_STARTED)
+			ereport(ERROR,
+					errcode(ERRCODE_INSUFFICIENT_RESOURCES),
+					errmsg("could not start background worker to process data checksums"),
+					errhint("More details may be available in the server log."));
 	}
 	else
 	{
