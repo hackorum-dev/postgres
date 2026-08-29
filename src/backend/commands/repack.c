@@ -179,6 +179,7 @@ static List *get_tables_to_repack(RepackCommand cmd, bool usingindex,
 static List *get_tables_to_repack_partitioned(RepackStmt *stmt,
 											  Relation rel,
 											  MemoryContext permcxt);
+static void warn_foreign_partition(RepackCommand cmd, Oid relid);
 static bool repack_is_permitted_for_relation(RepackCommand cmd,
 											 Oid relid, Oid userid,
 											 bool already_locked);
@@ -2435,6 +2436,7 @@ get_tables_to_repack_partitioned(RepackStmt *stmt, Relation rel,
 	inhoids = find_all_inheritors(relid, NoLock, NULL);
 	foreach_oid(child_oid, inhoids)
 	{
+		char		relkind = get_rel_relkind(child_oid);
 		Oid			table_oid,
 					index_oid;
 		RelToCluster *rtc;
@@ -2442,8 +2444,30 @@ get_tables_to_repack_partitioned(RepackStmt *stmt, Relation rel,
 
 		if (rel_is_index)
 		{
+			/*
+			 * Foreign tables have no index partitions, so look for them among
+			 * the partitions of each partitioned table in the tree.
+			 */
+			if (relkind == RELKIND_PARTITIONED_INDEX)
+			{
+				Oid			parent_oid = IndexGetRelation(child_oid, true);
+				List	   *partoids;
+
+				if (!OidIsValid(parent_oid))
+					continue;
+
+				partoids = find_inheritance_children(parent_oid, NoLock);
+				foreach_oid(part_oid, partoids)
+				{
+					if (get_rel_relkind(part_oid) == RELKIND_FOREIGN_TABLE)
+						warn_foreign_partition(stmt->command, part_oid);
+				}
+				list_free(partoids);
+				continue;
+			}
+
 			/* consider only leaf indexes */
-			if (get_rel_relkind(child_oid) != RELKIND_INDEX)
+			if (relkind != RELKIND_INDEX)
 				continue;
 
 			/*
@@ -2458,8 +2482,14 @@ get_tables_to_repack_partitioned(RepackStmt *stmt, Relation rel,
 		}
 		else
 		{
+			if (relkind == RELKIND_FOREIGN_TABLE)
+			{
+				warn_foreign_partition(stmt->command, child_oid);
+				continue;
+			}
+
 			/* consider only leaf relations */
-			if (get_rel_relkind(child_oid) != RELKIND_RELATION)
+			if (relkind != RELKIND_RELATION)
 				continue;
 
 			table_oid = child_oid;
@@ -2488,6 +2518,33 @@ get_tables_to_repack_partitioned(RepackStmt *stmt, Relation rel,
 	table_close(rel, AccessExclusiveLock);
 
 	return rtcs;
+}
+
+/*
+ * Warn that a foreign-table partition is skipped, as it has no local storage.
+ *
+ * Check privileges first, like VACUUM does, so that a user who may not
+ * process the partition gets the permission warning instead.  We don't hold
+ * a lock on the partition's immediate parent if it's below the first level,
+ * so it may have been dropped concurrently.
+ */
+static void
+warn_foreign_partition(RepackCommand cmd, Oid relid)
+{
+	char	   *relname;
+
+	if (!repack_is_permitted_for_relation(cmd, relid, GetUserId(), false))
+		return;
+
+	relname = get_rel_name(relid);
+	if (relname == NULL)
+		return;
+
+	ereport(WARNING,
+	/*- translator: second %s is the name of a SQL command, eg. REPACK */
+			errmsg("skipping \"%s\" --- cannot execute %s on foreign tables",
+				   relname, RepackCommandAsString(cmd)));
+	pfree(relname);
 }
 
 
