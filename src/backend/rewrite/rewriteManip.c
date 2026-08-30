@@ -627,7 +627,18 @@ ChangeVarNodes_walker(Node *node, ChangeVarNodes_context *context)
 												  context->rt_index,
 												  context->new_index);
 		}
-		/* fall through to examine children */
+
+		/*
+		 * If it's an outer-level PHV, do not recurse into its contents. Such
+		 * a PHV must have been pushed into this query level without
+		 * expression preprocessing, so it may contain Vars that we think are
+		 * due to be deleted, triggering our INVALID_VAR assertions.  There is
+		 * no need to modify such a PHV anyway, since it will be replaced by a
+		 * Param before anything very interesting happens.
+		 */
+		if (phv->phlevelsup > 0)
+			return node;
+		/* else fall through to examine children */
 	}
 	if (IsA(node, PlanRowMark))
 	{

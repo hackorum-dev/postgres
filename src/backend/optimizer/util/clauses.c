@@ -1703,23 +1703,30 @@ find_nonnullable_rels_walker(Node *node, bool top_level)
 		PlaceHolderVar *phv = (PlaceHolderVar *) node;
 
 		/*
-		 * If the contained expression forces any rels non-nullable, so does
-		 * the PHV.
+		 * We can ignore outer-level PHVs: they cannot contain any Vars of the
+		 * current level, so they can't force anything non-nullable.
 		 */
-		result = find_nonnullable_rels_walker((Node *) phv->phexpr, top_level);
+		if (phv->phlevelsup == 0)
+		{
+			/*
+			 * If the contained expression forces any rels non-nullable, so
+			 * does the PHV.
+			 */
+			result = find_nonnullable_rels_walker((Node *) phv->phexpr,
+												  top_level);
 
-		/*
-		 * If the PHV's syntactic scope is exactly one rel, it will be forced
-		 * to be evaluated at that rel, and so it will behave like a Var of
-		 * that rel: if the rel's entire output goes to null, so will the PHV.
-		 * (If the syntactic scope is a join, we know that the PHV will go to
-		 * null if the whole join does; but that is AND semantics while we
-		 * need OR semantics for find_nonnullable_rels' result, so we can't do
-		 * anything with the knowledge.)
-		 */
-		if (phv->phlevelsup == 0 &&
-			bms_membership(phv->phrels) == BMS_SINGLETON)
-			result = bms_add_members(result, phv->phrels);
+			/*
+			 * If the PHV's syntactic scope is exactly one rel, it will be
+			 * forced to be evaluated at that rel, and so it will behave like
+			 * a Var of that rel: if the rel's entire output goes to null, so
+			 * will the PHV.  (If the syntactic scope is a join, we know that
+			 * the PHV will go to null if the whole join does; but that is AND
+			 * semantics while we need OR semantics for find_nonnullable_rels'
+			 * result, so we can't do anything with the knowledge.)
+			 */
+			if (bms_membership(phv->phrels) == BMS_SINGLETON)
+				result = bms_add_members(result, phv->phrels);
+		}
 	}
 	return result;
 }
@@ -1954,7 +1961,13 @@ find_nonnullable_vars_walker(Node *node, bool top_level)
 	{
 		PlaceHolderVar *phv = (PlaceHolderVar *) node;
 
-		result = find_nonnullable_vars_walker((Node *) phv->phexpr, top_level);
+		/*
+		 * We can ignore outer-level PHVs: they cannot contain any Vars of the
+		 * current level, so they can't force anything non-nullable.
+		 */
+		if (phv->phlevelsup == 0)
+			result = find_nonnullable_vars_walker((Node *) phv->phexpr,
+												  top_level);
 	}
 	return result;
 }
@@ -4150,20 +4163,31 @@ eval_const_expressions_mutator(Node *node,
 				return (Node *) newcdomain;
 			}
 		case T_PlaceHolderVar:
-
-			/*
-			 * In estimation mode, just strip the PlaceHolderVar node
-			 * altogether; this amounts to estimating that the contained value
-			 * won't be forced to null by an outer join.  In regular mode we
-			 * just use the default behavior (ie, simplify the expression but
-			 * leave the PlaceHolderVar node intact).
-			 */
-			if (context->estimate)
 			{
 				PlaceHolderVar *phv = (PlaceHolderVar *) node;
 
-				return eval_const_expressions_mutator((Node *) phv->phexpr,
-													  context);
+				/*
+				 * If it's an outer-level PHV, we should return it unmodified.
+				 * Descending into the contents is risky because there may be
+				 * since-deleted Vars there.  In any case the current query
+				 * level is not going to do anything with the PHV except
+				 * replace it with a Param (cf. SS_replace_correlation_vars),
+				 * so the effort would be wasted.  But we do copy the subtree,
+				 * just to conform to this function's API spec.
+				 */
+				if (phv->phlevelsup > 0)
+					return copyObject(node);
+
+				/*
+				 * In estimation mode, just strip the PlaceHolderVar node
+				 * altogether; this amounts to estimating that the contained
+				 * value won't be forced to null by an outer join.  In regular
+				 * mode we just use the default behavior (ie, simplify the
+				 * expression but leave the PlaceHolderVar node intact).
+				 */
+				if (context->estimate)
+					return eval_const_expressions_mutator((Node *) phv->phexpr,
+														  context);
 			}
 			break;
 		case T_ConvertRowtypeExpr:
