@@ -2427,6 +2427,7 @@ CreatePredicateLock(const PREDICATELOCKTARGETTAG *targettag,
 		dlist_push_tail(&target->predicateLocks, &lock->targetLink);
 		dlist_push_tail(&sxact->predicateLocks, &lock->xactLink);
 		lock->commitSeqNo = InvalidSerCommitSeqNo;
+		lock->finishedBefore = InvalidTransactionId;
 	}
 
 	LWLockRelease(partitionLock);
@@ -2752,6 +2753,7 @@ TransferPredicateLocksToNewTarget(PREDICATELOCKTARGETTAG oldtargettag,
 				dlist_container(PREDICATELOCK, targetLink, iter.cur);
 			PREDICATELOCK *newpredlock;
 			SerCommitSeqNo oldCommitSeqNo = oldpredlock->commitSeqNo;
+			TransactionId oldfinishedBefore = oldpredlock->finishedBefore;
 
 			newpredlocktag.myXact = oldpredlock->tag.myXact;
 
@@ -2791,15 +2793,21 @@ TransferPredicateLocksToNewTarget(PREDICATELOCKTARGETTAG oldtargettag,
 				dlist_push_tail(&(newpredlocktag.myXact->predicateLocks),
 								&(newpredlock->xactLink));
 				newpredlock->commitSeqNo = oldCommitSeqNo;
+				newpredlock->finishedBefore = oldfinishedBefore;
 			}
 			else
 			{
 				if (newpredlock->commitSeqNo < oldCommitSeqNo)
 					newpredlock->commitSeqNo = oldCommitSeqNo;
+				if (TransactionIdFollows(oldfinishedBefore,
+										 newpredlock->finishedBefore))
+					newpredlock->finishedBefore = oldfinishedBefore;
 			}
 
 			Assert(newpredlock->commitSeqNo != 0);
 			Assert((newpredlock->commitSeqNo == InvalidSerCommitSeqNo)
+				   || (newpredlock->tag.myXact == OldCommittedSxact));
+			Assert(!TransactionIdIsValid(newpredlock->finishedBefore)
 				   || (newpredlock->tag.myXact == OldCommittedSxact));
 		}
 		LWLockRelease(SerializableXactHashLock);
@@ -2974,6 +2982,7 @@ DropAllPredicateLocksFromTable(Relation relation, bool transfer)
 				dlist_container(PREDICATELOCK, targetLink, iter.cur);
 			PREDICATELOCK *newpredlock;
 			SerCommitSeqNo oldCommitSeqNo;
+			TransactionId oldfinishedBefore;
 			SERIALIZABLEXACT *oldXact;
 
 			/*
@@ -2981,6 +2990,7 @@ DropAllPredicateLocksFromTable(Relation relation, bool transfer)
 			 * out of lock structure entries for the hash table.
 			 */
 			oldCommitSeqNo = oldpredlock->commitSeqNo;
+			oldfinishedBefore = oldpredlock->finishedBefore;
 			oldXact = oldpredlock->tag.myXact;
 
 			dlist_delete(&(oldpredlock->xactLink));
@@ -3014,15 +3024,21 @@ DropAllPredicateLocksFromTable(Relation relation, bool transfer)
 					dlist_push_tail(&(newpredlocktag.myXact->predicateLocks),
 									&(newpredlock->xactLink));
 					newpredlock->commitSeqNo = oldCommitSeqNo;
+					newpredlock->finishedBefore = oldfinishedBefore;
 				}
 				else
 				{
 					if (newpredlock->commitSeqNo < oldCommitSeqNo)
 						newpredlock->commitSeqNo = oldCommitSeqNo;
+					if (TransactionIdFollows(oldfinishedBefore,
+											 newpredlock->finishedBefore))
+						newpredlock->finishedBefore = oldfinishedBefore;
 				}
 
 				Assert(newpredlock->commitSeqNo != 0);
 				Assert((newpredlock->commitSeqNo == InvalidSerCommitSeqNo)
+					   || (newpredlock->tag.myXact == OldCommittedSxact));
+				Assert(!TransactionIdIsValid(newpredlock->finishedBefore)
 					   || (newpredlock->tag.myXact == OldCommittedSxact));
 			}
 		}
@@ -3701,7 +3717,12 @@ ClearOldPredicateLocks(void)
 		LWLockAcquire(SerializableXactHashLock, LW_SHARED);
 		Assert(predlock->commitSeqNo != 0);
 		Assert(predlock->commitSeqNo != InvalidSerCommitSeqNo);
-		canDoPartialCleanup = (predlock->commitSeqNo <= PredXact->CanPartialClearThrough);
+		Assert(TransactionIdIsValid(predlock->finishedBefore));
+		canDoPartialCleanup =
+			(predlock->commitSeqNo <= PredXact->CanPartialClearThrough)
+			|| !TransactionIdIsValid(PredXact->SxactGlobalXmin)
+			|| TransactionIdPrecedesOrEquals(predlock->finishedBefore,
+											 PredXact->SxactGlobalXmin);
 		LWLockRelease(SerializableXactHashLock);
 
 		/*
@@ -3771,6 +3792,7 @@ ReleaseOneSerializableXact(SERIALIZABLEXACT *sxact, bool partial,
 	Assert(SxactIsRolledBack(sxact) || SxactIsCommitted(sxact));
 	Assert(partial || !SxactIsOnFinishedList(sxact));
 	Assert(LWLockHeldByMe(SerializableFinishedListLock));
+	Assert(TransactionIdIsValid(sxact->finishedBefore));
 
 	/*
 	 * First release all the predicate locks held by this xact (or transfer
@@ -3824,6 +3846,10 @@ ReleaseOneSerializableXact(SERIALIZABLEXACT *sxact, bool partial,
 				Assert(predlock->commitSeqNo != InvalidSerCommitSeqNo);
 				if (predlock->commitSeqNo < sxact->commitSeqNo)
 					predlock->commitSeqNo = sxact->commitSeqNo;
+				Assert(TransactionIdIsValid(predlock->finishedBefore));
+				if (TransactionIdFollows(sxact->finishedBefore,
+										 predlock->finishedBefore))
+					predlock->finishedBefore = sxact->finishedBefore;
 			}
 			else
 			{
@@ -3832,6 +3858,7 @@ ReleaseOneSerializableXact(SERIALIZABLEXACT *sxact, bool partial,
 				dlist_push_tail(&OldCommittedSxact->predicateLocks,
 								&predlock->xactLink);
 				predlock->commitSeqNo = sxact->commitSeqNo;
+				predlock->finishedBefore = sxact->finishedBefore;
 			}
 		}
 		else
@@ -4131,6 +4158,15 @@ CheckTargetForConflictsIn(PREDICATELOCKTARGETTAG *targettag)
 		PREDICATELOCK *predlock =
 			dlist_container(PREDICATELOCK, targetLink, iter.cur);
 		SERIALIZABLEXACT *sxact = predlock->tag.myXact;
+		TransactionId finishedBefore;
+
+		if (sxact == OldCommittedSxact)
+		{
+			Assert(TransactionIdIsValid(predlock->finishedBefore));
+			finishedBefore = predlock->finishedBefore;
+		}
+		else
+			finishedBefore = sxact->finishedBefore;
 
 		if (sxact == MySerializableXact)
 		{
@@ -4154,7 +4190,7 @@ CheckTargetForConflictsIn(PREDICATELOCKTARGETTAG *targettag)
 		else if (!SxactIsDoomed(sxact)
 				 && (!SxactIsCommitted(sxact)
 					 || TransactionIdPrecedes(GetTransactionSnapshot()->xmin,
-											  sxact->finishedBefore))
+											  finishedBefore))
 				 && !RWConflictExists(sxact, MySerializableXact))
 		{
 			LWLockRelease(SerializableXactHashLock);
@@ -4167,7 +4203,7 @@ CheckTargetForConflictsIn(PREDICATELOCKTARGETTAG *targettag)
 			if (!SxactIsDoomed(sxact)
 				&& (!SxactIsCommitted(sxact)
 					|| TransactionIdPrecedes(GetTransactionSnapshot()->xmin,
-											 sxact->finishedBefore))
+											 finishedBefore))
 				&& !RWConflictExists(sxact, MySerializableXact))
 			{
 				FlagRWConflict(sxact, MySerializableXact);

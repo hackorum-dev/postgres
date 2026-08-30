@@ -325,6 +325,12 @@ typedef struct PREDICATELOCK
 	dlist_node	xactLink;		/* list link in SERIALIZABLEXACT's list of
 								 * predicate locks */
 	SerCommitSeqNo commitSeqNo; /* only used for summarized predicate locks */
+	TransactionId finishedBefore;	/* only used for summarized predicate
+									 * locks; the latest finishedBefore among
+									 * the transactions folded into this lock,
+									 * so that the lock can be released once
+									 * SxactGlobalXmin has advanced past all
+									 * of them */
 } PREDICATELOCK;
 
 
