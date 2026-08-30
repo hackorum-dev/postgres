@@ -355,6 +355,7 @@ enum RelStatsColumns
 	RELSTATS_RELPAGES = 0,
 	RELSTATS_RELTUPLES,
 	RELSTATS_RELKIND,
+	RELSTATS_RELHASSUBCLASS,
 	RELSTATS_NUM_FIELDS,
 };
 
@@ -385,6 +386,7 @@ typedef struct
 	PGresult   *att;			/* result for attribute stats query */
 	double		livetuples;		/* livetuples estimates, for pgstat report */
 	double		deadtuples;		/* deadtuples estimates, for pgstat report */
+	char		relkind;		/* relkind of remote table */
 	int			version;		/* version of remote server */
 } RemoteStatsResults;
 
@@ -5294,7 +5296,7 @@ postgresGetAnalyzeInfoForForeignTable(Relation relation, bool *can_tablesample)
 
 	if (PQntuples(res) != 1 || PQnfields(res) != RELSTATS_NUM_FIELDS)
 		elog(ERROR, "unexpected result from deparseAnalyzeInfoSql query");
-	/* We don't use relpages here */
+	/* We don't use relpages/relhassubclass here */
 	reltuples = strtod(PQgetvalue(res, 0, RELSTATS_RELTUPLES), NULL);
 	relkind = *(PQgetvalue(res, 0, RELSTATS_RELKIND));
 	PQclear(res);
@@ -5850,7 +5852,7 @@ fetch_remote_statistics(Relation relation,
 	 * RELKIND_PARTITIONED_INDEX can have rows in pg_stats, they obviously
 	 * can't support a foreign table.
 	 */
-	relkind = *PQgetvalue(relstats, 0, RELSTATS_RELKIND);
+	remstats->relkind = relkind = *PQgetvalue(relstats, 0, RELSTATS_RELKIND);
 	switch (relkind)
 	{
 		case RELKIND_RELATION:
@@ -5864,6 +5866,23 @@ fetch_remote_statistics(Relation relation,
 						   local_schemaname, local_relname,
 						   remote_schemaname, remote_relname, relkind));
 			goto fetch_cleanup;
+	}
+
+	/*
+	 * If the remote table is inherited, relpages/reltuples in pg_class for
+	 * it show stats for the parent table, not for the inheritance set.  We
+	 * could calculate stats for the set by fetching the relation stats for
+	 * child tables as well; but for now, just fallback to sampling.
+	 */
+	if ((relkind == RELKIND_RELATION || relkind == RELKIND_FOREIGN_TABLE) &&
+		strcmp(PQgetvalue(relstats, 0, RELSTATS_RELHASSUBCLASS), "t") == 0)
+	{
+		ereport(WARNING,
+				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				errmsg("could not import statistics for foreign table \"%s.%s\" --- remote table \"%s.%s\" is inherited",
+					   local_schemaname, local_relname,
+					   remote_schemaname, remote_relname));
+		goto fetch_cleanup;
 	}
 
 	/*
@@ -6005,7 +6024,12 @@ fetch_attstats(PGconn *conn, int server_version_num,
 					 " AND attname = ANY(%s)",
 					 column_list);
 
-	/* inherited is supported since Postgres 9.0 */
+	/*
+	 * inherited is supported since Postgres 9.0
+	 *
+	 * Note that this is okay because for now, we support only the case where
+	 * the remote table is partitioned (see fetch_remote_statistics()).
+	 */
 	if (server_version_num >= 90000)
 		appendStringInfoString(&sql,
 							   " ORDER BY attname COLLATE \"C\", inherited DESC");
@@ -6337,9 +6361,20 @@ import_fetched_statistics(Relation relation,
 	Assert(PQnfields(res) == RELSTATS_NUM_FIELDS);
 	Assert(PQntuples(res) == 1);
 
-	/* Set the remaining parameters. */
-	set_int32_arg(&args[1], get_opt_value(res, 0, RELSTATS_RELPAGES));
-	Assert(!args[1].isnull);
+	/*
+	 * Set the remaining parameters.  If the remote table is partitioned, set
+	 * the 'relpages' parameter to 0, to match the sampling case.
+	 */
+	if (remstats->relkind == RELKIND_PARTITIONED_TABLE)
+	{
+		args[1].value = Int32GetDatum(0);
+		args[2].isnull = false;
+	}
+	else
+	{
+		set_int32_arg(&args[1], get_opt_value(res, 0, RELSTATS_RELPAGES));
+		Assert(!args[1].isnull);
+	}
 	set_float_arg(&args[2], get_opt_value(res, 0, RELSTATS_RELTUPLES));
 	Assert(!args[2].isnull);
 	/* We don't import relallvisible/relallfrozen. */
