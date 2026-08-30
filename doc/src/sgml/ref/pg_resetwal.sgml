@@ -188,13 +188,18 @@ PostgreSQL documentation
       A safe value for the oldest transaction ID for which the commit time can
       be retrieved (first part) can be determined by looking
       for the numerically smallest file name in the directory
-      <filename>pg_commit_ts</filename> under the data directory.  Conversely, a safe
+      <filename>pg_commit_ts</filename> under the data directory, and then
+      multiplying by 21824 (0x5540).  Conversely, a safe
       value for the newest transaction ID for which the commit time can be
       retrieved (second part) can be determined by looking for the numerically
-      greatest file name in the same directory.  The file names are in
-      hexadecimal.
+      greatest file name in the same directory, and then multiplying by 21824 (0x5540).
+      Note that the file names are in hexadecimal.  It is usually easiest to specify
+      the option values in hexadecimal too. For example, if <filename>0007</filename>
+      is the smallest entry in <filename>pg_commit_ts</filename>,
+      <literal>-c 0x25480,...</literal> will work (the multiplier is represented
+      by 0x5540 following the 0x7).
      </para>
-      <!-- XXX: Should there be a multiplier, similar to the other options? -->
+     <!-- 21824 = SLRU_PAGES_PER_SEGMENT * BLCKSZ / SizeOfCommitTimestampEntry -->
     </listitem>
    </varlistentry>
 
