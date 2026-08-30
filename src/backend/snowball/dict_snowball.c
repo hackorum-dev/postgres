@@ -276,6 +276,14 @@ dsnowball_init(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("missing Language parameter")));
 
+	/*
+	 * Snowball create_env returns NULL on allocation failure.  Catch it here
+	 */
+	if (d->z == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_OUT_OF_MEMORY),
+				 errmsg("out of memory")));
+
 	d->dictCtx = CurrentMemoryContext;
 
 	PG_RETURN_POINTER(d);
