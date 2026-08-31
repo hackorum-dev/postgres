@@ -93,7 +93,7 @@ cash_pl_cash(Cash c1, Cash c2)
 {
 	Cash		res;
 
-	if (unlikely(pg_add_s64_overflow(c1, c2, &res)))
+	if (pg_add_s64_overflow(c1, c2, &res))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("money out of range")));
@@ -106,7 +106,7 @@ cash_mi_cash(Cash c1, Cash c2)
 {
 	Cash		res;
 
-	if (unlikely(pg_sub_s64_overflow(c1, c2, &res)))
+	if (pg_sub_s64_overflow(c1, c2, &res))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("money out of range")));
@@ -145,7 +145,7 @@ cash_mul_int64(Cash c, int64 i)
 {
 	Cash		res;
 
-	if (unlikely(pg_mul_s64_overflow(c, i, &res)))
+	if (pg_mul_s64_overflow(c, i, &res))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("money out of range")));

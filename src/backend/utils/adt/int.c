@@ -824,7 +824,7 @@ int4pl(PG_FUNCTION_ARGS)
 	int32		arg2 = PG_GETARG_INT32(1);
 	int32		result;
 
-	if (unlikely(pg_add_s32_overflow(arg1, arg2, &result)))
+	if (pg_add_s32_overflow(arg1, arg2, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("integer out of range")));
@@ -838,7 +838,7 @@ int4mi(PG_FUNCTION_ARGS)
 	int32		arg2 = PG_GETARG_INT32(1);
 	int32		result;
 
-	if (unlikely(pg_sub_s32_overflow(arg1, arg2, &result)))
+	if (pg_sub_s32_overflow(arg1, arg2, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("integer out of range")));
@@ -852,7 +852,7 @@ int4mul(PG_FUNCTION_ARGS)
 	int32		arg2 = PG_GETARG_INT32(1);
 	int32		result;
 
-	if (unlikely(pg_mul_s32_overflow(arg1, arg2, &result)))
+	if (pg_mul_s32_overflow(arg1, arg2, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("integer out of range")));
@@ -903,7 +903,7 @@ int4inc(PG_FUNCTION_ARGS)
 	int32		arg = PG_GETARG_INT32(0);
 	int32		result;
 
-	if (unlikely(pg_add_s32_overflow(arg, 1, &result)))
+	if (pg_add_s32_overflow(arg, 1, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("integer out of range")));
@@ -939,7 +939,7 @@ int2pl(PG_FUNCTION_ARGS)
 	int16		arg2 = PG_GETARG_INT16(1);
 	int16		result;
 
-	if (unlikely(pg_add_s16_overflow(arg1, arg2, &result)))
+	if (pg_add_s16_overflow(arg1, arg2, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("smallint out of range")));
@@ -953,7 +953,7 @@ int2mi(PG_FUNCTION_ARGS)
 	int16		arg2 = PG_GETARG_INT16(1);
 	int16		result;
 
-	if (unlikely(pg_sub_s16_overflow(arg1, arg2, &result)))
+	if (pg_sub_s16_overflow(arg1, arg2, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("smallint out of range")));
@@ -967,7 +967,7 @@ int2mul(PG_FUNCTION_ARGS)
 	int16		arg2 = PG_GETARG_INT16(1);
 	int16		result;
 
-	if (unlikely(pg_mul_s16_overflow(arg1, arg2, &result)))
+	if (pg_mul_s16_overflow(arg1, arg2, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("smallint out of range")));
@@ -1020,7 +1020,7 @@ int24pl(PG_FUNCTION_ARGS)
 	int32		arg2 = PG_GETARG_INT32(1);
 	int32		result;
 
-	if (unlikely(pg_add_s32_overflow((int32) arg1, arg2, &result)))
+	if (pg_add_s32_overflow((int32) arg1, arg2, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("integer out of range")));
@@ -1034,7 +1034,7 @@ int24mi(PG_FUNCTION_ARGS)
 	int32		arg2 = PG_GETARG_INT32(1);
 	int32		result;
 
-	if (unlikely(pg_sub_s32_overflow((int32) arg1, arg2, &result)))
+	if (pg_sub_s32_overflow((int32) arg1, arg2, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("integer out of range")));
@@ -1048,7 +1048,7 @@ int24mul(PG_FUNCTION_ARGS)
 	int32		arg2 = PG_GETARG_INT32(1);
 	int32		result;
 
-	if (unlikely(pg_mul_s32_overflow((int32) arg1, arg2, &result)))
+	if (pg_mul_s32_overflow((int32) arg1, arg2, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("integer out of range")));
@@ -1081,7 +1081,7 @@ int42pl(PG_FUNCTION_ARGS)
 	int16		arg2 = PG_GETARG_INT16(1);
 	int32		result;
 
-	if (unlikely(pg_add_s32_overflow(arg1, (int32) arg2, &result)))
+	if (pg_add_s32_overflow(arg1, (int32) arg2, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("integer out of range")));
@@ -1095,7 +1095,7 @@ int42mi(PG_FUNCTION_ARGS)
 	int16		arg2 = PG_GETARG_INT16(1);
 	int32		result;
 
-	if (unlikely(pg_sub_s32_overflow(arg1, (int32) arg2, &result)))
+	if (pg_sub_s32_overflow(arg1, (int32) arg2, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("integer out of range")));
@@ -1109,7 +1109,7 @@ int42mul(PG_FUNCTION_ARGS)
 	int16		arg2 = PG_GETARG_INT16(1);
 	int32		result;
 
-	if (unlikely(pg_mul_s32_overflow(arg1, (int32) arg2, &result)))
+	if (pg_mul_s32_overflow(arg1, (int32) arg2, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("integer out of range")));
@@ -1362,7 +1362,7 @@ int4lcm(PG_FUNCTION_ARGS)
 	gcd = int4gcd_internal(arg1, arg2);
 	arg1 = arg1 / gcd;
 
-	if (unlikely(pg_mul_s32_overflow(arg1, arg2, &result)))
+	if (pg_mul_s32_overflow(arg1, arg2, &result))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("integer out of range")));
