@@ -375,7 +375,7 @@ OPTIONS (ADD password_required 'false');
        the local server.  If the attempt failed, statistics are collected by
        row sampling on the foreign table.
        This option is only useful if the remote table is one that can have
-       regular statistics (tables and materialized views).
+       regular statistics (tables, not inherited, and materialized views).
        When using this option, <emphasis>it is the user's responsibility
        </emphasis> to ensure that the existing statistics for the foreign
        table are up-to-date.
