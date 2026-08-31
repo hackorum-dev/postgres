@@ -6367,7 +6367,11 @@ int2_sum(PG_FUNCTION_ARGS)
 		PG_RETURN_INT64(oldsum);
 
 	/* OK to do the addition. */
-	newval = oldsum + (int64) PG_GETARG_INT16(1);
+	if (unlikely(pg_add_s64_overflow(oldsum, (int64) PG_GETARG_INT16(1),
+									 &newval)))
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("bigint out of range")));
 
 	PG_RETURN_INT64(newval);
 }
@@ -6395,7 +6399,11 @@ int4_sum(PG_FUNCTION_ARGS)
 		PG_RETURN_INT64(oldsum);
 
 	/* OK to do the addition. */
-	newval = oldsum + (int64) PG_GETARG_INT32(1);
+	if (unlikely(pg_add_s64_overflow(oldsum, (int64) PG_GETARG_INT32(1),
+									 &newval)))
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("bigint out of range")));
 
 	PG_RETURN_INT64(newval);
 }
@@ -6457,6 +6465,7 @@ int2_avg_accum(PG_FUNCTION_ARGS)
 	ArrayType  *transarray;
 	int16		newval = PG_GETARG_INT16(1);
 	Int8TransTypeData *transdata;
+	int64		newsum;
 
 	/*
 	 * If we're invoked as an aggregate, we can cheat and modify our first
@@ -6473,8 +6482,14 @@ int2_avg_accum(PG_FUNCTION_ARGS)
 		elog(ERROR, "expected 2-element int8 array");
 
 	transdata = (Int8TransTypeData *) ARR_DATA_PTR(transarray);
+
+	if (unlikely(pg_add_s64_overflow(transdata->sum, (int64) newval, &newsum)))
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("bigint out of range")));
+
 	transdata->count++;
-	transdata->sum += newval;
+	transdata->sum = newsum;
 
 	PG_RETURN_ARRAYTYPE_P(transarray);
 }
@@ -6485,6 +6500,7 @@ int4_avg_accum(PG_FUNCTION_ARGS)
 	ArrayType  *transarray;
 	int32		newval = PG_GETARG_INT32(1);
 	Int8TransTypeData *transdata;
+	int64		newsum;
 
 	/*
 	 * If we're invoked as an aggregate, we can cheat and modify our first
@@ -6501,8 +6517,14 @@ int4_avg_accum(PG_FUNCTION_ARGS)
 		elog(ERROR, "expected 2-element int8 array");
 
 	transdata = (Int8TransTypeData *) ARR_DATA_PTR(transarray);
+
+	if (unlikely(pg_add_s64_overflow(transdata->sum, (int64) newval, &newsum)))
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("bigint out of range")));
+
 	transdata->count++;
-	transdata->sum += newval;
+	transdata->sum = newsum;
 
 	PG_RETURN_ARRAYTYPE_P(transarray);
 }
@@ -6514,6 +6536,7 @@ int4_avg_combine(PG_FUNCTION_ARGS)
 	ArrayType  *transarray2;
 	Int8TransTypeData *state1;
 	Int8TransTypeData *state2;
+	int64		newsum;
 
 	if (!AggCheckCallContext(fcinfo, NULL))
 		elog(ERROR, "aggregate function called in non-aggregate context");
@@ -6532,8 +6555,14 @@ int4_avg_combine(PG_FUNCTION_ARGS)
 	state1 = (Int8TransTypeData *) ARR_DATA_PTR(transarray1);
 	state2 = (Int8TransTypeData *) ARR_DATA_PTR(transarray2);
 
+	/* As in intX_avg_accum, don't modify state1 until we know we can. */
+	if (unlikely(pg_add_s64_overflow(state1->sum, state2->sum, &newsum)))
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("bigint out of range")));
+
 	state1->count += state2->count;
-	state1->sum += state2->sum;
+	state1->sum = newsum;
 
 	PG_RETURN_ARRAYTYPE_P(transarray1);
 }

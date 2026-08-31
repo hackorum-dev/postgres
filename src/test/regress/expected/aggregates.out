@@ -87,6 +87,25 @@ SELECT sum(gpa) AS avg_6_8 FROM ONLY student;
      6.8
 (1 row)
 
+-- sum(int2) and sum(int4) accumulate into int8.  Overflowing that accumulator
+-- would take billions of rows, so exercise the transition functions directly.
+SELECT int2_sum('9223372036854775807'::int8, 1::int2);
+ERROR:  bigint out of range
+SELECT int4_sum('9223372036854775807'::int8, 1::int4);
+ERROR:  bigint out of range
+SELECT int2_avg_accum('{0,9223372036854775807}'::int8[], 1::int2);
+ERROR:  bigint out of range
+SELECT int4_avg_accum('{0,9223372036854775807}'::int8[], 1::int4);
+ERROR:  bigint out of range
+-- negative inputs must be caught going the other way just the same
+SELECT int2_sum('-9223372036854775808'::int8, -1::int2);
+ERROR:  bigint out of range
+SELECT int4_sum('-9223372036854775808'::int8, -1::int4);
+ERROR:  bigint out of range
+SELECT int2_avg_accum('{0,-9223372036854775808}'::int8[], -1::int2);
+ERROR:  bigint out of range
+SELECT int4_avg_accum('{0,-9223372036854775808}'::int8[], -1::int4);
+ERROR:  bigint out of range
 SELECT max(four) AS max_3 FROM onek;
  max_3 
 -------

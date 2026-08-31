@@ -42,6 +42,18 @@ SELECT sum(a) AS sum_198 FROM aggtest;
 SELECT sum(b) AS avg_431_773 FROM aggtest;
 SELECT sum(gpa) AS avg_6_8 FROM ONLY student;
 
+-- sum(int2) and sum(int4) accumulate into int8.  Overflowing that accumulator
+-- would take billions of rows, so exercise the transition functions directly.
+SELECT int2_sum('9223372036854775807'::int8, 1::int2);
+SELECT int4_sum('9223372036854775807'::int8, 1::int4);
+SELECT int2_avg_accum('{0,9223372036854775807}'::int8[], 1::int2);
+SELECT int4_avg_accum('{0,9223372036854775807}'::int8[], 1::int4);
+-- negative inputs must be caught going the other way just the same
+SELECT int2_sum('-9223372036854775808'::int8, -1::int2);
+SELECT int4_sum('-9223372036854775808'::int8, -1::int4);
+SELECT int2_avg_accum('{0,-9223372036854775808}'::int8[], -1::int2);
+SELECT int4_avg_accum('{0,-9223372036854775808}'::int8[], -1::int4);
+
 SELECT max(four) AS max_3 FROM onek;
 SELECT max(a) AS max_100 FROM aggtest;
 SELECT max(aggtest.b) AS max_324_78 FROM aggtest;
