@@ -53,6 +53,16 @@ SELECT bt_page_items('aaa'::bytea);
 CREATE INDEX test1_a_brin ON test1 USING brin(a);
 SELECT bt_page_items(get_raw_page('test1', 0));
 SELECT bt_page_items(get_raw_page('test1_a_brin', 0));
+-- A corrupt line pointer must be reported, not read out of bounds.  All-ones is
+-- an invalid (out-of-range, unaligned) line pointer on any architecture.
+SELECT bt_page_items(set_byte(set_byte(set_byte(set_byte(get_raw_page('test1_a_idx', 1), 24, 255), 25, 255), 26, 255), 27, 255));
+-- LP_DEAD is never set on a pivot tuple, so a page that has it is corrupt.
+-- Block 1 is the first leaf of a multi-page index, and its first item is the
+-- high key.  Byte 26 holds the lp_flags of that line pointer.
+CREATE TABLE test2 (a int);
+INSERT INTO test2 SELECT g FROM generate_series(1, 1000) g;
+CREATE INDEX test2_a_idx ON test2 (a);
+SELECT bt_page_items(set_byte(get_raw_page('test2_a_idx', 1), 26, 245));
 \set VERBOSITY default
 
 -- Tests with all-zero pages.
@@ -60,3 +70,4 @@ SHOW block_size \gset
 SELECT bt_page_items(decode(repeat('00', :block_size), 'hex'));
 
 DROP TABLE test1;
+DROP TABLE test2;
