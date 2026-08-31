@@ -273,6 +273,8 @@ static const ShmemCallbacks pgss_shmem_callbacks = {
 
 /* Current nesting depth of planner/ExecutorRun/ProcessUtility calls */
 static int	nesting_level = 0;
+static int64 active_queryid = INT64CONST(0);
+static bool active_toplevel = false;
 
 /* Saved hook values */
 static post_parse_analyze_hook_type prev_post_parse_analyze_hook = NULL;
@@ -379,6 +381,9 @@ static char *qtext_fetch(Size query_offset, int query_len,
 static bool need_gc_qtexts(void);
 static void gc_qtexts(void);
 static TimestampTz entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only);
+static void entry_update_sticky(const char *query, int64 queryid,
+								int query_location, int query_len,
+								const JumbleState *jstate);
 static char *generate_normalized_query(const JumbleState *jstate,
 									   const char *query,
 									   int query_loc, int *query_len_p);
@@ -855,6 +860,17 @@ pgss_post_parse_analyze(ParseState *pstate, Query *query, const JumbleState *jst
 	}
 
 	/*
+	 * A sticky entry may preserve old query text for a cached statement after
+	 * a reset.  Since this query has been parsed, let it update such an entry
+	 * with a new representative text.
+	 */
+	entry_update_sticky(pstate->p_sourcetext,
+						query->queryId,
+						query->stmt_location,
+						query->stmt_len,
+						jstate);
+
+	/*
 	 * If query jumbling were able to identify any ignorable constants, we
 	 * immediately create a hash table entry for the query, so that we can
 	 * record the normalized form of the query string.  If there were no such
@@ -1015,6 +1031,11 @@ pgss_ExecutorStart(QueryDesc *queryDesc, int eflags)
 static void
 pgss_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count)
 {
+	int64		saved_queryid = active_queryid;
+	bool		saved_toplevel = active_toplevel;
+
+	active_queryid = queryDesc->plannedstmt->queryId;
+	active_toplevel = (nesting_level == 0);
 	nesting_level++;
 	PG_TRY();
 	{
@@ -1026,6 +1047,8 @@ pgss_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count)
 	PG_FINALLY();
 	{
 		nesting_level--;
+		active_queryid = saved_queryid;
+		active_toplevel = saved_toplevel;
 	}
 	PG_END_TRY();
 }
@@ -1036,6 +1059,11 @@ pgss_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count)
 static void
 pgss_ExecutorFinish(QueryDesc *queryDesc)
 {
+	int64		saved_queryid = active_queryid;
+	bool		saved_toplevel = active_toplevel;
+
+	active_queryid = queryDesc->plannedstmt->queryId;
+	active_toplevel = (nesting_level == 0);
 	nesting_level++;
 	PG_TRY();
 	{
@@ -1047,6 +1075,8 @@ pgss_ExecutorFinish(QueryDesc *queryDesc)
 	PG_FINALLY();
 	{
 		nesting_level--;
+		active_queryid = saved_queryid;
+		active_toplevel = saved_toplevel;
 	}
 	PG_END_TRY();
 }
@@ -2665,10 +2695,103 @@ if (e) { \
 	} \
 	else \
 	{ \
-		/* Remove the key otherwise  */ \
-		hash_search(pgss_hash, &e->key, HASH_REMOVE, NULL); \
-		num_remove++; \
+		if (e->key.userid == GetUserId() && \
+			e->key.dbid == MyDatabaseId && \
+			e->key.queryid == current_queryid && \
+			e->key.toplevel == current_toplevel) \
+		{ \
+			/* Let the statement performing the reset store its current text. */ \
+			hash_search(pgss_hash, &e->key, HASH_REMOVE, NULL); \
+		} \
+		else \
+		{ \
+			/* \
+			 * Keep the representative query text, so that a cached prepared \
+			 * statement can reuse it without being parsed again.  With no calls, \
+			 * the entry is sticky and therefore hidden from the view. \
+			 */ \
+			memset(&e->counters, 0, sizeof(Counters)); \
+			e->counters.usage = pgss->cur_median_usage; \
+			e->stats_since = stats_reset; \
+			e->minmax_stats_since = stats_reset; \
+		} \
+		num_reset++; \
 	} \
+}
+
+/*
+ * Update the representative query text of a sticky entry when its query is
+ * parsed again.  Cached statements do not reach this function, so after a
+ * reset they can continue to use the representative query text that was
+ * saved before it.
+ */
+static void
+entry_update_sticky(const char *query, int64 queryid,
+					int query_location, int query_len,
+					const JumbleState *jstate)
+{
+	pgssHashKey key;
+	pgssEntry  *entry;
+	char	   *norm_query = NULL;
+	bool		is_sticky = false;
+	Size		query_offset;
+	int			encoding = GetDatabaseEncoding();
+	bool		stored;
+
+	if (queryid == INT64CONST(0))
+		return;
+
+	query = CleanQuerytext(query, &query_location, &query_len);
+
+	memset(&key, 0, sizeof(pgssHashKey));
+	key.userid = GetUserId();
+	key.dbid = MyDatabaseId;
+	key.queryid = queryid;
+	key.toplevel = (nesting_level == 0);
+
+	/* Avoid taking the exclusive lock in the usual case. */
+	LWLockAcquire(&pgss->lock.lock, LW_SHARED);
+	entry = (pgssEntry *) hash_search(pgss_hash, &key, HASH_FIND, NULL);
+	if (entry)
+	{
+		SpinLockAcquire(&entry->mutex);
+		is_sticky = IS_STICKY(entry->counters);
+		SpinLockRelease(&entry->mutex);
+	}
+	LWLockRelease(&pgss->lock.lock);
+
+	if (!is_sticky)
+		return;
+
+	if (jstate && jstate->clocations_count > 0)
+		norm_query = generate_normalized_query(jstate, query,
+											   query_location, &query_len);
+
+	/*
+	 * Update the text while holding the exclusive lock, so that an executor
+	 * cannot observe the entry as missing between parse and execution.
+	 */
+	LWLockAcquire(&pgss->lock.lock, LW_EXCLUSIVE);
+	entry = (pgssEntry *) hash_search(pgss_hash, &key, HASH_FIND, NULL);
+	if (!entry || !IS_STICKY(entry->counters))
+		goto done;
+
+	stored = qtext_store(norm_query ? norm_query : query, query_len,
+						 &query_offset, NULL);
+	if (!stored)
+		goto done;
+
+	entry->query_offset = query_offset;
+	entry->query_len = query_len;
+	entry->encoding = encoding;
+
+	if (need_gc_qtexts())
+		gc_qtexts();
+
+done:
+	LWLockRelease(&pgss->lock.lock);
+	if (norm_query)
+		pfree(norm_query);
 }
 
 /*
@@ -2679,9 +2802,10 @@ entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only)
 {
 	HASH_SEQ_STATUS hash_seq;
 	pgssEntry  *entry;
-	FILE	   *qfile;
 	int64		num_entries;
-	int64		num_remove = 0;
+	int64		num_reset = 0;
+	int64		current_queryid = active_queryid;
+	bool		current_toplevel = active_toplevel;
 	pgssHashKey key;
 	TimestampTz stats_reset;
 
@@ -2742,46 +2866,18 @@ entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only)
 		}
 	}
 
-	/* All entries are removed? */
-	if (num_entries != num_remove)
+	/* Have all entries been reset? */
+	if (num_entries != num_reset)
 		goto release_lock;
 
 	/*
-	 * Reset global statistics for pg_stat_statements since all entries are
-	 * removed.
+	 * Reset global statistics for pg_stat_statements since all entries have
+	 * been reset.
 	 */
 	SpinLockAcquire(&pgss->mutex);
 	pgss->stats.dealloc = 0;
 	pgss->stats.stats_reset = stats_reset;
 	SpinLockRelease(&pgss->mutex);
-
-	/*
-	 * Write new empty query file, perhaps even creating a new one to recover
-	 * if the file was missing.
-	 */
-	qfile = AllocateFile(PGSS_TEXT_FILE, PG_BINARY_W);
-	if (qfile == NULL)
-	{
-		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not create file \"%s\": %m",
-						PGSS_TEXT_FILE)));
-		goto done;
-	}
-
-	/* If ftruncate fails, log it, but it's not a fatal problem */
-	if (ftruncate(fileno(qfile), 0) != 0)
-		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not truncate file \"%s\": %m",
-						PGSS_TEXT_FILE)));
-
-	FreeFile(qfile);
-
-done:
-	pgss->extent = 0;
-	/* This counts as a query text garbage collection for our purposes */
-	record_gc_qtexts();
 
 release_lock:
 	LWLockRelease(&pgss->lock.lock);
