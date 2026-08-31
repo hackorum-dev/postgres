@@ -39,6 +39,46 @@ SELECT * FROM test_squash WHERE id::text = ANY(ARRAY[$1, $2, $3, $4, $5]) \bind 
 ;
 SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
 
+-- Cached prepared statements retain normalized text across a reset
+SET plan_cache_mode = force_custom_plan;
+SELECT * FROM test_squash WHERE id IN ($1, $2, $3) \parse p1
+\bind_named p1 1 2 3 \g
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+\bind_named p1 1 2 3 \g
+SELECT query, calls FROM pg_stat_statements
+  WHERE query LIKE 'SELECT * FROM test_squash WHERE id IN%';
+
+-- Reparse the statement with the same query ID, changing "IN" to "in" to show
+-- that its representative query text is updated
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+select * from test_squash where id in ($1, $2, $3) \parse p2
+\bind_named p2 1 2 3 \g
+SELECT query, calls FROM pg_stat_statements
+  WHERE query LIKE 'select * from test_squash where id in%';
+\close_prepared p2
+
+SET plan_cache_mode = force_generic_plan;
+\bind_named p1 1 2 3 \g
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+\bind_named p1 1 2 3 \g
+SELECT query, calls FROM pg_stat_statements
+  WHERE query LIKE 'select * from test_squash where id in%';
+\close_prepared p1
+RESET plan_cache_mode;
+
+-- A nested statement performing a reset stores its current query text
+SET pg_stat_statements.track = 'all';
+CREATE FUNCTION pgss_nested_reset() RETURNS void AS $$
+BEGIN
+  PERFORM pg_stat_statements_reset(0, 0, 0);
+END;
+$$ LANGUAGE plpgsql;
+SELECT pgss_nested_reset();
+SELECT query, toplevel FROM pg_stat_statements
+  WHERE query LIKE 'SELECT pg_stat_statements_reset%';
+DROP FUNCTION pgss_nested_reset();
+RESET pg_stat_statements.track;
+
 -- prepared statements will also be squashed
 -- the IN and ARRAY forms of this statement will have the same queryId
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
