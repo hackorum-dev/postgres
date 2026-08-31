@@ -279,6 +279,7 @@ extern bool RI_FKey_fk_upd_check_required(Trigger *trigger, Relation fk_rel,
 										  TupleTableSlot *oldslot, TupleTableSlot *newslot);
 extern bool RI_Initial_Check(Trigger *trigger,
 							 Relation fk_rel, Relation pk_rel);
+extern void RI_FKey_check_validate(TriggerData *trigdata);
 extern void RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel,
 									 Relation pk_rel);
 
@@ -308,7 +309,6 @@ typedef void (*AfterTriggerBatchCallback) (void *arg);
 
 extern void RegisterAfterTriggerBatchCallback(AfterTriggerBatchCallback callback,
 											  void *arg);
-extern bool AfterTriggerIsActive(void);
 extern int	AfterTriggerCurrentQueryDepth(void);
 
 extern void AtEOXact_RI(bool isCommit);

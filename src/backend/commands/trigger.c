@@ -6964,20 +6964,6 @@ FireAfterTriggerBatchCallbacks(List *callbacks)
 }
 
 /*
- * AfterTriggerIsActive
- *		Returns true if we're inside the after-trigger framework where
- *		registered batch callbacks will actually be invoked.
- *
- * This is false during validateForeignKeyConstraint(), which calls
- * RI trigger functions directly outside the after-trigger framework.
- */
-bool
-AfterTriggerIsActive(void)
-{
-	return afterTriggers.firing_depth > 0;
-}
-
-/*
  * AfterTriggerCurrentQueryDepth
  *		Return the current after-trigger query nesting depth.
  *

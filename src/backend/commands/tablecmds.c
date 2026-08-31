@@ -14233,17 +14233,9 @@ validateForeignKeyConstraint(char *conname,
 
 	while (table_scan_getnextslot(scan, ForwardScanDirection, slot))
 	{
-		LOCAL_FCINFO(fcinfo, 0);
 		TriggerData trigdata = {0};
 
 		CHECK_FOR_INTERRUPTS();
-
-		/*
-		 * Make a call to the trigger function
-		 *
-		 * No parameters are passed, but we do set a context
-		 */
-		MemSet(fcinfo, 0, SizeForFunctionCallInfo(0));
 
 		/*
 		 * We assume RI_FKey_check_ins won't look at flinfo...
@@ -14255,9 +14247,7 @@ validateForeignKeyConstraint(char *conname,
 		trigdata.tg_trigslot = slot;
 		trigdata.tg_trigger = &trig;
 
-		fcinfo->context = (Node *) &trigdata;
-
-		RI_FKey_check_ins(fcinfo);
+		RI_FKey_check_validate(&trigdata);
 
 		MemoryContextReset(perTupCxt);
 	}
