@@ -5,17 +5,17 @@ PostgreSQL documentation
 
 <refentry id="sql-wait-for">
  <indexterm zone="sql-wait-for">
-  <primary>WAIT FOR</primary>
+  <primary>WAIT</primary>
  </indexterm>
 
  <refmeta>
-  <refentrytitle>WAIT FOR</refentrytitle>
+  <refentrytitle>WAIT</refentrytitle>
   <manvolnum>7</manvolnum>
   <refmiscinfo>SQL - Language Statements</refmiscinfo>
  </refmeta>
 
  <refnamediv>
-  <refname>WAIT FOR</refname>
+  <refname>WAIT</refname>
   <refpurpose>wait for WAL to reach a target <acronym>LSN</acronym></refpurpose>
  </refnamediv>
 
