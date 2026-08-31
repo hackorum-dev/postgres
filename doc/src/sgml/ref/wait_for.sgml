@@ -164,6 +164,24 @@ WAIT FOR LSN '<replaceable class="parameter">lsn</replaceable>'
           running on the primary.  In this case the result status can be
           obtained from the return value.
          </para>
+
+         <para>
+          Use this when an unsuccessful wait is an expected outcome rather
+          than a fault.  The error raised otherwise aborts the current
+          transaction, so a caller that responds to a timeout by waiting
+          again or reading from the primary instead would have to roll back
+          and discard any work already done.  Omit it when the application
+          cannot usefully proceed without the target
+          <acronym>LSN</acronym>, since a returned status, unlike an error,
+          is silently ignored by a caller that does not inspect it.
+         </para>
+
+         <para>
+          This option affects only the outcome of the wait.  Conditions that
+          prevent the command from running at all still raise an error, and
+          the wait is still unbounded unless
+          <literal>TIMEOUT</literal> is also specified.
+         </para>
         </listitem>
        </varlistentry>
       </variablelist>
