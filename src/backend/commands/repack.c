@@ -3679,15 +3679,37 @@ start_repack_decoding_worker(Oid relid)
 				errhint("You might need to increase \"%s\".", "max_worker_processes"));
 
 	/*
+	 * Associate the worker's handle with the error queue, just as if it had
+	 * been passed to shm_mq_attach(); we passed NULL there because the worker
+	 * did not exist yet. This lets ProcessRepackMessages() notice the worker
+	 * is gone instead of blocking on the queue.
+	 */
+	shm_mq_set_handle(decoding_worker->error_mqh, decoding_worker->handle);
+
+	/*
 	 * The decoding setup must be done before the caller can have XID assigned
 	 * for any reason, otherwise the worker might end up in a deadlock,
 	 * waiting for the caller's transaction to end. Therefore wait here until
 	 * the worker indicates that it has the logical decoding initialized.
+	 *
+	 * We wait on our latch. The worker sets it once it is initialized, and
+	 * the postmaster sends us SIGUSR1 via bgw_notify_pid if the worker fails
+	 * to start or exits, which sets our latch too. That way a worker that
+	 * never starts (e.g. fork failure) does not leave us waiting forever
+	 * while holding ShareUpdateExclusiveLock on the table.
 	 */
-	ConditionVariablePrepareToSleep(&shared->cv);
 	for (;;)
 	{
 		bool		initialized;
+		BgwHandleStatus status;
+		pid_t		pid;
+
+		/*
+		 * Drain any messages from the worker first. This rethrows an error
+		 * the worker reported (so we surface that rather than the generic
+		 * failure below) and lets the wait be cancelled.
+		 */
+		CHECK_FOR_INTERRUPTS();
 
 		SpinLockAcquire(&shared->mutex);
 		initialized = shared->initialized;
@@ -3696,9 +3718,22 @@ start_repack_decoding_worker(Oid relid)
 		if (initialized)
 			break;
 
-		ConditionVariableSleep(&shared->cv, WAIT_EVENT_REPACK_WORKER_EXPORT);
+		/* Give up if the worker is gone before it got initialized. */
+		status = GetBackgroundWorkerPid(decoding_worker->handle, &pid);
+		if (status == BGWH_STOPPED)
+			ereport(ERROR,
+					errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					errmsg("REPACK decoding worker failed to start"),
+					errhint("More details may be available in the server log."));
+		if (status == BGWH_POSTMASTER_DIED)
+			ereport(FATAL,
+					errcode(ERRCODE_ADMIN_SHUTDOWN),
+					errmsg("postmaster exited during REPACK command"));
+
+		(void) WaitLatch(MyLatch, WL_LATCH_SET | WL_EXIT_ON_PM_DEATH, -1,
+						 WAIT_EVENT_REPACK_WORKER_EXPORT);
+		ResetLatch(MyLatch);
 	}
-	ConditionVariableCancelSleep();
 }
 
 /*
@@ -3713,6 +3748,19 @@ stop_repack_decoding_worker(void)
 	/* Nothing to do if no worker was set up. */
 	if (decoding_worker == NULL)
 		return;
+
+	/*
+	 * Detach from the error queue before waiting for the worker to exit.
+	 * Otherwise a worker blocked writing into a full queue would wait for us
+	 * to read from it while we wait for the worker to exit, and neither would
+	 * make progress. Detaching lets the worker's write fail so that it can
+	 * exit.
+	 */
+	if (decoding_worker->error_mqh != NULL)
+	{
+		shm_mq_detach(decoding_worker->error_mqh);
+		decoding_worker->error_mqh = NULL;
+	}
 
 	/* Terminate the worker process, if one is running. */
 	if (decoding_worker->handle != NULL)
@@ -3742,8 +3790,6 @@ stop_repack_decoding_worker(void)
 	 * critical because the CV lives in the DSM that we're about to detach, so
 	 * if we omit it, later automatic cleanup tries to clear freed memory.
 	 */
-	if (decoding_worker->error_mqh != NULL)
-		shm_mq_detach(decoding_worker->error_mqh);
 	ConditionVariableCancelSleep();
 	if (decoding_worker->seg != NULL)
 		dsm_detach(decoding_worker->seg);
@@ -3851,9 +3897,11 @@ ProcessRepackMessages(void)
 
 	/*
 	 * Nothing to do if we haven't launched the worker yet or have already
-	 * terminated it.
+	 * terminated it. stop_repack_decoding_worker() detaches the error queue
+	 * before clearing decoding_worker, so also bail out once error_mqh is
+	 * gone.
 	 */
-	if (decoding_worker == NULL)
+	if (decoding_worker == NULL || decoding_worker->error_mqh == NULL)
 		return;
 
 	/*

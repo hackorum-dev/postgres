@@ -129,11 +129,15 @@ RepackWorkerMain(Datum main_arg)
 	 */
 	decoding_ctx = repack_setup_logical_decoding(shared->relid);
 
-	/* Announce that we're ready. */
+	/*
+	 * Announce that we're ready. The backend waits for this on its latch (see
+	 * start_repack_decoding_worker()), so set it rather than signal the
+	 * condition variable.
+	 */
 	SpinLockAcquire(&shared->mutex);
 	shared->initialized = true;
 	SpinLockRelease(&shared->mutex);
-	ConditionVariableSignal(&shared->cv);
+	SetLatch(&shared->backend_proc->procLatch);
 
 	/* There doesn't seem to a nice API to set these */
 	XactIsoLevel = XACT_REPEATABLE_READ;
