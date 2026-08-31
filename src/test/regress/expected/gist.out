@@ -463,3 +463,26 @@ create index gist_tbl_box_index on gist_tbl using gist (b);
 insert into gist_tbl
   select box(point(0.05*i, 0.05*i)) from generate_series(0,10) as i;
 drop table gist_tbl;
+-- Test KNN scan with lossy distance recheck, reorder queue, and row locking
+CREATE TABLE gist_reorder_tbl (id int4 PRIMARY KEY, v circle);
+INSERT INTO gist_reorder_tbl (id, v)
+  SELECT i, circle(point(i, i), 0.5) FROM generate_series(1, 100) i;
+CREATE INDEX gist_reorder_idx ON gist_reorder_tbl USING gist (v circle_ops);
+-- Verify that ctid is properly preserved when popped from reorder queue
+SELECT ctid != '(4294967295,0)'::tid AS valid_tid FROM gist_reorder_tbl
+  ORDER BY v <-> point(50, 50) LIMIT 1;
+ valid_tid 
+-----------
+ t
+(1 row)
+
+-- Verify that row locking succeeds without attempting to lock invisible tuple
+BEGIN;
+SELECT id FROM gist_reorder_tbl ORDER BY v <-> point(50, 50) LIMIT 1 FOR UPDATE;
+ id 
+----
+ 50
+(1 row)
+
+COMMIT;
+DROP TABLE gist_reorder_tbl;
