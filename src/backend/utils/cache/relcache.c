@@ -1522,9 +1522,8 @@ RelationInitIndexAccessInfo(Relation relation)
 	 * a context, and not just a couple of pallocs, is so that we won't leak
 	 * any subsidiary info attached to fmgr lookup records.
 	 */
-	indexcxt = AllocSetContextCreate(CacheMemoryContext,
-									 "index info",
-									 ALLOCSET_SMALL_SIZES);
+	indexcxt = ProxyContextCreate(CacheMemoryContext, "index info");
+
 	relation->rd_indexcxt = indexcxt;
 	MemoryContextCopyAndSetIdentifier(indexcxt,
 									  RelationGetRelationName(relation));
