@@ -1765,6 +1765,7 @@ ExecForceStoreHeapTuple(HeapTuple tuple,
 		slot->tts_flags &= ~TTS_FLAG_EMPTY;
 		oldContext = MemoryContextSwitchTo(slot->tts_mcxt);
 		bslot->base.tuple = heap_copytuple(tuple);
+		slot->tts_tid = tuple->t_self;
 		slot->tts_flags |= TTS_FLAG_SHOULDFREE;
 		MemoryContextSwitchTo(oldContext);
 
