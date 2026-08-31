@@ -3731,7 +3731,7 @@ start_repack_decoding_worker(Oid relid)
 					errmsg("postmaster exited during REPACK command"));
 
 		(void) WaitLatch(MyLatch, WL_LATCH_SET | WL_EXIT_ON_PM_DEATH, -1,
-						 WAIT_EVENT_REPACK_WORKER_EXPORT);
+						 WAIT_EVENT_BGWORKER_STARTUP);
 		ResetLatch(MyLatch);
 	}
 }
