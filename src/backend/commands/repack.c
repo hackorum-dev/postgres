@@ -887,6 +887,21 @@ check_concurrent_repack_requirements(Relation rel, Oid *ident_idx_p)
 						"REPACK (CONCURRENTLY)"));
 
 	/*
+	 * Concurrent repack is not MVCC-safe, i.e. it changes visibility
+	 * information, which can make the contents invisible to the output
+	 * plugin. Once it is made MVCC-safe, the logical rewrite mappings must
+	 * also be written for user catalog tables before this check can be
+	 * removed.
+	 */
+	if (RelationIsUsedAsCatalogTable(rel))
+		ereport(ERROR,
+				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				errmsg("cannot execute %s on relation \"%s\"",
+					   "REPACK (CONCURRENTLY)", RelationGetRelationName(rel)),
+				errhint("%s is not supported for tables used as catalog tables.",
+						"REPACK (CONCURRENTLY)"));
+
+	/*
 	 * reorderbuffer.c does not seem to handle processing of TOAST relation
 	 * alone.
 	 */
