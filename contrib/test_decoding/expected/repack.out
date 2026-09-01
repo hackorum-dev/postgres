@@ -57,6 +57,14 @@ CREATE TABLE clstrpart (a int) PARTITION BY RANGE (a);
 REPACK (CONCURRENTLY) clstrpart;
 ERROR:  REPACK (CONCURRENTLY) is not supported for partitioned tables
 HINT:  Consider running the command on individual partitions.
+-- Only supported for the heap access method
+CREATE ACCESS METHOD heap2 TYPE TABLE HANDLER heap_tableam_handler;
+CREATE TABLE repack_conc_heap2 (i int) USING heap2;
+REPACK (CONCURRENTLY) repack_conc_heap2;
+ERROR:  cannot execute REPACK (CONCURRENTLY) on relation "repack_conc_heap2"
+HINT:  REPACK (CONCURRENTLY) is only supported for the "heap" access method.
+DROP TABLE repack_conc_heap2;
+DROP ACCESS METHOD heap2;
 -- Disallowed in catalogs
 REPACK (CONCURRENTLY) pg_class;
 ERROR:  cannot execute REPACK (CONCURRENTLY) on relation "pg_class"

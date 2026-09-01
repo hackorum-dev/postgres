@@ -39,6 +39,13 @@ DROP TABLE rpk_missing;
 CREATE TABLE clstrpart (a int) PARTITION BY RANGE (a);
 REPACK (CONCURRENTLY) clstrpart;
 
+-- Only supported for the heap access method
+CREATE ACCESS METHOD heap2 TYPE TABLE HANDLER heap_tableam_handler;
+CREATE TABLE repack_conc_heap2 (i int) USING heap2;
+REPACK (CONCURRENTLY) repack_conc_heap2;
+DROP TABLE repack_conc_heap2;
+DROP ACCESS METHOD heap2;
+
 -- Disallowed in catalogs
 REPACK (CONCURRENTLY) pg_class;
 
