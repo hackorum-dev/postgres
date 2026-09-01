@@ -2895,7 +2895,26 @@ ProcessStandbyPSRequestMessage(void)
 	nextFullXid = ReadNextFullTransactionId();
 	fullOldestXidInCommit = FullTransactionIdFromAllowableAt(nextFullXid,
 															 oldestXidInCommit);
-	lsn = GetXLogWriteRecPtr();
+
+	/*
+	 * Report the end of the last inserted WAL record rather than the WAL
+	 * write position.  A transaction that commits asynchronously (with
+	 * synchronous_commit = off) clears DELAY_CHKPT_IN_COMMIT without flushing
+	 * its commit record, so it is visible to neither the in-commit scan above
+	 * nor a write position that has not yet reached its commit record.  The
+	 * subscriber waits until it has applied and flushed up to the reported
+	 * position before advancing its non-removable transaction ID, so the
+	 * reported position must cover every transaction that can already own a
+	 * commit timestamp.  The insert position guarantees that, because a
+	 * commit timestamp is assigned only after the commit record has been
+	 * inserted.
+	 *
+	 * GetXLogInsertEndRecPtr() is used rather than GetXLogInsertRecPtr()
+	 * because the latter can return a position past the page header when the
+	 * last record ends at a page boundary, which can never match a record end
+	 * and would needlessly stall the subscriber's wait.
+	 */
+	lsn = GetXLogInsertEndRecPtr();
 
 	elog(DEBUG2, "sending primary status");
 
