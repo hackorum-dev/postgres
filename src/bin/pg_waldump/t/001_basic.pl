@@ -140,7 +140,16 @@ ROLLBACK;
 CREATE UNLOGGED TABLE t2 (x int);
 CREATE INDEX i2 ON t2 USING btree (x);
 INSERT INTO t2 SELECT generate_series(1, 10);
+});
 
+# Everything the --relation, --block and --fork tests can match lies
+# before this point.  The TRUNCATE changed the relfilenodes of t1 and
+# i1a, and only t2 and i2 have init forks.
+my $rel_test_end_lsn =
+  $node->safe_psql('postgres', 'SELECT pg_current_wal_insert_lsn()');
+
+$node->safe_psql(
+	'postgres', q{
 -- gin
 CREATE TABLE gin_idx_tbl (id bigserial PRIMARY KEY, data jsonb);
 CREATE INDEX gin_idx ON gin_idx_tbl USING gin (data);
@@ -184,6 +193,11 @@ $node->safe_psql(
 CREATE TABLESPACE ts1 LOCATION '$tblspc_path';
 DROP TABLESPACE ts1;
 });
+
+# The option and filter tests read up to here.  The WAL beyond this
+# point only sets up the contrecord case.
+my $test_end_lsn =
+  $node->safe_psql('postgres', 'SELECT pg_current_wal_insert_lsn()');
 
 # Test: Decode a continuation record (contrecord) that spans multiple WAL
 # segments.
@@ -438,11 +452,13 @@ for my $scenario (@scenarios)
 			],
 			qr/./,
 			'runs with path option and start and end locations');
+		# The two tests below only need the end of the WAL.  Starting at
+		# contrecord_lsn skips the bulk of the filler.
 		command_fails_like(
 			[
 				'pg_waldump',
 				'--path' => $path,
-				'--start' => $start_lsn,
+				'--start' => $contrecord_lsn,
 			],
 			qr/error: error in WAL record at/,
 			'falling off the end of the WAL results in an error');
@@ -451,7 +467,7 @@ for my $scenario (@scenarios)
 			[
 				'pg_waldump', '--quiet',
 				'--path' => $path,
-				'--start' => $start_lsn
+				'--start' => $contrecord_lsn
 			],
 			qr/error: error in WAL record at/,
 			'errors are shown with --quiet');
@@ -469,27 +485,31 @@ for my $scenario (@scenarios)
 		@lines = test_pg_waldump($path, $start_lsn, $end_lsn, '--limit' => 6);
 		is(@lines, 6, 'limit option observed');
 
-		@lines = test_pg_waldump($path, $start_lsn, $end_lsn, '--fullpage');
+		# The filter tests read up to test_end_lsn, checking every
+		# matching record while skipping the filler.
+		@lines =
+		  test_pg_waldump($path, $start_lsn, $test_end_lsn, '--fullpage');
 		is(grep(!/^rmgr:.*\bFPW\b/, @lines), 0, 'all output lines are FPW');
 
-		@lines = test_pg_waldump($path, $start_lsn, $end_lsn, '--stats');
+		@lines = test_pg_waldump($path, $start_lsn, $test_end_lsn, '--stats');
 		like($lines[0], qr/WAL statistics/, "statistics on stdout");
 		is(grep(/^rmgr:/, @lines), 0, 'no rmgr lines output');
 
 		@lines =
-		  test_pg_waldump($path, $start_lsn, $end_lsn, '--stats=record');
+		  test_pg_waldump($path, $start_lsn, $test_end_lsn, '--stats=record');
 		like($lines[0], qr/WAL statistics/, "statistics on stdout");
 		is(grep(/^rmgr:/, @lines), 0, 'no rmgr lines output');
 
-		@lines =
-		  test_pg_waldump($path, $start_lsn, $end_lsn, '--rmgr' => 'Btree');
+		@lines = test_pg_waldump($path, $start_lsn, $test_end_lsn,
+			'--rmgr' => 'Btree');
 		is(grep(!/^rmgr: Btree/, @lines), 0, 'only Btree lines');
 
-		@lines =
-		  test_pg_waldump($path, $start_lsn, $end_lsn, '--fork' => 'init');
+		# These three can only match records before rel_test_end_lsn.
+		@lines = test_pg_waldump($path, $start_lsn, $rel_test_end_lsn,
+			'--fork' => 'init');
 		is(grep(!/fork init/, @lines), 0, 'only init fork lines');
 
-		@lines = test_pg_waldump($path, $start_lsn, $end_lsn,
+		@lines = test_pg_waldump($path, $start_lsn, $rel_test_end_lsn,
 			'--relation' => "$default_ts_oid/$postgres_db_oid/$rel_t1_oid");
 		is( grep(!/rel $default_ts_oid\/$postgres_db_oid\/$rel_t1_oid/,
 				@lines),
@@ -497,7 +517,7 @@ for my $scenario (@scenarios)
 			'only lines for selected relation');
 
 		@lines = test_pg_waldump(
-			$path, $start_lsn, $end_lsn,
+			$path, $start_lsn, $rel_test_end_lsn,
 			'--relation' => "$default_ts_oid/$postgres_db_oid/$rel_i1a_oid",
 			'--block' => 1);
 		is(grep(!/\bblk 1\b/, @lines), 0, 'only lines for selected block');
