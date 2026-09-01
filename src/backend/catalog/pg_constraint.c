@@ -864,22 +864,22 @@ RelationGetNotNullConstraints(Oid relid, bool cooked, bool include_noinh)
 
 		if (cooked)
 		{
-			CookedConstraint *cooked;
+			CookedConstraint *cooked_constr;
 
-			cooked = palloc_object(CookedConstraint);
+			cooked_constr = palloc_object(CookedConstraint);
 
-			cooked->contype = CONSTR_NOTNULL;
-			cooked->conoid = conForm->oid;
-			cooked->name = pstrdup(NameStr(conForm->conname));
-			cooked->attnum = colnum;
-			cooked->expr = NULL;
-			cooked->is_enforced = true;
-			cooked->skip_validation = !conForm->convalidated;
-			cooked->is_local = true;
-			cooked->inhcount = 0;
-			cooked->is_no_inherit = conForm->connoinherit;
+			cooked_constr->contype = CONSTR_NOTNULL;
+			cooked_constr->conoid = conForm->oid;
+			cooked_constr->name = pstrdup(NameStr(conForm->conname));
+			cooked_constr->attnum = colnum;
+			cooked_constr->expr = NULL;
+			cooked_constr->is_enforced = true;
+			cooked_constr->skip_validation = !conForm->convalidated;
+			cooked_constr->is_local = true;
+			cooked_constr->inhcount = 0;
+			cooked_constr->is_no_inherit = conForm->connoinherit;
 
-			notnulls = lappend(notnulls, cooked);
+			notnulls = lappend(notnulls, cooked_constr);
 		}
 		else
 		{
