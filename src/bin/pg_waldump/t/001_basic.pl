@@ -393,6 +393,52 @@ sub generate_archive
 	chdir($cwd) || die "chdir: $!";
 }
 
+# Decode the full range and check the output format once.  Rendering
+# does not depend on how the input is read.
+{
+	my @lines = test_pg_waldump($node->data_dir, $start_lsn, $end_lsn);
+	is(grep(!/^rmgr: \w/, @lines), 0, 'all output lines are rmgr lines');
+}
+
+# The filter tests likewise run once.  With no limit they check every
+# matching record up to test_end_lsn.
+{
+	my $path = $node->data_dir;
+	my @lines;
+
+	@lines = test_pg_waldump($path, $start_lsn, $test_end_lsn, '--fullpage');
+	is(grep(!/^rmgr:.*\bFPW\b/, @lines), 0, 'all output lines are FPW');
+
+	@lines = test_pg_waldump($path, $start_lsn, $test_end_lsn, '--stats');
+	like($lines[0], qr/WAL statistics/, "statistics on stdout");
+	is(grep(/^rmgr:/, @lines), 0, 'no rmgr lines output');
+
+	@lines =
+	  test_pg_waldump($path, $start_lsn, $test_end_lsn, '--stats=record');
+	like($lines[0], qr/WAL statistics/, "statistics on stdout");
+	is(grep(/^rmgr:/, @lines), 0, 'no rmgr lines output');
+
+	@lines =
+	  test_pg_waldump($path, $start_lsn, $test_end_lsn, '--rmgr' => 'Btree');
+	is(grep(!/^rmgr: Btree/, @lines), 0, 'only Btree lines');
+
+	# These three can only match records before rel_test_end_lsn.
+	@lines = test_pg_waldump($path, $start_lsn, $rel_test_end_lsn,
+		'--fork' => 'init');
+	is(grep(!/fork init/, @lines), 0, 'only init fork lines');
+
+	@lines = test_pg_waldump($path, $start_lsn, $rel_test_end_lsn,
+		'--relation' => "$default_ts_oid/$postgres_db_oid/$rel_t1_oid");
+	is(grep(!/rel $default_ts_oid\/$postgres_db_oid\/$rel_t1_oid/, @lines),
+		0, 'only lines for selected relation');
+
+	@lines = test_pg_waldump(
+		$path, $start_lsn, $rel_test_end_lsn,
+		'--relation' => "$default_ts_oid/$postgres_db_oid/$rel_i1a_oid",
+		'--block' => 1);
+	is(grep(!/\bblk 1\b/, @lines), 0, 'only lines for selected block');
+}
+
 my $tmp_dir = PostgreSQL::Test::Utils::tempdir_short();
 
 my @scenarios = (
@@ -422,11 +468,11 @@ for my $scenario (@scenarios)
 
   SKIP:
 	{
-		skip "tar command is not available", 56
+		skip "tar command is not available", 25
 		  if (!defined $tar || $tar eq '') && $scenario->{'is_archive'};
 		skip
 		  "$scenario->{'compression_method'} compression not supported by this build",
-		  56
+		  25
 		  if !$scenario->{'enabled'} && $scenario->{'is_archive'};
 
 		# create pg_wal archive
@@ -452,7 +498,26 @@ for my $scenario (@scenarios)
 			],
 			qr/./,
 			'runs with path option and start and end locations');
-		# The two tests below only need the end of the WAL.  Starting at
+
+		# The full range parses without error from each archive.  With
+		# --quiet every record is decoded but none are printed.  The
+		# plain directory was already fully decoded above.
+		if ($scenario->{'is_archive'})
+		{
+			command_like(
+				[
+					'pg_waldump', '--quiet',
+					'--path' => $path,
+					'--start' => $start_lsn,
+					'--end' => $end_lsn,
+				],
+				qr/^$/,
+				'full WAL range parses successfully');
+		}
+
+		test_pg_waldump_skip_bytes($path, $start_lsn, $end_lsn);
+
+		# The tests below only need the end of the WAL.  Starting at
 		# contrecord_lsn skips the bulk of the filler.
 		command_fails_like(
 			[
@@ -472,55 +537,13 @@ for my $scenario (@scenarios)
 			qr/error: error in WAL record at/,
 			'errors are shown with --quiet');
 
-		test_pg_waldump_skip_bytes($path, $start_lsn, $end_lsn);
-
-		my @lines = test_pg_waldump($path, $start_lsn, $end_lsn);
-		is(grep(!/^rmgr: \w/, @lines), 0, 'all output lines are rmgr lines');
-
-		@lines = test_pg_waldump($path, $contrecord_lsn, $end_lsn);
+		my @lines = test_pg_waldump($path, $contrecord_lsn, $end_lsn);
 		is(grep(!/^rmgr: \w/, @lines), 0, 'all output lines are rmgr lines');
 
 		test_pg_waldump_skip_bytes($path, $contrecord_lsn, $end_lsn);
 
 		@lines = test_pg_waldump($path, $start_lsn, $end_lsn, '--limit' => 6);
 		is(@lines, 6, 'limit option observed');
-
-		# The filter tests read up to test_end_lsn, checking every
-		# matching record while skipping the filler.
-		@lines =
-		  test_pg_waldump($path, $start_lsn, $test_end_lsn, '--fullpage');
-		is(grep(!/^rmgr:.*\bFPW\b/, @lines), 0, 'all output lines are FPW');
-
-		@lines = test_pg_waldump($path, $start_lsn, $test_end_lsn, '--stats');
-		like($lines[0], qr/WAL statistics/, "statistics on stdout");
-		is(grep(/^rmgr:/, @lines), 0, 'no rmgr lines output');
-
-		@lines =
-		  test_pg_waldump($path, $start_lsn, $test_end_lsn, '--stats=record');
-		like($lines[0], qr/WAL statistics/, "statistics on stdout");
-		is(grep(/^rmgr:/, @lines), 0, 'no rmgr lines output');
-
-		@lines = test_pg_waldump($path, $start_lsn, $test_end_lsn,
-			'--rmgr' => 'Btree');
-		is(grep(!/^rmgr: Btree/, @lines), 0, 'only Btree lines');
-
-		# These three can only match records before rel_test_end_lsn.
-		@lines = test_pg_waldump($path, $start_lsn, $rel_test_end_lsn,
-			'--fork' => 'init');
-		is(grep(!/fork init/, @lines), 0, 'only init fork lines');
-
-		@lines = test_pg_waldump($path, $start_lsn, $rel_test_end_lsn,
-			'--relation' => "$default_ts_oid/$postgres_db_oid/$rel_t1_oid");
-		is( grep(!/rel $default_ts_oid\/$postgres_db_oid\/$rel_t1_oid/,
-				@lines),
-			0,
-			'only lines for selected relation');
-
-		@lines = test_pg_waldump(
-			$path, $start_lsn, $rel_test_end_lsn,
-			'--relation' => "$default_ts_oid/$postgres_db_oid/$rel_i1a_oid",
-			'--block' => 1);
-		is(grep(!/\bblk 1\b/, @lines), 0, 'only lines for selected block');
 
 		# Cleanup.
 		unlink $path if $scenario->{'is_archive'};
