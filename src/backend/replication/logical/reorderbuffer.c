@@ -303,6 +303,9 @@ static void ReorderBufferToastInitHash(ReorderBuffer *rb, ReorderBufferTXN *txn)
 static void ReorderBufferToastReset(ReorderBuffer *rb, ReorderBufferTXN *txn);
 static void ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 									  Relation relation, ReorderBufferChange *change);
+static void ReorderBufferToastReplaceTuple(ReorderBuffer *rb, Relation relation,
+											Relation toast_rel, HeapTuple tup,
+											ReorderBufferTXN *txn);
 static void ReorderBufferToastAppendChunk(ReorderBuffer *rb, ReorderBufferTXN *txn,
 										  Relation relation, ReorderBufferChange *change);
 
@@ -5087,79 +5090,35 @@ ReorderBufferToastAppendChunk(ReorderBuffer *rb, ReorderBufferTXN *txn,
 }
 
 /*
- * Rejigger change->newtuple to point to in-memory toast tuples instead of
- * on-disk toast tuples that may no longer exist (think DROP TABLE or VACUUM).
+ * Rejigger one of a change's tuples (newtuple or oldtuple) to point to
+ * in-memory toast tuples instead of on-disk toast tuples that may no longer
+ * exist (think DROP TABLE or VACUUM).
  *
  * We cannot replace unchanged toast tuples though, so those will still point
  * to on-disk toast data.
  *
- * While updating the existing change with detoasted tuple data, we need to
- * update the memory accounting info, because the change size will differ.
- * Otherwise the accounting may get out of sync, triggering serialization
- * at unexpected times.
- *
- * We simply subtract size of the change before rejiggering the tuple, and
- * then add the new size. This makes it look like the change was removed
- * and then added back, except it only tweaks the accounting info.
- *
- * In particular it can't trigger serialization, which would be pointless
- * anyway as it happens during commit processing right before handing
- * the change to the output plugin.
+ * relation is the table tup belongs to; toast_rel is its already-open toast
+ * relation.
  */
 static void
-ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
-						  Relation relation, ReorderBufferChange *change)
+ReorderBufferToastReplaceTuple(ReorderBuffer *rb, Relation relation,
+								Relation toast_rel, HeapTuple tup,
+								ReorderBufferTXN *txn)
 {
-	TupleDesc	desc;
+	TupleDesc	desc = RelationGetDescr(relation);
+	TupleDesc	toast_desc = RelationGetDescr(toast_rel);
 	int			natt;
 	Datum	   *attrs;
 	bool	   *isnull;
 	bool	   *free;
 	HeapTuple	tmphtup;
-	Relation	toast_rel;
-	TupleDesc	toast_desc;
-	MemoryContext oldcontext;
-	HeapTuple	newtup;
-	Size		old_size;
-
-	/* no toast tuples changed */
-	if (txn->toast_hash == NULL)
-		return;
-
-	/*
-	 * We're going to modify the size of the change. So, to make sure the
-	 * accounting is correct we record the current change size and then after
-	 * re-computing the change we'll subtract the recorded size and then
-	 * re-add the new change size at the end. We don't immediately subtract
-	 * the old size because if there is any error before we add the new size,
-	 * we will release the changes and that will update the accounting info
-	 * (subtracting the size from the counters). And we don't want to
-	 * underflow there.
-	 */
-	old_size = ReorderBufferChangeSize(change);
-
-	oldcontext = MemoryContextSwitchTo(rb->context);
-
-	/* we should only have toast tuples in an INSERT or UPDATE */
-	Assert(change->data.tp.newtuple);
-
-	desc = RelationGetDescr(relation);
-
-	toast_rel = RelationIdGetRelation(relation->rd_rel->reltoastrelid);
-	if (!RelationIsValid(toast_rel))
-		elog(ERROR, "could not open toast relation with OID %u (base relation \"%s\")",
-			 relation->rd_rel->reltoastrelid, RelationGetRelationName(relation));
-
-	toast_desc = RelationGetDescr(toast_rel);
 
 	/* should we allocate from stack instead? */
 	attrs = palloc0_array(Datum, desc->natts);
 	isnull = palloc0_array(bool, desc->natts);
 	free = palloc0_array(bool, desc->natts);
 
-	newtup = change->data.tp.newtuple;
-
-	heap_deform_tuple(newtup, desc, attrs, isnull);
+	heap_deform_tuple(tup, desc, attrs, isnull);
 
 	for (natt = 0; natt < desc->natts; natt++)
 	{
@@ -5258,19 +5217,24 @@ ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	 * Build tuple in separate memory & copy tuple back into the tuplebuf
 	 * passed to the output plugin. We can't directly heap_fill_tuple() into
 	 * the tuplebuf because attrs[] will point back into the current content.
+	 *
+	 * Note that tup can legitimately be larger than MaxHeapTupleSize here:
+	 * for a replica identity old tuple, ExtractReplicaIdentity() may have
+	 * inlined out-of-line column values (always for REPLICA IDENTITY FULL,
+	 * or when the identity key itself is toasted), and
+	 * ReorderBufferAllocTupleBuf() already sized tup's buffer to match the
+	 * WAL record's actual length, not to a page-sized bound.
 	 */
 	tmphtup = heap_form_tuple(desc, attrs, isnull);
-	Assert(newtup->t_len <= MaxHeapTupleSize);
-	Assert(newtup->t_data == (HeapTupleHeader) ((char *) newtup + HEAPTUPLESIZE));
+	Assert(tup->t_data == (HeapTupleHeader) ((char *) tup + HEAPTUPLESIZE));
 
-	memcpy(newtup->t_data, tmphtup->t_data, tmphtup->t_len);
-	newtup->t_len = tmphtup->t_len;
+	memcpy(tup->t_data, tmphtup->t_data, tmphtup->t_len);
+	tup->t_len = tmphtup->t_len;
 
 	/*
 	 * free resources we won't further need, more persistent stuff will be
 	 * free'd in ReorderBufferToastReset().
 	 */
-	RelationClose(toast_rel);
 	pfree(tmphtup);
 	for (natt = 0; natt < desc->natts; natt++)
 	{
@@ -5280,6 +5244,75 @@ ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	pfree(attrs);
 	pfree(free);
 	pfree(isnull);
+}
+
+/*
+ * Rejigger change->newtuple and/or change->oldtuple to point to in-memory
+ * toast tuples instead of on-disk toast tuples that may no longer exist
+ * (think DROP TABLE or VACUUM); see ReorderBufferToastReplaceTuple().
+ *
+ * While updating the existing change with detoasted tuple data, we need to
+ * update the memory accounting info, because the change size will differ.
+ * Otherwise the accounting may get out of sync, triggering serialization
+ * at unexpected times.
+ *
+ * We simply subtract size of the change before rejiggering the tuple, and
+ * then add the new size. This makes it look like the change was removed
+ * and then added back, except it only tweaks the accounting info.
+ *
+ * In particular it can't trigger serialization, which would be pointless
+ * anyway as it happens during commit processing right before handing
+ * the change to the output plugin.
+ */
+static void
+ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
+						  Relation relation, ReorderBufferChange *change)
+{
+	Relation	toast_rel;
+	MemoryContext oldcontext;
+	Size		old_size;
+
+	/* no toast tuples changed */
+	if (txn->toast_hash == NULL)
+		return;
+
+	/*
+	 * We're going to modify the size of the change. So, to make sure the
+	 * accounting is correct we record the current change size and then after
+	 * re-computing the change we'll subtract the recorded size and then
+	 * re-add the new change size at the end. We don't immediately subtract
+	 * the old size because if there is any error before we add the new size,
+	 * we will release the changes and that will update the accounting info
+	 * (subtracting the size from the counters). And we don't want to
+	 * underflow there.
+	 */
+	old_size = ReorderBufferChangeSize(change);
+
+	oldcontext = MemoryContextSwitchTo(rb->context);
+
+	/*
+	 * We should have a tuple to work with for an INSERT, UPDATE or DELETE.
+	 * A DELETE only has an oldtuple, and can reach here because
+	 * REPLICA IDENTITY FULL's flattening step now sometimes leaves an
+	 * out-of-line placeholder pointer in the old tuple; see
+	 * BuildFullIdentityTuple() in heapam.c.
+	 */
+	Assert(change->data.tp.newtuple || change->data.tp.oldtuple);
+
+	toast_rel = RelationIdGetRelation(relation->rd_rel->reltoastrelid);
+	if (!RelationIsValid(toast_rel))
+		elog(ERROR, "could not open toast relation with OID %u (base relation \"%s\")",
+			 relation->rd_rel->reltoastrelid, RelationGetRelationName(relation));
+
+	if (change->data.tp.newtuple)
+		ReorderBufferToastReplaceTuple(rb, relation, toast_rel,
+									   change->data.tp.newtuple, txn);
+
+	if (change->data.tp.oldtuple)
+		ReorderBufferToastReplaceTuple(rb, relation, toast_rel,
+									   change->data.tp.oldtuple, txn);
+
+	RelationClose(toast_rel);
 
 	MemoryContextSwitchTo(oldcontext);
 

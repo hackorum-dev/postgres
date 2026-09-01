@@ -51,6 +51,8 @@ extern Oid	toast_get_valid_index(Oid toastoid, LOCKMODE lock);
 extern void toast_delete_datum(Relation rel, Datum value, bool is_speculative);
 extern Datum toast_save_datum(Relation rel, Datum value,
 							  varlena *oldexternal, uint32 options);
+extern Datum toast_save_wal_only_datum(Relation rel, Datum value,
+									   uint32 options);
 
 extern int	toast_open_indexes(Relation toastrel,
 							   LOCKMODE lock,

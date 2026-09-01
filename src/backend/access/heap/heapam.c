@@ -31,15 +31,18 @@
  */
 #include "postgres.h"
 
+#include "access/detoast.h"
 #include "access/heapam.h"
 #include "access/heaptoast.h"
 #include "access/hio.h"
 #include "access/multixact.h"
 #include "access/subtrans.h"
 #include "access/syncscan.h"
+#include "access/toast_internals.h"
 #include "access/valid.h"
 #include "access/visibilitymap.h"
 #include "access/xloginsert.h"
+#include "access/xlogrecord.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_database_d.h"
 #include "commands/vacuum.h"
@@ -112,6 +115,8 @@ static int	bottomup_sort_and_shrink(TM_IndexDeleteOp *delstate);
 static XLogRecPtr log_heap_new_cid(Relation relation, HeapTuple tup);
 static HeapTuple ExtractReplicaIdentity(Relation relation, HeapTuple tp, bool key_required,
 										bool *copy);
+static HeapTuple BuildFullIdentityTuple(Relation relation, HeapTuple tp,
+										TupleDesc desc);
 
 
 /*
@@ -9322,6 +9327,80 @@ log_heap_new_cid(Relation relation, HeapTuple tup)
 }
 
 /*
+ * Above this combined size of out-of-line column values, BuildFullIdentityTuple
+ * persists them via WAL-only toast chunks rather than inlining them, to stay
+ * safely clear of XLogRecordMaxSize.  The slack below XLogRecordMaxSize
+ * covers the old tuple's other columns, its header, and the WAL record's
+ * own framing.
+ */
+#define FULL_IDENTITY_INLINE_LIMIT \
+	((Size) XLogRecordMaxSize - (64 * 1024 * 1024))
+
+/*
+ * Build the flattened REPLICA IDENTITY FULL old tuple for heap_update() or
+ * heap_delete() to WAL-log, for a tuple that HeapTupleHasExternal() found to
+ * have out-of-line column values.
+ *
+ * Ordinarily every out-of-line value is inlined via toast_flatten_tuple(),
+ * as before this function existed.  But heap_update()/heap_delete() build
+ * this tuple, and hence insert the record containing it, inside a critical
+ * section; if inlining produced a tuple large enough to push the resulting
+ * WAL record past XLogRecordMaxSize, the resulting ERROR would be promoted
+ * to a PANIC.  Once the out-of-line values' combined size approaches that
+ * limit, this instead keeps a small toast pointer for each such value,
+ * persisting the actual bytes via toast_save_wal_only_datum() so they
+ * remain available to logical decoding without ever inlining them into one
+ * tuple.  ReorderBufferToastReplace() resolves such pointers from the
+ * transaction's buffered toast chunks when reconstructing the old tuple.
+ */
+static HeapTuple
+BuildFullIdentityTuple(Relation relation, HeapTuple tp, TupleDesc desc)
+{
+	Datum		values[MaxHeapAttributeNumber];
+	bool		nulls[MaxHeapAttributeNumber];
+	Size		total_external_size = 0;
+
+	heap_deform_tuple(tp, desc, values, nulls);
+
+	for (int i = 0; i < desc->natts; i++)
+	{
+		CompactAttribute *att;
+		varatt_external toast_pointer;
+
+		if (nulls[i])
+			continue;
+
+		att = TupleDescCompactAttr(desc, i);
+		if (att->attlen != -1 ||
+			!VARATT_IS_EXTERNAL_ONDISK(DatumGetPointer(values[i])))
+			continue;
+
+		VARATT_EXTERNAL_GET_POINTER(toast_pointer, DatumGetPointer(values[i]));
+		total_external_size += toast_pointer.va_rawsize;
+	}
+
+	if (total_external_size <= FULL_IDENTITY_INLINE_LIMIT)
+		return toast_flatten_tuple(tp, desc);
+
+	for (int i = 0; i < desc->natts; i++)
+	{
+		CompactAttribute *att;
+
+		if (nulls[i])
+			continue;
+
+		att = TupleDescCompactAttr(desc, i);
+		if (att->attlen != -1 ||
+			!VARATT_IS_EXTERNAL_ONDISK(DatumGetPointer(values[i])))
+			continue;
+
+		values[i] = toast_save_wal_only_datum(relation, values[i], 0);
+	}
+
+	return heap_form_tuple(desc, values, nulls);
+}
+
+/*
  * Build a heap tuple representing the configured REPLICA IDENTITY to represent
  * the old tuple in an UPDATE or DELETE.
  *
@@ -9357,12 +9436,13 @@ ExtractReplicaIdentity(Relation relation, HeapTuple tp, bool key_required,
 	{
 		/*
 		 * When logging the entire old tuple, it very well could contain
-		 * toasted columns. If so, force them to be inlined.
+		 * toasted columns. If so, force them to be inlined, subject to a
+		 * safety check; see BuildFullIdentityTuple.
 		 */
 		if (HeapTupleHasExternal(tp))
 		{
 			*copy = true;
-			tp = toast_flatten_tuple(tp, desc);
+			tp = BuildFullIdentityTuple(relation, tp, desc);
 		}
 		return tp;
 	}

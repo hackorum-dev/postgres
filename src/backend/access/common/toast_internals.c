@@ -439,6 +439,138 @@ toast_delete_datum(Relation rel, Datum value, bool is_speculative)
 }
 
 /* ----------
+ * toast_save_wal_only_datum -
+ *
+ *	Persist an already out-of-line datum's bytes durably in WAL, via the
+ *	ordinary toast chunking path, without leaving a live row behind in the
+ *	toast relation, and without ever materializing the whole (potentially
+ *	huge) value in memory at once.
+ *
+ *	Each of the value's existing chunks is read and immediately
+ *	re-inserted, verbatim, under a freshly allocated toast value id; the
+ *	new chunks are then deleted again within the same transaction.  The
+ *	delete goes through heap_delete(), whose own visibility check
+ *	(HeapTupleSatisfiesUpdate()) treats a tuple inserted by the current
+ *	command as not yet visible to that same command, so a
+ *	CommandCounterIncrement() between the inserts and the delete is
+ *	required for the delete to find them; without it, heap_delete() raises
+ *	"attempted to delete invisible tuple".  Physically, the net effect on
+ *	the toast relation is the same as if nothing had happened once the
+ *	current transaction commits and the dead chunk rows are eventually
+ *	vacuumed; the only lasting effect is the sequence of small INSERT (and
+ *	DELETE) WAL records the chunking produces, each safely below any WAL
+ *	record size limit regardless of how large the datum is.
+ *
+ *	Reusing the value's original toast pointer id is not an option: doing so
+ *	would collide with the still-live chunks under the toast relation's
+ *	(valueid, chunkseq) unique index.
+ *
+ *	This exists for callers that need a datum's value to survive in WAL for
+ *	logical decoding's sake (see ReorderBufferToastReplace()), without
+ *	wanting to either flatten arbitrarily large data inline into one tuple
+ *	or leave a toast row referenced by nothing once the current transaction
+ *	ends.
+ *
+ * rel: the main relation we're working with (not the toast rel!)
+ * value: an on-disk external toast pointer
+ * ----------
+ */
+Datum
+toast_save_wal_only_datum(Relation rel, Datum value, uint32 options)
+{
+	varlena    *attr = (varlena *) DatumGetPointer(value);
+	varatt_external toast_pointer;
+	varatt_external new_toast_pointer;
+	Relation	toastrel;
+	Relation   *toastidxs;
+	TupleDesc	toasttupDesc;
+	ScanKeyData toastkey;
+	SysScanDesc toastscan;
+	HeapTuple	ttup;
+	CommandId	mycid = GetCurrentCommandId(true);
+	int			num_indexes;
+	int			validIndex;
+	varlena    *result;
+
+	Assert(VARATT_IS_EXTERNAL_ONDISK(attr));
+
+	/* Must copy to access aligned fields */
+	VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
+
+	toastrel = table_open(toast_pointer.va_toastrelid, RowExclusiveLock);
+	toasttupDesc = toastrel->rd_att;
+
+	validIndex = toast_open_indexes(toastrel, RowExclusiveLock,
+									&toastidxs, &num_indexes);
+
+	/* the new pointer describes the same bytes under a fresh value id */
+	new_toast_pointer = toast_pointer;
+	new_toast_pointer.va_valueid =
+		GetNewOidWithIndex(toastrel,
+						   RelationGetRelid(toastidxs[validIndex]),
+						   (AttrNumber) 1);
+
+	ScanKeyInit(&toastkey,
+				(AttrNumber) 1,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(toast_pointer.va_valueid));
+
+	toastscan = systable_beginscan_ordered(toastrel, toastidxs[validIndex],
+										   get_toast_snapshot(), 1, &toastkey);
+
+	while ((ttup = systable_getnext_ordered(toastscan, ForwardScanDirection)) != NULL)
+	{
+		Datum		t_values[3];
+		bool		t_isnull[3] = {0};
+		HeapTuple	newchunktup;
+		bool		isnull;
+
+		/* copy the existing chunk's sequence number and bytes verbatim */
+		t_values[0] = ObjectIdGetDatum(new_toast_pointer.va_valueid);
+		t_values[1] = fastgetattr(ttup, 2, toasttupDesc, &isnull);
+		Assert(!isnull);
+		t_values[2] = fastgetattr(ttup, 3, toasttupDesc, &isnull);
+		Assert(!isnull);
+
+		newchunktup = heap_form_tuple(toasttupDesc, t_values, t_isnull);
+
+		heap_insert(toastrel, newchunktup, mycid, options, NULL);
+
+		for (int i = 0; i < num_indexes; i++)
+		{
+			if (toastidxs[i]->rd_index->indisready)
+				index_insert(toastidxs[i], t_values, t_isnull,
+							&(newchunktup->t_self),
+							toastrel,
+							toastidxs[i]->rd_index->indisunique ?
+							UNIQUE_CHECK_YES : UNIQUE_CHECK_NO,
+							false, NULL);
+		}
+
+		heap_freetuple(newchunktup);
+	}
+
+	systable_endscan_ordered(toastscan);
+	toast_close_indexes(toastidxs, num_indexes, NoLock);
+	table_close(toastrel, NoLock);
+
+	result = (varlena *) palloc(TOAST_POINTER_SIZE);
+	SET_VARTAG_EXTERNAL(result, VARTAG_ONDISK);
+	memcpy(VARDATA_EXTERNAL(result), &new_toast_pointer, sizeof(new_toast_pointer));
+
+	/*
+	 * Make the just-inserted chunks visible to the delete below; see the
+	 * file header comment for why this is required.
+	 */
+	CommandCounterIncrement();
+
+	/* remove the freshly-written chunks again; see comment above */
+	toast_delete_datum(rel, PointerGetDatum(result), false);
+
+	return PointerGetDatum(result);
+}
+
+/* ----------
  * toastrel_valueid_exists -
  *
  *	Test whether a toast value with the given ID exists in the toast relation.
