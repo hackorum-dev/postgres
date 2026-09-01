@@ -70,23 +70,21 @@ stats_check_required_arg(const NullableDatum *args,
  * true.
  */
 bool
-stats_check_arg_array(const NullableDatum *args,
-					  struct StatsArgInfo *arginfo,
-					  int argnum)
+stats_check_arg_array(const NullableDatum *arg, const char *argname)
 {
 	ArrayType  *arr;
 
-	if (args[argnum].isnull)
+	if (arg->isnull)
 		return true;
 
-	arr = DatumGetArrayTypeP(args[argnum].value);
+	arr = DatumGetArrayTypeP(arg->value);
 
 	if (ARR_NDIM(arr) != 1)
 	{
 		ereport(WARNING,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("argument \"%s\" must not be a multidimensional array",
-						arginfo[argnum].argname)));
+						argname)));
 		return false;
 	}
 
@@ -95,7 +93,7 @@ stats_check_arg_array(const NullableDatum *args,
 		ereport(WARNING,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("argument \"%s\" array must not contain null values",
-						arginfo[argnum].argname)));
+						argname)));
 		return false;
 	}
 
@@ -111,23 +109,21 @@ stats_check_arg_array(const NullableDatum *args,
  * true.
  */
 bool
-stats_check_arg_pair(const NullableDatum *args,
-					 struct StatsArgInfo *arginfo,
-					 int argnum1, int argnum2)
+stats_check_arg_pair(const NullableDatum *arg1, const NullableDatum *arg2,
+					 const char *argname1, const char *argname2)
 {
-	if (args[argnum1].isnull && args[argnum2].isnull)
+	if (arg1->isnull && arg2->isnull)
 		return true;
 
-	if (args[argnum1].isnull || args[argnum2].isnull)
+	if (arg1->isnull || arg2->isnull)
 	{
-		int			nullarg = args[argnum1].isnull ? argnum1 : argnum2;
-		int			otherarg = args[argnum1].isnull ? argnum2 : argnum1;
+		const char *nullarg = arg1->isnull ? argname1 : argname2;
+		const char *otherarg = arg1->isnull ? argname2 : argname1;
 
 		ereport(WARNING,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("argument \"%s\" must be specified when argument \"%s\" is specified",
-						arginfo[nullarg].argname,
-						arginfo[otherarg].argname)));
+						nullarg, otherarg)));
 
 		return false;
 	}

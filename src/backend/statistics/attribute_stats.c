@@ -109,7 +109,7 @@ static bool attribute_statistics_update_internal(Oid reloid,
 												 const char *attname,
 												 AttrNumber attnum,
 												 bool inherited,
-												 const NullableDatum *args);
+												 const AttributeStatsValues *statvalues);
 static void upsert_pg_statistic(Relation starel, HeapTuple oldtup,
 								const Datum *values, const bool *nulls, const bool *replaces);
 static bool delete_pg_statistic(Oid reloid, AttrNumber attnum, bool stainherit);
@@ -140,6 +140,7 @@ attribute_statistics_update(const NullableDatum *args)
 	AttrNumber	attnum;
 	bool		inherited;
 	Oid			locked_table = InvalidOid;
+	AttributeStatsValues values;
 
 	stats_check_required_arg(args, attarginfo, ATTRELSCHEMA_ARG);
 	stats_check_required_arg(args, attarginfo, ATTRELNAME_ARG);
@@ -204,8 +205,25 @@ attribute_statistics_update(const NullableDatum *args)
 	stats_check_required_arg(args, attarginfo, INHERITED_ARG);
 	inherited = DatumGetBool(args[INHERITED_ARG].value);
 
+	/* Collect the values to apply */
+	values.version.value = (Datum) 0;
+	values.version.isnull = true;
+	values.null_frac = args[NULL_FRAC_ARG];
+	values.avg_width = args[AVG_WIDTH_ARG];
+	values.n_distinct = args[N_DISTINCT_ARG];
+	values.most_common_vals = args[MOST_COMMON_VALS_ARG];
+	values.most_common_freqs = args[MOST_COMMON_FREQS_ARG];
+	values.histogram_bounds = args[HISTOGRAM_BOUNDS_ARG];
+	values.correlation = args[CORRELATION_ARG];
+	values.most_common_elems = args[MOST_COMMON_ELEMS_ARG];
+	values.most_common_elem_freqs = args[MOST_COMMON_ELEM_FREQS_ARG];
+	values.elem_count_histogram = args[ELEM_COUNT_HISTOGRAM_ARG];
+	values.range_length_histogram = args[RANGE_LENGTH_HISTOGRAM_ARG];
+	values.range_empty_frac = args[RANGE_EMPTY_FRAC_ARG];
+	values.range_bounds_histogram = args[RANGE_BOUNDS_HISTOGRAM_ARG];
+
 	return attribute_statistics_update_internal(reloid, attname, attnum,
-												inherited, args);
+												inherited, &values);
 }
 
 /*
@@ -214,7 +232,8 @@ attribute_statistics_update(const NullableDatum *args)
 static bool
 attribute_statistics_update_internal(Oid reloid,
 									 const char *attname, AttrNumber attnum,
-									 bool inherited, const NullableDatum *args)
+									 bool inherited,
+									 const AttributeStatsValues *statvalues)
 {
 	Relation	starel;
 	HeapTuple	statup;
@@ -231,16 +250,16 @@ attribute_statistics_update_internal(Oid reloid,
 
 	FmgrInfo	array_in_fn;
 
-	bool		do_mcv = !args[MOST_COMMON_FREQS_ARG].isnull &&
-		!args[MOST_COMMON_VALS_ARG].isnull;
-	bool		do_histogram = !args[HISTOGRAM_BOUNDS_ARG].isnull;
-	bool		do_correlation = !args[CORRELATION_ARG].isnull;
-	bool		do_mcelem = !args[MOST_COMMON_ELEMS_ARG].isnull &&
-		!args[MOST_COMMON_ELEM_FREQS_ARG].isnull;
-	bool		do_dechist = !args[ELEM_COUNT_HISTOGRAM_ARG].isnull;
-	bool		do_bounds_histogram = !args[RANGE_BOUNDS_HISTOGRAM_ARG].isnull;
-	bool		do_range_length_histogram = !args[RANGE_LENGTH_HISTOGRAM_ARG].isnull &&
-		!args[RANGE_EMPTY_FRAC_ARG].isnull;
+	bool		do_mcv = !statvalues->most_common_freqs.isnull &&
+		!statvalues->most_common_vals.isnull;
+	bool		do_histogram = !statvalues->histogram_bounds.isnull;
+	bool		do_correlation = !statvalues->correlation.isnull;
+	bool		do_mcelem = !statvalues->most_common_elems.isnull &&
+		!statvalues->most_common_elem_freqs.isnull;
+	bool		do_dechist = !statvalues->elem_count_histogram.isnull;
+	bool		do_bounds_histogram = !statvalues->range_bounds_histogram.isnull;
+	bool		do_range_length_histogram = !statvalues->range_length_histogram.isnull &&
+		!statvalues->range_empty_frac.isnull;
 
 	Datum		values[Natts_pg_statistic] = {0};
 	bool		nulls[Natts_pg_statistic] = {0};
@@ -253,41 +272,45 @@ attribute_statistics_update_internal(Oid reloid,
 	 * and skip the corresponding statistics kind, reporting back a failure.
 	 */
 
-	if (!stats_check_arg_array(args, attarginfo, MOST_COMMON_FREQS_ARG))
+	if (!stats_check_arg_array(&statvalues->most_common_freqs,
+							   "most_common_freqs"))
 	{
 		do_mcv = false;
 		result = false;
 	}
 
-	if (!stats_check_arg_array(args, attarginfo, MOST_COMMON_ELEM_FREQS_ARG))
+	if (!stats_check_arg_array(&statvalues->most_common_elem_freqs,
+							   "most_common_elem_freqs"))
 	{
 		do_mcelem = false;
 		result = false;
 	}
-	if (!stats_check_arg_array(args, attarginfo, ELEM_COUNT_HISTOGRAM_ARG))
+	if (!stats_check_arg_array(&statvalues->elem_count_histogram,
+							   "elem_count_histogram"))
 	{
 		do_dechist = false;
 		result = false;
 	}
 
-	if (!stats_check_arg_pair(args, attarginfo,
-							  MOST_COMMON_VALS_ARG, MOST_COMMON_FREQS_ARG))
+	if (!stats_check_arg_pair(&statvalues->most_common_vals,
+							  &statvalues->most_common_freqs,
+							  "most_common_vals", "most_common_freqs"))
 	{
 		do_mcv = false;
 		result = false;
 	}
 
-	if (!stats_check_arg_pair(args, attarginfo,
-							  MOST_COMMON_ELEMS_ARG,
-							  MOST_COMMON_ELEM_FREQS_ARG))
+	if (!stats_check_arg_pair(&statvalues->most_common_elems,
+							  &statvalues->most_common_elem_freqs,
+							  "most_common_elems", "most_common_elem_freqs"))
 	{
 		do_mcelem = false;
 		result = false;
 	}
 
-	if (!stats_check_arg_pair(args, attarginfo,
-							  RANGE_LENGTH_HISTOGRAM_ARG,
-							  RANGE_EMPTY_FRAC_ARG))
+	if (!stats_check_arg_pair(&statvalues->range_length_histogram,
+							  &statvalues->range_empty_frac,
+							  "range_length_histogram", "range_empty_frac"))
 	{
 		do_range_length_histogram = false;
 		result = false;
@@ -361,19 +384,19 @@ attribute_statistics_update_internal(Oid reloid,
 								 replaces);
 
 	/* if specified, set to argument values */
-	if (!args[NULL_FRAC_ARG].isnull)
+	if (!statvalues->null_frac.isnull)
 	{
-		values[Anum_pg_statistic_stanullfrac - 1] = args[NULL_FRAC_ARG].value;
+		values[Anum_pg_statistic_stanullfrac - 1] = statvalues->null_frac.value;
 		replaces[Anum_pg_statistic_stanullfrac - 1] = true;
 	}
-	if (!args[AVG_WIDTH_ARG].isnull)
+	if (!statvalues->avg_width.isnull)
 	{
-		values[Anum_pg_statistic_stawidth - 1] = args[AVG_WIDTH_ARG].value;
+		values[Anum_pg_statistic_stawidth - 1] = statvalues->avg_width.value;
 		replaces[Anum_pg_statistic_stawidth - 1] = true;
 	}
-	if (!args[N_DISTINCT_ARG].isnull)
+	if (!statvalues->n_distinct.isnull)
 	{
-		values[Anum_pg_statistic_stadistinct - 1] = args[N_DISTINCT_ARG].value;
+		values[Anum_pg_statistic_stadistinct - 1] = statvalues->n_distinct.value;
 		replaces[Anum_pg_statistic_stadistinct - 1] = true;
 	}
 
@@ -381,10 +404,10 @@ attribute_statistics_update_internal(Oid reloid,
 	if (do_mcv)
 	{
 		bool		converted;
-		Datum		stanumbers = args[MOST_COMMON_FREQS_ARG].value;
+		Datum		stanumbers = statvalues->most_common_freqs.value;
 		Datum		stavalues = statatt_build_stavalues("most_common_vals",
 														&array_in_fn,
-														args[MOST_COMMON_VALS_ARG].value,
+														statvalues->most_common_vals.value,
 														atttypid, atttypmod,
 														&converted);
 
@@ -424,7 +447,7 @@ attribute_statistics_update_internal(Oid reloid,
 
 		stavalues = statatt_build_stavalues("histogram_bounds",
 											&array_in_fn,
-											args[HISTOGRAM_BOUNDS_ARG].value,
+											statvalues->histogram_bounds.value,
 											atttypid, atttypmod,
 											&converted);
 
@@ -442,7 +465,7 @@ attribute_statistics_update_internal(Oid reloid,
 	/* STATISTIC_KIND_CORRELATION */
 	if (do_correlation)
 	{
-		Datum		elems[] = {args[CORRELATION_ARG].value};
+		Datum		elems[] = {statvalues->correlation.value};
 		ArrayType  *arry = construct_array_builtin(elems, 1, FLOAT4OID);
 		Datum		stanumbers = PointerGetDatum(arry);
 
@@ -455,13 +478,13 @@ attribute_statistics_update_internal(Oid reloid,
 	/* STATISTIC_KIND_MCELEM */
 	if (do_mcelem)
 	{
-		Datum		stanumbers = args[MOST_COMMON_ELEM_FREQS_ARG].value;
+		Datum		stanumbers = statvalues->most_common_elem_freqs.value;
 		bool		converted = false;
 		Datum		stavalues;
 
 		stavalues = statatt_build_stavalues("most_common_elems",
 											&array_in_fn,
-											args[MOST_COMMON_ELEMS_ARG].value,
+											statvalues->most_common_elems.value,
 											elemtypid, atttypmod,
 											&converted);
 
@@ -479,7 +502,7 @@ attribute_statistics_update_internal(Oid reloid,
 	/* STATISTIC_KIND_DECHIST */
 	if (do_dechist)
 	{
-		Datum		stanumbers = args[ELEM_COUNT_HISTOGRAM_ARG].value;
+		Datum		stanumbers = statvalues->elem_count_histogram.value;
 
 		statatt_set_slot(values, nulls, replaces,
 						 STATISTIC_KIND_DECHIST,
@@ -509,7 +532,7 @@ attribute_statistics_update_internal(Oid reloid,
 
 		stavalues = statatt_build_stavalues("range_bounds_histogram",
 											&array_in_fn,
-											args[RANGE_BOUNDS_HISTOGRAM_ARG].value,
+											statvalues->range_bounds_histogram.value,
 											bounds_typid, atttypmod,
 											&converted);
 
@@ -529,7 +552,7 @@ attribute_statistics_update_internal(Oid reloid,
 	if (do_range_length_histogram)
 	{
 		/* The anyarray is always a float8[] for this stakind */
-		Datum		elems[] = {args[RANGE_EMPTY_FRAC_ARG].value};
+		Datum		elems[] = {statvalues->range_empty_frac.value};
 		ArrayType  *arry = construct_array_builtin(elems, 1, FLOAT4OID);
 		Datum		stanumbers = PointerGetDatum(arry);
 
@@ -538,7 +561,7 @@ attribute_statistics_update_internal(Oid reloid,
 
 		stavalues = statatt_build_stavalues("range_length_histogram",
 											&array_in_fn,
-											args[RANGE_LENGTH_HISTOGRAM_ARG].value,
+											statvalues->range_length_histogram.value,
 											FLOAT8OID, 0, &converted);
 
 		if (converted)
@@ -713,48 +736,19 @@ pg_restore_attribute_stats(PG_FUNCTION_ARGS)
 }
 
 /*
- * Import attribute statistics from NullableDatum inputs for all statistical
- * values.
+ * Import attribute statistics for a relation.
  *
- * For now, the 'version' argument is ignored. In the future it can be used
- * to interpret older statistics properly.
+ * See AttributeStatsValues for the values to provide.
  */
 bool
 import_attribute_statistics(Relation rel, AttrNumber attnum, bool inherited,
-							const NullableDatum *version,
-							const NullableDatum *null_frac,
-							const NullableDatum *avg_width,
-							const NullableDatum *n_distinct,
-							const NullableDatum *most_common_vals,
-							const NullableDatum *most_common_freqs,
-							const NullableDatum *histogram_bounds,
-							const NullableDatum *correlation,
-							const NullableDatum *most_common_elems,
-							const NullableDatum *most_common_elem_freqs,
-							const NullableDatum *elem_count_histogram,
-							const NullableDatum *range_length_histogram,
-							const NullableDatum *range_empty_frac,
-							const NullableDatum *range_bounds_histogram)
+							const AttributeStatsValues *statvalues)
 {
-	NullableDatum args[NUM_ATTRIBUTE_STATS_ARGS];
 	Oid			reloid = RelationGetRelid(rel);
 	char	   *relname = RelationGetRelationName(rel);
 	char	   *attname = get_attname(reloid, attnum, true);
-	NullableDatum unused = {.isnull = true, .value = (Datum) 0};
 
-	Assert(null_frac);
-	Assert(avg_width);
-	Assert(n_distinct);
-	Assert(most_common_vals);
-	Assert(most_common_freqs);
-	Assert(histogram_bounds);
-	Assert(correlation);
-	Assert(most_common_elems);
-	Assert(most_common_elem_freqs);
-	Assert(elem_count_histogram);
-	Assert(range_length_histogram);
-	Assert(range_empty_frac);
-	Assert(range_bounds_histogram);
+	Assert(statvalues);
 
 	/* annoyingly, get_attname doesn't check attisdropped */
 	if (attname == NULL ||
@@ -764,28 +758,8 @@ import_attribute_statistics(Relation rel, AttrNumber attnum, bool inherited,
 				 errmsg("column %d of relation \"%s\" does not exist",
 						attnum, relname)));
 
-	args[ATTRELSCHEMA_ARG] = unused;
-	args[ATTRELNAME_ARG] = unused;
-	args[ATTNAME_ARG] = unused;
-	args[ATTNUM_ARG] = unused;
-	args[INHERITED_ARG] = unused;
-
-	args[NULL_FRAC_ARG] = *null_frac;
-	args[AVG_WIDTH_ARG] = *avg_width;
-	args[N_DISTINCT_ARG] = *n_distinct;
-	args[MOST_COMMON_VALS_ARG] = *most_common_vals;
-	args[MOST_COMMON_FREQS_ARG] = *most_common_freqs;
-	args[HISTOGRAM_BOUNDS_ARG] = *histogram_bounds;
-	args[CORRELATION_ARG] = *correlation;
-	args[MOST_COMMON_ELEMS_ARG] = *most_common_elems;
-	args[MOST_COMMON_ELEM_FREQS_ARG] = *most_common_elem_freqs;
-	args[ELEM_COUNT_HISTOGRAM_ARG] = *elem_count_histogram;
-	args[RANGE_LENGTH_HISTOGRAM_ARG] = *range_length_histogram;
-	args[RANGE_EMPTY_FRAC_ARG] = *range_empty_frac;
-	args[RANGE_BOUNDS_HISTOGRAM_ARG] = *range_bounds_histogram;
-
 	return attribute_statistics_update_internal(reloid, attname, attnum,
-												inherited, args);
+												inherited, statvalues);
 }
 
 /*

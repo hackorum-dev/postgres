@@ -28,11 +28,12 @@ struct StatsArgInfo
 extern void stats_check_required_arg(const NullableDatum *args,
 									 struct StatsArgInfo *arginfo,
 									 int argnum);
-extern bool stats_check_arg_array(const NullableDatum *args,
-								  struct StatsArgInfo *arginfo, int argnum);
-extern bool stats_check_arg_pair(const NullableDatum *args,
-								 struct StatsArgInfo *arginfo,
-								 int argnum1, int argnum2);
+extern bool stats_check_arg_array(const NullableDatum *arg,
+								  const char *argname);
+extern bool stats_check_arg_pair(const NullableDatum *arg1,
+								 const NullableDatum *arg2,
+								 const char *argname1,
+								 const char *argname2);
 
 extern void RangeVarCallbackForStats(const RangeVar *relation,
 									 Oid relId, Oid oldRelId, void *arg);

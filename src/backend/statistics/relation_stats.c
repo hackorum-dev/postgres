@@ -61,7 +61,7 @@ static struct StatsArgInfo relarginfo[] =
 
 static bool relation_statistics_update(const NullableDatum *args);
 static bool relation_statistics_update_internal(Oid reloid,
-												const NullableDatum *args);
+												const RelationStatsValues *statvalues);
 
 /*
  * Internal function for modifying statistics for a relation.
@@ -73,6 +73,7 @@ relation_statistics_update(const NullableDatum *args)
 	char	   *relname;
 	Oid			reloid;
 	Oid			locked_table = InvalidOid;
+	RelationStatsValues values;
 
 	stats_check_required_arg(args, relarginfo, RELSCHEMA_ARG);
 	stats_check_required_arg(args, relarginfo, RELNAME_ARG);
@@ -90,14 +91,23 @@ relation_statistics_update(const NullableDatum *args)
 									  ShareUpdateExclusiveLock, 0,
 									  RangeVarCallbackForStats, &locked_table);
 
-	return relation_statistics_update_internal(reloid, args);
+	/* Collect the values to apply. */
+	values.version.value = (Datum) 0;
+	values.version.isnull = true;
+	values.relpages = args[RELPAGES_ARG];
+	values.reltuples = args[RELTUPLES_ARG];
+	values.relallvisible = args[RELALLVISIBLE_ARG];
+	values.relallfrozen = args[RELALLFROZEN_ARG];
+
+	return relation_statistics_update_internal(reloid, &values);
 }
 
 /*
  * Workhorse function for relation_statistics_update.
  */
 static bool
-relation_statistics_update_internal(Oid reloid, const NullableDatum *args)
+relation_statistics_update_internal(Oid reloid,
+									const RelationStatsValues *statvalues)
 {
 	int32		relpages = 0;
 	bool		update_relpages = false;
@@ -116,15 +126,15 @@ relation_statistics_update_internal(Oid reloid, const NullableDatum *args)
 	int			nreplaces = 0;
 	bool		result = true;
 
-	if (!args[RELPAGES_ARG].isnull)
+	if (!statvalues->relpages.isnull)
 	{
-		relpages = DatumGetInt32(args[RELPAGES_ARG].value);
+		relpages = DatumGetInt32(statvalues->relpages.value);
 		update_relpages = true;
 	}
 
-	if (!args[RELTUPLES_ARG].isnull)
+	if (!statvalues->reltuples.isnull)
 	{
-		reltuples = DatumGetFloat4(args[RELTUPLES_ARG].value);
+		reltuples = DatumGetFloat4(statvalues->reltuples.value);
 		if (isnan(reltuples) || isinf(reltuples))
 		{
 			ereport(WARNING,
@@ -143,15 +153,15 @@ relation_statistics_update_internal(Oid reloid, const NullableDatum *args)
 			update_reltuples = true;
 	}
 
-	if (!args[RELALLVISIBLE_ARG].isnull)
+	if (!statvalues->relallvisible.isnull)
 	{
-		relallvisible = DatumGetInt32(args[RELALLVISIBLE_ARG].value);
+		relallvisible = DatumGetInt32(statvalues->relallvisible.value);
 		update_relallvisible = true;
 	}
 
-	if (!args[RELALLFROZEN_ARG].isnull)
+	if (!statvalues->relallfrozen.isnull)
 	{
-		relallfrozen = DatumGetInt32(args[RELALLFROZEN_ARG].value);
+		relallfrozen = DatumGetInt32(statvalues->relallfrozen.value);
 		update_relallfrozen = true;
 	}
 
@@ -259,35 +269,15 @@ pg_restore_relation_stats(PG_FUNCTION_ARGS)
 }
 
 /*
- * Import relation statistics from NullableDatum inputs for all statistical
- * values.
+ * Import relation statistics.
  *
- * For now, the 'version' argument is ignored. In the future it can be used
- * to interpret older statistics properly.
+ * See RelationStatsValues for the values to provide.
  */
 bool
-import_relation_statistics(Relation rel,
-						   const NullableDatum *version,
-						   const NullableDatum *relpages,
-						   const NullableDatum *reltuples,
-						   const NullableDatum *relallvisible,
-						   const NullableDatum *relallfrozen)
+import_relation_statistics(Relation rel, const RelationStatsValues *statvalues)
 {
-	NullableDatum args[NUM_RELATION_STATS_ARGS];
-	NullableDatum unused = {.isnull = true, .value = (Datum) 0};
+	Assert(statvalues);
 
-	Assert(relpages);
-	Assert(reltuples);
-	Assert(relallvisible);
-	Assert(relallfrozen);
-
-	args[RELSCHEMA_ARG] = unused;
-	args[RELNAME_ARG] = unused;
-
-	args[RELPAGES_ARG] = *relpages;
-	args[RELTUPLES_ARG] = *reltuples;
-	args[RELALLVISIBLE_ARG] = *relallvisible;
-	args[RELALLFROZEN_ARG] = *relallfrozen;
-
-	return relation_statistics_update_internal(RelationGetRelid(rel), args);
+	return relation_statistics_update_internal(RelationGetRelid(rel),
+											   statvalues);
 }
