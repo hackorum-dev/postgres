@@ -72,6 +72,7 @@ tests += {
     },
     'tests': [
       't/001_wait_without_sql.pl',
+      't/002_shutdown_after_crash_restart.pl',
     ],
   },
 }
