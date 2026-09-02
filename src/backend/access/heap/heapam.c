@@ -3961,8 +3961,18 @@ l2:
 		 */
 		if (need_toast)
 		{
+			int		toast_options = 0;
+
+			/*
+			 * If logical decoding is not needed, make sure that neither TOAST
+			 * changes are decoded.
+			 */
+			if (!walLogical)
+				toast_options |= TABLE_INSERT_NO_LOGICAL;
+
 			/* Note we always use WAL and FSM during updates */
-			heaptup = heap_toast_insert_or_update(relation, newtup, &oldtup, 0);
+			heaptup = heap_toast_insert_or_update(relation, newtup, &oldtup,
+												  toast_options);
 			newtupsize = MAXALIGN(heaptup->t_len);
 		}
 		else
