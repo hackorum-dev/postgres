@@ -464,6 +464,8 @@ static uint32 predicatelock_hash(const void *key, Size keysize);
 
 static void SummarizeOldestCommittedSxact(void);
 static Snapshot GetSafeSnapshot(Snapshot origSnapshot);
+static SerCommitSeqNo GetSourceLastCommitBeforeSnapshot(const SERIALIZABLEXACT *mysxact,
+														const VirtualTransactionId *sourcevxid);
 static Snapshot GetSerializableTransactionSnapshotInt(Snapshot snapshot,
 													  VirtualTransactionId *sourcevxid,
 													  int sourcepid);
@@ -1681,6 +1683,60 @@ SetSerializableTransactionSnapshot(Snapshot snapshot,
 }
 
 /*
+ * Find the commit sequence number horizon of the transaction we are importing
+ * a snapshot from.
+ *
+ * Since the source transaction exported the very snapshot we are adopting,
+ * its lastCommitBeforeSnapshot is by definition the correct horizon for that
+ * snapshot, and using it makes the two transactions agree.  A read-write
+ * serializable transaction can only import a snapshot from a serializable
+ * transaction which is not read-only (ImportSnapshot() rejects the other
+ * combinations) and which is still running (ProcArrayInstallImportedXmin()
+ * checks that), and such a transaction always has a SERIALIZABLEXACT of its
+ * own -- only read-only transactions ever opt out of predicate locking -- so
+ * the search below should always succeed.  Should it somehow not, return 0,
+ * which makes PredicateLockIsForOverlappingTransaction() treat every
+ * summarized lock as overlapping ours.
+ *
+ * There is no index from a VirtualTransactionId to a SERIALIZABLEXACT, but
+ * activeList is short and importing a snapshot is rare, so just scan it.
+ *
+ * Caller must hold SerializableXactHashLock.  mysxact is the caller's own
+ * entry, which is already on activeList but not yet initialized.
+ */
+static SerCommitSeqNo
+GetSourceLastCommitBeforeSnapshot(const SERIALIZABLEXACT *mysxact,
+								  const VirtualTransactionId *sourcevxid)
+{
+	dlist_iter	iter;
+
+	Assert(LWLockHeldByMeInMode(SerializableXactHashLock, LW_EXCLUSIVE));
+
+	dlist_foreach(iter, &PredXact->activeList)
+	{
+		const SERIALIZABLEXACT *othersxact =
+			dlist_container(SERIALIZABLEXACT, xactLink, iter.cur);
+
+		/*
+		 * Skip the dummy transaction used for summarized locks, our own
+		 * uninitialized entry, and any transaction which has finished: in the
+		 * last case the SeqNo union no longer holds a
+		 * lastCommitBeforeSnapshot.
+		 */
+		if (othersxact == PredXact->OldCommittedSxact
+			|| othersxact == mysxact
+			|| SxactIsCommitted(othersxact)
+			|| SxactIsRolledBack(othersxact))
+			continue;
+
+		if (VirtualTransactionIdEquals(othersxact->vxid, *sourcevxid))
+			return othersxact->SeqNo.lastCommitBeforeSnapshot;
+	}
+
+	return 0;
+}
+
+/*
  * Guts of GetSerializableTransactionSnapshot
  *
  * If sourcevxid is valid, this is actually an import operation and we should
@@ -1780,6 +1836,29 @@ GetSerializableTransactionSnapshotInt(Snapshot snapshot,
 	/* Initialize the structure. */
 	sxact->vxid = vxid;
 	sxact->SeqNo.lastCommitBeforeSnapshot = PredXact->LastSxactCommitSeqNo;
+
+	/*
+	 * If we are importing a snapshot, the value just recorded is wrong: the
+	 * snapshot was taken by the source transaction at some earlier point, so
+	 * LastSxactCommitSeqNo has since moved past the commits which the
+	 * snapshot does not include.  Anything which committed in between would
+	 * then be wrongly judged to precede our snapshot by
+	 * PredicateLockIsForOverlappingTransaction(), and we would miss a
+	 * rw-conflict in from a summarized reader.  Record the horizon of the
+	 * transaction which exported the snapshot instead.
+	 *
+	 * Only do this for read-write transactions.  A read-only transaction
+	 * never writes, so it never reaches
+	 * PredicateLockIsForOverlappingTransaction(); every other consumer of
+	 * lastCommitBeforeSnapshot is one of the read-only optimizations, and
+	 * those err on the safe side when the value is too large, not when it is
+	 * too small.  Leaving read-only transactions with the existing value
+	 * therefore keeps this change confined to the test above.
+	 */
+	if (sourcevxid && !XactReadOnly)
+		sxact->SeqNo.lastCommitBeforeSnapshot =
+			GetSourceLastCommitBeforeSnapshot(sxact, sourcevxid);
+
 	sxact->prepareSeqNo = InvalidSerCommitSeqNo;
 	sxact->commitSeqNo = InvalidSerCommitSeqNo;
 	dlist_init(&(sxact->outConflicts));
