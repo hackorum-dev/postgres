@@ -742,7 +742,13 @@ retry:
 		return false;
 	}
 
-	*conflictslot = table_slot_create(rel, NULL);
+	/*
+	 * Create the slot only once and reuse it on retries. Re-storing the tuple
+	 * in the same slot releases the buffer pin held for the previously stored
+	 * tuple.
+	 */
+	if (*conflictslot == NULL)
+		*conflictslot = table_slot_create(rel, NULL);
 
 	PushActiveSnapshot(GetLatestSnapshot());
 
