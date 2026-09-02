@@ -114,7 +114,7 @@ static TimestampTz ApplyLauncherGetWorkerStartTime(Oid subid);
 static void compute_min_nonremovable_xid(LogicalRepWorker *worker, TransactionId *xmin);
 static bool acquire_conflict_slot_if_exists(void);
 static void update_conflict_slot_xmin(TransactionId new_xmin);
-static void init_conflict_slot_xmin(void);
+static void reset_conflict_slot_xmin_to_safe_horizon(void);
 
 
 /*
@@ -1204,6 +1204,8 @@ ApplyLauncherWakeup(void)
 void
 ApplyLauncherMain(Datum main_arg)
 {
+	List	   *retained_dbids;
+
 	ereport(DEBUG1,
 			(errmsg_internal("logical replication launcher started")));
 
@@ -1223,6 +1225,13 @@ ApplyLauncherMain(Datum main_arg)
 	BackgroundWorkerInitializeConnection(NULL, NULL, 0);
 
 	/*
+	 * Databases with actively-retaining subscriptions as of the previous
+	 * cycle.  Local memory only, so every such database counts as new after a
+	 * launcher restart, resetting the slot's xmin once at startup.
+	 */
+	retained_dbids = NIL;
+
+	/*
 	 * Acquire the conflict detection slot at startup to ensure it can be
 	 * dropped if no longer needed after a restart.
 	 */
@@ -1239,7 +1248,9 @@ ApplyLauncherMain(Datum main_arg)
 		long		wait_time = DEFAULT_NAPTIME_PER_CYCLE;
 		bool		can_update_xmin = true;
 		bool		retain_dead_tuples = false;
+		bool		reset_done = false;
 		TransactionId xmin = InvalidTransactionId;
+		List	   *current_dbids = NIL;
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -1288,6 +1299,10 @@ ApplyLauncherMain(Datum main_arg)
 
 				if (sub->retentionactive)
 				{
+					/* Remember the retained databases for the next cycle. */
+					current_dbids = list_append_unique_oid(current_dbids,
+														   sub->dbid);
+
 					/*
 					 * Can't advance xmin of the slot unless all the
 					 * subscriptions actively retaining dead tuples are
@@ -1301,11 +1316,24 @@ ApplyLauncherMain(Datum main_arg)
 					can_update_xmin &= sub->enabled;
 
 					/*
-					 * Initialize the slot once the subscription activates
-					 * retention.
+					 * Reset the slot's xmin to the safe decoding horizon if
+					 * it is not valid, or if this database newly appears
+					 * among the retained databases: the xmin may be newer
+					 * than the new database's oldest active transaction ID,
+					 * violating the per-database invariant checked in
+					 * get_candidate_xid().  The set is keyed on
+					 * subretentionactive, so that a subscription resuming
+					 * retention is also treated as a new arrival.  One call
+					 * per cycle is enough, as the horizon is a safe seed for
+					 * every database.
 					 */
-					if (!TransactionIdIsValid(MyReplicationSlot->data.xmin))
-						init_conflict_slot_xmin();
+					if (!reset_done &&
+						(!TransactionIdIsValid(MyReplicationSlot->data.xmin) ||
+						 !list_member_oid(retained_dbids, sub->dbid)))
+					{
+						reset_conflict_slot_xmin_to_safe_horizon();
+						reset_done = true;
+					}
 				}
 			}
 
@@ -1414,6 +1442,14 @@ ApplyLauncherMain(Datum main_arg)
 
 		/* Switch back to original memory context. */
 		MemoryContextSwitchTo(oldctx);
+
+		/*
+		 * Remember the current set of retained databases for the next cycle,
+		 * in long-lived memory.
+		 */
+		list_free(retained_dbids);
+		retained_dbids = list_copy(current_dbids);
+
 		/* Clean the temporary memory. */
 		MemoryContextDelete(subctx);
 
@@ -1530,26 +1566,48 @@ update_conflict_slot_xmin(TransactionId new_xmin)
 }
 
 /*
- * Initialize the xmin for the conflict detection slot.
+ * Reset the xmin of the conflict detection slot to the cluster-wide safe
+ * decoding horizon, which is a safe seed for an apply worker in any
+ * database.
+ *
+ * This is used both for the initial setup and when a database newly appears
+ * among the databases with actively-retaining subscriptions; see
+ * ApplyLauncherMain().  An already-valid xmin is only moved backwards, as
+ * advancing it here would bypass the advancement protocol; regressing is
+ * safe, and the workers will advance the xmin again in later cycles.
  */
 static void
-init_conflict_slot_xmin(void)
+reset_conflict_slot_xmin_to_safe_horizon(void)
 {
 	TransactionId xmin_horizon;
+	TransactionId old_xmin;
 
-	/* Replication slot must exist but shouldn't be initialized. */
-	Assert(MyReplicationSlot &&
-		   !TransactionIdIsValid(MyReplicationSlot->data.xmin));
+	Assert(MyReplicationSlot);
 
 	LWLockAcquire(ReplicationSlotControlLock, LW_EXCLUSIVE);
 	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
 
 	xmin_horizon = GetOldestSafeDecodingTransactionId(false);
+	old_xmin = MyReplicationSlot->data.xmin;
+
+	/*
+	 * Nothing to do if the current xmin is valid and not newer than the
+	 * horizon.
+	 */
+	if (TransactionIdIsValid(old_xmin) &&
+		TransactionIdPrecedesOrEquals(old_xmin, xmin_horizon))
+	{
+		LWLockRelease(ProcArrayLock);
+		LWLockRelease(ReplicationSlotControlLock);
+		return;
+	}
 
 	SpinLockAcquire(&MyReplicationSlot->mutex);
 	MyReplicationSlot->effective_xmin = xmin_horizon;
 	MyReplicationSlot->data.xmin = xmin_horizon;
 	SpinLockRelease(&MyReplicationSlot->mutex);
+
+	elog(DEBUG1, "reset conflict detection slot's xmin to %u", xmin_horizon);
 
 	ReplicationSlotsComputeRequiredXmin(true);
 
@@ -1578,7 +1636,7 @@ CreateConflictDetectionSlot(void)
 	ReplicationSlotCreate(CONFLICT_DETECTION_SLOT, false, RS_PERSISTENT, false,
 						  false, false, false);
 
-	init_conflict_slot_xmin();
+	reset_conflict_slot_xmin_to_safe_horizon();
 }
 
 /*
