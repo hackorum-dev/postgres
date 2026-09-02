@@ -722,27 +722,24 @@ FindConflictTuple(ResultRelInfo *resultRelInfo, EState *estate,
 	TM_FailureData tmfd;
 	TM_Result	res;
 
-	*conflictslot = NULL;
-
 	/*
 	 * Build additional information required to check constraints violations.
 	 * See check_exclusion_or_unique_constraint().
 	 */
 	BuildConflictIndexInfo(resultRelInfo, conflictindex);
 
+	/* Create the slot once and reuse it across retries */
+	*conflictslot = table_slot_create(rel, NULL);
+
 retry:
 	if (ExecCheckIndexConstraints(resultRelInfo, slot, estate,
 								  &conflictTid, &slot->tts_tid,
 								  list_make1_oid(conflictindex)))
 	{
-		if (*conflictslot)
-			ExecDropSingleTupleTableSlot(*conflictslot);
-
+		ExecDropSingleTupleTableSlot(*conflictslot);
 		*conflictslot = NULL;
 		return false;
 	}
-
-	*conflictslot = table_slot_create(rel, NULL);
 
 	PushActiveSnapshot(GetLatestSnapshot());
 
