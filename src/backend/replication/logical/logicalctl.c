@@ -354,9 +354,9 @@ EnableLogicalDecoding(void)
 	}
 
 	/*
-	 * Set logical info WAL logging in shmem. All process starts after this
-	 * point will include the information required by logical decoding to WAL
-	 * records.
+	 * Set logical info WAL logging in shmem. All processes starting after
+	 * this point will include the information required by logical decoding to
+	 * WAL records.
 	 */
 	LogicalDecodingCtl->xlog_logical_info = true;
 
