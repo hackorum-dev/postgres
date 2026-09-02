@@ -71,5 +71,6 @@ extern void TwoPhaseTransactionGid(Oid subid, TransactionId xid, char *gid_res,
 extern bool LookupGXactBySubid(Oid subid);
 
 extern TransactionId TwoPhaseGetOldestXidInCommit(void);
+extern bool HasActivePreparedTransactions(void);
 
 #endif							/* TWOPHASE_H */

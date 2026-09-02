@@ -2878,3 +2878,21 @@ TwoPhaseGetOldestXidInCommit(void)
 
 	return oldestRunningXid;
 }
+
+/*
+ * HasActivePreparedTransactions - check if there are any active prepared 2PC transactions
+ */
+bool
+HasActivePreparedTransactions(void)
+{
+	bool		result;
+
+	if (max_prepared_xacts <= 0 || TwoPhaseState == NULL)
+		return false;
+
+	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
+	result = (TwoPhaseState->numPrepXacts > 0);
+	LWLockRelease(TwoPhaseStateLock);
+
+	return result;
+}
