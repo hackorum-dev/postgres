@@ -30,7 +30,10 @@
 
 #include "access/printsimple.h"
 #include "access/printtup.h"
+#include "access/twophase.h"
 #include "access/xact.h"
+#include "access/xlog.h"
+#include "catalog/namespace.h"
 #include "commands/copy.h"
 #include "commands/createas.h"
 #include "commands/explain_dr.h"
@@ -40,6 +43,13 @@
 #include "executor/tstoreReceiver.h"
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
+#include "utils/portal.h"
+
+/* GUC variable */
+int			ready_for_query_message = READY_FOR_QUERY_PLAIN;
+
+/* Hook for ReadyForQuery */
+ready_for_query_hook_type ready_for_query_hook = NULL;
 
 
 /* ----------------
@@ -253,6 +263,87 @@ NullCommand(CommandDest dest)
 	}
 }
 
+/*
+ * ready_for_query_has_key
+ *		Check if the specified key is already present in the ReadyForQuery message buffer.
+ */
+bool
+ready_for_query_has_key(StringInfo buf, const char *key, uint8 key_len)
+{
+	int			offset = 1;		/* Skip the initial 1-byte TxStatus indicator */
+
+	while (offset < buf->len)
+	{
+		uint8		klen = (uint8) buf->data[offset++];
+		uint8		vlen;
+
+		if (offset + klen > buf->len)
+			break;
+
+		if (klen == key_len && memcmp(&buf->data[offset], key, key_len) == 0)
+			return true;
+
+		offset += klen;
+		if (offset >= buf->len)
+			break;
+
+		vlen = (uint8) buf->data[offset++];
+
+		offset += vlen;
+	}
+
+	return false;
+}
+
+/*
+ * ready_for_query_append_kv
+ *		Append a key-value pair to the ReadyForQuery message buffer.
+ */
+void
+ready_for_query_append_kv(StringInfo buf,
+						  const char *key, uint8 key_len,
+						  const char *val, uint8 val_len)
+{
+	pq_sendbyte(buf, key_len);
+	pq_sendbytes(buf, key, key_len);
+	pq_sendbyte(buf, val_len);
+	if (val_len > 0)
+		pq_sendbytes(buf, val, val_len);
+}
+
+/*
+ * append_builtin_ready_for_query_status
+ *		Append built-in single-character session status indicators to ReadyForQuery buffer.
+ */
+static void
+append_builtin_ready_for_query_status(StringInfo buf)
+{
+	Oid			tempNamespaceId,
+				tempToastNamespaceId;
+	bool		has_temp;
+	bool		has_cursors;
+	bool		has_prepared;
+	char		lsn_buf[32];
+	int			lsn_len;
+
+	/* 1. Temporary tables / schema ('T') */
+	GetTempNamespaceState(&tempNamespaceId, &tempToastNamespaceId);
+	has_temp = OidIsValid(tempNamespaceId);
+	ready_for_query_append_kv(buf, "T", 1, has_temp ? "1" : "0", 1);
+
+	/* 2. With-hold cursors ('H') */
+	has_cursors = HasActiveWithHoldCursors();
+	ready_for_query_append_kv(buf, "H", 1, has_cursors ? "1" : "0", 1);
+
+	/* 3. Prepared transactions ('P') */
+	has_prepared = HasActivePreparedTransactions();
+	ready_for_query_append_kv(buf, "P", 1, has_prepared ? "1" : "0", 1);
+
+	/* 4. Last Commit LSN ('L') */
+	lsn_len = snprintf(lsn_buf, sizeof(lsn_buf), "%X/%X", LSN_FORMAT_ARGS(XactLastCommitEnd));
+	ready_for_query_append_kv(buf, "L", 1, lsn_buf, (uint8) lsn_len);
+}
+
 /* ----------------
  *		ReadyForQuery - tell dest that we are ready for a new query
  *
@@ -277,6 +368,15 @@ ReadyForQuery(CommandDest dest)
 
 				pq_beginmessage(&buf, PqMsg_ReadyForQuery);
 				pq_sendbyte(&buf, TransactionBlockStatusCode());
+
+				if (ready_for_query_message == READY_FOR_QUERY_RICH)
+				{
+					append_builtin_ready_for_query_status(&buf);
+
+					if (ready_for_query_hook != NULL)
+						ready_for_query_hook(&buf);
+				}
+
 				pq_endmessage(&buf);
 			}
 			/* Flush output at end of cycle in any case. */

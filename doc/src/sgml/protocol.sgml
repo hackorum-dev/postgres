@@ -5911,10 +5911,14 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
       </varlistentry>
 
       <varlistentry>
-       <term>Int32(5)</term>
+       <term>Int32</term>
        <listitem>
         <para>
          Length of message contents in bytes, including self.
+         Standard messages have a length of 5. When extended
+         (such as when <varname>ready_for_query_message</varname> is set to
+         <literal>rich</literal>), the length is 5 plus the length of any
+         additional payload.
         </para>
        </listitem>
       </varlistentry>
@@ -5928,6 +5932,42 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
          a transaction block); '<literal>T</literal>' if in a transaction
          block; or '<literal>E</literal>' if in a failed transaction
          block (queries will be rejected until block is ended).
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term>Byte1</term>
+       <listitem>
+        <para>
+         Length of key in bytes. Only present in extended messages.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term>Byte<replaceable>n</replaceable></term>
+       <listitem>
+        <para>
+         Key bytes. Only present in extended messages.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term>Byte1</term>
+       <listitem>
+        <para>
+         Length of value in bytes. Only present in extended messages.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term>Byte<replaceable>n</replaceable></term>
+       <listitem>
+        <para>
+         Value bytes. Only present in extended messages.
         </para>
        </listitem>
       </varlistentry>

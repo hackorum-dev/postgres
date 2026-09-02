@@ -639,7 +639,7 @@ sub init
 	$params{has_archiving} = 0 unless defined $params{has_archiving};
 
 	my $initdb_extra_opts_env = $ENV{PG_TEST_INITDB_EXTRA_OPTS};
-	if (defined $initdb_extra_opts_env)
+	if (defined $initdb_extra_opts_env && length($initdb_extra_opts_env) > 0)
 	{
 		push @{ $params{extra} }, shellwords($initdb_extra_opts_env);
 	}
@@ -670,7 +670,7 @@ sub init
 			'initdb', '--no-sync',
 			'--pgdata' => $pgdata,
 			'--auth' => 'trust',
-			@{ $params{extra} });
+			(defined $params{extra} ? @{ $params{extra} } : ()));
 	}
 	else
 	{

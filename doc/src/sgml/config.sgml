@@ -11776,6 +11776,26 @@ dynamic_library_path = '/usr/local/lib/postgresql:$libdir'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-ready-for-query-message" xreflabel="ready_for_query_message">
+      <term><varname>ready_for_query_message</varname> (<type>enum</type>)
+      <indexterm>
+       <primary><varname>ready_for_query_message</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Controls the format of the frontend/backend protocol <literal>ReadyForQuery</literal>
+        (<literal>'Z'</literal>) message. When set to <literal>plain</literal> (the default),
+        the standard 5-byte message containing only the transaction status indicator is sent.
+        When set to <literal>rich</literal>, the message length is extended to append
+        a sequence of length-prefixed key-value pairs carrying session state indicators
+        (such as whether temporary tables, with-hold cursors, or prepared transactions are active,
+        and the last transaction commit LSN) and any data supplied by extensions using
+        <literal>ready_for_query_hook</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
      </variablelist>
     </sect2>
    </sect1>

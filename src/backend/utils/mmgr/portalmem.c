@@ -1192,6 +1192,35 @@ ThereAreNoReadyPortals(void)
 }
 
 /*
+ * HasActiveWithHoldCursors - check if session has any active WITH HOLD cursors
+ */
+bool
+HasActiveWithHoldCursors(void)
+{
+	HASH_SEQ_STATUS status;
+	PortalHashEnt *hentry;
+
+	if (PortalHashTable == NULL)
+		return false;
+
+	hash_seq_init(&status, PortalHashTable);
+
+	while ((hentry = (PortalHashEnt *) hash_seq_search(&status)) != NULL)
+	{
+		Portal		portal = hentry->portal;
+
+		if (portal->status == PORTAL_READY &&
+			(portal->cursorOptions & CURSOR_OPT_HOLD))
+		{
+			hash_seq_term(&status);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/*
  * Hold all pinned portals.
  *
  * When initiating a COMMIT or ROLLBACK inside a procedure, this must be
