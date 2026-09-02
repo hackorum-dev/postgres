@@ -3017,6 +3017,12 @@ XLogBackgroundFlush(void)
 	int			flushblocks;
 	TimeLineID	insertTLI;
 
+	/*
+	 * Only the WAL writer calls this, so this injection point can be used to
+	 * hold back background WAL flushing in tests.
+	 */
+	INJECTION_POINT("xlog-background-flush", NULL);
+
 	/* XLOG doesn't need flushing during recovery */
 	if (RecoveryInProgress())
 		return false;

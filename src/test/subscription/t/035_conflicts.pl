@@ -558,7 +558,100 @@ if ($injection_points_supported != 0)
 	is($result, qq(t),
 		"pub UPDATE's timestamp is later than that of sub's DELETE");
 
-	# Re-enable the subscription for further tests
+	###########################################################################
+	# Check that a transaction committing asynchronously on the publisher (with
+	# synchronous_commit = off) is accounted for when advancing the
+	# non-removable transaction ID.  The publisher must report a WAL position
+	# covering the commit record of such a transaction even though the record
+	# has not been flushed yet; otherwise the conflict detection slot's xmin
+	# could advance past a local deletion before the concurrent remote update
+	# is applied, misclassifying an update_deleted conflict as update_missing.
+	###########################################################################
+
+	# Start with a clean slate on both nodes.  Note that the subscription
+	# from node A to node B is disabled above, so applying the deletion below
+	# on node B cannot close the unflushed window prematurely by flushing WAL
+	# on the publisher.
+	$node_B->safe_psql('postgres',
+		"TRUNCATE tab; INSERT INTO tab VALUES (7, 7);");
+	$node_B->wait_for_catchup($subname_AB);
+
+	# Park the publisher's walwriter inside XLogBackgroundFlush() and delay
+	# checkpoints, so that the asynchronously committed transaction below
+	# keeps its commit record inserted but unflushed: the walsender waits
+	# for the flush before sending the record, and nothing else can flush
+	# it.
+	$node_B->append_conf('postgresql.conf', "checkpoint_timeout = 1h");
+	$node_B->reload;
+
+	# Disable sub_tab: its apply worker is repeatedly restarting on the
+	# pending conf_tab_2_p1 conflict, and its startup transaction commits
+	# synchronously, which would flush WAL on the publisher.
+	$node_B->psql('postgres', "ALTER SUBSCRIPTION sub_tab DISABLE;");
+
+	$node_B->safe_psql('postgres',
+		"SELECT injection_points_attach('xlog-background-flush', 'wait');");
+	$node_B->wait_for_event('walwriter', 'xlog-background-flush');
+
+	$log_location = -s $node_A->logfile;
+
+	# Update the row on the publisher with an asynchronous commit.  The
+	# commit record is inserted but not flushed.
+	$node_B->safe_psql('postgres',
+		"SET synchronous_commit = off; UPDATE tab SET b = 8 WHERE a = 7;");
+
+	# Delete the same row locally on the subscriber.
+	$node_A->safe_psql('postgres', "DELETE FROM tab WHERE a = 7;");
+
+	# Remember the next transaction ID to be assigned.
+	$next_xid = $node_A->safe_psql('postgres', "SELECT txid_current() + 1;");
+
+	# Wait for the apply worker to request the publisher status for the
+	# advancement cycle triggered by the deletion.  The status round trip
+	# completes promptly on a local connection; after that, the advancement
+	# can only be waiting for the local flush to reach the reported WAL
+	# position, which covers the unflushed commit record.
+	$node_A->wait_for_log(qr/sending publisher status request message/,
+		$log_location);
+
+	# Give the worker a moment to process the reply, then verify that the
+	# slot's xmin did not advance past the local deletion.
+	sleep 1;
+
+	$result = $node_A->safe_psql('postgres',
+		"SELECT xmin::text::bigint < $next_xid FROM pg_replication_slots WHERE slot_name = 'pg_conflict_detection'"
+	);
+	is($result, 't',
+		"slot xmin does not advance while the publisher's commit record is unflushed"
+	);
+
+	# Unpark the walwriter so that the update is sent and applied.
+	$node_B->safe_psql('postgres',
+		"SELECT injection_points_wakeup('xlog-background-flush');
+		 SELECT injection_points_detach('xlog-background-flush');");
+	$node_B->append_conf('postgresql.conf', "checkpoint_timeout = 5min");
+	$node_B->reload;
+	$node_B->wait_for_catchup($subname_AB);
+
+	# The deletion must be detected as an update_deleted conflict rather
+	# than update_missing, because the conflict detection slot's xmin could
+	# not advance past it before the update was applied.
+	$logfile = slurp_file($node_A->logfile(), $log_location);
+	like(
+		$logfile,
+		qr/conflict detected on relation "public.tab": conflict=update_deleted.*
+.*DETAIL:.* Could not find the row to be updated: remote row \(7, 8\), replica identity full \(7, 7\).*
+.*The row to be updated was deleted locally in transaction [0-9]+ at .*/,
+		'update_deleted detected for asynchronously committed update on publisher'
+	);
+
+	unlike(
+		$logfile,
+		qr/conflict detected on relation "public.tab": conflict=update_missing/,
+		'update_missing is not reported');
+
+	# Re-enable the subscriptions for further tests
+	$node_B->psql('postgres', "ALTER SUBSCRIPTION sub_tab ENABLE;");
 	$node_B->psql('postgres', "ALTER SUBSCRIPTION $subname_BA ENABLE;");
 }
 
