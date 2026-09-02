@@ -677,6 +677,54 @@ UpdateIndexRelation(Oid indexoid,
 
 
 /*
+ * CheckOpclassCollation
+ *
+ * Verify that the given operator class can be used with the given collation,
+ * throwing an error if not.  This is applied to index columns and to
+ * partition key columns.
+ *
+ * Btree text_pattern_ops uses texteq as the equality operator, which is
+ * fine as long as the collation is deterministic; texteq then reduces to
+ * bitwise equality and so it is semantically compatible with the other
+ * operators and functions in that opclass.  But with a nondeterministic
+ * collation, texteq could yield results that are incompatible with the
+ * actual behavior of the index or partition key (which is determined by
+ * the opclass's comparison function).  We prevent such problems by refusing
+ * that opclass in combination with a nondeterministic collation.
+ *
+ * The same applies to varchar_pattern_ops and bpchar_pattern_ops.  If we
+ * find more cases, we might decide to create a real mechanism for marking
+ * opclasses as incompatible with nondeterminism; but for now, this small
+ * hack suffices.
+ *
+ * Another solution is to use a special operator, not texteq, as the
+ * equality opclass member; but that is undesirable because it would
+ * prevent index usage in many queries that work fine today.
+ */
+void
+CheckOpclassCollation(Oid opclass, Oid collation)
+{
+	if (!OidIsValid(collation))
+		return;
+
+	if ((opclass == TEXT_BTREE_PATTERN_OPS_OID ||
+		 opclass == VARCHAR_BTREE_PATTERN_OPS_OID ||
+		 opclass == BPCHAR_BTREE_PATTERN_OPS_OID) &&
+		!get_collation_isdeterministic(collation))
+	{
+		HeapTuple	classtup;
+
+		classtup = SearchSysCache1(CLAOID, ObjectIdGetDatum(opclass));
+		if (!HeapTupleIsValid(classtup))
+			elog(ERROR, "cache lookup failed for operator class %u", opclass);
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("nondeterministic collations are not supported for operator class \"%s\"",
+						NameStr(((Form_pg_opclass) GETSTRUCT(classtup))->opcname))));
+	}
+}
+
+/*
  * index_create
  *
  * heapRelation: table to build index on (suitably locked by caller)
@@ -811,49 +859,11 @@ index_create(Relation heapRelation,
 				 errmsg("user-defined indexes on system catalog tables are not supported")));
 
 	/*
-	 * Btree text_pattern_ops uses texteq as the equality operator, which is
-	 * fine as long as the collation is deterministic; texteq then reduces to
-	 * bitwise equality and so it is semantically compatible with the other
-	 * operators and functions in that opclass.  But with a nondeterministic
-	 * collation, texteq could yield results that are incompatible with the
-	 * actual behavior of the index (which is determined by the opclass's
-	 * comparison function).  We prevent such problems by refusing creation of
-	 * an index with that opclass and a nondeterministic collation.
-	 *
-	 * The same applies to varchar_pattern_ops and bpchar_pattern_ops.  If we
-	 * find more cases, we might decide to create a real mechanism for marking
-	 * opclasses as incompatible with nondeterminism; but for now, this small
-	 * hack suffices.
-	 *
-	 * Another solution is to use a special operator, not texteq, as the
-	 * equality opclass member; but that is undesirable because it would
-	 * prevent index usage in many queries that work fine today.
+	 * Check that each operator class can be used with its collation; see
+	 * CheckOpclassCollation for the rationale.
 	 */
 	for (i = 0; i < indexInfo->ii_NumIndexKeyAttrs; i++)
-	{
-		Oid			collation = collationIds[i];
-		Oid			opclass = opclassIds[i];
-
-		if (collation)
-		{
-			if ((opclass == TEXT_BTREE_PATTERN_OPS_OID ||
-				 opclass == VARCHAR_BTREE_PATTERN_OPS_OID ||
-				 opclass == BPCHAR_BTREE_PATTERN_OPS_OID) &&
-				!get_collation_isdeterministic(collation))
-			{
-				HeapTuple	classtup;
-
-				classtup = SearchSysCache1(CLAOID, ObjectIdGetDatum(opclass));
-				if (!HeapTupleIsValid(classtup))
-					elog(ERROR, "cache lookup failed for operator class %u", opclass);
-				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("nondeterministic collations are not supported for operator class \"%s\"",
-								NameStr(((Form_pg_opclass) GETSTRUCT(classtup))->opcname))));
-				ReleaseSysCache(classtup);
-			}
-		}
-	}
+		CheckOpclassCollation(opclassIds[i], collationIds[i]);
 
 	/*
 	 * Concurrent index build on a system catalog is unsafe because we tend to
