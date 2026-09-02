@@ -64,6 +64,8 @@ extern void index_check_primary_key(Relation heapRel,
 									bool is_alter_table,
 									const IndexStmt *stmt);
 
+extern void CheckOpclassCollation(Oid opclass, Oid collation);
+
 #define	INDEX_CREATE_IS_PRIMARY				(1 << 0)
 #define	INDEX_CREATE_ADD_CONSTRAINT			(1 << 1)
 #define	INDEX_CREATE_SKIP_BUILD				(1 << 2)
