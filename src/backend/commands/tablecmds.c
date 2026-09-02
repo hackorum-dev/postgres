@@ -20772,6 +20772,12 @@ ComputePartitionAttrs(ParseState *pstate, Relation rel, List *partParams, AttrNu
 											   am_oid == HASH_AM_OID ? "hash" : "btree",
 											   am_oid);
 
+		/*
+		 * Check that the operator class can be used with the collation, in
+		 * the same way as index_create does for index columns.
+		 */
+		CheckOpclassCollation(partopclass[attn], partcollation[attn]);
+
 		attn++;
 	}
 }

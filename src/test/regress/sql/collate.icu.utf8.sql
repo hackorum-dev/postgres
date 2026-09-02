@@ -1192,6 +1192,11 @@ INSERT INTO test23a VALUES (2, ARRAY['DEF']);
 -- they end up in the same partition (but it's platform-dependent which one)
 SELECT (SELECT count(*) FROM test23a_0) <> (SELECT count(*) FROM test23a_1);
 
+-- operator classes that cannot be used with a nondeterministic collation
+-- are rejected for partition keys, as they are for indexes
+CREATE TABLE test24 (a int, b text COLLATE case_insensitive) PARTITION BY RANGE (b text_pattern_ops);  -- error
+CREATE TABLE test24 (a int, b text COLLATE case_insensitive) PARTITION BY RANGE (b COLLATE "C" text_pattern_ops);  -- ok
+
 CREATE TABLE test30 (a int, b char(3) COLLATE case_insensitive) PARTITION BY LIST (b);
 CREATE TABLE test30_1 PARTITION OF test30 FOR VALUES IN ('abc');
 INSERT INTO test30 VALUES (1, 'abc');
