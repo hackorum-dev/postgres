@@ -315,6 +315,16 @@ ExecRepack(ParseState *pstate, RepackStmt *stmt, bool isTopLevel)
 		PreventInTransactionBlock(isTopLevel, "REPACK (CONCURRENTLY)");
 	}
 
+	else if ((params.options & CLUOPT_ANALYZE) != 0)
+	{
+		/*
+		 * REPACK (ANALYZE) performs transaction management internally.
+		 * It therefore cannot be executed from a transaction block or
+		 * from a function.
+		 */
+		PreventInTransactionBlock(isTopLevel, "REPACK (ANALYZE)");
+	}
+
 	/*
 	 * If a single relation is specified, process it and we're done ... unless
 	 * the relation is a partitioned table, in which case we fall through.
