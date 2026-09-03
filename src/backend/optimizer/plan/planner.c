@@ -225,6 +225,7 @@ static RelOptInfo *create_ordered_paths(PlannerInfo *root,
 										RelOptInfo *input_rel,
 										PathTarget *target,
 										bool target_parallel_safe,
+										bool postpone_projection_in_leader,
 										double limit_tuples);
 static PathTarget *make_group_input_target(PlannerInfo *root,
 										   PathTarget *final_target);
@@ -243,6 +244,8 @@ static List *make_pathkeys_for_window(PlannerInfo *root, WindowClause *wc,
 									  List *tlist);
 static PathTarget *make_sort_input_target(PlannerInfo *root,
 										  PathTarget *final_target,
+										  double input_rows,
+										  bool *postpone_projection_in_leader,
 										  bool *have_postponed_srfs);
 static void adjust_paths_for_srfs(PlannerInfo *root, RelOptInfo *rel,
 								  List *targets, List *targets_contain_srfs);
@@ -1696,6 +1699,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction,
 	int64		offset_est = 0;
 	int64		count_est = 0;
 	double		limit_tuples = -1.0;
+	bool		postpone_projection_in_leader = false;
 	bool		have_postponed_srfs = false;
 	PathTarget *final_target;
 	List	   *final_targets;
@@ -1933,6 +1937,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction,
 		{
 			sort_input_target = make_sort_input_target(root,
 													   final_target,
+													   current_rel->rows,
+													   &postpone_projection_in_leader,
 													   &have_postponed_srfs);
 			sort_input_target_parallel_safe =
 				is_parallel_safe(root, (Node *) sort_input_target->exprs);
@@ -2111,6 +2117,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction,
 										   current_rel,
 										   final_target,
 										   final_target_parallel_safe,
+										   postpone_projection_in_leader,
 										   have_postponed_srfs ? -1.0 :
 										   limit_tuples);
 		/* Fix things up if final_target contains SRFs */
@@ -5560,6 +5567,7 @@ create_ordered_paths(PlannerInfo *root,
 					 RelOptInfo *input_rel,
 					 PathTarget *target,
 					 bool target_parallel_safe,
+					 bool postpone_projection_in_leader,
 					 double limit_tuples)
 {
 	Path	   *cheapest_input_path = input_rel->cheapest_total_path;
@@ -5638,8 +5646,17 @@ create_ordered_paths(PlannerInfo *root,
 		 * the target to be applied, a projection step is needed.
 		 */
 		if (!equal(sorted_path->pathtarget->exprs, target->exprs))
-			sorted_path = apply_projection_to_path(root, ordered_rel,
+		{
+			if (postpone_projection_in_leader &&
+				(IsA(sorted_path, GatherPath) ||
+				 IsA(sorted_path, GatherMergePath)))
+				sorted_path = (Path *)
+					create_projection_path(root, ordered_rel,
+									   sorted_path, target);
+			else
+				sorted_path = apply_projection_to_path(root, ordered_rel,
 												   sorted_path, target);
+		}
 
 		add_path(ordered_rel, sorted_path);
 	}
@@ -5719,8 +5736,15 @@ create_ordered_paths(PlannerInfo *root,
 			 * from the target to be applied, a projection step is needed.
 			 */
 			if (!equal(sorted_path->pathtarget->exprs, target->exprs))
-				sorted_path = apply_projection_to_path(root, ordered_rel,
+			{
+				if (postpone_projection_in_leader)
+					sorted_path = (Path *)
+						create_projection_path(root, ordered_rel,
+										   sorted_path, target);
+				else
+					sorted_path = apply_projection_to_path(root, ordered_rel,
 													   sorted_path, target);
+			}
 
 			add_path(ordered_rel, sorted_path);
 		}
@@ -6647,6 +6671,9 @@ make_pathkeys_for_window(PlannerInfo *root, WindowClause *wc,
  * computed earlier.
  *
  * 'final_target' is the query's final target list (in PathTarget form)
+ * 'input_rows' is the estimated number of rows before the Sort step
+ * 'postpone_projection_in_leader' is set if a Top-N cost decision postponed
+ * expressions that should not be pushed below a Gather or Gather Merge
  * 'have_postponed_srfs' is an output argument, see below
  *
  * The result is the PathTarget to be computed by the plan node immediately
@@ -6659,6 +6686,8 @@ make_pathkeys_for_window(PlannerInfo *root, WindowClause *wc,
 static PathTarget *
 make_sort_input_target(PlannerInfo *root,
 					   PathTarget *final_target,
+					   double input_rows,
+					   bool *postpone_projection_in_leader,
 					   bool *have_postponed_srfs)
 {
 	Query	   *parse = root->parse;
@@ -6666,6 +6695,8 @@ make_sort_input_target(PlannerInfo *root,
 	int			ncols;
 	bool	   *col_is_srf;
 	bool	   *postpone_col;
+	Cost	   *col_cost;
+	Cost		postponable_cost = 0;
 	bool		have_srf;
 	bool		have_volatile;
 	bool		have_expensive;
@@ -6679,12 +6710,14 @@ make_sort_input_target(PlannerInfo *root,
 	/* Shouldn't get here unless query has ORDER BY */
 	Assert(parse->sortClause);
 
-	*have_postponed_srfs = false;	/* default result */
+	*postpone_projection_in_leader = false;
+	*have_postponed_srfs = false;	/* default results */
 
 	/* Inspect tlist and collect per-column information */
 	ncols = list_length(final_target->exprs);
 	col_is_srf = palloc0_array(bool, ncols);
 	postpone_col = palloc0_array(bool, ncols);
+	col_cost = palloc0_array(Cost, ncols);
 	have_srf = have_volatile = have_expensive = have_srf_sortcols = false;
 
 	i = 0;
@@ -6729,6 +6762,8 @@ make_sort_input_target(PlannerInfo *root,
 				QualCost	cost;
 
 				cost_qual_eval_node(&cost, (Node *) expr, root);
+				col_cost[i] = cost.per_tuple;
+				postponable_cost += cost.per_tuple;
 
 				/*
 				 * We arbitrarily define "expensive" as "more than 10X
@@ -6752,6 +6787,35 @@ make_sort_input_target(PlannerInfo *root,
 		}
 
 		i++;
+	}
+
+	/*
+	 * The fixed per-expression threshold above misses target lists made up of
+	 * several individually cheap expressions when a small LIMIT means that
+	 * very few input rows survive the Sort.  In that case, compare the cost
+	 * avoided on discarded rows with a conservative per-output-row threshold.
+	 *
+	 * root->limit_tuples is positive only when LIMIT/OFFSET could be
+	 * estimated and can safely be applied to the scan/join result.  Keep the
+	 * historical factor of 10, but scale it by the number of rows expected to
+	 * survive rather than applying it independently to every input row.
+	 */
+	if (root->limit_tuples > 0 &&
+		input_rows > root->limit_tuples &&
+		postponable_cost * (input_rows - root->limit_tuples) >
+		10 * cpu_operator_cost * root->limit_tuples)
+	{
+		i = 0;
+		foreach(lc, final_target->exprs)
+		{
+			/* Zero means a Var, Const, or another cost-free expression. */
+			if (col_cost[i] > 0)
+				postpone_col[i] = true;
+			i++;
+		}
+
+		have_expensive = true;
+		*postpone_projection_in_leader = true;
 	}
 
 	/*
