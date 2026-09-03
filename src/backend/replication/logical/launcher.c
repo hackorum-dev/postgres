@@ -1406,7 +1406,6 @@ ApplyLauncherMain(Datum main_arg)
 		if (MyReplicationSlot)
 		{
 			if (!retain_dead_tuples)
-				/* XXX unclear why we don't request logical decoding disable */
 				ReplicationSlotDropAcquired(false);
 			else if (can_update_xmin)
 				update_conflict_slot_xmin(xmin);
