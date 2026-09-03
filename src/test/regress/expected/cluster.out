@@ -796,6 +796,11 @@ ORDER BY 1;
  clstr_tst_pkey
 (3 rows)
 
+-- REPACK (ANALYZE) must not be executed inside a transaction block
+BEGIN;
+REPACK (ANALYZE) clstr_tst;
+ERROR:  REPACK (ANALYZE) cannot run inside a transaction block
+ROLLBACK;
 -- Verify partial analyze works
 REPACK (ANALYZE) clstr_tst (a);
 REPACK (ANALYZE) clstr_tst;

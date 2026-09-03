@@ -380,6 +380,10 @@ INSERT INTO clstr_tst (b, c) VALUES (1111, 'this should fail');
 SELECT conname FROM pg_constraint WHERE conrelid = 'clstr_tst'::regclass
 ORDER BY 1;
 
+-- REPACK (ANALYZE) must not be executed inside a transaction block
+BEGIN;
+REPACK (ANALYZE) clstr_tst;
+ROLLBACK;
 -- Verify partial analyze works
 REPACK (ANALYZE) clstr_tst (a);
 REPACK (ANALYZE) clstr_tst;
