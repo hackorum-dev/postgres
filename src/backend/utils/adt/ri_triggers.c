@@ -3078,9 +3078,9 @@ ri_check_fastpath_index(RI_ConstraintInfo *riinfo, Relation fk_rel,
 	 * collation to SPI.  Map index keys to table attributes because the FK
 	 * columns need not be listed in index order.  Ignore INCLUDE columns.
 	 */
-	for (int i = 0; i < idx_rel->rd_index->indnkeyatts; i++)
+	for (int i = 0; i < RelationGetIndex(idx_rel)->indnkeyatts; i++)
 	{
-		AttrNumber	attnum = idx_rel->rd_index->indkey.values[i];
+		AttrNumber	attnum = RelationGetIndex(idx_rel)->indkey.values[i];
 
 		if (idx_rel->rd_indcollation[i] != RIAttCollation(pk_rel, attnum))
 		{
@@ -3100,10 +3100,9 @@ ri_check_fastpath_index(RI_ConstraintInfo *riinfo, Relation fk_rel,
 	{
 		int			idx_col;
 
-		for (idx_col = 0; idx_col < idx_rel->rd_index->indnkeyatts; idx_col++)
+		for (idx_col = 0; idx_col < RelationGetIndex(idx_rel)->indnkeyatts; idx_col++)
 		{
-			if (idx_rel->rd_index->indkey.values[idx_col] ==
-				riinfo->pk_attnums[i])
+			if (RelationGetIndex(idx_rel)->indkey.values[idx_col] == riinfo->pk_attnums[i])
 				break;
 		}
 		Assert(idx_col < idx_rel->rd_index->indnkeyatts);
@@ -3348,7 +3347,7 @@ ri_populate_fastpath_metadata(RI_ConstraintInfo *riinfo, Relation idx_rel)
 		 */
 		for (idx_col = 0; idx_col < riinfo->nkeys; idx_col++)
 		{
-			if (idx_rel->rd_index->indkey.values[idx_col] == riinfo->pk_attnums[i])
+			if (RelationGetIndex(idx_rel)->indkey.values[idx_col] == riinfo->pk_attnums[i])
 				break;
 		}
 		Assert(idx_col < riinfo->nkeys);
