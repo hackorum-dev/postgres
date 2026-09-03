@@ -2151,6 +2151,94 @@ WHERE (CASE id WHEN 1 THEN 1 ELSE 0 END) = 1;
                Filter: (CASE id WHEN 1 THEN 1 ELSE 0 END = 1)
 (5 rows)
 
+-- Wrapped jsonb comparisons over grouped subqueries (DISTINCT ON and
+-- GROUP BY): wrapped quals must stay above grouping.
+CREATE TEMP TABLE pdt_json (id int, j jsonb);
+INSERT INTO pdt_json VALUES
+  (1, '1'),
+  (2, '1.0');
+EXPLAIN (COSTS OFF)
+SELECT * FROM (SELECT DISTINCT ON (j) id, j FROM pdt_json ORDER BY j, id) s
+WHERE j::text = '1.0';
+                   QUERY PLAN                    
+-------------------------------------------------
+ Subquery Scan on s
+   Filter: ((s.j)::text = '1.0'::text)
+   ->  Unique
+         ->  Sort
+               Sort Key: pdt_json.j, pdt_json.id
+               ->  Seq Scan on pdt_json
+(6 rows)
+
+SELECT * FROM (SELECT DISTINCT ON (j) id, j FROM pdt_json ORDER BY j, id) s
+WHERE j::text = '1.0';
+ id | j 
+----+---
+(0 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT * FROM (SELECT DISTINCT ON (j) id, j FROM pdt_json ORDER BY j, id) s
+WHERE j #>> '{}' = '1.0';
+                    QUERY PLAN                    
+--------------------------------------------------
+ Subquery Scan on s
+   Filter: ((s.j #>> '{}'::text[]) = '1.0'::text)
+   ->  Unique
+         ->  Sort
+               Sort Key: pdt_json.j, pdt_json.id
+               ->  Seq Scan on pdt_json
+(6 rows)
+
+SELECT * FROM (SELECT DISTINCT ON (j) id, j FROM pdt_json ORDER BY j, id) s
+WHERE j #>> '{}' = '1.0';
+ id | j 
+----+---
+(0 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT c FROM (SELECT j, count(*) c FROM pdt_json GROUP BY j) s
+WHERE j::text = '1';
+                    QUERY PLAN                    
+--------------------------------------------------
+ Subquery Scan on s
+   ->  HashAggregate
+         Group Key: pdt_json.j
+         Filter: ((pdt_json.j)::text = '1'::text)
+         ->  Seq Scan on pdt_json
+(5 rows)
+
+SELECT c FROM (SELECT j, count(*) c FROM pdt_json GROUP BY j) s
+WHERE j::text = '1';
+ c 
+---
+ 2
+(1 row)
+
+EXPLAIN (COSTS OFF)
+SELECT c FROM (SELECT j, count(*) c FROM pdt_json GROUP BY j) s
+WHERE j::text = '1.0';
+                     QUERY PLAN                     
+----------------------------------------------------
+ Subquery Scan on s
+   ->  HashAggregate
+         Group Key: pdt_json.j
+         Filter: ((pdt_json.j)::text = '1.0'::text)
+         ->  Seq Scan on pdt_json
+(5 rows)
+
+SELECT c FROM (SELECT j, count(*) c FROM pdt_json GROUP BY j) s
+WHERE j::text = '1.0';
+ c 
+---
+(0 rows)
+
+SELECT c FROM (SELECT j, count(*) c FROM pdt_json GROUP BY j) s
+WHERE j = '1'::jsonb;
+ c 
+---
+ 2
+(1 row)
+
 -- Set operations: any operation other than UNION ALL groups rows by equality,
 -- so the same opfamily-mismatch rules apply.
 CREATE TEMP TABLE u1 (a t_rec);

@@ -112,6 +112,9 @@ typedef struct
 	grouping_eqop_callback get_eqop;
 	void	   *cb_context;
 	Var		   *case_var;
+	Oid			cmp_opno;
+	Oid			cmp_inputcollid;
+	bool		cmp_context_valid;
 } grouping_walker_ctx;
 
 static bool contain_agg_clause_walker(Node *node, void *context);
@@ -133,6 +136,14 @@ static List *find_nonnullable_vars_walker(Node *node, bool top_level);
 static bool is_strict_saop(ScalarArrayOpExpr *expr, bool falseOK);
 static bool convert_saop_to_hashed_saop_walker(Node *node, void *context);
 static bool grouping_conflict_walker(Node *node, grouping_walker_ctx *ctx);
+static bool grouping_var_has_comparison_conflict(Var *var, Oid opno,
+												 Oid inputcollid,
+												 grouping_walker_ctx *ctx);
+static bool grouping_operand_has_comparison_conflict(Node *node, Oid opno,
+													 Oid inputcollid,
+													 grouping_walker_ctx *ctx);
+static bool grouping_operand_has_comparison_conflict_walker(Node *node,
+															 void *context);
 static bool grouping_check_operands(Oid opno, Oid inputcollid,
 									List *args, grouping_walker_ctx *ctx);
 static bool grouping_check_operand(Node *arg, Oid opno, Oid inputcollid,
@@ -6417,15 +6428,13 @@ pull_paramids_walker(Node *node, Bitmapset **context)
  * For a nondeterministic collation, every other reference is rejected: a
  * comparison under a different collation, and any function or operator over
  * the column, because we cannot tell whether the function yields the same
- * result for values the grouping treats as equal, and many do not.  A column
- * with a deterministic collation is not restricted this way.
+ * result for values the grouping treats as equal, and many do not.
  *
- * This leaves one case uncaught: with a deterministic collation, a function
- * over the column can still feed a finer comparison than the direct-operand
- * check sees, for example record_image_ops over a rebuilt record, or scale()
- * over numeric where two equal values differ in scale.  Catching it would
- * require knowing that a type's equality is bitwise, which we do not test
- * here.
+ * In addition, within a comparison, if an operand is not a direct grouping
+ * Var, we recurse into it and apply the same opfamily/collation checks to any
+ * grouping Vars found there.  This catches wrappers such as CoerceViaIO and
+ * text-extraction operators that can feed a comparison using a different
+ * equality relation than grouping does.
  *
  * Returns true if any such conflict exists.
  */
@@ -6643,6 +6652,100 @@ grouping_check_operands(Oid opno, Oid inputcollid, List *args,
 }
 
 /*
+ * grouping_var_has_comparison_conflict
+ *		Apply direct-operand grouping checks to one Var.
+ *
+ * Returns true when this Var is a grouping column and the surrounding
+ * comparison would apply a conflicting equivalence relation, either because
+ * the comparison operator is from an incompatible equality family or because
+ * a nondeterministic-collation grouping Var is compared under a different
+ * collation.
+ */
+static bool
+grouping_var_has_comparison_conflict(Var *var, Oid opno, Oid inputcollid,
+									 grouping_walker_ctx *ctx)
+{
+	Oid			grouping_eqop = ctx->get_eqop(var, ctx->cb_context);
+
+	if (!OidIsValid(grouping_eqop))
+		return false;
+
+	if (!equality_ops_are_compatible(opno, grouping_eqop))
+		return true;
+
+	if (OidIsValid(var->varcollid) &&
+		!get_collation_isdeterministic(var->varcollid) &&
+		inputcollid != var->varcollid)
+		return true;
+
+	return false;
+}
+
+/*
+ * grouping_operand_has_comparison_conflict
+ *		Recursively inspect a non-direct comparison operand.
+ *
+ * grouping_check_operand calls this only after determining that the operand is
+ * not itself a direct Var reference.
+ */
+static bool
+grouping_operand_has_comparison_conflict(Node *node, Oid opno,
+										 Oid inputcollid,
+										 grouping_walker_ctx *ctx)
+{
+	grouping_walker_ctx check_ctx = *ctx;
+
+	check_ctx.cmp_opno = opno;
+	check_ctx.cmp_inputcollid = inputcollid;
+	check_ctx.cmp_context_valid = true;
+
+	return grouping_operand_has_comparison_conflict_walker(node, &check_ctx);
+}
+
+/*
+ * grouping_operand_has_comparison_conflict_walker
+ *		Walker for grouping_operand_has_comparison_conflict.
+ *
+ * 'context' is grouping_walker_ctx with cmp_* fields set for the surrounding
+ * comparison.  We descend through wrapper structure and apply
+ * grouping_var_has_comparison_conflict to every grouping Var found in the
+ * operand subtree.  CaseTestExpr is resolved through ctx->case_var,
+ * matching the CASE handling used by grouping_conflict_walker.
+ *
+ * Returns true if any grouping Var inside this operand would fail the same
+ * operator/collation checks that we use for direct operands.
+ */
+static bool
+grouping_operand_has_comparison_conflict_walker(Node *node, void *context)
+{
+	grouping_walker_ctx *ctx = (grouping_walker_ctx *) context;
+
+	if (node == NULL)
+		return false;
+
+	if (IsA(node, RelabelType))
+		return grouping_operand_has_comparison_conflict_walker(
+			(Node *) ((RelabelType *) node)->arg, context);
+
+	if (IsA(node, CaseTestExpr))
+		return grouping_operand_has_comparison_conflict_walker(
+			(Node *) ctx->case_var, context);
+
+	if (IsA(node, Var))
+	{
+		Var		   *var = (Var *) node;
+
+		Assert(ctx->cmp_context_valid);
+		return grouping_var_has_comparison_conflict(var, ctx->cmp_opno,
+													ctx->cmp_inputcollid, ctx);
+	}
+
+	return expression_tree_walker(node,
+								  grouping_operand_has_comparison_conflict_walker,
+								  context);
+}
+
+/*
  * grouping_check_operand
  *		Handle one operand 'arg' of a comparison with operator 'opno' and
  *		collation 'inputcollid'.
@@ -6670,21 +6773,15 @@ grouping_check_operand(Node *arg, Oid opno, Oid inputcollid,
 	if (node && IsA(node, Var))
 	{
 		Var		   *var = (Var *) node;
-		Oid			grouping_eqop = ctx->get_eqop(var, ctx->cb_context);
 
-		if (OidIsValid(grouping_eqop))
-		{
-			/* incompatible equality semantics */
-			if (!equality_ops_are_compatible(opno, grouping_eqop))
-				return true;
-			/* nondeterministic collation compared under a different collation */
-			if (OidIsValid(var->varcollid) &&
-				!get_collation_isdeterministic(var->varcollid) &&
-				inputcollid != var->varcollid)
-				return true;
-		}
+		if (grouping_var_has_comparison_conflict(var, opno, inputcollid, ctx))
+			return true;
 		return false;			/* direct operand handled; do not recurse */
 	}
+
+	/* Recurse into non-direct operands and reuse direct checks. */
+	if (grouping_operand_has_comparison_conflict(arg, opno, inputcollid, ctx))
+		return true;
 
 	return grouping_conflict_walker(arg, ctx);
 }
