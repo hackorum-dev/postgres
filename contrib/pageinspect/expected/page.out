@@ -161,6 +161,68 @@ SELECT unnest(combined_flags)
  HEAP_XMIN_FROZEN
 (3 rows)
 
+-- Repeated subtransactions need not carry a lock held only by the updating
+-- XID forward to each new tuple version.
+CREATE TABLE test_lock_carry_counter (
+	tenant_id text NOT NULL,
+	counter_name text NOT NULL,
+	counter_value bigint,
+	PRIMARY KEY (tenant_id, counter_name)
+) WITH (autovacuum_enabled = off);
+INSERT INTO test_lock_carry_counter VALUES ('t1', 'main', 1);
+CREATE FUNCTION test_lock_carry_counter_bump(n integer) RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE
+	current_value bigint;
+BEGIN
+	FOR i IN 1..n LOOP
+		BEGIN
+			SELECT counter_value INTO current_value
+			  FROM test_lock_carry_counter
+			  WHERE tenant_id = 't1' AND counter_name = 'main'
+			  FOR UPDATE;
+			UPDATE test_lock_carry_counter
+			  SET counter_value = counter_value + 1
+			  WHERE tenant_id = 't1' AND counter_name = 'main';
+		EXCEPTION WHEN OTHERS THEN
+			NULL;
+		END;
+	END LOOP;
+END;
+$$;
+BEGIN;
+SELECT test_lock_carry_counter_bump(2);
+ test_lock_carry_counter_bump 
+------------------------------
+ 
+(1 row)
+
+WITH items AS (
+	SELECT lp, t_xmax, raw_flags
+	  FROM heap_page_items(get_raw_page('test_lock_carry_counter', 0)),
+	       LATERAL heap_tuple_infomask_flags(t_infomask, t_infomask2)
+	  WHERE lp_flags = 1
+),
+tail AS (
+	SELECT t_xmax, raw_flags
+	  FROM items
+	  ORDER BY lp DESC
+	  LIMIT 1
+)
+SELECT (SELECT count(*) FROM items) AS tuple_versions,
+       (SELECT bool_or(array_position(raw_flags, 'HEAP_XMAX_IS_MULTI') IS NOT NULL)
+        FROM items) AS any_multi,
+       t_xmax = '0'::xid AS tail_xmax_invalid,
+       array_position(raw_flags, 'HEAP_XMAX_INVALID') IS NOT NULL AS tail_has_invalid
+  FROM tail;
+ tuple_versions | any_multi | tail_xmax_invalid | tail_has_invalid 
+----------------+-----------+-------------------+------------------
+              3 | f         | t                 | t
+(1 row)
+
+ROLLBACK;
+DROP FUNCTION test_lock_carry_counter_bump(integer);
+DROP TABLE test_lock_carry_counter;
 -- no flags at all
 SELECT * FROM heap_tuple_infomask_flags(0, 0);
  raw_flags | combined_flags 
