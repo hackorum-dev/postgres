@@ -4378,6 +4378,17 @@ RewriteQuery(Query *parsetree, List *rewrite_events, int orig_rt_length,
 									&qual_product);
 
 		/*
+		 * An unqualified INSTEAD rule replaces the query with the rule
+		 * action, dropping any FOR PORTION OF clause; reject it as we do for
+		 * views with INSTEAD OF triggers.
+		 */
+		if (parsetree->forPortionOf && instead &&
+			rt_entry_relation->rd_rel->relkind == RELKIND_VIEW)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("views with INSTEAD rules do not support FOR PORTION OF")));
+
+		/*
 		 * If we have a VALUES RTE with any remaining untouched DEFAULT items,
 		 * and we got any product queries, finalize the VALUES RTE for each
 		 * product query (replacing the remaining DEFAULT items with NULLs).
