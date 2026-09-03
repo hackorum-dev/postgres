@@ -31,6 +31,7 @@
 #include "replication/logicalrelation.h"
 #include "storage/lmgr.h"
 #include "utils/builtins.h"
+#include "utils/injection_point.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
@@ -743,6 +744,13 @@ retry:
 	}
 
 	/*
+	 * XXX TEMPORARY hook: lets a test park the apply worker here and commit a
+	 * concurrent UPDATE of the conflicting row, forcing table_tuple_lock()
+	 * below to report TM_Updated and retry.
+	 */
+	INJECTION_POINT("find-conflict-tuple-before-lock", NULL);
+
+	/*
 	 * Create the slot only once and reuse it on retries. Re-storing the tuple
 	 * in the same slot releases the buffer pin held for the previously stored
 	 * tuple.
@@ -761,6 +769,23 @@ retry:
 						   &tmfd);
 
 	PopActiveSnapshot();
+
+	/*
+	 * XXX TEMPORARY PROBE.
+	 *
+	 * The discriminator is slot IDENTITY.  Unpatched, each retry allocates a
+	 * fresh slot and abandons the previous one; because the old slot is never
+	 * freed its address cannot be reused, so every pass reports a different
+	 * "slot=".  With the fix a single slot is created before the retry label
+	 * and re-stored on each pass, so "slot=" is constant.  A changing address
+	 * is therefore direct evidence of the leak: the prior slot, still owning
+	 * the buffer pin transferred to it by heapam_tuple_lock(), is
+	 * unreachable.
+	 */
+	elog(WARNING, "O11: pass done slot=%p buffer=%d res=%d",
+		 (void *) *conflictslot,
+		 ((BufferHeapTupleTableSlot *) *conflictslot)->buffer,
+		 (int) res);
 
 	if (should_refetch_tuple(res, &tmfd))
 		goto retry;
