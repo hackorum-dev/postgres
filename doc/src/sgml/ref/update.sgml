@@ -88,7 +88,9 @@ UPDATE [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ]
    two inserted records, depending on whether the original application time
    was completely updated, extended before/after the change, or both.
    Multiranges never require two temporal leftovers, because one value can
-   always contain whatever application time remains.
+   always contain whatever application time remains. <literal>INSERT</literal>
+   triggers fire for each inserted leftover. If a row-level <literal>BEFORE
+   INSERT</literal> trigger returns <literal>NULL</literal>, no leftover is inserted.
   </para>
 
   <para>
