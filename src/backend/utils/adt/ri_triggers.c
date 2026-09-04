@@ -238,11 +238,15 @@ typedef struct RI_CompareHashEntry
  * A constraint can be checked in nested trigger-firing cycles.  Each cycle
  * must have a separate entry so that its rows are checked with that cycle's
  * snapshot and its resources are released by that cycle's callback.
+ *
+ * The firing depth, not the query depth, identifies the cycle: SET CONSTRAINTS
+ * ... IMMEDIATE fires queued events without opening a query level, so its cycle
+ * runs at the same query depth as the cycle that contains it.
  */
 typedef struct RI_FastPathKey
 {
 	Oid			conoid;			/* pg_constraint OID */
-	int			query_depth;	/* after-trigger query depth */
+	int			firing_depth;	/* after-trigger firing cycle depth */
 } RI_FastPathKey;
 
 /*
@@ -403,7 +407,7 @@ pg_noreturn static void ri_ReportViolation(const RI_ConstraintInfo *riinfo,
 static RI_FastPathEntry *ri_FastPathGetEntry(const RI_ConstraintInfo *riinfo,
 											 Relation fk_rel);
 static void ri_FastPathEndBatch(void *arg);
-static void ri_FastPathTeardown(int depth);
+static void ri_FastPathTeardown(int firing_depth);
 
 
 /*
@@ -4342,7 +4346,7 @@ ri_FastPathEndBatch(void *arg)
 {
 	HASH_SEQ_STATUS status;
 	RI_FastPathEntry *entry;
-	int			my_depth = (int) (intptr_t) arg;
+	int			my_firing_depth = (int) (intptr_t) arg;
 
 	if (ri_fastpath_cache == NULL)
 		return;
@@ -4368,7 +4372,7 @@ ri_FastPathEndBatch(void *arg)
 		while ((entry = hash_seq_search(&status)) != NULL)
 		{
 			/* Flush only entries created in the cycle now ending. */
-			if (entry->key.query_depth == my_depth && entry->batch_count > 0)
+			if (entry->key.firing_depth == my_firing_depth && entry->batch_count > 0)
 			{
 				Relation	fk_rel = table_open(entry->fk_relid, AccessShareLock);
 				RI_ConstraintInfo *riinfo;
@@ -4391,7 +4395,7 @@ ri_FastPathEndBatch(void *arg)
 	 * outer cycles' entries for their own callbacks.  Destroy the cache once
 	 * empty.
 	 */
-	ri_FastPathTeardown(my_depth);
+	ri_FastPathTeardown(my_firing_depth);
 }
 
 /*
@@ -4399,13 +4403,13 @@ ri_FastPathEndBatch(void *arg)
  *		Release and remove the cached entries of one firing cycle, and drop
  *		the cache once it holds no more entries.
  *
- * Called from ri_FastPathEndBatch() with the depth of the cycle that is
+ * Called from ri_FastPathEndBatch() with the firing depth of the cycle that is
  * ending: it releases only that cycle's entries, leaving an outer cycle's
  * still-live entries for their own callbacks.  The cache (and its static
  * pointer) go away once the last entry is removed.
  */
 static void
-ri_FastPathTeardown(int depth)
+ri_FastPathTeardown(int firing_depth)
 {
 	HASH_SEQ_STATUS status;
 	RI_FastPathEntry *entry;
@@ -4416,7 +4420,7 @@ ri_FastPathTeardown(int depth)
 	hash_seq_init(&status, ri_fastpath_cache);
 	while ((entry = hash_seq_search(&status)) != NULL)
 	{
-		if (entry->key.query_depth != depth)
+		if (entry->key.firing_depth != firing_depth)
 			continue;
 		if (entry->idx_rel)
 			index_close(entry->idx_rel, NoLock);
@@ -4527,6 +4531,11 @@ AtEOXact_RI(bool isCommit)
  * entries so a later firing cycle cannot reuse them.  Entries belonging to
  * outer subtransactions remain valid and are preserved.
  *
+ * parentSubid is unused: an entry found here is stale on the commit path too,
+ * since subtransaction commit force-releases the relation and tuple-descriptor
+ * references rather than transferring them to the parent.  The slots survive,
+ * but point at tuple descriptors that no longer do.
+ *
  * The remaining slot storage and per-entry flush contexts are reclaimed when
  * TopTransactionContext is reset at top-level transaction end.
  */
@@ -4548,20 +4557,21 @@ AtEOSubXact_RI(bool isCommit, SubTransactionId mySubid,
 		if (entry->subid != mySubid)
 			continue;
 
-		if (isCommit)
-		{
-			/*
-			 * A committing subxact's entry should already have been flushed
-			 * and torn down at its statement's end (ri_FastPathEndBatch()),
-			 * so we don't expect to find one here.  If we do, reassign it to
-			 * the parent so it's still cleaned up rather than left under a
-			 * subxact id that no longer exists.
-			 */
-			Assert(false);
-			entry->subid = parentSubid;
-		}
-		else
-			hash_search(ri_fastpath_cache, &entry->key, HASH_REMOVE, NULL);
+		/*
+		 * A committing subxact's entry should already have been flushed and
+		 * torn down at the end of the firing cycle that created it
+		 * (ri_FastPathEndBatch()), so we don't expect to find one here.
+		 */
+		Assert(!isCommit);
+
+		/*
+		 * Remove it in either case.  Subtransaction commit does not hand this
+		 * entry's relation and tuple-descriptor references to the parent's
+		 * resource owner; it force-releases them just as abort does.  Keeping
+		 * the entry -- reassigned to the parent or otherwise -- would leave a
+		 * later firing cycle free to flush through released references.
+		 */
+		hash_search(ri_fastpath_cache, &entry->key, HASH_REMOVE, NULL);
 	}
 
 	/* If that emptied the cache, drop it so the next batch starts clean. */
@@ -4590,10 +4600,10 @@ ri_FastPathGetEntry(const RI_ConstraintInfo *riinfo, Relation fk_rel)
 	RI_FastPathKey key;
 	RI_FastPathEntry *entry;
 	bool		found;
-	int			cur_depth = AfterTriggerCurrentQueryDepth();
+	int			cur_firing_depth = AfterTriggerCurrentFiringDepth();
 
 	key.conoid = riinfo->constraint_id;
-	key.query_depth = cur_depth;
+	key.firing_depth = cur_firing_depth;
 
 	/* Create hash table on first use in this batch */
 	if (ri_fastpath_cache == NULL)
@@ -4668,33 +4678,33 @@ ri_FastPathGetEntry(const RI_ConstraintInfo *riinfo, Relation fk_rel)
 
 		/*
 		 * Register an end-of-batch callback once per firing cycle, passing
-		 * the query depth so the callback flushes only entries belonging to
+		 * the firing depth so the callback flushes only entries belonging to
 		 * that cycle.
 		 */
 		{
-			bool		depth_registered = false;
+			bool		firing_depth_registered = false;
 			HASH_SEQ_STATUS reg_status;
 			RI_FastPathEntry *other;
 
 			/*
-			 * An existing entry at this depth means its callback is already
-			 * registered.  Ignore the just-created entry, which is already in
-			 * the hash.
+			 * An existing entry at this firing depth means its callback is
+			 * already registered.  Ignore the just-created entry, which is
+			 * already in the hash.
 			 */
 			hash_seq_init(&reg_status, ri_fastpath_cache);
 			while ((other = hash_seq_search(&reg_status)) != NULL)
 			{
-				if (other != entry && other->key.query_depth == cur_depth)
+				if (other != entry && other->key.firing_depth == cur_firing_depth)
 				{
-					depth_registered = true;
+					firing_depth_registered = true;
 					hash_seq_term(&reg_status);
 					break;
 				}
 			}
 
-			if (!depth_registered)
+			if (!firing_depth_registered)
 				RegisterAfterTriggerBatchCallback(ri_FastPathEndBatch,
-												  (void *) (intptr_t) cur_depth);
+												  (void *) (intptr_t) cur_firing_depth);
 		}
 
 		entry->flushing = false;
