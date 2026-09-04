@@ -1025,6 +1025,9 @@ check_publisher(const struct LogicalRepInfo *dbinfo)
 	int			cur_walsenders;
 	int			max_prepared_transactions;
 	char	   *max_slot_wal_keep_size;
+	char	   *output_plugin_libraries;
+	char	  **allowed_plugins;
+	bool		pgoutput_allowed = false;
 
 	pg_log_info("checking settings on publisher");
 
@@ -1058,7 +1061,8 @@ check_publisher(const struct LogicalRepInfo *dbinfo)
 				 " pg_catalog.current_setting('max_wal_senders'),"
 				 " (SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE backend_type = 'walsender'),"
 				 " pg_catalog.current_setting('max_prepared_transactions'),"
-				 " pg_catalog.current_setting('max_slot_wal_keep_size')");
+				 " pg_catalog.current_setting('max_slot_wal_keep_size'),"
+				 " pg_catalog.current_setting('output_plugin_libraries')");
 
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 	{
@@ -1074,6 +1078,7 @@ check_publisher(const struct LogicalRepInfo *dbinfo)
 	cur_walsenders = atoi(PQgetvalue(res, 0, 4));
 	max_prepared_transactions = atoi(PQgetvalue(res, 0, 5));
 	max_slot_wal_keep_size = pg_strdup(PQgetvalue(res, 0, 6));
+	output_plugin_libraries = pg_strdup(PQgetvalue(res, 0, 7));
 
 	PQclear(res);
 
@@ -1086,6 +1091,8 @@ check_publisher(const struct LogicalRepInfo *dbinfo)
 				 max_prepared_transactions);
 	pg_log_debug("publisher: max_slot_wal_keep_size: %s",
 				 max_slot_wal_keep_size);
+	pg_log_debug("publisher: output_plugin_libraries: %s",
+				 output_plugin_libraries);
 
 	disconnect_database(conn, false);
 
@@ -1133,7 +1140,37 @@ check_publisher(const struct LogicalRepInfo *dbinfo)
 							"max_slot_wal_keep_size");
 	}
 
+	if (!SplitGUCList(output_plugin_libraries, ',', &allowed_plugins))
+	{
+		/*
+		 * Should not happen. (Frontend and backend GUC_LIST_QUOTE parsing
+		 * have to remain compatible for pg_dump at minimum.)
+		 */
+		pg_fatal("could not parse \"output_plugin_libraries\" setting '%s'",
+				 output_plugin_libraries);
+	}
+
+	/* Make sure the output_plugin_libraries setting includes "pgoutput" */
+	for (char **plugin = allowed_plugins; *plugin; plugin++)
+	{
+		if (strcmp(*plugin, "pgoutput") == 0)
+		{
+			pgoutput_allowed = true;
+			break;
+		}
+	}
+
+	if (!pgoutput_allowed)
+	{
+		pg_log_error("publisher does not allow the \"pgoutput\" output plugin");
+		pg_log_error_hint("Add \"pgoutput\" to the configuration parameter \"%s\" and reload the server configuration.",
+						  "output_plugin_libraries");
+		failed = true;
+	}
+
 	pg_free(wal_level);
+	pg_free(output_plugin_libraries);
+	pg_free(allowed_plugins);
 
 	if (failed)
 		exit(1);

@@ -334,6 +334,30 @@ is($node_s->safe_psql($db1, "SELECT COUNT(*) FROM pg_publication"),
 
 $node_s->stop;
 
+# pg_createsubscriber requires that output_plugin_libraries includes 'pgoutput'
+# on the publisher.
+$node_p->append_conf('postgresql.conf',
+	"output_plugin_libraries = 'test_decoding'");
+$node_p->reload;
+
+command_fails_like(
+    [
+        'pg_createsubscriber',
+        '--verbose',
+        '--dry-run',
+        '--pgdata' => $node_s->data_dir,
+        '--publisher-server' => $node_p->connstr($db1),
+        '--socketdir' => $node_s->host,
+        '--subscriber-port' => $node_s->port,
+        '--database' => $db1,
+    ],
+    qr/publisher does not allow the "pgoutput" output plugin/,
+    'primary does not allow to load pgoutput plugin');
+
+$node_p->append_conf('postgresql.conf',
+    "output_plugin_libraries = 'pgoutput, test_decoding'");
+$node_p->reload;
+
 # dry run mode on node S. Use the same publication name for different
 # databases, since publication names are database-local.
 command_ok(
