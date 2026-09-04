@@ -3647,6 +3647,33 @@ SELECT eatarray(rwagg(ARRAY[1.0::real])), eatarray(rwagg(ARRAY[1.0::real]));
 (1 row)
 
 ROLLBACK;
+-- The transition state of avg(int2)/avg(int4), and of the moving-aggregate
+-- mode of sum(int2)/sum(int4), is "internal", so none of the supporting
+-- functions can be reached from SQL.
+SELECT int2_avg_accum('{0,0}'::int8[], '1'::int2);
+ERROR:  function int2_avg_accum(bigint[], smallint) does not exist
+LINE 1: SELECT int2_avg_accum('{0,0}'::int8[], '1'::int2);
+               ^
+DETAIL:  No function of that name accepts the given argument types.
+HINT:  You might need to add explicit type casts.
+SELECT int4_avg_accum_inv('{1,1}'::int8[], '1'::int4);
+ERROR:  function int4_avg_accum_inv(bigint[], integer) does not exist
+LINE 1: SELECT int4_avg_accum_inv('{1,1}'::int8[], '1'::int4);
+               ^
+DETAIL:  No function of that name accepts the given argument types.
+HINT:  You might need to add explicit type casts.
+SELECT int8_avg('{1,2}'::int8[]);
+ERROR:  function int8_avg(bigint[]) does not exist
+LINE 1: SELECT int8_avg('{1,2}'::int8[]);
+               ^
+DETAIL:  No function of that name accepts the given argument types.
+HINT:  You might need to add explicit type casts.
+SELECT int2int4_sum('{1,2}'::int8[]);
+ERROR:  function int2int4_sum(bigint[]) does not exist
+LINE 1: SELECT int2int4_sum('{1,2}'::int8[]);
+               ^
+DETAIL:  No function of that name accepts the given argument types.
+HINT:  You might need to add explicit type casts.
 -- test coverage for aggregate combine/serial/deserial functions
 BEGIN;
 SET parallel_setup_cost = 0;
@@ -3730,6 +3757,44 @@ FROM (SELECT * FROM tenk1
        variance       |          avg          
 ----------------------+-----------------------
  8333541.588539713493 | 4999.5000000000000000
+(1 row)
+
+-- avg(int2) and avg(int4) cover int4_avg_combine, int4_avg_serialize and
+-- int4_avg_deserialize
+EXPLAIN (COSTS OFF, VERBOSE)
+SELECT avg(unique1::int2), avg(unique1::int4)
+FROM (SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1) u;
+                                        QUERY PLAN                                        
+------------------------------------------------------------------------------------------
+ Finalize Aggregate
+   Output: avg((tenk1.unique1)::smallint), avg(tenk1.unique1)
+   ->  Gather
+         Output: (PARTIAL avg((tenk1.unique1)::smallint)), (PARTIAL avg(tenk1.unique1))
+         Workers Planned: 4
+         ->  Partial Aggregate
+               Output: PARTIAL avg((tenk1.unique1)::smallint), PARTIAL avg(tenk1.unique1)
+               ->  Parallel Append
+                     ->  Parallel Seq Scan on public.tenk1
+                           Output: tenk1.unique1
+                     ->  Parallel Seq Scan on public.tenk1 tenk1_1
+                           Output: tenk1_1.unique1
+                     ->  Parallel Seq Scan on public.tenk1 tenk1_2
+                           Output: tenk1_2.unique1
+                     ->  Parallel Seq Scan on public.tenk1 tenk1_3
+                           Output: tenk1_3.unique1
+(16 rows)
+
+SELECT avg(unique1::int2), avg(unique1::int4)
+FROM (SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1) u;
+          avg          |          avg          
+-----------------------+-----------------------
+ 4999.5000000000000000 | 4999.5000000000000000
 (1 row)
 
 ROLLBACK;
