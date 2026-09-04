@@ -228,6 +228,38 @@ SELECT sum(q1+q2), sum(q1)+sum(q2) FROM int8_tbl;
 SELECT sum(q1-q2), sum(q2-q1), sum(q1)-sum(q2) FROM int8_tbl;
 SELECT sum(q1*2000), sum(-q1*2000), 2000*sum(q1) FROM int8_tbl;
 
+--
+-- sum(int2)/sum(int4) and avg(int2)/avg(int4) accumulate into int8, and that
+-- accumulator must report an overflow rather than silently wrap around.
+-- Summing enough real rows to reach the int8 limit would take billions of
+-- them, so use custom aggregates over the same transition functions with an
+-- initial condition that already sits next to the limit.
+--
+
+CREATE AGGREGATE ovf_sum_int4 (int4) (
+	sfunc = int4_sum, stype = int8, initcond = '9223372036854775806'
+);
+SELECT ovf_sum_int4(v) FROM (VALUES (1)) t(v);
+SELECT ovf_sum_int4(v) FROM (VALUES (1), (NULL)) t(v);
+SELECT ovf_sum_int4(v) FROM (VALUES (1), (1)) t(v); -- ERROR
+
+CREATE AGGREGATE ovf_sum_int2 (int2) (
+	sfunc = int2_sum, stype = int8, initcond = '-9223372036854775807'
+);
+SELECT ovf_sum_int2(v) FROM (VALUES ('-1'::int2), ('-1'::int2)) t(v); -- ERROR
+
+-- avg(int2)/avg(int4) keep count and sum in a two-element int8 array
+CREATE AGGREGATE ovf_avg_int4 (int4) (
+	sfunc = int4_avg_accum, stype = _int8, finalfunc = int8_avg,
+	initcond = '{0,9223372036854775806}'
+);
+SELECT ovf_avg_int4(v) FROM (VALUES (1)) t(v);
+SELECT ovf_avg_int4(v) FROM (VALUES (1), (1)) t(v); -- ERROR
+
+DROP AGGREGATE ovf_sum_int4 (int4);
+DROP AGGREGATE ovf_sum_int2 (int2);
+DROP AGGREGATE ovf_avg_int4 (int4);
+
 -- test for outer-level aggregates
 
 -- this should work
