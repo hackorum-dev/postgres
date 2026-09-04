@@ -4445,15 +4445,15 @@ targetIsInAllPartitionLists(TargetEntry *tle, Query *query)
  * 5. rinfo's clause must not refer to any subquery output columns that were
  * found to be unsafe to reference by subquery_is_pushdown_safe().
  *
- * 6. If the subquery has a grouping layer (DISTINCT, DISTINCT ON, window
- * PARTITION BY, or a set operation that groups rows by equality), rinfo's
- * clause must not apply a different equivalence relation to a grouping column
- * than the grouping uses; otherwise it would distinguish rows the grouping
- * considers equal, and pushing such a clause past the grouping would drop
- * members of a group and change which row becomes the group's representative
- * (or, for window functions, change per-partition values such as ranks and
- * counts).  See expression_has_grouping_conflict for the kinds of conflict
- * detected.
+ * 6. If the subquery has a grouping layer (GROUP BY, DISTINCT, DISTINCT ON,
+ * window PARTITION BY, or a set operation that groups rows by equality),
+ * rinfo's clause must not apply a different equivalence relation to a
+ * grouping column than the grouping uses.  Otherwise it would distinguish
+ * rows the grouping considers equal, and pushing such a clause past the
+ * grouping would drop members of a group and change which row becomes the
+ * group's representative (or, for window functions, change per-partition
+ * values such as ranks and counts).  See expression_has_grouping_conflict
+ * for the kinds of conflict detected.
  */
 static pushdown_safe_type
 qual_is_pushdown_safe(Query *subquery, Index rti, RestrictInfo *rinfo,
@@ -4552,7 +4552,8 @@ qual_is_pushdown_safe(Query *subquery, Index rti, RestrictInfo *rinfo,
 
 	/* Check point 6 */
 	if (safe == PUSHDOWN_SAFE &&
-		(subquery->hasWindowFuncs ||
+		(subquery->groupClause != NIL ||
+		 subquery->hasWindowFuncs ||
 		 subquery->distinctClause != NIL ||
 		 (subquery->setOperations != NULL &&
 		  setop_has_grouping(subquery->setOperations))))
@@ -4579,20 +4580,11 @@ static Oid
 pushdown_var_grouping_eqop(Var *var, void *context)
 {
 	Query	   *subquery = (Query *) context;
-	Oid			eqop;
 
 	if (var->varlevelsup != 0)
 		return InvalidOid;
 
-	eqop = subquery_column_grouping_eqop(subquery, var->varattno);
-
-	/*
-	 * qual_is_pushdown_safe ensures any level-0 subquery Var that reaches us
-	 * references a grouping column.
-	 */
-	Assert(OidIsValid(eqop));
-
-	return eqop;
+	return subquery_column_grouping_eqop(subquery, var->varattno);
 }
 
 /*
@@ -4602,11 +4594,12 @@ pushdown_var_grouping_eqop(Var *var, void *context)
  *		participate in any grouping mechanism.
  *
  * A subquery output column is grouping-relevant if it appears in
- * subquery->distinctClause (covering both DISTINCT and DISTINCT ON), in every
- * window's PARTITION BY clause, or is grouped by some node in a set-operation
- * tree.  In all of these cases the parser builds the SortGroupClause with the
- * column's type-default equality operator via get_sort_group_operators, so any
- * matching SortGroupClause carries the correct eqop.
+ * subquery->groupClause, subquery->distinctClause (covering both DISTINCT and
+ * DISTINCT ON), in every window's PARTITION BY clause, or is grouped by some
+ * node in a set-operation tree.  In all of these cases the parser builds the
+ * SortGroupClause with the column's type-default equality operator via
+ * get_sort_group_operators, so any matching SortGroupClause carries the
+ * correct eqop.  Aggregate output columns are not grouping-relevant.
  */
 static Oid
 subquery_column_grouping_eqop(Query *subquery, AttrNumber attno)
@@ -4618,6 +4611,15 @@ subquery_column_grouping_eqop(Query *subquery, AttrNumber attno)
 		return InvalidOid;
 
 	tle = list_nth_node(TargetEntry, subquery->targetList, attno - 1);
+
+	/* GROUP BY */
+	foreach(lc, subquery->groupClause)
+	{
+		SortGroupClause *sgc = lfirst_node(SortGroupClause, lc);
+
+		if (sgc->tleSortGroupRef == tle->ressortgroupref)
+			return sgc->eqop;
+	}
 
 	/* DISTINCT or DISTINCT ON */
 	foreach(lc, subquery->distinctClause)
