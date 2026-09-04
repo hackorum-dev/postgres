@@ -806,6 +806,7 @@ SH_LOOKUP_HASH_INTERNAL(SH_TYPE * tb, SH_KEY_TYPE key, uint32 hash)
 {
 	const uint32 startelem = SH_INITIAL_BUCKET(tb, hash);
 	uint32		curelem = startelem;
+	uint32		searchdist = 0;
 
 	while (true)
 	{
@@ -822,13 +823,29 @@ SH_LOOKUP_HASH_INTERNAL(SH_TYPE * tb, SH_KEY_TYPE key, uint32 hash)
 			return entry;
 
 		/*
-		 * TODO: we could stop search based on distance. If the current
-		 * buckets's distance-from-optimal is smaller than what we've skipped
-		 * already, the entry doesn't exist. Probably only do so if
-		 * SH_STORE_HASH is defined, to avoid re-computing hashes?
+		 * Early termination optimization: if the current bucket's
+		 * distance-from-optimal is smaller than what we've skipped already,
+		 * the entry doesn't exist. This is a property of Robin Hood hashing:
+		 * elements are implicitly sorted by distance, so if we find an
+		 * element closer to home than we've traveled, our target would have
+		 * been inserted before this element.
+		 *
+		 * We only do this when SH_STORE_HASH is defined to avoid
+		 * recomputing hashes.
 		 */
+#ifdef SH_STORE_HASH
+		{
+			uint32		curhash = SH_ENTRY_HASH(tb, entry);
+			uint32		curoptimal = SH_INITIAL_BUCKET(tb, curhash);
+			uint32		curdist = SH_DISTANCE_FROM_OPTIMAL(tb, curoptimal, curelem);
+
+			if (curdist < searchdist)
+				return NULL;
+		}
+#endif
 
 		curelem = SH_NEXT(tb, curelem, startelem);
+		searchdist++;
 	}
 }
 
@@ -864,6 +881,7 @@ SH_DELETE(SH_TYPE * tb, SH_KEY_TYPE key)
 	uint32		hash = SH_HASH_KEY(tb, key);
 	uint32		startelem = SH_INITIAL_BUCKET(tb, hash);
 	uint32		curelem = startelem;
+	uint32		searchdist = 0;
 
 	while (true)
 	{
@@ -920,9 +938,24 @@ SH_DELETE(SH_TYPE * tb, SH_KEY_TYPE key)
 			return true;
 		}
 
-		/* TODO: return false; if distance too big */
+		/*
+		 * Early termination optimization: same as in lookup, if the
+		 * current bucket's distance is smaller than our search distance,
+		 * the key doesn't exist.
+		 */
+#ifdef SH_STORE_HASH
+		{
+			uint32		curhash = SH_ENTRY_HASH(tb, entry);
+			uint32		curoptimal = SH_INITIAL_BUCKET(tb, curhash);
+			uint32		curdist = SH_DISTANCE_FROM_OPTIMAL(tb, curoptimal, curelem);
+
+			if (curdist < searchdist)
+				return false;
+		}
+#endif
 
 		curelem = SH_NEXT(tb, curelem, startelem);
+		searchdist++;
 	}
 }
 
@@ -955,7 +988,6 @@ SH_DELETE_ITEM(SH_TYPE * tb, SH_ELEMENT_TYPE * entry)
 		uint32		curhash;
 		uint32		curoptimal;
 
-		curelem = SH_NEXT(tb, curelem, startelem);
 		curentry = &tb->data[curelem];
 
 		if (curentry->status != SH_STATUS_IN_USE)
