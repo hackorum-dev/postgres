@@ -3940,8 +3940,9 @@ typedef struct AfterTriggersData
 
 	/*
 	 * Incremented around the trigger-firing loops in AfterTriggerEndQuery,
-	 * AfterTriggerFireDeferred, and AfterTriggerSetState.  Used by
-	 * AfterTriggerIsActive() to signal that after-trigger firing is active.
+	 * AfterTriggerFireDeferred, and AfterTriggerSetState.  Identifies the
+	 * firing cycle a batch callback is registered from; see
+	 * AfterTriggerCurrentFiringDepth().
 	 */
 	int			firing_depth;
 } AfterTriggersData;
@@ -6961,20 +6962,6 @@ FireAfterTriggerBatchCallbacks(List *callbacks)
 		item->callback(item->arg);
 	}
 	afterTriggers.firing_batch_callbacks = false;
-}
-
-/*
- * AfterTriggerIsActive
- *		Returns true if we're inside the after-trigger framework where
- *		registered batch callbacks will actually be invoked.
- *
- * This is false during validateForeignKeyConstraint(), which calls
- * RI trigger functions directly outside the after-trigger framework.
- */
-bool
-AfterTriggerIsActive(void)
-{
-	return afterTriggers.firing_depth > 0;
 }
 
 /*

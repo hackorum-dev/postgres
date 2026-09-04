@@ -3032,3 +3032,47 @@ INSERT INTO fp_deferred_pk VALUES (1);
 COMMIT;
 SELECT count(*) AS deferred_rows FROM fp_deferred_fk;  -- 1, check passed at commit
 DROP TABLE fp_deferred_fk, fp_deferred_pk;
+
+-- ALTER TABLE ... ADD FOREIGN KEY run from inside an AFTER trigger.  The
+-- validation scan must check each row itself rather than batching, so the
+-- orphan row is caught, the ALTER fails, and the constraint is never created.
+--
+-- Row-level security on the referenced table forces the row-at-a-time path;
+-- RI_Initial_Check() cannot use its single query when RLS applies.
+CREATE ROLE regress_fp_alter_role;
+CREATE TABLE fp_alter_pk (id int PRIMARY KEY);
+INSERT INTO fp_alter_pk VALUES (1);
+ALTER TABLE fp_alter_pk ENABLE ROW LEVEL SECURITY;
+CREATE POLICY fp_alter_pk_all ON fp_alter_pk USING (true);
+GRANT REFERENCES, SELECT ON fp_alter_pk TO regress_fp_alter_role;
+
+CREATE TABLE fp_alter_fk (a int);
+INSERT INTO fp_alter_fk VALUES (1), (999);
+ALTER TABLE fp_alter_fk OWNER TO regress_fp_alter_role;
+
+CREATE TABLE fp_alter_outer (a int);
+ALTER TABLE fp_alter_outer OWNER TO regress_fp_alter_role;
+
+CREATE FUNCTION fp_alter_from_trigger() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    BEGIN
+        EXECUTE 'ALTER TABLE fp_alter_fk ADD CONSTRAINT fp_alter_bad_fk '
+                'FOREIGN KEY (a) REFERENCES fp_alter_pk(id)';
+    EXCEPTION WHEN others THEN
+        RAISE;
+    END;
+    RETURN NEW;
+END$$;
+CREATE TRIGGER fp_alter_trg AFTER INSERT ON fp_alter_outer
+    FOR EACH ROW EXECUTE FUNCTION fp_alter_from_trigger();
+
+SET ROLE regress_fp_alter_role;
+INSERT INTO fp_alter_outer VALUES (1);
+RESET ROLE;
+SELECT conname, convalidated FROM pg_constraint WHERE conname = 'fp_alter_bad_fk';
+TABLE fp_alter_fk;
+
+DROP TABLE fp_alter_outer, fp_alter_fk, fp_alter_pk;
+DROP FUNCTION fp_alter_from_trigger();
+DROP ROLE regress_fp_alter_role;
