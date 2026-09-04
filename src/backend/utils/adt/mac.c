@@ -152,7 +152,7 @@ macaddr_send(PG_FUNCTION_ARGS)
 	macaddr    *addr = PG_GETARG_MACADDR_P(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 6);
 	pq_sendbyte(&buf, addr->a);
 	pq_sendbyte(&buf, addr->b);
 	pq_sendbyte(&buf, addr->c);

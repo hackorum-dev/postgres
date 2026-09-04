@@ -221,6 +221,7 @@ Datum
 enum_send(PG_FUNCTION_ARGS)
 {
 	Oid			enumval = PG_GETARG_OID(0);
+	int			slen;
 	StringInfoData buf;
 	HeapTuple	tup;
 	Form_pg_enum en;
@@ -232,9 +233,10 @@ enum_send(PG_FUNCTION_ARGS)
 				 errmsg("invalid internal value for enum: %u",
 						enumval)));
 	en = (Form_pg_enum) GETSTRUCT(tup);
+	slen = strlen(NameStr(en->enumlabel));
 
-	pq_begintypsend(&buf);
-	pq_sendtext(&buf, NameStr(en->enumlabel), strlen(NameStr(en->enumlabel)));
+	pq_begintypsend_with_size(&buf, slen);
+	pq_sendtext(&buf, NameStr(en->enumlabel), slen);
 
 	ReleaseSysCache(tup);
 

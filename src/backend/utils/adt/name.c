@@ -106,10 +106,11 @@ Datum
 namesend(PG_FUNCTION_ARGS)
 {
 	Name		s = PG_GETARG_NAME(0);
+	int			slen = strlen(NameStr(*s));
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
-	pq_sendtext(&buf, NameStr(*s), strlen(NameStr(*s)));
+	pq_begintypsend_with_size(&buf, slen);
+	pq_sendtext(&buf, NameStr(*s), slen);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
 

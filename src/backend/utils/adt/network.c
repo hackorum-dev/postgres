@@ -272,11 +272,12 @@ network_send(inet *addr, bool is_cidr)
 	int			nb,
 				i;
 
-	pq_begintypsend(&buf);
+	nb = ip_addrsize(addr);
+
+	pq_begintypsend_with_size(&buf, 4 + nb);
 	pq_sendbyte(&buf, ip_family(addr));
 	pq_sendbyte(&buf, ip_bits(addr));
 	pq_sendbyte(&buf, is_cidr);
-	nb = ip_addrsize(addr);
 	pq_sendbyte(&buf, nb);
 	addrptr = (char *) ip_addr(addr);
 	for (i = 0; i < nb; i++)

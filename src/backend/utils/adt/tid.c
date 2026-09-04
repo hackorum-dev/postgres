@@ -161,7 +161,7 @@ tidsend(PG_FUNCTION_ARGS)
 	ItemPointer itemPtr = PG_GETARG_ITEMPOINTER(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 6);
 	pq_sendint32(&buf, ItemPointerGetBlockNumberNoCheck(itemPtr));
 	pq_sendint16(&buf, ItemPointerGetOffsetNumberNoCheck(itemPtr));
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));

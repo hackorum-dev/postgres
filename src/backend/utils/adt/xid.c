@@ -69,7 +69,7 @@ xidsend(PG_FUNCTION_ARGS)
 	TransactionId arg1 = PG_GETARG_TRANSACTIONID(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 4);
 	pq_sendint32(&buf, arg1);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
@@ -227,7 +227,7 @@ xid8send(PG_FUNCTION_ARGS)
 	FullTransactionId arg1 = PG_GETARG_FULLTRANSACTIONID(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 8);
 	pq_sendint64(&buf, (uint64) U64FromFullTransactionId(arg1));
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
@@ -386,7 +386,7 @@ cidsend(PG_FUNCTION_ARGS)
 	CommandId	arg1 = PG_GETARG_COMMANDID(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 4);
 	pq_sendint32(&buf, arg1);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }

@@ -1174,7 +1174,7 @@ numeric_send(PG_FUNCTION_ARGS)
 
 	init_var_from_num(num, &x);
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, (x.ndigits + 4) * sizeof(int16));
 
 	pq_sendint16(&buf, x.ndigits);
 	pq_sendint16(&buf, x.weight);

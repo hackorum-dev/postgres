@@ -289,7 +289,7 @@ macaddr8_send(PG_FUNCTION_ARGS)
 	macaddr8   *addr = PG_GETARG_MACADDR8_P(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 8);
 	pq_sendbyte(&buf, addr->a);
 	pq_sendbyte(&buf, addr->b);
 	pq_sendbyte(&buf, addr->c);

@@ -438,6 +438,7 @@ xml_send(PG_FUNCTION_ARGS)
 {
 	xmltype    *x = PG_GETARG_XML_P(0);
 	char	   *outval;
+	int			outlen;
 	StringInfoData buf;
 
 	/*
@@ -445,9 +446,10 @@ xml_send(PG_FUNCTION_ARGS)
 	 * declaration. pq_sendtext will do the conversion.
 	 */
 	outval = xml_out_internal(x, pg_get_client_encoding());
+	outlen = strlen(outval);
 
-	pq_begintypsend(&buf);
-	pq_sendtext(&buf, outval, strlen(outval));
+	pq_begintypsend_with_size(&buf, outlen);
+	pq_sendtext(&buf, outval, outlen);
 	pfree(outval);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }

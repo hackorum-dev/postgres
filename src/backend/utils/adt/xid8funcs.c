@@ -538,7 +538,7 @@ pg_snapshot_send(PG_FUNCTION_ARGS)
 	StringInfoData buf;
 	uint32		i;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 20 + snap->nxip * 8);
 	pq_sendint32(&buf, snap->nxip);
 	pq_sendint64(&buf, (int64) U64FromFullTransactionId(snap->xmin));
 	pq_sendint64(&buf, (int64) U64FromFullTransactionId(snap->xmax));

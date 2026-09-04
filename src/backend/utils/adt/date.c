@@ -229,7 +229,7 @@ date_send(PG_FUNCTION_ARGS)
 	DateADT		date = PG_GETARG_DATEADT(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 4);
 	pq_sendint32(&buf, date);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
@@ -1654,7 +1654,7 @@ time_send(PG_FUNCTION_ARGS)
 	TimeADT		time = PG_GETARG_TIMEADT(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 8);
 	pq_sendint64(&buf, time);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
@@ -2492,7 +2492,7 @@ timetz_send(PG_FUNCTION_ARGS)
 	TimeTzADT  *time = PG_GETARG_TIMETZADT_P(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 12);
 	pq_sendint64(&buf, time->time);
 	pq_sendint32(&buf, time->zone);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));

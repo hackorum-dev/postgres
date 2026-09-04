@@ -320,7 +320,7 @@ textsend(PG_FUNCTION_ARGS)
 	text	   *t = PG_GETARG_TEXT_PP(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, VARSIZE_ANY_EXHDR(t));
 	pq_sendtext(&buf, VARDATA_ANY(t), VARSIZE_ANY_EXHDR(t));
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
@@ -373,10 +373,11 @@ unknownsend(PG_FUNCTION_ARGS)
 {
 	/* representation is same as cstring */
 	char	   *str = PG_GETARG_CSTRING(0);
+	int			slen = strlen(str);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
-	pq_sendtext(&buf, str, strlen(str));
+	pq_begintypsend_with_size(&buf, slen);
+	pq_sendtext(&buf, str, slen);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
 

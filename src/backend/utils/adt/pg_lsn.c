@@ -79,7 +79,7 @@ pg_lsn_send(PG_FUNCTION_ARGS)
 	XLogRecPtr	lsn = PG_GETARG_LSN(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 8);
 	pq_sendint64(&buf, lsn);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }

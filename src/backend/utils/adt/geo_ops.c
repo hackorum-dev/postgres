@@ -506,7 +506,7 @@ box_send(PG_FUNCTION_ARGS)
 	BOX		   *box = PG_GETARG_BOX_P(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 32);
 	pq_sendfloat8(&buf, box->high.x);
 	pq_sendfloat8(&buf, box->high.y);
 	pq_sendfloat8(&buf, box->low.x);
@@ -1109,7 +1109,7 @@ line_send(PG_FUNCTION_ARGS)
 	LINE	   *line = PG_GETARG_LINE_P(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 24);
 	pq_sendfloat8(&buf, line->A);
 	pq_sendfloat8(&buf, line->B);
 	pq_sendfloat8(&buf, line->C);
@@ -1578,7 +1578,7 @@ path_send(PG_FUNCTION_ARGS)
 	StringInfoData buf;
 	int32		i;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 5 + path->npts * 16);
 	pq_sendbyte(&buf, path->closed ? 1 : 0);
 	pq_sendint32(&buf, path->npts);
 	for (i = 0; i < path->npts; i++)
@@ -1921,7 +1921,7 @@ point_send(PG_FUNCTION_ARGS)
 	Point	   *pt = PG_GETARG_POINT_P(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 16);
 	pq_sendfloat8(&buf, pt->x);
 	pq_sendfloat8(&buf, pt->y);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
@@ -2175,7 +2175,7 @@ lseg_send(PG_FUNCTION_ARGS)
 	LSEG	   *ls = PG_GETARG_LSEG_P(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 32);
 	pq_sendfloat8(&buf, ls->p[0].x);
 	pq_sendfloat8(&buf, ls->p[0].y);
 	pq_sendfloat8(&buf, ls->p[1].x);
@@ -3597,7 +3597,7 @@ poly_send(PG_FUNCTION_ARGS)
 	StringInfoData buf;
 	int32		i;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 4 + poly->npts * 16);
 	pq_sendint32(&buf, poly->npts);
 	for (i = 0; i < poly->npts; i++)
 	{
@@ -4831,7 +4831,7 @@ circle_send(PG_FUNCTION_ARGS)
 	CIRCLE	   *circle = PG_GETARG_CIRCLE_P(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 24);
 	pq_sendfloat8(&buf, circle->center.x);
 	pq_sendfloat8(&buf, circle->center.y);
 	pq_sendfloat8(&buf, circle->radius);

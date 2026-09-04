@@ -134,10 +134,11 @@ Datum
 cstring_send(PG_FUNCTION_ARGS)
 {
 	char	   *str = PG_GETARG_CSTRING(0);
+	int			slen = strlen(str);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
-	pq_sendtext(&buf, str, strlen(str));
+	pq_begintypsend_with_size(&buf, slen);
+	pq_sendtext(&buf, str, slen);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
 
@@ -287,7 +288,7 @@ void_send(PG_FUNCTION_ARGS)
 	StringInfoData buf;
 
 	/* send an empty string */
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 0);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
 

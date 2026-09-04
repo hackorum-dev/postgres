@@ -288,7 +288,7 @@ timestamp_send(PG_FUNCTION_ARGS)
 	Timestamp	timestamp = PG_GETARG_TIMESTAMP(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 8);
 	pq_sendint64(&buf, timestamp);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
@@ -837,7 +837,7 @@ timestamptz_send(PG_FUNCTION_ARGS)
 	TimestampTz timestamp = PG_GETARG_TIMESTAMPTZ(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 8);
 	pq_sendint64(&buf, timestamp);
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
@@ -1025,7 +1025,7 @@ interval_send(PG_FUNCTION_ARGS)
 	Interval   *interval = PG_GETARG_INTERVAL_P(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, 16);
 	pq_sendint64(&buf, interval->time);
 	pq_sendint32(&buf, interval->day);
 	pq_sendint32(&buf, interval->month);

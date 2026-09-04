@@ -683,7 +683,7 @@ varbit_send(PG_FUNCTION_ARGS)
 	VarBit	   *s = PG_GETARG_VARBIT_P(0);
 	StringInfoData buf;
 
-	pq_begintypsend(&buf);
+	pq_begintypsend_with_size(&buf, VARBITBYTES(s) + 4);
 	pq_sendint32(&buf, VARBITLEN(s));
 	pq_sendbytes(&buf, VARBITS(s), VARBITBYTES(s));
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
