@@ -1169,6 +1169,7 @@ check_publisher(const struct LogicalRepInfo *dbinfo)
 	}
 
 	pg_free(wal_level);
+	pg_free(max_slot_wal_keep_size);
 	pg_free(output_plugin_libraries);
 	pg_free(allowed_plugins);
 
