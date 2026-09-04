@@ -181,7 +181,7 @@ SELECT * FROM jo_fact f
                      ->  Seq Scan on jo_dim2 d2
                            Filter: (val2 = 1)
  Supplied Plan Advice:
-   JOIN_ORDER(f {d1 d2}) /* matched, failed */
+   JOIN_ORDER(f {d1 d2}) /* matched */
  Generated Plan Advice:
    JOIN_ORDER(f (d1 d2))
    NESTED_LOOP_MATERIALIZE(d2)
