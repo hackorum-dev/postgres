@@ -1220,6 +1220,7 @@ check_publisher(const struct LogicalRepInfo *dbinfo)
 	}
 
 	pg_free(wal_level);
+	pg_free(max_slot_wal_keep_size);
 
 	if (failed)
 		exit(1);
