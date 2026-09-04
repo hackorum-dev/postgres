@@ -17,6 +17,7 @@
 #include "pgpa_walker.h"
 
 #include "access/tsmapi.h"
+#include "miscadmin.h"
 #include "nodes/plannodes.h"
 #include "parser/parsetree.h"
 #include "utils/lsyscache.h"
@@ -47,6 +48,7 @@ static bool pgpa_walker_join_order_matches_member(pgpa_join_member *member,
 												  Index rtable_length,
 												  pgpa_identifier *rt_identifiers,
 												  pgpa_advice_target *target);
+static Bitmapset *pgpa_walker_join_member_relids(pgpa_join_member *member);
 static pgpa_scan *pgpa_walker_find_scan(pgpa_plan_walker_context *walker,
 										pgpa_scan_strategy strategy,
 										Bitmapset *relids);
@@ -991,28 +993,22 @@ pgpa_walker_join_order_matches_member(pgpa_join_member *member,
 									  pgpa_identifier *rt_identifiers,
 									  pgpa_advice_target *target)
 {
-	Bitmapset  *relids = NULL;
-
-	if (member->unrolled_join != NULL)
-	{
-		if (target->ttype != PGPA_TARGET_ORDERED_LIST)
-			return false;
-		return pgpa_walker_join_order_matches(member->unrolled_join,
-											  rtable_length,
-											  rt_identifiers,
-											  target,
-											  false);
-	}
-
-	Assert(member->scan != NULL);
 	switch (target->ttype)
 	{
 		case PGPA_TARGET_ORDERED_LIST:
 			/* Could only match an unrolled join */
-			return false;
+			if (member->unrolled_join == NULL)
+				return false;
+			return pgpa_walker_join_order_matches(member->unrolled_join,
+												  rtable_length,
+												  rt_identifiers,
+												  target,
+												  false);
 
 		case PGPA_TARGET_UNORDERED_LIST:
 			{
+				Bitmapset  *relids = NULL;
+
 				foreach_ptr(pgpa_advice_target, child_target, target->children)
 				{
 					Index		rti;
@@ -1024,24 +1020,67 @@ pgpa_walker_join_order_matches_member(pgpa_join_member *member,
 						return false;
 					relids = bms_add_member(relids, rti);
 				}
-				break;
+
+				/* Could match either a scan or an unrolled join */
+				return bms_equal(pgpa_walker_join_member_relids(member),
+								 relids);
 			}
 
 		case PGPA_TARGET_IDENTIFIER:
 			{
 				Index		rti;
+				int			scan_rti;
+
+				/* Could only match a scan */
+				if (member->unrolled_join != NULL)
+					return false;
 
 				rti = pgpa_compute_rti_from_identifier(rtable_length,
 													   rt_identifiers,
 													   &target->rid);
 				if (rti == 0)
 					return false;
-				relids = bms_make_singleton(rti);
-				break;
+
+				if (!bms_get_singleton_member(member->scan->relids, &scan_rti))
+					return false;
+				return rti == (Index) scan_rti;
 			}
 	}
 
-	return bms_equal(member->scan->relids, relids);
+	pg_unreachable();
+	return false;
+}
+
+/*
+ * Compute the set of relations covered by one member of an unrolled join.
+ */
+static Bitmapset *
+pgpa_walker_join_member_relids(pgpa_join_member *member)
+{
+	pgpa_unrolled_join *ujoin;
+	Bitmapset  *all_relids;
+
+	check_stack_depth();
+
+	/* If it's a scan, this is easy. */
+	if (member->scan != NULL)
+		return member->scan->relids;
+
+	/* Otherwise, it's an unrolled join. */
+	ujoin = member->unrolled_join;
+	Assert(ujoin != NULL);
+
+	/* Collect outer relids (which must be from a scan). */
+	Assert(ujoin->outer.unrolled_join == NULL);
+	all_relids = bms_copy(ujoin->outer.scan->relids);
+
+	/* Collect each set of inner relids. */
+	for (unsigned k = 0; k < ujoin->ninner; ++k)
+		all_relids =
+			bms_add_members(all_relids,
+							pgpa_walker_join_member_relids(&ujoin->inner[k]));
+
+	return all_relids;
 }
 
 /*
