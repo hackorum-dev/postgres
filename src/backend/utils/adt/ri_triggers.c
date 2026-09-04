@@ -412,7 +412,7 @@ static void ri_FastPathTeardown(int depth);
  * Check foreign key existence (combined for INSERT and UPDATE).
  */
 static Datum
-RI_FKey_check(TriggerData *trigdata)
+RI_FKey_check(TriggerData *trigdata, bool allow_batch)
 {
 	RI_ConstraintInfo *riinfo;
 	Relation	fk_rel;
@@ -520,7 +520,7 @@ RI_FKey_check(TriggerData *trigdata)
 	 */
 	if (ri_fastpath_is_applicable(riinfo))
 	{
-		if (AfterTriggerIsActive() && !ri_fastpath_flushing)
+		if (allow_batch && !ri_fastpath_flushing)
 		{
 			/* Batched path: buffer and probe in groups */
 			ri_FastPathBatchAdd(riinfo, fk_rel, newslot);
@@ -530,8 +530,8 @@ RI_FKey_check(TriggerData *trigdata)
 			/*
 			 * Per-row path, used when batching is not applicable:
 			 *
-			 * - ALTER TABLE validation, where no after-trigger firing is
-			 * active;
+			 * - ALTER TABLE validation, whose caller passes allow_batch =
+			 * false because no firing cycle will flush its checks;
 			 *
 			 * - a re-entrant check from user cast/operator code running
 			 * during a batch flush, since adding a cache entry while
@@ -675,7 +675,7 @@ RI_FKey_check_ins(PG_FUNCTION_ARGS)
 	ri_CheckTrigger(fcinfo, "RI_FKey_check_ins", RI_TRIGTYPE_INSERT);
 
 	/* Share code with UPDATE case. */
-	return RI_FKey_check((TriggerData *) fcinfo->context);
+	return RI_FKey_check((TriggerData *) fcinfo->context, true);
 }
 
 
@@ -691,7 +691,7 @@ RI_FKey_check_upd(PG_FUNCTION_ARGS)
 	ri_CheckTrigger(fcinfo, "RI_FKey_check_upd", RI_TRIGTYPE_UPDATE);
 
 	/* Share code with INSERT case. */
-	return RI_FKey_check((TriggerData *) fcinfo->context);
+	return RI_FKey_check((TriggerData *) fcinfo->context, true);
 }
 
 
@@ -1999,6 +1999,23 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	AtEOXact_GUC(true, save_nestlevel);
 
 	return true;
+}
+
+/*
+ * RI_FKey_check_validate -
+ *
+ * Check one existing row during ALTER TABLE ... ADD FOREIGN KEY validation.
+ *
+ * This is the check the insert trigger performs, but never batched.  Batching
+ * defers the probe to the end of the firing cycle that queued the check;
+ * validation is queued by no cycle, and ALTER TABLE marks the constraint
+ * validated as soon as the scan completes, so a deferred probe would be
+ * reported -- or discarded -- after the result is already visible.
+ */
+void
+RI_FKey_check_validate(TriggerData *trigdata)
+{
+	(void) RI_FKey_check(trigdata, false);
 }
 
 /*

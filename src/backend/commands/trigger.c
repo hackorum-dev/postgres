@@ -3940,8 +3940,8 @@ typedef struct AfterTriggersData
 
 	/*
 	 * Incremented around the trigger-firing loops in AfterTriggerEndQuery,
-	 * AfterTriggerFireDeferred, and AfterTriggerSetState.  Used by
-	 * AfterTriggerIsActive() to signal that after-trigger firing is active.
+	 * AfterTriggerFireDeferred, and AfterTriggerSetState.  Identifies the
+	 * firing cycle a batch callback is registered from.
 	 */
 	int			firing_depth;
 } AfterTriggersData;
@@ -6898,13 +6898,14 @@ check_modified_virtual_generated(TupleDesc tupdesc, HeapTuple tuple)
 /*
  * RegisterAfterTriggerBatchCallback
  *		Register a function to be called when the current trigger-firing
- *		batch completes.
+ *		cycle ends.
  *
- * Must be called from within a trigger function's execution context
- * (i.e., while afterTriggers state is active).
+ * Must be called from within a firing cycle, which is what guarantees the
+ * callback will be invoked: the cycle fires its callbacks before it returns.
  *
- * The callback list is cleared after invocation, so the caller must
- * re-register for each new batch if needed.
+ * A cycle's callbacks are invoked once, at its end, and are not carried into
+ * any later cycle, so a caller that wants a callback in a later cycle must
+ * register again there.
  */
 void
 RegisterAfterTriggerBatchCallback(AfterTriggerBatchCallback callback,
@@ -6913,15 +6914,13 @@ RegisterAfterTriggerBatchCallback(AfterTriggerBatchCallback callback,
 	AfterTriggerCallbackItem *item;
 	MemoryContext oldcxt;
 
-	/*
-	 * Allocate in TopTransactionContext so the item survives for the duration
-	 * of the batch, which may span multiple trigger invocations.
-	 *
-	 * Must be called while afterTriggers is active; callbacks registered
-	 * outside a trigger-firing context would never fire.
-	 */
 	Assert(afterTriggers.firing_depth > 0);
 	Assert(!afterTriggers.firing_batch_callbacks);
+
+	/*
+	 * Allocate in TopTransactionContext so the item survives for the duration
+	 * of the cycle, which may span multiple trigger invocations.
+	 */
 	oldcxt = MemoryContextSwitchTo(TopTransactionContext);
 	item = palloc_object(AfterTriggerCallbackItem);
 	item->callback = callback;
@@ -6961,20 +6960,6 @@ FireAfterTriggerBatchCallbacks(List *callbacks)
 		item->callback(item->arg);
 	}
 	afterTriggers.firing_batch_callbacks = false;
-}
-
-/*
- * AfterTriggerIsActive
- *		Returns true if we're inside the after-trigger framework where
- *		registered batch callbacks will actually be invoked.
- *
- * This is false during validateForeignKeyConstraint(), which calls
- * RI trigger functions directly outside the after-trigger framework.
- */
-bool
-AfterTriggerIsActive(void)
-{
-	return afterTriggers.firing_depth > 0;
 }
 
 /*
