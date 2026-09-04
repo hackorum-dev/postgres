@@ -6437,206 +6437,267 @@ int8_sum(PG_FUNCTION_ARGS)
 
 
 /*
- * Routines for avg(int2) and avg(int4).  The transition datatype
- * is a two-element int8 array, holding count and sum.
- *
- * These functions are also used for sum(int2) and sum(int4) when
- * operating in moving-aggregate mode, since for correct inverse transitions
- * we need to count the inputs.
+ * Routines for avg(int2) and avg(int4), and for the moving-aggregate mode of
+ * sum(int2) and sum(int4), which needs the input count for inverse
+ * transitions.  The transition state is declared "internal" so that it cannot
+ * be forged from SQL; the transition functions are therefore not strict and
+ * must build the state themselves on first call.
  */
-
 typedef struct Int8TransTypeData
 {
 	int64		count;
 	int64		sum;
 } Int8TransTypeData;
 
+/*
+ * Prepare state data for an aggregate function that needs to compute the sum
+ * and count of int2 or int4 inputs.
+ */
+static Int8TransTypeData *
+makeInt8TransTypeData(FunctionCallInfo fcinfo)
+{
+	Int8TransTypeData *state;
+	MemoryContext agg_context;
+	MemoryContext old_context;
+
+	if (!AggCheckCallContext(fcinfo, &agg_context))
+		elog(ERROR, "aggregate function called in non-aggregate context");
+
+	old_context = MemoryContextSwitchTo(agg_context);
+
+	state = palloc0_object(Int8TransTypeData);
+
+	MemoryContextSwitchTo(old_context);
+
+	return state;
+}
+
+/*
+ * Transition function for int2 input.
+ */
 Datum
 int2_avg_accum(PG_FUNCTION_ARGS)
 {
-	ArrayType  *transarray;
-	int16		newval = PG_GETARG_INT16(1);
-	Int8TransTypeData *transdata;
+	Int8TransTypeData *state;
 
-	/*
-	 * If we're invoked as an aggregate, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we need to make
-	 * a copy of it before scribbling on it.
-	 */
-	if (AggCheckCallContext(fcinfo, NULL))
-		transarray = PG_GETARG_ARRAYTYPE_P(0);
-	else
-		transarray = PG_GETARG_ARRAYTYPE_P_COPY(0);
+	state = PG_ARGISNULL(0) ? NULL : (Int8TransTypeData *) PG_GETARG_POINTER(0);
 
-	if (ARR_HASNULL(transarray) ||
-		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
+	/* Create the state data on the first call */
+	if (state == NULL)
+		state = makeInt8TransTypeData(fcinfo);
 
-	transdata = (Int8TransTypeData *) ARR_DATA_PTR(transarray);
-	transdata->count++;
-	transdata->sum += newval;
+	if (!PG_ARGISNULL(1))
+	{
+		state->count++;
+		state->sum += PG_GETARG_INT16(1);
+	}
 
-	PG_RETURN_ARRAYTYPE_P(transarray);
+	PG_RETURN_POINTER(state);
 }
 
+/*
+ * Transition function for int4 input.
+ */
 Datum
 int4_avg_accum(PG_FUNCTION_ARGS)
 {
-	ArrayType  *transarray;
-	int32		newval = PG_GETARG_INT32(1);
-	Int8TransTypeData *transdata;
+	Int8TransTypeData *state;
 
-	/*
-	 * If we're invoked as an aggregate, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we need to make
-	 * a copy of it before scribbling on it.
-	 */
-	if (AggCheckCallContext(fcinfo, NULL))
-		transarray = PG_GETARG_ARRAYTYPE_P(0);
-	else
-		transarray = PG_GETARG_ARRAYTYPE_P_COPY(0);
+	state = PG_ARGISNULL(0) ? NULL : (Int8TransTypeData *) PG_GETARG_POINTER(0);
 
-	if (ARR_HASNULL(transarray) ||
-		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
+	/* Create the state data on the first call */
+	if (state == NULL)
+		state = makeInt8TransTypeData(fcinfo);
 
-	transdata = (Int8TransTypeData *) ARR_DATA_PTR(transarray);
-	transdata->count++;
-	transdata->sum += newval;
+	if (!PG_ARGISNULL(1))
+	{
+		state->count++;
+		state->sum += PG_GETARG_INT32(1);
+	}
 
-	PG_RETURN_ARRAYTYPE_P(transarray);
+	PG_RETURN_POINTER(state);
 }
 
+/*
+ * Combine function for Int8TransTypeData.
+ */
 Datum
 int4_avg_combine(PG_FUNCTION_ARGS)
 {
-	ArrayType  *transarray1;
-	ArrayType  *transarray2;
 	Int8TransTypeData *state1;
 	Int8TransTypeData *state2;
 
 	if (!AggCheckCallContext(fcinfo, NULL))
 		elog(ERROR, "aggregate function called in non-aggregate context");
 
-	transarray1 = PG_GETARG_ARRAYTYPE_P(0);
-	transarray2 = PG_GETARG_ARRAYTYPE_P(1);
+	state1 = PG_ARGISNULL(0) ? NULL : (Int8TransTypeData *) PG_GETARG_POINTER(0);
+	state2 = PG_ARGISNULL(1) ? NULL : (Int8TransTypeData *) PG_GETARG_POINTER(1);
 
-	if (ARR_HASNULL(transarray1) ||
-		ARR_SIZE(transarray1) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
+	if (state2 == NULL)
+	{
+		/*
+		 * NULL state2 is easy, just return state1, which we know is already
+		 * in the agg_context
+		 */
+		if (state1 == NULL)
+			PG_RETURN_NULL();
+		PG_RETURN_POINTER(state1);
+	}
 
-	if (ARR_HASNULL(transarray2) ||
-		ARR_SIZE(transarray2) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
+	/* copy state2 into a fresh state in the agg_context */
+	if (state1 == NULL)
+	{
+		state1 = makeInt8TransTypeData(fcinfo);
+		*state1 = *state2;
 
-	state1 = (Int8TransTypeData *) ARR_DATA_PTR(transarray1);
-	state2 = (Int8TransTypeData *) ARR_DATA_PTR(transarray2);
+		PG_RETURN_POINTER(state1);
+	}
 
 	state1->count += state2->count;
 	state1->sum += state2->sum;
 
-	PG_RETURN_ARRAYTYPE_P(transarray1);
+	PG_RETURN_POINTER(state1);
+}
+
+/*
+ * int4_avg_serialize
+ *		Serialize Int8TransTypeData into bytea.  Shared by avg(int2) and
+ *		avg(int4), whose states are identical.
+ */
+Datum
+int4_avg_serialize(PG_FUNCTION_ARGS)
+{
+	Int8TransTypeData *state;
+	StringInfoData buf;
+	bytea	   *result;
+
+	/* Ensure we disallow calling when not in aggregate context */
+	if (!AggCheckCallContext(fcinfo, NULL))
+		elog(ERROR, "aggregate function called in non-aggregate context");
+
+	state = (Int8TransTypeData *) PG_GETARG_POINTER(0);
+
+	pq_begintypsend(&buf);
+
+	pq_sendint64(&buf, state->count);
+	pq_sendint64(&buf, state->sum);
+
+	result = pq_endtypsend(&buf);
+
+	PG_RETURN_BYTEA_P(result);
+}
+
+/*
+ * int4_avg_deserialize
+ *		Deserialize Int8TransTypeData from bytea.  Shared by avg(int2) and
+ *		avg(int4), whose states are identical.
+ */
+Datum
+int4_avg_deserialize(PG_FUNCTION_ARGS)
+{
+	bytea	   *sstate;
+	Int8TransTypeData *result;
+	StringInfoData buf;
+
+	if (!AggCheckCallContext(fcinfo, NULL))
+		elog(ERROR, "aggregate function called in non-aggregate context");
+
+	sstate = PG_GETARG_BYTEA_PP(0);
+
+	initReadOnlyStringInfo(&buf, VARDATA_ANY(sstate),
+						   VARSIZE_ANY_EXHDR(sstate));
+
+	result = palloc_object(Int8TransTypeData);
+
+	result->count = pq_getmsgint64(&buf);
+	result->sum = pq_getmsgint64(&buf);
+
+	pq_getmsgend(&buf);
+
+	PG_RETURN_POINTER(result);
 }
 
 Datum
 int2_avg_accum_inv(PG_FUNCTION_ARGS)
 {
-	ArrayType  *transarray;
-	int16		newval = PG_GETARG_INT16(1);
-	Int8TransTypeData *transdata;
+	Int8TransTypeData *state;
 
-	/*
-	 * If we're invoked as an aggregate, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we need to make
-	 * a copy of it before scribbling on it.
-	 */
-	if (AggCheckCallContext(fcinfo, NULL))
-		transarray = PG_GETARG_ARRAYTYPE_P(0);
-	else
-		transarray = PG_GETARG_ARRAYTYPE_P_COPY(0);
+	state = PG_ARGISNULL(0) ? NULL : (Int8TransTypeData *) PG_GETARG_POINTER(0);
 
-	if (ARR_HASNULL(transarray) ||
-		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
+	/* Should not get here with no state */
+	if (state == NULL)
+		elog(ERROR, "int2_avg_accum_inv called with NULL state");
 
-	transdata = (Int8TransTypeData *) ARR_DATA_PTR(transarray);
-	transdata->count--;
-	transdata->sum -= newval;
+	if (!PG_ARGISNULL(1))
+	{
+		state->count--;
+		state->sum -= PG_GETARG_INT16(1);
+	}
 
-	PG_RETURN_ARRAYTYPE_P(transarray);
+	PG_RETURN_POINTER(state);
 }
 
 Datum
 int4_avg_accum_inv(PG_FUNCTION_ARGS)
 {
-	ArrayType  *transarray;
-	int32		newval = PG_GETARG_INT32(1);
-	Int8TransTypeData *transdata;
+	Int8TransTypeData *state;
 
-	/*
-	 * If we're invoked as an aggregate, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we need to make
-	 * a copy of it before scribbling on it.
-	 */
-	if (AggCheckCallContext(fcinfo, NULL))
-		transarray = PG_GETARG_ARRAYTYPE_P(0);
-	else
-		transarray = PG_GETARG_ARRAYTYPE_P_COPY(0);
+	state = PG_ARGISNULL(0) ? NULL : (Int8TransTypeData *) PG_GETARG_POINTER(0);
 
-	if (ARR_HASNULL(transarray) ||
-		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
+	/* Should not get here with no state */
+	if (state == NULL)
+		elog(ERROR, "int4_avg_accum_inv called with NULL state");
 
-	transdata = (Int8TransTypeData *) ARR_DATA_PTR(transarray);
-	transdata->count--;
-	transdata->sum -= newval;
+	if (!PG_ARGISNULL(1))
+	{
+		state->count--;
+		state->sum -= PG_GETARG_INT32(1);
+	}
 
-	PG_RETURN_ARRAYTYPE_P(transarray);
+	PG_RETURN_POINTER(state);
 }
 
 Datum
 int8_avg(PG_FUNCTION_ARGS)
 {
-	ArrayType  *transarray = PG_GETARG_ARRAYTYPE_P(0);
-	Int8TransTypeData *transdata;
+	Int8TransTypeData *state;
 	Datum		countd,
 				sumd;
 
-	if (ARR_HASNULL(transarray) ||
-		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
-	transdata = (Int8TransTypeData *) ARR_DATA_PTR(transarray);
-
-	/* SQL defines AVG of no values to be NULL */
-	if (transdata->count == 0)
+	if (PG_ARGISNULL(0))
 		PG_RETURN_NULL();
 
-	countd = NumericGetDatum(int64_to_numeric(transdata->count));
-	sumd = NumericGetDatum(int64_to_numeric(transdata->sum));
+	state = (Int8TransTypeData *) PG_GETARG_POINTER(0);
+
+	/* SQL defines AVG of no values to be NULL */
+	if (state->count == 0)
+		PG_RETURN_NULL();
+
+	countd = NumericGetDatum(int64_to_numeric(state->count));
+	sumd = NumericGetDatum(int64_to_numeric(state->sum));
 
 	PG_RETURN_DATUM(DirectFunctionCall2(numeric_div, sumd, countd));
 }
 
 /*
- * SUM(int2) and SUM(int4) both return int8, so we can use this
- * final function for both.
+ * SUM(int2) and SUM(int4) both return int8, so we can use this final function
+ * for both.
  */
 Datum
 int2int4_sum(PG_FUNCTION_ARGS)
 {
-	ArrayType  *transarray = PG_GETARG_ARRAYTYPE_P(0);
-	Int8TransTypeData *transdata;
+	Int8TransTypeData *state;
 
-	if (ARR_HASNULL(transarray) ||
-		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
-	transdata = (Int8TransTypeData *) ARR_DATA_PTR(transarray);
-
-	/* SQL defines SUM of no values to be NULL */
-	if (transdata->count == 0)
+	if (PG_ARGISNULL(0))
 		PG_RETURN_NULL();
 
-	PG_RETURN_DATUM(Int64GetDatumFast(transdata->sum));
+	state = (Int8TransTypeData *) PG_GETARG_POINTER(0);
+
+	/* SQL defines SUM of no values to be NULL */
+	if (state->count == 0)
+		PG_RETURN_NULL();
+
+	PG_RETURN_DATUM(Int64GetDatumFast(state->sum));
 }
 
 

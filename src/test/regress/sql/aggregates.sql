@@ -1595,6 +1595,14 @@ SELECT eatarray(rwagg(ARRAY[1.0::real])), eatarray(rwagg(ARRAY[1.0::real]));
 
 ROLLBACK;
 
+-- The transition state of avg(int2)/avg(int4), and of the moving-aggregate
+-- mode of sum(int2)/sum(int4), is "internal", so none of the supporting
+-- functions can be reached from SQL.
+SELECT int2_avg_accum('{0,0}'::int8[], '1'::int2);
+SELECT int4_avg_accum_inv('{1,1}'::int8[], '1'::int4);
+SELECT int8_avg('{1,2}'::int8[]);
+SELECT int2int4_sum('{1,2}'::int8[]);
+
 -- test coverage for aggregate combine/serial/deserial functions
 BEGIN;
 
@@ -1631,6 +1639,21 @@ FROM (SELECT * FROM tenk1
       UNION ALL SELECT * FROM tenk1) u;
 
 SELECT variance(unique1::int8), avg(unique1::numeric)
+FROM (SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1) u;
+
+-- avg(int2) and avg(int4) cover int4_avg_combine, int4_avg_serialize and
+-- int4_avg_deserialize
+EXPLAIN (COSTS OFF, VERBOSE)
+SELECT avg(unique1::int2), avg(unique1::int4)
+FROM (SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1) u;
+
+SELECT avg(unique1::int2), avg(unique1::int4)
 FROM (SELECT * FROM tenk1
       UNION ALL SELECT * FROM tenk1
       UNION ALL SELECT * FROM tenk1

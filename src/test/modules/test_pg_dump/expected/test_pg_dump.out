@@ -9,9 +9,8 @@ CREATE MATERIALIZED VIEW test_pg_dump_mv1 AS SELECT * FROM test_pg_dump_t1;
 CREATE SCHEMA test_pg_dump_s1;
 CREATE TYPE test_pg_dump_e1 AS ENUM ('abc', 'def');
 CREATE AGGREGATE newavg (
-   sfunc = int4_avg_accum, basetype = int4, stype = _int8,
-   finalfunc = int8_avg,
-   initcond1 = '{0,0}'
+   sfunc = int4_avg_accum, basetype = int4, stype = internal,
+   finalfunc = int8_avg
 );
 CREATE FUNCTION test_pg_dump(int) RETURNS int AS $$
 BEGIN
