@@ -26,6 +26,7 @@
 #include "storage/ipc.h"
 #include "storage/proc.h"
 #include "tcop/tcopprot.h"
+#include "utils/guc.h"
 #include "utils/memutils.h"
 
 #define PGREPACK_PLUGIN   "pgrepack"
@@ -110,6 +111,20 @@ RepackWorkerMain(Datum main_arg)
 	BackgroundWorkerInitializeConnectionByOid(shared->dbid, shared->roleid,
 											  BGWORKER_BYPASS_ALLOWCONN |
 											  BGWORKER_BYPASS_ROLELOGINCHECK);
+
+	/*
+	 * Force settable timeouts off, like autovacuum does.  We run in a new
+	 * session as the table owner, so role- and database-level settings
+	 * apply here even though the user running REPACK cannot see or override
+	 * them.  A lock_timeout would otherwise abort the wait for older
+	 * transactions in the snapshot builder, and a transaction_timeout would
+	 * abort the whole command.
+	 */
+	SetConfigOption("statement_timeout", "0", PGC_SUSET, PGC_S_OVERRIDE);
+	SetConfigOption("transaction_timeout", "0", PGC_SUSET, PGC_S_OVERRIDE);
+	SetConfigOption("lock_timeout", "0", PGC_SUSET, PGC_S_OVERRIDE);
+	SetConfigOption("idle_in_transaction_session_timeout", "0",
+					PGC_SUSET, PGC_S_OVERRIDE);
 
 	/*
 	 * Transaction is needed to open relation, and it also provides us with a
