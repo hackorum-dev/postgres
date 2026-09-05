@@ -24,6 +24,7 @@
 #include "nodes/bitmapset.h"
 #include "nodes/nodes.h"
 #include "nodes/pg_list.h"
+#include "nodes/readfuncs.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
@@ -86,16 +87,39 @@ PG_FUNCTION_INFO_V1(test_random_offset_operations);
 				 #expr, __FILE__, __LINE__); \
 	} while (0)
 
-/* Encode/Decode to/from TEXT and Bitmapset */
+/* Encode a Bitmapset into its serialized representation */
 #define BITMAPSET_TO_TEXT(bms) cstring_to_text(nodeToString(bms))
-#define TEXT_TO_BITMAPSET(str) ((Bitmapset *) stringToNode(text_to_cstring(str)))
+
+/*
+ * Decode a Bitmapset from its serialized representation, either "<>" for an
+ * empty set or "(b member ...)".
+ *
+ * This goes through readBitmapset(), the reader for contexts where a
+ * Bitmapset is known to be expected, rather than through the generic
+ * stringToNode().  The latter assumes its input to be valid, and the read
+ * routines of readfuncs.c it dispatches to for other node types do not check
+ * for missing tokens, so a string naming any of those could crash the
+ * backend.  readBitmapset() checks everything it reads.
+ */
+static Bitmapset *
+text_to_bitmapset(text *txt)
+{
+	char	   *str = text_to_cstring(txt);
+	ReadNodeContext ctx = {.str = str};
+
+	/* nodeToString() writes an empty set as "<>" */
+	if (strcmp(str, "<>") == 0)
+		return NULL;
+
+	return readBitmapset(&ctx);
+}
 
 /*
  * Helper macro to fetch text parameters as Bitmapsets. SQL-NULL means empty
  * set.
  */
 #define PG_ARG_GETBITMAPSET(n) \
-	(PG_ARGISNULL(n) ? NULL : TEXT_TO_BITMAPSET(PG_GETARG_TEXT_PP(n)))
+	(PG_ARGISNULL(n) ? NULL : text_to_bitmapset(PG_GETARG_TEXT_PP(n)))
 
 /*
  * Helper macro to handle converting sets back to text, returning the
