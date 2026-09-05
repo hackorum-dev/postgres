@@ -17,6 +17,7 @@
 
 #include "access/hash.h"
 #include "access/htup_details.h"
+#include "access/nbtree.h"
 #include "bootstrap/bootstrap.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_am.h"
@@ -1035,6 +1036,109 @@ get_opfamily_proc(Oid opfamily, Oid lefttype, Oid righttype, int16 procnum)
 	amproc_tup = (Form_pg_amproc) GETSTRUCT(tp);
 	result = amproc_tup->amproc;
 	ReleaseSysCache(tp);
+	return result;
+}
+
+/*
+ * opfamily_is_equalimage
+ *
+ *		Does opfamily promise "equality implies image equality" for the given
+ *		input type and collation?
+ *
+ * A true result means that whenever the opfamily's ordering function reports
+ * two values equal, those values are interchangeable without any loss of
+ * semantic information; that is, no expression can tell them apart.  Callers
+ * rely on this when they want to substitute one member of an equivalence
+ * class for another, as B-tree deduplication does.
+ *
+ * An opfamily that registers no BTEQUALIMAGE_PROC makes no such promise, so
+ * we must assume the property does not hold.  Note that callers must pass the
+ * collation actually in use rather than the type's default collation: for a
+ * collatable type the answer depends on it, since a nondeterministic
+ * collation is not image equality.
+ */
+bool
+opfamily_is_equalimage(Oid opfamily, Oid opcintype, Oid collation)
+{
+	Oid			equalimageproc;
+
+	equalimageproc = get_opfamily_proc(opfamily, opcintype, opcintype,
+									   BTEQUALIMAGE_PROC);
+
+	if (!OidIsValid(equalimageproc))
+		return false;
+
+	return DatumGetBool(OidFunctionCall1Coll(equalimageproc, collation,
+											 ObjectIdGetDatum(opcintype)));
+}
+
+/*
+ * equality_op_is_equalimage
+ *
+ *		Does eqop define an equivalence under which equal values are
+ *		interchangeable without any loss of semantic information?
+ *
+ * This is the operator-level counterpart of opfamily_is_equalimage(), for
+ * callers that know only the equality operator some mechanism uses to decide
+ * which values to merge -- a SortGroupClause's eqop, typically -- and not the
+ * opfamily it came from.
+ *
+ * Not knowing the opfamily is why we must demand a promise from every family
+ * in which eqop is the equality member, rather than accepting the first "yes"
+ * we find.  Those families need not agree: texteq is the equality member of
+ * both text_ops and text_pattern_ops, and under a nondeterministic collation
+ * they describe different equivalences, the former case-folding where the
+ * latter is bytewise.  text_pattern_ops registers btequalimage, which answers
+ * true whatever collation it is handed, so trusting it alone would let a
+ * caller substitute values that a case-insensitive grouping merged.
+ *
+ * A false result means "not proven", not "proven false", and callers must
+ * treat it as "not image equality".  A type with no ordering opclass at all,
+ * such as xid, always lands there.
+ *
+ * 'collation' must be the collation actually applied to the values, not the
+ * type's default; see opfamily_is_equalimage().
+ */
+bool
+equality_op_is_equalimage(Oid eqop, Oid collation)
+{
+	Oid			lefttype;
+	Oid			righttype;
+	List	   *opfamilies;
+	bool		result;
+	ListCell   *lc;
+
+	op_input_types(eqop, &lefttype, &righttype);
+
+	/*
+	 * An equalimage procedure describes a single type, so a cross-type
+	 * operator gives us nothing to ask about.  Grouping equality operators are
+	 * never cross-type, so this costs no optimization in practice.
+	 */
+	if (lefttype != righttype)
+		return false;
+
+	/*
+	 * Collect the opfamilies before calling any of their procedures: the
+	 * procedure is user-supplied code that can throw, and we would rather not
+	 * be holding a syscache list reference when it does.
+	 */
+	opfamilies = get_mergejoin_opfamilies(eqop);
+
+	/* No ordering opfamily at all means nothing promised anything. */
+	result = (opfamilies != NIL);
+
+	foreach(lc, opfamilies)
+	{
+		if (!opfamily_is_equalimage(lfirst_oid(lc), lefttype, collation))
+		{
+			result = false;
+			break;
+		}
+	}
+
+	list_free(opfamilies);
+
 	return result;
 }
 

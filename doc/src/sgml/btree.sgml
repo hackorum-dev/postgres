@@ -464,9 +464,12 @@ returns bool
      <function>equalimage</function> (<quote>equality implies image
       equality</quote>) support functions, registered under support
      function number 4.  These functions allow the core code to
-     determine when it is safe to apply the btree deduplication
-     optimization.  Currently, <function>equalimage</function>
-     functions are only called when building or rebuilding an index.
+     determine when two values that compare equal may be freely
+     substituted for one another.  They are called when building or
+     rebuilding an index, to decide whether the btree deduplication
+     optimization is safe, and during query planning, to decide whether
+     an optimization that merges equal values may discard the
+     distinction between them.
     </para>
     <para>
      An <function>equalimage</function> function must have the

@@ -6414,18 +6414,22 @@ pull_paramids_walker(Node *node, Bitmapset **context)
  * semantics compatible with the grouping eqop, or, for a nondeterministic
  * collation, when the comparison applies a collation other than the column's.
  *
- * For a nondeterministic collation, every other reference is rejected: a
- * comparison under a different collation, and any function or operator over
- * the column, because we cannot tell whether the function yields the same
- * result for values the grouping treats as equal, and many do not.  A column
- * with a deterministic collation is not restricted this way.
+ * Every other reference -- a comparison under a different collation, or any
+ * function or operator over the column -- is opaque to us, so we accept it
+ * only when the grouping's equality is image equality.  Then the values the
+ * grouping merges are interchangeable without loss of semantic information,
+ * and whatever wraps the column is bound to return the same answer for all of
+ * them.  When it is not image equality, as for numeric (1 and 1.0), jsonb,
+ * float8 (0 and -0), record, or text under a nondeterministic collation, no
+ * such reasoning is available, and many wrappers do in fact distinguish the
+ * values: 1.0::text is not 1::text.
  *
- * This leaves one case uncaught: with a deterministic collation, a function
- * over the column can still feed a finer comparison than the direct-operand
- * check sees, for example record_image_ops over a rebuilt record, or scale()
- * over numeric where two equal values differ in scale.  Catching it would
- * require knowing that a type's equality is bitwise, which we do not test
- * here.
+ * Image equality is not quite bitwise equality for varlena types, because
+ * TOAST compression is not applied consistently on input.  Expressions that
+ * expose physical representation rather than value, pg_column_size() for one,
+ * can therefore still tell apart values that the grouping merges.  Those are
+ * outside the semantic contract that an equalimage procedure describes, and we
+ * make no attempt to detect them.
  *
  * Returns true if any such conflict exists.
  */
@@ -6477,18 +6481,23 @@ grouping_conflict_walker(Node *node, grouping_walker_ctx *ctx)
 	if (IsA(node, Var))
 	{
 		Var		   *var = (Var *) node;
+		Oid			grouping_eqop = ctx->get_eqop(var, ctx->cb_context);
 
 		/*
 		 * A grouping column reaches here when it was not handled as a direct
-		 * operand by a comparison node above (see the function header).  That
-		 * is safe for a deterministic collation, but not for a
-		 * nondeterministic one, where the reference may distinguish values
-		 * the grouping considers equal.  A bare boolean qual is safe too:
-		 * boolean is not collatable, so it takes the deterministic path here.
+		 * operand by a comparison node above (see the function header), so we
+		 * know nothing about the expression it is embedded in.  Accept it only
+		 * if the grouping's equality is image equality, which makes any two
+		 * values the grouping merges interchangeable for every expression.
+		 *
+		 * This subsumes the nondeterministic-collation case: the equalimage
+		 * procedure of a collatable type is handed the column's collation and
+		 * answers false for a nondeterministic one.  A bare boolean qual takes
+		 * this path too, and stays safe, boolean equality being image
+		 * equality.
 		 */
-		if (OidIsValid(ctx->get_eqop(var, ctx->cb_context)) &&
-			OidIsValid(var->varcollid) &&
-			!get_collation_isdeterministic(var->varcollid))
+		if (OidIsValid(grouping_eqop) &&
+			!equality_op_is_equalimage(grouping_eqop, var->varcollid))
 			return true;
 		return false;
 	}

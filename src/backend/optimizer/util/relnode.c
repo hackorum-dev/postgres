@@ -16,7 +16,6 @@
 
 #include <limits.h>
 
-#include "access/nbtree.h"
 #include "catalog/pg_constraint.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
@@ -3038,7 +3037,6 @@ init_grouping_targets(PlannerInfo *root, RelOptInfo *rel,
 			 */
 			SortGroupClause *sgc;
 			TypeCacheEntry *tce;
-			Oid			equalimageproc;
 
 			/*
 			 * But first, check if equality implies image equality for this
@@ -3051,22 +3049,13 @@ init_grouping_targets(PlannerInfo *root, RelOptInfo *rel,
 				!OidIsValid(tce->btree_opintype))
 				return false;
 
-			equalimageproc = get_opfamily_proc(tce->btree_opf,
-											   tce->btree_opintype,
-											   tce->btree_opintype,
-											   BTEQUALIMAGE_PROC);
-
 			/*
-			 * If there is no BTEQUALIMAGE_PROC, eager aggregation is assumed
-			 * to be unsafe.  Otherwise, we call the procedure to check.  We
-			 * must be careful to pass the expression's actual collation,
+			 * We must be careful to pass the expression's actual collation,
 			 * rather than the data type's default collation, to ensure that
 			 * non-deterministic collations are correctly handled.
 			 */
-			if (!OidIsValid(equalimageproc) ||
-				!DatumGetBool(OidFunctionCall1Coll(equalimageproc,
-												   exprCollation((Node *) expr),
-												   ObjectIdGetDatum(tce->btree_opintype))))
+			if (!opfamily_is_equalimage(tce->btree_opf, tce->btree_opintype,
+										exprCollation((Node *) expr)))
 				return false;
 
 			/* Create the SortGroupClause. */

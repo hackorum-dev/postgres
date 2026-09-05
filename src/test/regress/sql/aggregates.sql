@@ -652,6 +652,52 @@ select a, count(*) from t_having group by a having a = row(1.0)::avg_rec;
 drop table t_having;
 drop type avg_rec;
 
+-- A HAVING clause that reaches the grouping column through a wrapper, rather
+-- than as a direct operand of a comparison, must NOT be pushed down to WHERE
+-- unless the grouping's equality is image equality: the wrapper can tell apart
+-- values that GROUP BY merged into one group.
+create temp table t_eqimg (n numeric, f float8, j jsonb, i int);
+insert into t_eqimg values (1, '0', '1', 1), (1.0, '-0', '1.0', 1);
+
+-- baselines: each of these is a single group of two rows
+select n, count(*) from t_eqimg group by n;
+select f, count(*) from t_eqimg group by f;
+select j, count(*) from t_eqimg group by j;
+
+-- numeric equality ignores scale, so the clause must stay in HAVING
+explain (costs off)
+select n, count(*) from t_eqimg group by n having n::text = '1';
+select n, count(*) from t_eqimg group by n having n::text = '1';
+
+-- float8 equality merges 0 and -0
+explain (costs off)
+select f, count(*) from t_eqimg group by f having f::text = '0';
+select f, count(*) from t_eqimg group by f having f::text = '0';
+
+-- jsonb numbers compare as numeric but print their trailing zeroes
+explain (costs off)
+select j, count(*) from t_eqimg group by j having j::text = '1';
+select j, count(*) from t_eqimg group by j having j::text = '1';
+
+-- The same conflict reached through an outer WHERE over a GROUP BY subquery,
+-- which subquery_push_qual turns into a HAVING clause before we get to it.
+-- A WHERE clause may only select the subquery's output rows, never alter
+-- them, so both the count and the group key must be unaffected here.
+explain (costs off)
+select n, c from (select n, count(*) c from t_eqimg group by n) s
+where n::text = '1';
+select n, c from (select n, count(*) c from t_eqimg group by n) s
+where n::text = '1';
+select n, c from (select n, count(*) c from t_eqimg group by n) s
+where n::text = '1.0';
+
+-- int equality is image equality, so a wrapped reference is still pushable
+explain (costs off)
+select i, count(*) from t_eqimg group by i having i + 1 = 2;
+select i, count(*) from t_eqimg group by i having i + 1 = 2;
+
+drop table t_eqimg;
+
 --
 -- Test GROUP BY matching of join columns that are type-coerced due to USING
 --

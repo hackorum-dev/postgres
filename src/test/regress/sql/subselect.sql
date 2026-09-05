@@ -1111,6 +1111,45 @@ WHERE a *= ROW(1.0)::t_rec;
 ROLLBACK;
 
 --
+-- A qual that reaches a grouping column of the subquery through a wrapper,
+-- rather than as a direct operand of a comparison, is only pushable when the
+-- grouping's equality is image equality.  numeric equality is not: 1 and 1.0
+-- are equal but do not print alike, so a pushed-down qual could both drop a
+-- row the grouping would have kept and change which row represents the group.
+--
+BEGIN;
+
+CREATE TEMP TABLE eqimg_num (n numeric);
+INSERT INTO eqimg_num VALUES (1), (1.0);
+
+-- the subquery emits a single row, so the outer WHERE can only keep or drop it
+SELECT n FROM (SELECT DISTINCT n FROM eqimg_num) s;
+
+EXPLAIN (COSTS OFF)
+SELECT n FROM (SELECT DISTINCT n FROM eqimg_num) s WHERE n::text = '1.0';
+
+SELECT n FROM (SELECT DISTINCT n FROM eqimg_num) s WHERE n::text = '1.0';
+
+-- UNION groups by the same equality
+EXPLAIN (COSTS OFF)
+SELECT n FROM (SELECT n FROM eqimg_num UNION SELECT n FROM eqimg_num) s
+WHERE n::text = '1.0';
+
+SELECT n FROM (SELECT n FROM eqimg_num UNION SELECT n FROM eqimg_num) s
+WHERE n::text = '1.0';
+
+-- int equality is image equality, so the same shape of qual is pushable
+CREATE TEMP TABLE eqimg_int (i int);
+INSERT INTO eqimg_int VALUES (1), (1);
+
+EXPLAIN (COSTS OFF)
+SELECT i FROM (SELECT DISTINCT i FROM eqimg_int) s WHERE i + 1 = 2;
+
+SELECT i FROM (SELECT DISTINCT i FROM eqimg_int) s WHERE i + 1 = 2;
+
+ROLLBACK;
+
+--
 -- Test that LIMIT can be pushed to SORT through a subquery that just projects
 -- columns.  We check for that having happened by looking to see if EXPLAIN
 -- ANALYZE shows that a top-N sort was used.  We must suppress or filter away
