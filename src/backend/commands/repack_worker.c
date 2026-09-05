@@ -26,6 +26,7 @@
 #include "storage/ipc.h"
 #include "storage/proc.h"
 #include "tcop/tcopprot.h"
+#include "utils/guc.h"
 #include "utils/memutils.h"
 
 #define PGREPACK_PLUGIN   "pgrepack"
@@ -66,6 +67,7 @@ RepackWorkerMain(Datum main_arg)
 	LogicalDecodingContext *decoding_ctx;
 	SharedFileSet *sfs;
 	Snapshot	snapshot;
+	char		buf[32];
 
 	am_repack_worker = true;
 
@@ -110,6 +112,17 @@ RepackWorkerMain(Datum main_arg)
 	BackgroundWorkerInitializeConnectionByOid(shared->dbid, shared->roleid,
 											  BGWORKER_BYPASS_ALLOWCONN |
 											  BGWORKER_BYPASS_ROLELOGINCHECK);
+
+	/*
+	 * Adopt the backend's timeouts.  We run in a new session as the table
+	 * owner, so role- and database-level settings would otherwise apply here,
+	 * and the user running REPACK could neither see nor override them.  These
+	 * are the only two settable timeouts a background worker arms.
+	 */
+	snprintf(buf, sizeof(buf), "%d", shared->lock_timeout);
+	SetConfigOption("lock_timeout", buf, PGC_SUSET, PGC_S_OVERRIDE);
+	snprintf(buf, sizeof(buf), "%d", shared->transaction_timeout);
+	SetConfigOption("transaction_timeout", buf, PGC_SUSET, PGC_S_OVERRIDE);
 
 	/*
 	 * Transaction is needed to open relation, and it also provides us with a
