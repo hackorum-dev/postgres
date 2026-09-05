@@ -184,6 +184,19 @@ heap_force_common(FunctionCallInfo fcinfo, HeapTupleForceOption heap_force_opt)
 
 		maxoffset = PageGetMaxOffsetNumber(page);
 
+		if (maxoffset > MaxHeapTuplesPerPage)
+		{
+			UnlockReleaseBuffer(buf);
+
+			/* Update the current_start_ptr before moving to the next page. */
+			curr_start_ptr = next_start_ptr;
+
+			ereport(NOTICE,
+					(errmsg("skipping block %u for relation \"%s\" because the page header is invalid",
+							blkno, RelationGetRelationName(rel))));
+			continue;
+		}
+
 		/*
 		 * Figure out which TIDs we are going to process and which ones we are
 		 * going to skip.

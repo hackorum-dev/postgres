@@ -37,6 +37,14 @@ select ctid, xmax from htab where xmin = 2;
 -- out-of-range TIDs should be skipped
 select heap_force_freeze('htab'::regclass, ARRAY['(0, 0)', '(0, 6)']::tid[]);
 
+-- the highest offset number a page can hold must be accepted
+create temp table htab4();
+insert into htab4 select from generate_series(1, 291);
+select heap_force_freeze('htab4'::regclass, ARRAY['(0, 291)']::tid[]);
+select ctid from htab4 where xmin = 2;
+select heap_force_kill('htab4'::regclass, ARRAY['(0, 291)']::tid[]);
+select ctid from htab4 where xmin = 2;
+
 -- set up a new table with a redirected line pointer
 -- use a temp table so that vacuum behavior doesn't depend on global xmin
 create temp table htab2(a int);

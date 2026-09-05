@@ -84,6 +84,32 @@ NOTICE:  skipping tid (0, 6) for relation "htab" because the item number is out 
  
 (1 row)
 
+-- the highest offset number a page can hold must be accepted
+create temp table htab4();
+insert into htab4 select from generate_series(1, 291);
+select heap_force_freeze('htab4'::regclass, ARRAY['(0, 291)']::tid[]);
+ heap_force_freeze 
+-------------------
+ 
+(1 row)
+
+select ctid from htab4 where xmin = 2;
+  ctid   
+---------
+ (0,291)
+(1 row)
+
+select heap_force_kill('htab4'::regclass, ARRAY['(0, 291)']::tid[]);
+ heap_force_kill 
+-----------------
+ 
+(1 row)
+
+select ctid from htab4 where xmin = 2;
+ ctid 
+------
+(0 rows)
+
 -- set up a new table with a redirected line pointer
 -- use a temp table so that vacuum behavior doesn't depend on global xmin
 create temp table htab2(a int);
