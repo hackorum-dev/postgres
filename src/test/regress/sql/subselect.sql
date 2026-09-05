@@ -1052,6 +1052,52 @@ EXPLAIN (COSTS OFF)
 SELECT * FROM (SELECT DISTINCT id FROM pdt) s
 WHERE (CASE id WHEN 1 THEN 1 ELSE 0 END) = 1;
 
+-- Wrapped jsonb comparisons over grouped subqueries (DISTINCT ON and
+-- GROUP BY): wrapped quals must stay above grouping.
+CREATE TEMP TABLE pdt_json (id int, j jsonb);
+INSERT INTO pdt_json VALUES
+  (1, '1'),
+  (2, '1.0');
+
+EXPLAIN (COSTS OFF)
+SELECT * FROM (SELECT DISTINCT ON (j) id, j FROM pdt_json ORDER BY j, id) s
+WHERE j::text = '1.0';
+
+SELECT * FROM (SELECT DISTINCT ON (j) id, j FROM pdt_json ORDER BY j, id) s
+WHERE j::text = '1.0';
+
+EXPLAIN (COSTS OFF)
+SELECT * FROM (SELECT DISTINCT ON (j) id, j FROM pdt_json ORDER BY j, id) s
+WHERE j #>> '{}' = '1.0';
+
+SELECT * FROM (SELECT DISTINCT ON (j) id, j FROM pdt_json ORDER BY j, id) s
+WHERE j #>> '{}' = '1.0';
+
+EXPLAIN (COSTS OFF)
+SELECT c FROM (SELECT j, count(*) c FROM pdt_json GROUP BY j) s
+WHERE j::text = '1';
+
+SELECT c FROM (SELECT j, count(*) c FROM pdt_json GROUP BY j) s
+WHERE j::text = '1';
+
+EXPLAIN (COSTS OFF)
+SELECT c FROM (SELECT j, count(*) c FROM pdt_json GROUP BY j) s
+WHERE j::text = '1.0';
+
+SELECT c FROM (SELECT j, count(*) c FROM pdt_json GROUP BY j) s
+WHERE j::text = '1.0';
+
+SELECT c FROM (SELECT j, count(*) c FROM pdt_json GROUP BY j) s
+WHERE j = '1'::jsonb;
+
+-- But safe wrappers such as int4->text must still push below grouping.
+CREATE TEMP TABLE pdt_int (i int, s text, ts timestamptz);
+SET enable_hashagg TO off;
+EXPLAIN (COSTS OFF)
+SELECT * FROM (SELECT i, count(*) c FROM pdt_int GROUP BY i) s
+WHERE i::text = '5';
+RESET enable_hashagg;
+
 -- Set operations: any operation other than UNION ALL groups rows by equality,
 -- so the same opfamily-mismatch rules apply.
 CREATE TEMP TABLE u1 (a t_rec);
