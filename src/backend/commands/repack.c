@@ -315,6 +315,18 @@ ExecRepack(ParseState *pstate, RepackStmt *stmt, bool isTopLevel)
 		PreventInTransactionBlock(isTopLevel, "REPACK (CONCURRENTLY)");
 	}
 
+	else if ((params.options & CLUOPT_ANALYZE) != 0)
+	{
+		/*
+		 * ANALYZE may start a new transaction in process_single_relation(),
+		 * which is not safe while an SPI session is active. Prevent execution
+		 * from a function, procedure, or DO block. For now, also prohibit
+		 * execution in a transaction block, consistently with VACUUM (FULL,
+		 * ANALYZE).
+		 */
+		PreventInTransactionBlock(isTopLevel, "REPACK (ANALYZE)");
+	}
+
 	/*
 	 * If a single relation is specified, process it and we're done ... unless
 	 * the relation is a partitioned table, in which case we fall through.
