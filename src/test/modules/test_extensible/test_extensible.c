@@ -463,22 +463,49 @@ test_get_custom_scan_methods(PG_FUNCTION_ARGS)
 }
 
 /*
- * Decode a TestExtNode via stringToNode(), rejecting a string describing
- * some other kind of node instead of misinterpreting it as one of ours.
+ * Check that the next token of the string being read is the expected one.
+ */
+static bool
+test_ext_node_expect_token(ReadNodeContext *ctx, const char *expected)
+{
+	int			length;
+	const char *token = pg_strtok(ctx, &length);
+
+	return token != NULL && length == (int) strlen(expected) &&
+		memcmp(token, expected, length) == 0;
+}
+
+/*
+ * Decode a TestExtNode via stringToNode().
+ *
+ * stringToNode() assumes its input to be valid, and the read routines of
+ * readfuncs.c it dispatches to do not check for missing tokens, so handing
+ * it a string naming any other node type could crash the backend.  Hence,
+ * look at the leading tokens first and refuse anything that would not end
+ * up in our own nodeRead callback, the only one hardened against arbitrary
+ * input.
  */
 static TestExtNode *
 text_to_test_ext_node(text *txt)
 {
-	Node	   *node = stringToNode(text_to_cstring(txt));
+	char	   *str = text_to_cstring(txt);
+	ReadNodeContext ctx = {.str = str};
+	TestExtNode *tnode;
 
-	if (node == NULL || !IsA(node, ExtensibleNode) ||
-		strcmp(((ExtensibleNode *) node)->extnodename, TEST_EXT_NODE_NAME) != 0)
+	if (!test_ext_node_expect_token(&ctx, "{") ||
+		!test_ext_node_expect_token(&ctx, "EXTENSIBLENODE") ||
+		!test_ext_node_expect_token(&ctx, ":extnodename") ||
+		!test_ext_node_expect_token(&ctx, TEST_EXT_NODE_NAME))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("argument is not a serialized \"%s\"",
 						TEST_EXT_NODE_NAME)));
 
-	return (TestExtNode *) node;
+	tnode = (TestExtNode *) stringToNode(str);
+	Assert(IsA(tnode, ExtensibleNode) &&
+		   strcmp(tnode->base.extnodename, TEST_EXT_NODE_NAME) == 0);
+
+	return tnode;
 }
 
 /*
