@@ -1327,6 +1327,7 @@ IndexScanDesc
 IndexScanDescData
 IndexScanInstrumentation
 IndexScanState
+IndexStatTarget
 IndexStateFlagsAction
 IndexStmt
 IndexTuple
