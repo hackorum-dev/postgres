@@ -17,6 +17,7 @@
 
 #include "access/hash.h"
 #include "access/htup_details.h"
+#include "access/nbtree.h"
 #include "bootstrap/bootstrap.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_am.h"
@@ -1033,6 +1034,95 @@ get_opfamily_proc(Oid opfamily, Oid lefttype, Oid righttype, int16 procnum)
 	amproc_tup = (Form_pg_amproc) GETSTRUCT(tp);
 	result = amproc_tup->amproc;
 	ReleaseSysCache(tp);
+	return result;
+}
+
+/*
+ * opfamily_is_equalimage
+ *		Return true if opfamily promises "equality implies image equality"
+ *		for the given input type and collation.
+ *
+ * A true result means that whenever the opfamily's ordering method reports
+ * two values equal, those values are interchangeable without loss of
+ * semantic information.  Used by B-tree deduplication and by
+ * equality_op_is_equalimage().  Callers that know a type OID rather than an
+ * opfamily should use type_is_equalimage() instead, which caches the support
+ * procedure in TypeCacheEntry.
+ *
+ * An opfamily that registers no BTEQUALIMAGE_PROC makes no such promise.
+ * Pass the collation actually in use, not the type's default.
+ */
+bool
+opfamily_is_equalimage(Oid opfamily, Oid opcintype, Oid collation)
+{
+	Oid			equalimageproc;
+
+	equalimageproc = get_opfamily_proc(opfamily, opcintype, opcintype,
+									   BTEQUALIMAGE_PROC);
+	if (!OidIsValid(equalimageproc))
+		return false;
+
+	return DatumGetBool(OidFunctionCall1Coll(equalimageproc, collation,
+											 ObjectIdGetDatum(opcintype)));
+}
+
+/*
+ * equality_op_is_equalimage
+ *		Return true if eqop defines an equivalence under which equal values
+ *		are interchangeable without loss of semantic information.
+ *
+ * Used when we know a grouping equality operator and not its opfamily.
+ *
+ * When eqop is the type's default equality operator, defer to
+ * type_is_equalimage().  Otherwise require a promise from every mergejoin
+ * opfamily in which eqop is the equality member: texteq belongs to both
+ * text_ops and text_pattern_ops, and under a nondeterministic collation they
+ * disagree.  text_pattern_ops registers btequalimage for any collation, so
+ * trusting it alone would be wrong for a case-insensitive grouping.
+ *
+ * A false result means "not proven".  Cross-type operators always land there.
+ * 'collation' must be the collation actually applied to the values.
+ */
+bool
+equality_op_is_equalimage(Oid eqop, Oid collation)
+{
+	Oid			lefttype;
+	Oid			righttype;
+	TypeCacheEntry *typentry;
+	List	   *opfamilies;
+	bool		result;
+	ListCell   *lc;
+
+	op_input_types(eqop, &lefttype, &righttype);
+
+	/* Equalimage describes one type.  Grouping eqops are never cross-type. */
+	if (lefttype != righttype)
+		return false;
+
+	/*
+	 * Common case: grouping uses the type's default equality.  Share the
+	 * typcache path used by eager aggregation.
+	 */
+	typentry = lookup_type_cache(lefttype, TYPECACHE_EQ_OPR);
+	if (OidIsValid(typentry->eq_opr) && eqop == typentry->eq_opr)
+		return type_is_equalimage(lefttype, collation);
+
+	opfamilies = get_mergejoin_opfamilies(eqop);
+
+	/* No ordering opfamily at all means nothing promised anything. */
+	result = (opfamilies != NIL);
+
+	foreach(lc, opfamilies)
+	{
+		if (!opfamily_is_equalimage(lfirst_oid(lc), lefttype, collation))
+		{
+			result = false;
+			break;
+		}
+	}
+
+	list_free(opfamilies);
+
 	return result;
 }
 
