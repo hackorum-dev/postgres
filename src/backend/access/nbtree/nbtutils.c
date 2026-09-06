@@ -1183,21 +1183,12 @@ _bt_allequalimage(Relation rel, bool debugmessage)
 
 	for (int i = 0; i < IndexRelationGetNumberOfKeyAttributes(rel); i++)
 	{
-		Oid			opfamily = rel->rd_opfamily[i];
-		Oid			opcintype = rel->rd_opcintype[i];
-		Oid			collation = rel->rd_indcollation[i];
-		Oid			equalimageproc;
-
-		equalimageproc = get_opfamily_proc(opfamily, opcintype, opcintype,
-										   BTEQUALIMAGE_PROC);
-
 		/*
-		 * If there is no BTEQUALIMAGE_PROC then deduplication is assumed to
-		 * be unsafe.  Otherwise, actually call proc and see what it says.
+		 * An opclass that lacks a BTEQUALIMAGE_PROC, or whose procedure
+		 * returns false, makes deduplication unsafe for the whole index.
 		 */
-		if (!OidIsValid(equalimageproc) ||
-			!DatumGetBool(OidFunctionCall1Coll(equalimageproc, collation,
-											   ObjectIdGetDatum(opcintype))))
+		if (!opfamily_is_equalimage(rel->rd_opfamily[i], rel->rd_opcintype[i],
+									rel->rd_indcollation[i]))
 		{
 			allequalimage = false;
 			break;

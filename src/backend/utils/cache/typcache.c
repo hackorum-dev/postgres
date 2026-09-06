@@ -117,6 +117,7 @@ static TypeCacheEntry *firstDomainTypeEntry = NULL;
 #define TCFLAGS_HAVE_FIELD_EXTENDED_HASHING	0x040000
 #define TCFLAGS_CHECKED_DOMAIN_CONSTRAINTS	0x080000
 #define TCFLAGS_DOMAIN_BASE_IS_COMPOSITE	0x100000
+#define TCFLAGS_CHECKED_EQUALIMAGE_PROC		0x200000
 
 /* The flags associated with equality/comparison/hashing are all but these: */
 #define TCFLAGS_OPERATOR_FLAGS \
@@ -584,7 +585,7 @@ lookup_type_cache(Oid type_id, int flags)
 	if ((flags & (TYPECACHE_EQ_OPR | TYPECACHE_LT_OPR | TYPECACHE_GT_OPR |
 				  TYPECACHE_CMP_PROC |
 				  TYPECACHE_EQ_OPR_FINFO | TYPECACHE_CMP_PROC_FINFO |
-				  TYPECACHE_BTREE_OPFAMILY)) &&
+				  TYPECACHE_BTREE_OPFAMILY | TYPECACHE_EQUALIMAGE_PROC)) &&
 		!(typentry->flags & TCFLAGS_CHECKED_BTREE_OPCLASS))
 	{
 		Oid			opclass;
@@ -609,7 +610,8 @@ lookup_type_cache(Oid type_id, int flags)
 		typentry->flags &= ~(TCFLAGS_CHECKED_EQ_OPR |
 							 TCFLAGS_CHECKED_LT_OPR |
 							 TCFLAGS_CHECKED_GT_OPR |
-							 TCFLAGS_CHECKED_CMP_PROC);
+							 TCFLAGS_CHECKED_CMP_PROC |
+							 TCFLAGS_CHECKED_EQUALIMAGE_PROC);
 		typentry->flags |= TCFLAGS_CHECKED_BTREE_OPCLASS;
 	}
 
@@ -779,6 +781,25 @@ lookup_type_cache(Oid type_id, int flags)
 
 		typentry->cmp_proc = cmp_proc;
 		typentry->flags |= TCFLAGS_CHECKED_CMP_PROC;
+	}
+	if ((flags & TYPECACHE_EQUALIMAGE_PROC) &&
+		!(typentry->flags & TCFLAGS_CHECKED_EQUALIMAGE_PROC))
+	{
+		Oid			equalimage_proc = InvalidOid;
+
+		/*
+		 * Cache only the support-function OID.  Whether equality implies
+		 * image equality can still depend on collation, so callers must
+		 * invoke the procedure with the collation actually in use.
+		 */
+		if (typentry->btree_opf != InvalidOid)
+			equalimage_proc = get_opfamily_proc(typentry->btree_opf,
+												typentry->btree_opintype,
+												typentry->btree_opintype,
+												BTEQUALIMAGE_PROC);
+
+		typentry->equalimage_proc = equalimage_proc;
+		typentry->flags |= TCFLAGS_CHECKED_EQUALIMAGE_PROC;
 	}
 	if ((flags & (TYPECACHE_HASH_PROC | TYPECACHE_HASH_PROC_FINFO)) &&
 		!(typentry->flags & TCFLAGS_CHECKED_HASH_PROC))
@@ -978,6 +999,30 @@ lookup_type_cache(Oid type_id, int flags)
 	insert_rel_type_cache_if_needed(typentry);
 
 	return typentry;
+}
+
+/*
+ * type_is_equalimage
+ *		Return true if the type's default btree equality implies image
+ *		equality under the given collation.
+ *
+ * This is the type-oriented counterpart of opfamily_is_equalimage(), for
+ * callers that know a type OID rather than an opfamily.  The equalimage
+ * support procedure OID is cached in TypeCacheEntry; the boolean answer is
+ * not, because it can depend on collation.
+ */
+bool
+type_is_equalimage(Oid type_id, Oid collation)
+{
+	TypeCacheEntry *typentry;
+
+	typentry = lookup_type_cache(type_id, TYPECACHE_EQUALIMAGE_PROC);
+	if (!OidIsValid(typentry->equalimage_proc))
+		return false;
+
+	return DatumGetBool(OidFunctionCall1Coll(typentry->equalimage_proc,
+											 collation,
+											 ObjectIdGetDatum(typentry->btree_opintype)));
 }
 
 /*
