@@ -442,10 +442,40 @@ EXPLAIN (VERBOSE, COSTS OFF)
   SELECT * FROM ft1 t1 WHERE t1.c1 === t1.c2 order by t1.c2 limit 1;
 SELECT * FROM ft1 t1 WHERE t1.c1 === t1.c2 order by t1.c2 limit 1;
 
--- Ensure we don't ship FETCH FIRST .. WITH TIES
+-- Ensure we ship FETCH FIRST .. WITH TIES once the remote server's version
+-- is known (i.e., a connection to it is already cached in this session, as
+-- is the case here due to preceding tests)
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c2 FROM ft1 t1 WHERE t1.c1 > 960 ORDER BY t1.c2 FETCH FIRST 2 ROWS WITH TIES;
 SELECT t1.c2 FROM ft1 t1 WHERE t1.c1 > 960 ORDER BY t1.c2 FETCH FIRST 2 ROWS WITH TIES;
+
+-- Same, but combined with OFFSET; OFFSET must be emitted ahead of FETCH FIRST
+-- per the grammar, and skipping into the middle of a tied group must not
+-- drop any of the remaining ties
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT t1.c2 FROM ft1 t1 WHERE t1.c1 > 960 ORDER BY t1.c2 OFFSET 1 FETCH FIRST 2 ROWS WITH TIES;
+SELECT t1.c2 FROM ft1 t1 WHERE t1.c1 > 960 ORDER BY t1.c2 OFFSET 1 FETCH FIRST 2 ROWS WITH TIES;
+
+-- Ensure we never ship FETCH FIRST .. WITH TIES for a query whose result
+-- combines rows from more than one foreign server (here, a join between
+-- ft5 on "loopback" and ft6 on "loopback2"), regardless of whether either
+-- server's version is known; there's no single remote query to push the
+-- FETCH clause into, so it must stay local
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT ft5.c1, ft5.c2 FROM ft5 JOIN ft6 USING (c1)
+  ORDER BY ft5.c2 FETCH FIRST 2 ROWS WITH TIES;
+
+-- Two independently limited scans on different foreign servers, combined
+-- locally via UNION ALL: each side's FETCH FIRST .. WITH TIES pushdown
+-- decision is made independently based on its own server's cached
+-- connection, with no coordination needed between them.  ft5's server
+-- (loopback) is already warmed up by many earlier tests, so that side
+-- pushes the FETCH clause down; ft6's server (loopback2) has not been
+-- connected to yet, so that side falls back to a local Limit.
+EXPLAIN (VERBOSE, COSTS OFF)
+(SELECT c1, c2 FROM ft6 ORDER BY c2 FETCH FIRST 2 ROWS WITH TIES)
+UNION ALL
+(SELECT c1, c2 FROM ft5 ORDER BY c2 FETCH FIRST 2 ROWS WITH TIES);
 
 -- Test CASE pushdown
 EXPLAIN (VERBOSE, COSTS OFF)

@@ -8514,12 +8514,36 @@ add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 	 * determined to be safe to push down before we get here.  So in that case
 	 * the FETCH clause is safe to push down with ORDER BY if the remote
 	 * server is v13 or later, but if not, the remote query will fail entirely
-	 * for lack of support for it.  Since we do not currently have a way to do
-	 * a remote-version check (without accessing the remote server), disable
-	 * pushing the FETCH clause for now.
+	 * for lack of support for it.  We have no way to check the remote
+	 * server's version without connecting to it, and plan-time code must not
+	 * have the side effect of opening a new connection; but if a connection
+	 * to this server already exists in the connection cache (from an earlier
+	 * query in this session), its version is known for free.  Push the FETCH
+	 * clause down only in that case; otherwise play it safe and disable the
+	 * pushdown, as before.
 	 */
 	if (parse->limitOption == LIMIT_OPTION_WITH_TIES)
-		return;
+	{
+		Oid			pushdown_userid;
+		UserMapping *user;
+
+		/*
+		 * final_rel->serverid is set only if the whole relation belongs to
+		 * a single FDW (see grouping_planner()); this is InvalidOid for,
+		 * e.g., a join or partitioned scan spanning more than one foreign
+		 * server, in which case there's no single remote query to push the
+		 * FETCH clause into.
+		 */
+		if (!OidIsValid(final_rel->serverid))
+			return;
+
+		pushdown_userid = OidIsValid(final_rel->userid) ?
+			final_rel->userid : GetUserId();
+		user = GetUserMapping(pushdown_userid, final_rel->serverid);
+
+		if (GetCachedConnectionVersion(user) < 130000)
+			return;
+	}
 
 	/*
 	 * Also, the LIMIT/OFFSET cannot be pushed down, if their expressions are
