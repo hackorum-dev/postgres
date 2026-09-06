@@ -815,6 +815,22 @@ GROUP BY [ ALL | DISTINCT ] <replaceable class="parameter">grouping_element</rep
    </para>
 
    <para>
+    For some data types, values that compare as equal under the type's
+    equality operator are not interchangeable in every expression.
+    Examples include <type>numeric</type> values that differ only in
+    display scale, <type>float8</type> <literal>0</literal> and
+    <literal>-0</literal>, and <type>jsonb</type> numbers written with
+    different amounts of trailing precision.  When such values are
+    merged by <literal>GROUP BY</literal>, <literal>DISTINCT</literal>,
+    or a set operation other than <literal>UNION ALL</literal>, which
+    member of each set of equals appears in the output (and therefore
+    what a distinguishing expression such as a cast to <type>text</type>
+    sees) is unspecified.  The same holds for <literal>DISTINCT ON</literal>
+    unless <literal>ORDER BY</literal> determines which row of each set is
+    kept (see <xref linkend="sql-distinct"/>).
+   </para>
+
+   <para>
     If any of <literal>GROUPING SETS</literal>, <literal>ROLLUP</literal> or
     <literal>CUBE</literal> are present as grouping elements, then the
     <literal>GROUP BY</literal> clause as a whole defines some number of
