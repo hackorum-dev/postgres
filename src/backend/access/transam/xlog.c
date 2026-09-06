@@ -58,6 +58,7 @@
 #include "access/xact.h"
 #include "access/xlog_internal.h"
 #include "access/xlogarchive.h"
+#include "access/xlogbackup.h"
 #include "access/xloginsert.h"
 #include "access/xlogreader.h"
 #include "access/xlogrecovery.h"
@@ -8537,6 +8538,7 @@ KeepLogSeg(XLogRecPtr recptr, XLogSegNo *logSegNo)
 	XLogSegNo	currSegNo;
 	XLogSegNo	segno;
 	XLogRecPtr	keep;
+	XLogRecPtr	keep_for_backups;
 
 	XLByteToSeg(recptr, currSegNo, wal_segment_size);
 	segno = currSegNo;
@@ -8544,9 +8546,22 @@ KeepLogSeg(XLogRecPtr recptr, XLogSegNo *logSegNo)
 	/* Calculate how many segments are kept by slots. */
 	keep = XLogGetReplicationSlotMinimumLSN();
 	if (XLogRecPtrIsValid(keep) && keep < recptr)
-	{
 		XLByteToSeg(keep, segno, wal_segment_size);
 
+	/*
+	 * Check if we need to keep more segments for in-progress backups.
+	 * This will also be subject to max_slot_wal_keep_size_mb, if set.
+	 */
+	keep_for_backups = GetOldestBackupStartLSN();
+	if (XLogRecPtrIsValid(keep_for_backups) &&
+		(!XLogRecPtrIsValid(keep) || keep_for_backups < keep))
+	{
+		keep = keep_for_backups;
+		XLByteToSeg(keep, segno, wal_segment_size);
+	}
+
+	if (segno < currSegNo)
+	{
 		/*
 		 * Account for max_slot_wal_keep_size to avoid keeping more than
 		 * configured.  However, don't do that during a binary upgrade: if
@@ -9696,6 +9711,25 @@ do_pg_backup_start(const char *backupidstr, bool fast, List **tablespaces,
 		} while (!gotUniqueStartpoint);
 
 		/*
+		 * The startpoint has been selected, but the client does not know it
+		 * yet and therefore cannot have created the requested slot.
+		 */
+		INJECTION_POINT("basebackup-before-send-startpoint", NULL);
+
+		/*
+		 * If we are invoked by basebackup, it may have already reserved a WAL
+		 * start point. If that is newer than what's selected here, update
+		 * the reservation.
+		 */
+		if (MyBackupInProgress != NULL &&
+			XLogRecPtrIsValid(MyBackupInProgress->startpoint) &&
+			state->startpoint < MyBackupInProgress->startpoint)
+		{
+				UnregisterBackupStartpoint();
+				RegisterBackupStartpoint(state->startpoint);
+		}
+
+		/*
 		 * Construct tablespace_map file.
 		 */
 		datadirpathlen = strlen(DataDir);
@@ -9898,6 +9932,9 @@ do_pg_backup_stop(BackupState *state, bool waitforarchive)
 	sessionBackupState = SESSION_BACKUP_NONE;
 
 	WALInsertLockRelease();
+
+	/* Unregister from the shared control structure */
+	UnregisterBackupStartpoint();
 
 	/*
 	 * If we are taking an online backup from the standby, we confirm that the
@@ -10133,6 +10170,9 @@ do_pg_abort_backup(int code, Datum arg)
 
 		sessionBackupState = SESSION_BACKUP_NONE;
 		WALInsertLockRelease();
+
+		/* Unregister from the shared control structure */
+		UnregisterBackupStartpoint();
 
 		if (!during_backup_start)
 			ereport(WARNING,

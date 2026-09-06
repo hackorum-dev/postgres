@@ -37,6 +37,46 @@ typedef struct BackupState
 	pg_time_t	stoptime;		/* backup stop time */
 } BackupState;
 
+/*
+ * Shared memory state of a backup in progress. Here we keep track of its
+ * start LSN to ensure checkpoints don't recycle or remove the corresponding
+ * WAL segments until we're done.
+ *
+ * Using a struct instead of a bare XLogRecPtr to allow future extensions.
+ */
+typedef struct BackupInProgress {
+	/*
+	 * Each backup triggers its own checkpoint, so their startpoints are
+	 * guaranteed to be unique, and we can use InvalidXLogRecPtr to indicate
+	 * an available entry
+	 */
+	XLogRecPtr	startpoint;
+} BackupInProgress;
+
+/* Shared memory structure for all in-progress backups
+ *
+ * It is protected by the LWLock BackupControlLock; exclusive
+ * for writers, shared for readers.
+ */
+typedef struct BackupCtlData {
+	/* Minimum startpoint of all in-progress backups */
+	XLogRecPtr			oldestStartpoint;
+	BackupInProgress 	backups[FLEXIBLE_ARRAY_MEMBER];
+} BackupCtlData;
+
+/*
+ * Pointer to shared memory
+ */
+extern PGDLLIMPORT BackupCtlData *BackupCtl;
+extern PGDLLIMPORT BackupInProgress *MyBackupInProgress;
+
+/* GUCs */
+extern PGDLLIMPORT int max_concurrent_backups;
+
+extern void RegisterBackupStartpoint(XLogRecPtr startpoint);
+extern void UnregisterBackupStartpoint(void);
+extern XLogRecPtr GetOldestBackupStartLSN(void);
+
 extern char *build_backup_content(BackupState *state,
 								  bool ishistoryfile);
 

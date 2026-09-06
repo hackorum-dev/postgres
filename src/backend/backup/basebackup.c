@@ -18,6 +18,7 @@
 
 #include "access/xlog_internal.h"
 #include "access/xlogbackup.h"
+#include "access/xlogrecovery.h"
 #include "backup/backup_manifest.h"
 #include "backup/basebackup.h"
 #include "backup/basebackup_incremental.h"
@@ -244,6 +245,7 @@ perform_base_backup(basebackup_options *opt, bbsink *sink,
 {
 	bbsink_state state;
 	XLogRecPtr	endptr;
+	XLogRecPtr	reserve_ptr;
 	TimeLineID	endtli;
 	backup_manifest_info manifest;
 	BackupState *backup_state;
@@ -263,6 +265,13 @@ perform_base_backup(basebackup_options *opt, bbsink *sink,
 	CurrentResourceOwner = AuxProcessResourceOwner;
 
 	backup_started_in_recovery = RecoveryInProgress();
+
+	/* Reserve the XLog before starting the backup */
+	if (backup_started_in_recovery)
+		reserve_ptr = GetXLogReplayRecPtr(NULL);
+	else
+		reserve_ptr = GetXLogInsertRecPtr();
+	RegisterBackupStartpoint(reserve_ptr);
 
 	InitializeBackupManifest(&manifest, opt->manifest,
 							 opt->manifest_checksum_type);
