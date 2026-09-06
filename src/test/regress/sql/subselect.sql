@@ -1052,6 +1052,66 @@ EXPLAIN (COSTS OFF)
 SELECT * FROM (SELECT DISTINCT id FROM pdt) s
 WHERE (CASE id WHEN 1 THEN 1 ELSE 0 END) = 1;
 
+-- Wrapped references over grouped subqueries.  When grouping equality is
+-- not image equality (jsonb, numeric), a wrapper must not be pushed below
+-- the grouping boundary.  int equality is image equality, so i::text
+-- remains pushable.
+CREATE TEMP TABLE pdt_eqimg (id int, j jsonb, n numeric, i int);
+INSERT INTO pdt_eqimg VALUES
+  (1, '1', 1, 1),
+  (2, '1.0', 1.0, 1);
+
+-- jsonb DISTINCT ON: ::text wrapper stays above Unique
+EXPLAIN (COSTS OFF)
+SELECT * FROM (SELECT DISTINCT ON (j) id, j FROM pdt_eqimg ORDER BY j, id) s
+WHERE j::text = '1.0';
+
+SELECT * FROM (SELECT DISTINCT ON (j) id, j FROM pdt_eqimg ORDER BY j, id) s
+WHERE j::text = '1.0';
+
+-- jsonb GROUP BY: ::text matching the group representative keeps count = 2
+EXPLAIN (COSTS OFF)
+SELECT c FROM (SELECT j, count(*) c FROM pdt_eqimg GROUP BY j) s
+WHERE j::text = '1';
+
+SELECT c FROM (SELECT j, count(*) c FROM pdt_eqimg GROUP BY j) s
+WHERE j::text = '1';
+
+-- jsonb GROUP BY: other image yields no row, not a split group
+SELECT c FROM (SELECT j, count(*) c FROM pdt_eqimg GROUP BY j) s
+WHERE j::text = '1.0';
+
+-- jsonb GROUP BY: same-eqop comparison remains pushable / correct
+EXPLAIN (COSTS OFF)
+SELECT c FROM (SELECT j, count(*) c FROM pdt_eqimg GROUP BY j) s
+WHERE j = '1'::jsonb;
+
+SELECT c FROM (SELECT j, count(*) c FROM pdt_eqimg GROUP BY j) s
+WHERE j = '1'::jsonb;
+
+-- jsonb GROUP BY: wrapped HAVING stays above the grouping
+EXPLAIN (COSTS OFF)
+SELECT j, count(*) FROM pdt_eqimg GROUP BY j
+HAVING starts_with(j::text, '1.');
+
+SELECT j, count(*) FROM pdt_eqimg GROUP BY j
+HAVING starts_with(j::text, '1.');
+
+-- numeric GROUP BY: ::text wrapper stays on the Agg (not jsonb-only)
+EXPLAIN (COSTS OFF)
+SELECT c FROM (SELECT n, count(*) c FROM pdt_eqimg GROUP BY n) s
+WHERE n::text = '1';
+
+SELECT c FROM (SELECT n, count(*) c FROM pdt_eqimg GROUP BY n) s
+WHERE n::text = '1';
+
+-- int GROUP BY: ::text is still pushed to Seq Scan
+SET enable_hashagg TO off;
+EXPLAIN (COSTS OFF)
+SELECT * FROM (SELECT i, count(*) c FROM pdt_eqimg GROUP BY i) s
+WHERE i::text = '5';
+RESET enable_hashagg;
+
 -- Set operations: any operation other than UNION ALL groups rows by equality,
 -- so the same opfamily-mismatch rules apply.
 CREATE TEMP TABLE u1 (a t_rec);

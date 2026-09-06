@@ -2151,6 +2151,134 @@ WHERE (CASE id WHEN 1 THEN 1 ELSE 0 END) = 1;
                Filter: (CASE id WHEN 1 THEN 1 ELSE 0 END = 1)
 (5 rows)
 
+-- Wrapped references over grouped subqueries.  When grouping equality is
+-- not image equality (jsonb, numeric), a wrapper must not be pushed below
+-- the grouping boundary.  int equality is image equality, so i::text
+-- remains pushable.
+CREATE TEMP TABLE pdt_eqimg (id int, j jsonb, n numeric, i int);
+INSERT INTO pdt_eqimg VALUES
+  (1, '1', 1, 1),
+  (2, '1.0', 1.0, 1);
+-- jsonb DISTINCT ON: ::text wrapper stays above Unique
+EXPLAIN (COSTS OFF)
+SELECT * FROM (SELECT DISTINCT ON (j) id, j FROM pdt_eqimg ORDER BY j, id) s
+WHERE j::text = '1.0';
+                    QUERY PLAN                     
+---------------------------------------------------
+ Subquery Scan on s
+   Filter: ((s.j)::text = '1.0'::text)
+   ->  Unique
+         ->  Sort
+               Sort Key: pdt_eqimg.j, pdt_eqimg.id
+               ->  Seq Scan on pdt_eqimg
+(6 rows)
+
+SELECT * FROM (SELECT DISTINCT ON (j) id, j FROM pdt_eqimg ORDER BY j, id) s
+WHERE j::text = '1.0';
+ id | j 
+----+---
+(0 rows)
+
+-- jsonb GROUP BY: ::text matching the group representative keeps count = 2
+EXPLAIN (COSTS OFF)
+SELECT c FROM (SELECT j, count(*) c FROM pdt_eqimg GROUP BY j) s
+WHERE j::text = '1';
+                    QUERY PLAN                     
+---------------------------------------------------
+ Subquery Scan on s
+   ->  HashAggregate
+         Group Key: pdt_eqimg.j
+         Filter: ((pdt_eqimg.j)::text = '1'::text)
+         ->  Seq Scan on pdt_eqimg
+(5 rows)
+
+SELECT c FROM (SELECT j, count(*) c FROM pdt_eqimg GROUP BY j) s
+WHERE j::text = '1';
+ c 
+---
+ 2
+(1 row)
+
+-- jsonb GROUP BY: other image yields no row, not a split group
+SELECT c FROM (SELECT j, count(*) c FROM pdt_eqimg GROUP BY j) s
+WHERE j::text = '1.0';
+ c 
+---
+(0 rows)
+
+-- jsonb GROUP BY: same-eqop comparison remains pushable / correct
+EXPLAIN (COSTS OFF)
+SELECT c FROM (SELECT j, count(*) c FROM pdt_eqimg GROUP BY j) s
+WHERE j = '1'::jsonb;
+               QUERY PLAN               
+----------------------------------------
+ Subquery Scan on s
+   ->  GroupAggregate
+         ->  Seq Scan on pdt_eqimg
+               Filter: (j = '1'::jsonb)
+(4 rows)
+
+SELECT c FROM (SELECT j, count(*) c FROM pdt_eqimg GROUP BY j) s
+WHERE j = '1'::jsonb;
+ c 
+---
+ 2
+(1 row)
+
+-- jsonb GROUP BY: wrapped HAVING stays above the grouping
+EXPLAIN (COSTS OFF)
+SELECT j, count(*) FROM pdt_eqimg GROUP BY j
+HAVING starts_with(j::text, '1.');
+                  QUERY PLAN                  
+----------------------------------------------
+ HashAggregate
+   Group Key: j
+   Filter: starts_with((j)::text, '1.'::text)
+   ->  Seq Scan on pdt_eqimg
+(4 rows)
+
+SELECT j, count(*) FROM pdt_eqimg GROUP BY j
+HAVING starts_with(j::text, '1.');
+ j | count 
+---+-------
+(0 rows)
+
+-- numeric GROUP BY: ::text wrapper stays on the Agg (not jsonb-only)
+EXPLAIN (COSTS OFF)
+SELECT c FROM (SELECT n, count(*) c FROM pdt_eqimg GROUP BY n) s
+WHERE n::text = '1';
+                    QUERY PLAN                     
+---------------------------------------------------
+ Subquery Scan on s
+   ->  HashAggregate
+         Group Key: pdt_eqimg.n
+         Filter: ((pdt_eqimg.n)::text = '1'::text)
+         ->  Seq Scan on pdt_eqimg
+(5 rows)
+
+SELECT c FROM (SELECT n, count(*) c FROM pdt_eqimg GROUP BY n) s
+WHERE n::text = '1';
+ c 
+---
+ 2
+(1 row)
+
+-- int GROUP BY: ::text is still pushed to Seq Scan
+SET enable_hashagg TO off;
+EXPLAIN (COSTS OFF)
+SELECT * FROM (SELECT i, count(*) c FROM pdt_eqimg GROUP BY i) s
+WHERE i::text = '5';
+                  QUERY PLAN                   
+-----------------------------------------------
+ GroupAggregate
+   Group Key: pdt_eqimg.i
+   ->  Sort
+         Sort Key: pdt_eqimg.i
+         ->  Seq Scan on pdt_eqimg
+               Filter: ((i)::text = '5'::text)
+(6 rows)
+
+RESET enable_hashagg;
 -- Set operations: any operation other than UNION ALL groups rows by equality,
 -- so the same opfamily-mismatch rules apply.
 CREATE TEMP TABLE u1 (a t_rec);

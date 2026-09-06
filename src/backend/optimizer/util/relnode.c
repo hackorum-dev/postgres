@@ -16,7 +16,6 @@
 
 #include <limits.h>
 
-#include "access/nbtree.h"
 #include "catalog/pg_constraint.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
@@ -3117,36 +3116,15 @@ init_grouping_targets(PlannerInfo *root, RelOptInfo *rel,
 			 * 'destiny', which is crucial for maintaining correctness.
 			 */
 			SortGroupClause *sgc;
-			TypeCacheEntry *tce;
-			Oid			equalimageproc;
 
 			/*
 			 * But first, check if equality implies image equality for this
 			 * expression.  If not, we cannot use it as a grouping key.  See
-			 * comments in create_grouping_expr_infos().
+			 * comments in create_grouping_expr_infos().  Pass the
+			 * expression's actual collation rather than the type default.
 			 */
-			tce = lookup_type_cache(exprType((Node *) expr),
-									TYPECACHE_BTREE_OPFAMILY);
-			if (!OidIsValid(tce->btree_opf) ||
-				!OidIsValid(tce->btree_opintype))
-				return false;
-
-			equalimageproc = get_opfamily_proc(tce->btree_opf,
-											   tce->btree_opintype,
-											   tce->btree_opintype,
-											   BTEQUALIMAGE_PROC);
-
-			/*
-			 * If there is no BTEQUALIMAGE_PROC, eager aggregation is assumed
-			 * to be unsafe.  Otherwise, we call the procedure to check.  We
-			 * must be careful to pass the expression's actual collation,
-			 * rather than the data type's default collation, to ensure that
-			 * non-deterministic collations are correctly handled.
-			 */
-			if (!OidIsValid(equalimageproc) ||
-				!DatumGetBool(OidFunctionCall1Coll(equalimageproc,
-												   exprCollation((Node *) expr),
-												   ObjectIdGetDatum(tce->btree_opintype))))
+			if (!type_is_equalimage(exprType((Node *) expr),
+									exprCollation((Node *) expr)))
 				return false;
 
 			/* Create the SortGroupClause. */
