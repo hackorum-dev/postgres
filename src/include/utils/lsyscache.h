@@ -95,6 +95,8 @@ extern bool collations_agree_on_equality(Oid coll1, Oid coll2);
 extern bool op_is_safe_index_member(Oid opno);
 extern Oid	get_opfamily_proc(Oid opfamily, Oid lefttype, Oid righttype,
 							  int16 procnum);
+extern bool opfamily_is_equalimage(Oid opfamily, Oid opcintype, Oid collation);
+extern bool equality_op_is_equalimage(Oid eqop, Oid collation);
 extern char *get_attname(Oid relid, AttrNumber attnum, bool missing_ok);
 extern AttrNumber get_attnum(Oid relid, const char *attname);
 extern char get_attgenerated(Oid relid, AttrNumber attnum);
