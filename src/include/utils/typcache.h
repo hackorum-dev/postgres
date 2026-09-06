@@ -65,6 +65,7 @@ typedef struct TypeCacheEntry
 	Oid			cmp_proc;		/* the btree comparison function */
 	Oid			hash_proc;		/* the hash calculation function */
 	Oid			hash_extended_proc; /* the extended hash calculation function */
+	Oid			equalimage_proc;	/* btree equalimage support function */
 
 	/*
 	 * Pre-set-up fmgr call info for the equality operator, the btree
@@ -152,6 +153,7 @@ typedef struct TypeCacheEntry
 #define TYPECACHE_HASH_EXTENDED_PROC		0x04000
 #define TYPECACHE_HASH_EXTENDED_PROC_FINFO	0x08000
 #define TYPECACHE_MULTIRANGE_INFO			0x10000
+#define TYPECACHE_EQUALIMAGE_PROC			0x20000
 
 /* This value will not equal any valid tupledesc identifier, nor 0 */
 #define INVALID_TUPLEDESC_IDENTIFIER ((uint64) 1)
@@ -177,6 +179,8 @@ typedef struct DomainConstraintRef
 typedef struct SharedRecordTypmodRegistry SharedRecordTypmodRegistry;
 
 extern TypeCacheEntry *lookup_type_cache(Oid type_id, int flags);
+
+extern bool type_is_equalimage(Oid type_id, Oid collation);
 
 extern void InitDomainConstraintRef(Oid type_id, DomainConstraintRef *ref,
 									MemoryContext refctx, bool need_exprstate);

@@ -14,7 +14,6 @@
  */
 #include "postgres.h"
 
-#include "access/nbtree.h"
 #include "access/sysattr.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_type.h"
@@ -884,8 +883,6 @@ create_grouping_expr_infos(PlannerInfo *root)
 	{
 		SortGroupClause *sgc = lfirst_node(SortGroupClause, lc);
 		TargetEntry *tle = get_sortgroupclause_tle(sgc, root->processed_tlist);
-		TypeCacheEntry *tce;
-		Oid			equalimageproc;
 
 		Assert(tle->ressortgroupref > 0);
 
@@ -903,30 +900,11 @@ create_grouping_expr_infos(PlannerInfo *root)
 		 *
 		 * For instance, the NUMERIC data type is not supported, as values
 		 * that are considered equal by the equality operator (e.g., 0 and
-		 * 0.0) can have different scales.
+		 * 0.0) can have different scales.  Pass the expression's actual
+		 * collation rather than the type default.
 		 */
-		tce = lookup_type_cache(exprType((Node *) tle->expr),
-								TYPECACHE_BTREE_OPFAMILY);
-		if (!OidIsValid(tce->btree_opf) ||
-			!OidIsValid(tce->btree_opintype))
-			return;
-
-		equalimageproc = get_opfamily_proc(tce->btree_opf,
-										   tce->btree_opintype,
-										   tce->btree_opintype,
-										   BTEQUALIMAGE_PROC);
-
-		/*
-		 * If there is no BTEQUALIMAGE_PROC, eager aggregation is assumed to
-		 * be unsafe.  Otherwise, we call the procedure to check.  We must be
-		 * careful to pass the expression's actual collation, rather than the
-		 * data type's default collation, to ensure that non-deterministic
-		 * collations are correctly handled.
-		 */
-		if (!OidIsValid(equalimageproc) ||
-			!DatumGetBool(OidFunctionCall1Coll(equalimageproc,
-											   exprCollation((Node *) tle->expr),
-											   ObjectIdGetDatum(tce->btree_opintype))))
+		if (!type_is_equalimage(exprType((Node *) tle->expr),
+								exprCollation((Node *) tle->expr)))
 			return;
 
 		exprs = lappend(exprs, tle->expr);
