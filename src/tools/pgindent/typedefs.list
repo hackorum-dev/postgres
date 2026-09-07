@@ -1520,6 +1520,8 @@ JsonbValue
 JumbleState
 JunkFilter
 KAXCompressReason
+KeptRel
+KeptTablespace
 KeyAction
 KeyActions
 KeyArray
@@ -1728,6 +1730,7 @@ MVDependencies
 MVDependency
 MVNDistinct
 MVNDistinctItem
+Manifest
 ManyTestResource
 ManyTestResourceKind
 Material
@@ -2611,6 +2614,7 @@ RelptrFreePageBtree
 RelptrFreePageManager
 RelptrFreePageSpanLeader
 RemoteAttributeMapping
+RemoteConn
 RemoteSlot
 RemoteStatsResults
 RenameStmt
@@ -3052,6 +3056,7 @@ SupportRequestSimplifyAggref
 SupportRequestWFuncMonotonic
 Syn
 SyncOps
+SyncOptions
 SyncRepConfigData
 SyncRepStandbyData
 SyncRequestHandler
@@ -3145,8 +3150,10 @@ TableScanInstrumentation
 TableSpaceCacheEntry
 TableSpaceOpts
 TableToProcess
+TablespaceInfo
 TablespaceList
 TablespaceListCell
+TablespaceMapping
 TapeBlockTrailer
 TapeShare
 TarMethodData
@@ -3914,6 +3921,7 @@ json_scalar_action
 json_struct_action
 keepwal_entry
 keepwal_hash
+kept_rels_hash
 key_t
 lclContext
 lclTocEntry
