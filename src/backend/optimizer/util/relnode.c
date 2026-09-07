@@ -1974,6 +1974,12 @@ get_joinrel_parampathinfo(PlannerInfo *root, RelOptInfo *joinrel,
 	 * has nothing that needs to be enforced here, while if the clause can be
 	 * moved into the LHS then it should have been enforced within that path.)
 	 *
+	 * In cases where an EC needs to constrain EC members that are newly
+	 * computable at this join, it can emit clauses that it already returned
+	 * above and we accepted into pclauses.  Hence, do a final list-membership
+	 * check before accepting more clauses.  (Pointer comparison should be
+	 * enough to detect duplicates, since ECs cache derived clauses.)
+	 *
 	 * Note that we don't need similar processing for ECs whose clause was
 	 * considered to be movable into the LHS, because the LHS can't refer to
 	 * the RHS so there is no comparable ambiguity about what it might
@@ -1998,10 +2004,13 @@ get_joinrel_parampathinfo(PlannerInfo *root, RelOptInfo *joinrel,
 			Assert(join_clause_is_movable_into(rinfo,
 											   outer_path->parent->relids,
 											   real_outer_and_req));
-			if (!join_clause_is_movable_into(rinfo,
-											 outer_path->parent->relids,
-											 outer_and_req))
-				pclauses = lappend(pclauses, rinfo);
+			if (join_clause_is_movable_into(rinfo,
+											outer_path->parent->relids,
+											outer_and_req))
+				continue;		/* drop if movable into LHS */
+			if (list_member_ptr(pclauses, rinfo))
+				continue;		/* drop if already accepted */
+			pclauses = lappend(pclauses, rinfo);
 		}
 	}
 
