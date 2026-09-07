@@ -226,6 +226,42 @@ WAIT FOR LSN '<replaceable class="parameter">lsn</replaceable>'
   </para>
 
   <para>
+   While recovery is in progress, a wait in <literal>standby_replay</literal>
+   (the default), <literal>standby_write</literal>, or
+   <literal>standby_flush</literal> mode is rejected when the session already
+   holds a lock and the target <parameter>lsn</parameter> has not been reached
+   yet.  Such a lock can make the startup process wait for this session, either
+   directly or through another session, while this session waits for the
+   startup process to advance recovery.  That cycle involves no lock wait on
+   this side, so deadlock detection does not see it and nothing breaks it.  A
+   wait whose target has already been reached returns immediately and is
+   therefore always allowed.
+  </para>
+
+  <para>
+   Issue <command>WAIT FOR</command> outside a transaction block, or as the
+   first statement of one, before running anything that takes locks.  That is
+   also the natural order for the read-your-writes pattern shown in the
+   examples below: wait for the target <parameter>lsn</parameter> first, then
+   run the queries that have to see it.  Note that a lock taken by an earlier
+   statement is still held at <literal>READ COMMITTED</literal>, even though
+   its snapshot is gone, so a wait placed after such a statement is rejected
+   even when the isolation level permits it.
+  </para>
+
+  <para>
+   The restriction covers <literal>standby_write</literal> and
+   <literal>standby_flush</literal> as well, even though streaming replication
+   can advance those positions without the startup process.  Both positions are
+   at least the replay position, so during archive recovery recovery is their
+   only source of progress.  Under streaming replication they advance only
+   while WAL keeps arriving, and a startup process that is blocked can neither
+   restart a walreceiver that has stopped nor create the restartpoints that
+   recycle WAL, so <filename>pg_wal</filename> eventually fills up and
+   reception stops as well.
+  </para>
+
+  <para>
    <command>WAIT FOR</command> waits until the specified
    <parameter>lsn</parameter> is reached according to the specified
    <parameter>mode</parameter>. The <literal>standby_replay</literal> mode

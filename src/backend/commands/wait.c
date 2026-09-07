@@ -23,6 +23,8 @@
 #include "commands/wait.h"
 #include "executor/executor.h"
 #include "parser/parse_node.h"
+#include "storage/lmgr.h"
+#include "storage/lock.h"
 #include "storage/proc.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
@@ -192,6 +194,46 @@ ExecWaitStmt(ParseState *pstate, WaitStmt *stmt, bool isTopLevel,
 					 errmsg("recovery is in progress"),
 					 errhint("Waiting for primary_flush can only be done on a primary server. "
 							 "Use standby_flush mode on a standby server.")));
+	}
+
+	/*
+	 * A standby wait that is not already satisfied must not retain heavyweight
+	 * locks.  Such a lock can make the startup process wait for us, directly
+	 * or through another backend, while we wait for it to advance recovery.
+	 * That cycle is invisible to the deadlock detector, because we sleep on
+	 * our latch rather than in ProcSleep(), so nothing breaks it.
+	 *
+	 * Write and flush waits are restricted as well.  Their positions are
+	 * floored by the replay position, so during archive recovery the startup
+	 * process is their only source of progress.  Streaming does advance them
+	 * independently, but only while WAL keeps arriving: a blocked startup
+	 * process cannot restart a walreceiver that has stopped, and it also stops
+	 * producing the restartpoints that recycle WAL, so the standby fills
+	 * pg_wal and then loses reception anyway.  Rather than guess how long that
+	 * lasts, treat all standby modes alike.
+	 */
+	if ((lsnType == WAIT_LSN_TYPE_STANDBY_REPLAY ||
+		 lsnType == WAIT_LSN_TYPE_STANDBY_WRITE ||
+		 lsnType == WAIT_LSN_TYPE_STANDBY_FLUSH) &&
+		RecoveryInProgress() &&
+		lsn > GetCurrentLSNForWaitType(lsnType))
+	{
+		LOCKTAG		locktag;
+
+		if (GetAnyGrantedHeavyweightLock(&locktag))
+		{
+			StringInfoData locktagbuf;
+
+			initStringInfo(&locktagbuf);
+			DescribeLockTag(&locktagbuf, &locktag);
+
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("cannot wait for a standby LSN while holding locks"),
+					 errdetail("This session holds a lock on %s, which could make recovery wait for this session while this session waits for recovery.",
+							   locktagbuf.data),
+					 errhint("Release the locks, or execute WAIT FOR before acquiring them.")));
+		}
 	}
 
 	/* Now wait for the LSN */
