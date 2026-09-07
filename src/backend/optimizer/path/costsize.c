@@ -4058,7 +4058,11 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	 * Get approx # tuples passing the mergequals.  We use approx_tuple_count
 	 * here because we need an estimate done with JOIN_INNER semantics.
 	 */
-	mergejointuples = approx_tuple_count(root, &path->jpath, mergeclauses);
+	if (path->jpath.jointype == JOIN_INNER &&
+		list_length(path->jpath.joinrestrictinfo) == list_length(mergeclauses))
+		mergejointuples = path->jpath.path.rows;
+	else
+		mergejointuples = approx_tuple_count(root, &path->jpath, mergeclauses);
 
 	/*
 	 * When there are equal merge keys in the outer relation, the mergejoin
@@ -4711,6 +4715,8 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 		hashjointuples = outer_path_rows - outer_matched_rows;
 	else if (path->jpath.jointype == JOIN_SEMI || extra->inner_unique)
 		hashjointuples = outer_matched_rows;
+	else if (path->jpath.jointype == JOIN_INNER && list_length(path->jpath.joinrestrictinfo) == list_length(hashclauses))
+		hashjointuples = path->jpath.path.rows;
 	else
 		hashjointuples = approx_tuple_count(root, &path->jpath, hashclauses);
 
