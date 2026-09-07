@@ -212,6 +212,34 @@ is_func_definition(char *tp)
     return false;
 }
 
+static size_t
+indent_strspn(const char *s1, const char *s2, const char *end)
+{
+    const char *p = s1;
+
+    while (p < end && *p != '\n' && *p != '\0')
+    {
+        const char *spanp;
+        bool found = false;
+
+        for (spanp = s2; *spanp != '\0'; spanp++)
+        {
+            if ((unsigned char) *spanp == (unsigned char) *p)
+            {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+            break;
+
+        p++;
+    }
+
+    return p - s1;
+}
+
 int
 lexi(struct parser_state *state)
 {
@@ -255,11 +283,11 @@ lexi(struct parser_state *state)
 		int len;
 
 		if (buf_ptr[1] == 'b' || buf_ptr[1] == 'B')
-		    len = strspn(buf_ptr + 2, "01") + 2;
+		    len = indent_strspn(buf_ptr + 2, "01", buf_end) + 2;
 		else if (buf_ptr[1] == 'x' || buf_ptr[1] == 'X')
-		    len = strspn(buf_ptr + 2, "0123456789ABCDEFabcdef") + 2;
+		    len = indent_strspn(buf_ptr + 2, "0123456789ABCDEFabcdef", buf_end) + 2;
 		else
-		    len = strspn(buf_ptr + 1, "012345678") + 1;
+		    len = indent_strspn(buf_ptr + 1, "012345678", buf_end) + 1;
 		if (len > 0) {
 		    CHECK_SIZE_TOKEN(len);
 		    memcpy(e_token, buf_ptr, len);
