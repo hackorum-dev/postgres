@@ -535,6 +535,24 @@ SELECT (current_schemas(true))[1] = ('pg_temp_' || beid::text) AS match
 FROM pg_stat_get_backend_idset() beid
 WHERE pg_stat_get_backend_pid(beid) = pg_backend_pid();
 
+-- pg_stat_get_backend_subxact() reports the details of a session, so like the
+-- other per-backend functions it is only meant to answer callers that are
+-- allowed to see them.
+SELECT beid FROM pg_stat_get_backend_idset() beid
+WHERE pg_stat_get_backend_pid(beid) = pg_backend_pid() \gset
+-- the role that owns this backend sees the values
+SELECT subxact_count IS NOT NULL AS count_visible,
+       subxact_overflowed IS NOT NULL AS overflow_visible
+FROM pg_stat_get_backend_subxact(:beid);
+CREATE ROLE regress_stat_subxact_role;
+SET ROLE regress_stat_subxact_role;
+-- an unrelated role gets NULLs instead
+SELECT subxact_count IS NULL AS count_hidden,
+       subxact_overflowed IS NULL AS overflow_hidden
+FROM pg_stat_get_backend_subxact(:beid);
+RESET ROLE;
+DROP ROLE regress_stat_subxact_role;
+
 -----
 -- Test that resetting stats works for reset timestamp
 -----
