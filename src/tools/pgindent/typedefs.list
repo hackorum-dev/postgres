@@ -3528,6 +3528,7 @@ XidBoundsViolation
 XidCacheStatus
 XidCommitStatus
 XidStatus
+XmlCast
 XmlExpr
 XmlExprOp
 XmlOptionType
