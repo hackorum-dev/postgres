@@ -212,6 +212,20 @@ typedef struct AlteredTableInfo
 	List	   *changedStatisticsOwners;	/* owners of same */
 } AlteredTableInfo;
 
+/*
+ * Relations that must not be opened by a table_rewrite event trigger.  Catalog
+ * changes for the whole work queue are already visible, but the corresponding
+ * tuples have not necessarily been rewritten yet.  Keep a stack so that a
+ * nested ALTER TABLE cannot hide the outer command's relations.
+ */
+typedef struct TableRewriteEventState
+{
+	List	   *wqueue;
+	struct TableRewriteEventState *previous;
+} TableRewriteEventState;
+
+static TableRewriteEventState *table_rewrite_event_state = NULL;
+
 /* Struct describing one new constraint to check in Phase 3 scan */
 /* Note: new not-null constraints are handled elsewhere */
 typedef struct NewConstraint
@@ -5891,6 +5905,37 @@ ATParseTransformCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 }
 
 /*
+ * CheckRelationNotInTableRewrite
+ *
+ * Called when opening a relation, before its possibly inconsistent tuple
+ * descriptor can be used by a table_rewrite event trigger.  Check the entire
+ * work queue, not just the relation for which the event is being fired: an
+ * inherited ALTER TABLE has already changed the catalogs for its children too.
+ */
+void
+CheckRelationNotInTableRewrite(Relation rel)
+{
+	TableRewriteEventState *state;
+
+	for (state = table_rewrite_event_state; state; state = state->previous)
+	{
+		ListCell   *lc;
+
+		foreach(lc, state->wqueue)
+		{
+			AlteredTableInfo *tab = lfirst(lc);
+
+			if (tab->relid == RelationGetRelid(rel))
+				ereport(ERROR,
+						(errcode(ERRCODE_OBJECT_IN_USE),
+						 errmsg("cannot access relation \"%s\" during a table_rewrite event trigger",
+								RelationGetRelationName(rel)),
+						 errdetail("The relation is being altered by the command that fired the event trigger.")));
+		}
+	}
+}
+
+/*
  * ATRewriteTables: ALTER TABLE phase 3
  */
 static void
@@ -6018,9 +6063,24 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode,
 			 * And fire it only once.
 			 */
 			if (parsetree)
-				EventTriggerTableRewrite((Node *) parsetree,
-										 tab->relid,
-										 tab->rewrite);
+			{
+				TableRewriteEventState state;
+
+				state.wqueue = *wqueue;
+				state.previous = table_rewrite_event_state;
+				table_rewrite_event_state = &state;
+				PG_TRY();
+				{
+					EventTriggerTableRewrite((Node *) parsetree,
+											 tab->relid,
+											 tab->rewrite);
+				}
+				PG_FINALLY();
+				{
+					table_rewrite_event_state = state.previous;
+				}
+				PG_END_TRY();
+			}
 
 			/*
 			 * Create transient table that will receive the modified data.
