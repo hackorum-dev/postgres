@@ -15,6 +15,7 @@
 
 #include <math.h>
 
+#include "access/xact.h"
 #include "access/xlog.h"
 #include "access/xlogrecovery.h"
 #include "access/xlogwait.h"
@@ -167,8 +168,12 @@ ExecWaitStmt(ParseState *pstate, WaitStmt *stmt, bool isTopLevel,
 	 */
 	InvalidateCatalogSnapshot();
 
-	/* Give up if there is still an active or registered snapshot. */
-	if (HaveRegisteredOrActiveSnapshot())
+	/*
+	 * Give up if there is still an active or registered snapshot. Also reject
+	 * transactions that use a transaction snapshot, even if that snapshot has
+	 * not been taken yet.
+	 */
+	if (HaveRegisteredOrActiveSnapshot() || IsolationUsesXactSnapshot())
 		ereport(ERROR,
 				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				errmsg("WAIT FOR must be called without an active or registered snapshot"),
