@@ -10168,6 +10168,9 @@ get_rule_expr(Node *node, deparse_context *context,
 						if (!PRETTY_PAREN(context))
 							appendStringInfoChar(buf, '(');
 						break;
+					case IS_XMLCAST:
+						appendStringInfoString(buf, "XMLCAST(");
+						break;
 				}
 				if (xexpr->op == IS_XMLPARSE || xexpr->op == IS_XMLSERIALIZE)
 				{
@@ -10217,6 +10220,7 @@ get_rule_expr(Node *node, deparse_context *context,
 						case IS_XMLFOREST:
 						case IS_XMLPI:
 						case IS_XMLSERIALIZE:
+						case IS_XMLCAST:
 							/* no extra decoration needed */
 							get_rule_expr((Node *) xexpr->args, context, true);
 							break;
@@ -10290,6 +10294,15 @@ get_rule_expr(Node *node, deparse_context *context,
 					else
 						appendStringInfoString(buf, " NO INDENT");
 				}
+
+				/*
+				 * BY REF / BY VALUE is not emitted: which one was written
+				 * makes no difference, and the node does not record it.
+				 */
+				if (xexpr->op == IS_XMLCAST)
+					appendStringInfo(buf, " AS %s",
+									 format_type_with_typemod(xexpr->targetType,
+															  xexpr->targetTypmod));
 
 				if (xexpr->op == IS_DOCUMENT)
 				{
