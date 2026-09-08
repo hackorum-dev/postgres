@@ -99,6 +99,7 @@
 #include "storage/ipc.h"
 #include "utils/guc.h"
 #include "utils/guc_hooks.h"
+#include "utils/memutils.h"
 #include "utils/resowner.h"
 #include "utils/varlena.h"
 #include "utils/wait_event.h"
@@ -217,6 +218,7 @@ typedef struct vfd
  * needed.  'File' values are indexes into this array.
  * Note that VfdCache[0] is not a usable VFD, just a list header.
  */
+static MemoryContext VfdCxt;
 static Vfd *VfdCache;
 static Size SizeVfdCache = 0;
 
@@ -905,12 +907,13 @@ InitFileAccess(void)
 {
 	Assert(SizeVfdCache == 0);	/* call me only once */
 
+	if (VfdCxt == NULL)
+		VfdCxt = AllocSetContextCreate(TopMemoryContext,
+									"Vfd cache context",
+									ALLOCSET_DEFAULT_SIZES);
+
 	/* initialize cache header entry */
-	VfdCache = (Vfd *) malloc(sizeof(Vfd));
-	if (VfdCache == NULL)
-		ereport(FATAL,
-				(errcode(ERRCODE_OUT_OF_MEMORY),
-				 errmsg("out of memory")));
+	VfdCache = MemoryContextAlloc(VfdCxt, sizeof(Vfd));
 
 	MemSet(&(VfdCache[0]), 0, sizeof(Vfd));
 	VfdCache->fd = VFD_CLOSED;
@@ -1403,6 +1406,7 @@ AllocateVfd(void)
 {
 	Index		i;
 	File		file;
+	MemoryContext oldcontext;
 
 	DO_DB(elog(LOG, "AllocateVfd. Size %zu", SizeVfdCache));
 
@@ -1422,13 +1426,11 @@ AllocateVfd(void)
 			newCacheSize = 32;
 
 		/*
-		 * Be careful not to clobber VfdCache ptr if realloc fails.
+		 * Be careful not to clobber VfdCache ptr if allocation fails.
 		 */
-		newVfdCache = (Vfd *) realloc(VfdCache, sizeof(Vfd) * newCacheSize);
-		if (newVfdCache == NULL)
-			ereport(ERROR,
-					(errcode(ERRCODE_OUT_OF_MEMORY),
-					 errmsg("out of memory")));
+		oldcontext = MemoryContextSwitchTo(VfdCxt);
+		newVfdCache = repalloc_array(VfdCache, Vfd, newCacheSize);
+		MemoryContextSwitchTo(oldcontext);
 		VfdCache = newVfdCache;
 
 		/*
@@ -1466,7 +1468,7 @@ FreeVfd(File file)
 
 	if (vfdP->fileName != NULL)
 	{
-		free(vfdP->fileName);
+		pfree(vfdP->fileName);
 		vfdP->fileName = NULL;
 	}
 	vfdP->fdstate = 0x0;
@@ -1582,14 +1584,7 @@ PathNameOpenFilePerm(const char *fileName, int fileFlags, mode_t fileMode)
 	DO_DB(elog(LOG, "PathNameOpenFilePerm: %s %x %o",
 			   fileName, fileFlags, fileMode));
 
-	/*
-	 * We need a malloc'd copy of the file name; fail cleanly if no room.
-	 */
-	fnamecopy = strdup(fileName);
-	if (fnamecopy == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_OUT_OF_MEMORY),
-				 errmsg("out of memory")));
+	fnamecopy = MemoryContextStrdup(VfdCxt, fileName);
 
 	file = AllocateVfd();
 	vfdP = &VfdCache[file];
@@ -1612,7 +1607,7 @@ PathNameOpenFilePerm(const char *fileName, int fileFlags, mode_t fileMode)
 		int			save_errno = errno;
 
 		FreeVfd(file);
-		free(fnamecopy);
+		pfree(fnamecopy);
 		errno = save_errno;
 		return -1;
 	}
@@ -2555,6 +2550,11 @@ reserveAllocatedDesc(void)
 	AllocateDesc *newDescs;
 	int			newMax;
 
+	if (VfdCxt == NULL)
+		VfdCxt = AllocSetContextCreate(TopMemoryContext,
+										"Vfd cache context",
+										ALLOCSET_DEFAULT_SIZES);
+
 	/* Quick out if array already has a free slot. */
 	if (numAllocatedDescs < maxAllocatedDescs)
 		return true;
@@ -2568,12 +2568,8 @@ reserveAllocatedDesc(void)
 	if (allocatedDescs == NULL)
 	{
 		newMax = FD_MINFREE / 3;
-		newDescs = (AllocateDesc *) malloc(newMax * sizeof(AllocateDesc));
-		/* Out of memory already?  Treat as fatal error. */
-		if (newDescs == NULL)
-			ereport(ERROR,
-					(errcode(ERRCODE_OUT_OF_MEMORY),
-					 errmsg("out of memory")));
+		newDescs = MemoryContextAlloc(VfdCxt,
+									 newMax * sizeof(AllocateDesc));
 		allocatedDescs = newDescs;
 		maxAllocatedDescs = newMax;
 		return true;
@@ -2593,11 +2589,12 @@ reserveAllocatedDesc(void)
 	newMax = max_safe_fds / 3;
 	if (newMax > maxAllocatedDescs)
 	{
-		newDescs = (AllocateDesc *) realloc(allocatedDescs,
-											newMax * sizeof(AllocateDesc));
-		/* Treat out-of-memory as a non-fatal error. */
+		newDescs = MemoryContextAllocExtended(VfdCxt,
+											 newMax * sizeof(AllocateDesc), MCXT_ALLOC_NO_OOM);
 		if (newDescs == NULL)
 			return false;
+		memcpy(newDescs, allocatedDescs, maxAllocatedDescs * sizeof(AllocateDesc));
+		pfree(allocatedDescs);
 		allocatedDescs = newDescs;
 		maxAllocatedDescs = newMax;
 		return true;
