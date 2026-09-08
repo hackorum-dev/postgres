@@ -838,7 +838,12 @@ pg_stat_get_backend_subxact(PG_FUNCTION_ARGS)
 	TupleDescFinalize(tupdesc);
 	BlessTupleDesc(tupdesc);
 
-	if ((local_beentry = pgstat_get_local_beentry_by_proc_number(procNumber)) != NULL)
+	/*
+	 * Like the other per-backend statistics functions, report the details of
+	 * a session only to a caller that is allowed to see them.
+	 */
+	if ((local_beentry = pgstat_get_local_beentry_by_proc_number(procNumber)) != NULL &&
+		HAS_PGSTAT_PERMISSIONS(local_beentry->backendStatus.st_userid))
 	{
 		/* Fill values and NULLs */
 		values[0] = Int32GetDatum(local_beentry->backend_subxact_count);
