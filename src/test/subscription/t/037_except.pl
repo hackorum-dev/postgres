@@ -52,6 +52,10 @@ sub test_except_root_partition
 	$result = $node_publisher->safe_psql('postgres',
 		"SELECT count(*) = 0 FROM pg_logical_slot_get_binary_changes('test_slot', NULL, NULL, 'proto_version', '1', 'publication_names', 'tap_pub_part')"
 	);
+	is($result, qq(t),
+		"no changes for the partitioned table in the EXCEPT clause are present in the replication slot (publish_via_partition_root = $pubviaroot)"
+	);
+
 	$node_publisher->wait_for_catchup('tap_sub_part');
 
 	# Verify that no rows are replicated to subscriber for root or partitions.
