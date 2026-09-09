@@ -264,7 +264,7 @@ unlike(
 # 5. Check mode validation: standby modes error on primary, primary mode errors
 # on standby, and primary_flush works on primary.  Also check that WAIT FOR
 # triggers an error if called within a function, procedure, anonymous DO block,
-# or inside a transaction with an isolation level higher than READ COMMITTED.
+# or inside a transaction that uses a transaction snapshot.
 
 # Test standby_flush on primary - should error
 $node_primary->psql(
@@ -284,11 +284,29 @@ ok($stderr =~ /recovery is in progress/,
 
 $node_standby->psql(
 	'postgres',
+	"BEGIN ISOLATION LEVEL REPEATABLE READ; WAIT FOR LSN '${lsn3}';",
+	stderr => \$stderr);
+ok( $stderr =~
+	  /WAIT FOR cannot be executed within a transaction with an isolation level higher than READ COMMITTED/,
+	"get an error when running WAIT FOR in a transaction with an isolation level higher than READ COMMITTED"
+);
+
+$node_standby->psql(
+	'postgres',
 	"BEGIN ISOLATION LEVEL REPEATABLE READ; SELECT 1; WAIT FOR LSN '${lsn3}';",
 	stderr => \$stderr);
 ok( $stderr =~
+	  /WAIT FOR cannot be executed within a transaction with an isolation level higher than READ COMMITTED/,
+	"get the isolation-level error even after a transaction snapshot has been taken"
+);
+
+$node_standby->psql(
+	'postgres',
+	"BEGIN ISOLATION LEVEL READ COMMITTED; DECLARE c CURSOR FOR SELECT 1; WAIT FOR LSN '${lsn3}';",
+	stderr => \$stderr);
+ok( $stderr =~
 	  /WAIT FOR must be called without an active or registered snapshot/,
-	"get an error when running in a transaction with an isolation level higher than REPEATABLE READ"
+	"get an error when running WAIT FOR with an active or registered snapshot"
 );
 
 # Test wrapping WAIT FOR into function, procedure, and anonymous DO block --
