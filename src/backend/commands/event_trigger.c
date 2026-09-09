@@ -53,12 +53,32 @@
 #include "utils/evtcache.h"
 #include "utils/fmgroids.h"
 #include "utils/fmgrprotos.h"
+#include "utils/hsearch.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/tuplestore.h"
+
+/*
+ * Registrations live until the owning complete query ends.  Nested commands
+ * can register the same relation when the outer command is not firing a
+ * table_rewrite event; restore the previous registration when they finish.
+ */
+typedef struct TableRewriteRelation
+{
+	Oid			relid;
+	struct EventTriggerQueryState *owner;
+	struct TableRewriteRelation *previous;
+	struct TableRewriteRelation *next;
+} TableRewriteRelation;
+
+typedef struct TableRewriteRelationEntry
+{
+	Oid			relid;
+	TableRewriteRelation *registration;
+} TableRewriteRelationEntry;
 
 typedef struct EventTriggerQueryState
 {
@@ -73,6 +93,7 @@ typedef struct EventTriggerQueryState
 	Oid			table_rewrite_oid;	/* InvalidOid, or set for table_rewrite
 									 * event */
 	int			table_rewrite_reason;	/* AT_REWRITE reason */
+	TableRewriteRelation *rewrite_relations;
 
 	/* Support for command collection */
 	bool		commandCollectionInhibited;
@@ -83,6 +104,10 @@ typedef struct EventTriggerQueryState
 } EventTriggerQueryState;
 
 static EventTriggerQueryState *currentEventTriggerState = NULL;
+static HTAB *table_rewrite_relations = NULL;
+
+/* Fast path for relation opens outside table_rewrite events. */
+bool		in_table_rewrite_event = false;
 
 /* GUC parameter */
 bool		event_triggers = true;
@@ -1007,12 +1032,15 @@ EventTriggerOnLogin(void)
 
 
 /*
- * Fire table_rewrite triggers.
+ * Fire table_rewrite triggers.  The caller initializes *registered to false
+ * for each ALTER work queue; subsequent events reuse its registrations.
  */
 void
-EventTriggerTableRewrite(Node *parsetree, Oid tableOid, int reason)
+EventTriggerTableRewrite(Node *parsetree, Oid tableOid, int reason,
+						 List *rewriteOids, bool *registered)
 {
 	List	   *runlist;
+	bool		was_in_table_rewrite_event = in_table_rewrite_event;
 	EventTriggerData trigdata;
 
 	/*
@@ -1040,6 +1068,48 @@ EventTriggerTableRewrite(Node *parsetree, Oid tableOid, int reason)
 		return;
 
 	/*
+	 * Register each work queue once, only if a trigger will
+	 * actually run.  Keep the registrations across successive rewrite events;
+	 * EventTriggerEndCompleteQuery() removes them on success or error.
+	 */
+	if (!*registered)
+	{
+		ListCell   *lc;
+
+		if (table_rewrite_relations == NULL)
+		{
+			HASHCTL		ctl;
+
+			ctl.keysize = sizeof(Oid);
+			ctl.entrysize = sizeof(TableRewriteRelationEntry);
+			ctl.hcxt = TopMemoryContext;
+			table_rewrite_relations = hash_create("table rewrite relations", 32,
+											   &ctl,
+											   HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+		}
+
+		foreach(lc, rewriteOids)
+		{
+			TableRewriteRelation *registration;
+			TableRewriteRelationEntry *entry;
+			bool		found;
+
+			registration = MemoryContextAlloc(currentEventTriggerState->cxt,
+											  sizeof(TableRewriteRelation));
+			registration->relid = lfirst_oid(lc);
+			registration->owner = currentEventTriggerState;
+			entry = hash_search(table_rewrite_relations, &registration->relid,
+								HASH_ENTER, &found);
+			/* No error can occur before linking the registration for cleanup. */
+			registration->previous = found ? entry->registration : NULL;
+			registration->next = currentEventTriggerState->rewrite_relations;
+			entry->registration = registration;
+			currentEventTriggerState->rewrite_relations = registration;
+		}
+		*registered = true;
+	}
+
+	/*
 	 * Make sure pg_event_trigger_table_rewrite_oid only works when running
 	 * these triggers. Use PG_TRY to ensure table_rewrite_oid is reset even
 	 * when one trigger fails. (This is perhaps not necessary, as the
@@ -1048,6 +1118,7 @@ EventTriggerTableRewrite(Node *parsetree, Oid tableOid, int reason)
 	 */
 	currentEventTriggerState->table_rewrite_oid = tableOid;
 	currentEventTriggerState->table_rewrite_reason = reason;
+	in_table_rewrite_event = true;
 
 	/* Run the triggers. */
 	PG_TRY();
@@ -1058,6 +1129,7 @@ EventTriggerTableRewrite(Node *parsetree, Oid tableOid, int reason)
 	{
 		currentEventTriggerState->table_rewrite_oid = InvalidOid;
 		currentEventTriggerState->table_rewrite_reason = 0;
+		in_table_rewrite_event = was_in_table_rewrite_event;
 	}
 	PG_END_TRY();
 
@@ -1069,6 +1141,30 @@ EventTriggerTableRewrite(Node *parsetree, Oid tableOid, int reason)
 	 * command.
 	 */
 	CommandCounterIncrement();
+}
+
+/*
+ * A registered relation is unsafe to open only while its owning command is
+ * firing table_rewrite triggers.  ALTER's own accesses between events remain
+ * allowed.  An overlapping nested registration can only hide an inactive
+ * owner: accessing an active owner's target would already have been rejected
+ * before the nested ALTER could reach its rewrite events.
+ */
+void
+EventTriggerCheckRelationAccess(Relation rel)
+{
+	TableRewriteRelationEntry *entry;
+
+	Assert(in_table_rewrite_event);
+	entry = hash_search(table_rewrite_relations, &RelationGetRelid(rel),
+						HASH_FIND, NULL);
+	if (entry != NULL &&
+		OidIsValid(entry->registration->owner->table_rewrite_oid))
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_IN_USE),
+				 errmsg("cannot access relation \"%s\" during a table_rewrite event trigger",
+						RelationGetRelationName(rel)),
+				 errdetail("The relation is affected by the command that fired the event trigger.")));
 }
 
 /*
@@ -1211,6 +1307,7 @@ EventTriggerBeginCompleteQuery(void)
 	slist_init(&(state->SQLDropList));
 	state->in_sql_drop = false;
 	state->table_rewrite_oid = InvalidOid;
+	state->rewrite_relations = NULL;
 
 	state->commandCollectionInhibited = currentEventTriggerState ?
 		currentEventTriggerState->commandCollectionInhibited : false;
@@ -1239,6 +1336,24 @@ EventTriggerEndCompleteQuery(void)
 	EventTriggerQueryState *prevstate;
 
 	prevstate = currentEventTriggerState->previous;
+
+	/* Remove registrations before freeing the state they point to. */
+	while (currentEventTriggerState->rewrite_relations != NULL)
+	{
+		TableRewriteRelation *registration =
+			currentEventTriggerState->rewrite_relations;
+		TableRewriteRelationEntry *entry;
+
+		entry = hash_search(table_rewrite_relations, &registration->relid,
+							HASH_FIND, NULL);
+		Assert(entry != NULL && entry->registration == registration);
+		if (registration->previous != NULL)
+			entry->registration = registration->previous;
+		else
+			hash_search(table_rewrite_relations, &registration->relid,
+						HASH_REMOVE, NULL);
+		currentEventTriggerState->rewrite_relations = registration->next;
+	}
 
 	/* this avoids the need for retail pfree of SQLDropList items: */
 	MemoryContextDelete(currentEventTriggerState->cxt);
