@@ -2524,7 +2524,18 @@ compute_semijoin_info(PlannerInfo *root, SpecialJoinInfo *sjinfo, List *clause)
 
 		/* so far so good, keep building lists */
 		semi_operators = lappend_oid(semi_operators, opno);
-		semi_rhs_exprs = lappend(semi_rhs_exprs, copyObject(right_expr));
+
+		/*
+		 * Ensure that the RHS expression exposes the join operator's input
+		 * collation.  Unique-ification groups on this expression and takes the
+		 * collation from it, since SortGroupClause carries none, so leaving
+		 * the expression's own collation here would group by different
+		 * equality semantics than the semijoin compares with.
+		 */
+		semi_rhs_exprs = lappend(semi_rhs_exprs,
+								 canonicalize_ec_expression((Expr *) copyObject(right_expr),
+															exprType(right_expr),
+															op->inputcollid));
 	}
 
 	/* Punt if we didn't find at least one column to unique-ify */

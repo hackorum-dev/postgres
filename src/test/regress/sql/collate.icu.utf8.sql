@@ -721,6 +721,49 @@ SELECT * FROM test3cs t1
                 WHERE t1.x = t2.x COLLATE case_insensitive)
 ORDER BY 1;
 
+-- Unique-ification of an IN/semijoin RHS must group under the join's collation
+-- rather than the one exposed by the RHS expression.  Otherwise values the join
+-- considers equal survive unique-ification and duplicate the outer rows.
+CREATE TABLE t_semi_ci (c1 text COLLATE case_insensitive);
+CREATE TABLE t_semi_cs (c0 text);
+INSERT INTO t_semi_ci VALUES ('a'), ('x'), ('y');
+INSERT INTO t_semi_cs VALUES ('a'), ('a');
+ANALYZE t_semi_ci, t_semi_cs;
+-- 'A' collides with 'a' only under case_insensitive.  Add it after ANALYZE, so
+-- that the statistics keep making unique-ification look worthwhile and the
+-- plans below stay the ones we mean to test.
+INSERT INTO t_semi_cs VALUES ('A');
+
+-- The predicate holds for exactly one row, so filtering on it must return one.
+SELECT c1, c1 IN (SELECT c0 FROM t_semi_cs) AS p FROM t_semi_ci ORDER BY c1;
+SELECT count(*) FROM t_semi_ci WHERE c1 IN (SELECT c0 FROM t_semi_cs);
+
+-- Both unique-ification strategies must use the join collation.
+SET enable_hashagg TO off;
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM t_semi_ci WHERE c1 IN (SELECT c0 FROM t_semi_cs);
+SELECT count(*) FROM t_semi_ci WHERE c1 IN (SELECT c0 FROM t_semi_cs);
+RESET enable_hashagg;
+
+SET enable_sort TO off;
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM t_semi_ci WHERE c1 IN (SELECT c0 FROM t_semi_cs);
+SELECT count(*) FROM t_semi_ci WHERE c1 IN (SELECT c0 FROM t_semi_cs);
+RESET enable_sort;
+
+-- A unique index on the RHS proves uniqueness under its own collation only, so
+-- it must not be taken as a reason to skip unique-ification for a join that
+-- compares under a different one.  The filler rows are what make unique-ifying
+-- the RHS look worthwhile, and so put that decision on the table at all; the
+-- plan is checked too, so that a costing change cannot quietly turn this into
+-- a test of nothing.
+CREATE TABLE t_semi_uq (c0 text UNIQUE);
+INSERT INTO t_semi_uq VALUES ('a'), ('A'), ('v1'), ('v2');
+ANALYZE t_semi_uq;
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM t_semi_ci WHERE c1 IN (SELECT c0 FROM t_semi_uq);
+SELECT count(*) FROM t_semi_ci WHERE c1 IN (SELECT c0 FROM t_semi_uq);
+
 CREATE TABLE test1ci (x text COLLATE case_insensitive);
 CREATE TABLE test2ci (x text COLLATE case_insensitive);
 CREATE TABLE test3ci (x text COLLATE case_insensitive);
