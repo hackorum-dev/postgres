@@ -239,7 +239,7 @@ $node_publisher->safe_psql(
 	CREATE PUBLICATION tap_pub2 FOR TABLE tab1;
 	INSERT INTO tab1 VALUES(1);
 ));
-$node_subscriber->psql('postgres',
+$node_subscriber->safe_psql('postgres',
 	"CREATE SUBSCRIPTION tap_sub CONNECTION '$publisher_connstr' PUBLICATION tap_pub1, tap_pub2"
 );
 $node_subscriber->wait_for_subscription_sync($node_publisher, 'tap_sub');
@@ -258,7 +258,11 @@ $node_publisher->safe_psql(
 	DROP PUBLICATION tap_pub2;
 	TRUNCATE tab1;
 ));
-$node_subscriber->safe_psql('postgres', qq(TRUNCATE tab1));
+$node_subscriber->safe_psql(
+	'postgres',	qq(
+	DROP SUBSCRIPTION tap_sub;
+	TRUNCATE tab1;
+));
 
 # OK when a table is excluded by pub1 EXCEPT clause, but it is included by pub2
 # FOR ALL TABLES.
@@ -267,7 +271,7 @@ $node_publisher->safe_psql(
 	CREATE PUBLICATION tap_pub2 FOR ALL TABLES;
 	INSERT INTO tab1 VALUES(1);
 ));
-$node_subscriber->psql('postgres',
+$node_subscriber->safe_psql('postgres',
 	"CREATE SUBSCRIPTION tap_sub CONNECTION '$publisher_connstr' PUBLICATION tap_pub1, tap_pub2"
 );
 $node_subscriber->wait_for_subscription_sync($node_publisher, 'tap_sub');
