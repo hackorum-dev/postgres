@@ -1057,15 +1057,6 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 	if (!pubform->puballtables && publish_via_partition_root_given &&
 		!publish_via_partition_root)
 	{
-		/*
-		 * Lock the publication so nobody else can do anything with it. This
-		 * prevents concurrent alter to add partitioned table(s) with WHERE
-		 * clause(s) and/or column lists which we don't allow when not
-		 * publishing via root.
-		 */
-		LockDatabaseObject(PublicationRelationId, pubform->oid, 0,
-						   AccessShareLock);
-
 		root_relids = GetIncludedPublicationRelations(pubform->oid,
 													  PUBLICATION_PART_ROOT);
 
@@ -1659,6 +1650,7 @@ AlterPublication(ParseState *pstate, AlterPublicationStmt *stmt)
 	Relation	rel;
 	HeapTuple	tup;
 	Form_pg_publication pubform;
+	Oid			pubid;
 
 	rel = table_open(PublicationRelationId, RowExclusiveLock);
 
@@ -1678,14 +1670,45 @@ AlterPublication(ParseState *pstate, AlterPublicationStmt *stmt)
 		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_PUBLICATION,
 					   stmt->pubname);
 
+	pubid = pubform->oid;
+
 	if (stmt->options)
+	{
+		/*
+		 * Lock the publication so nobody else can change it while we validate
+		 * and update it.  This prevents a concurrent alter from adding
+		 * partitioned table(s) with WHERE clause(s) and/or column lists,
+		 * which we don't allow when not publishing via root, and it also
+		 * prevents the publication definition from changing (for example, via
+		 * SET ALL TABLES) between the validation performed by
+		 * AlterPublicationOptions() and the subsequent catalog update.
+		 */
+		LockDatabaseObject(PublicationRelationId, pubid, 0,
+						   AccessShareLock);
+
+		heap_freetuple(tup);
+
+		/*
+		 * It is possible that by the time we acquire the lock on publication,
+		 * concurrent DDL has removed it. We can test this by checking the
+		 * existence of publication. We get the tuple again to avoid the risk
+		 * of any publication option getting changed.
+		 */
+		tup = SearchSysCacheCopy1(PUBLICATIONOID,
+								  ObjectIdGetDatum(pubid));
+		if (!HeapTupleIsValid(tup))
+			ereport(ERROR,
+					errcode(ERRCODE_UNDEFINED_OBJECT),
+					errmsg("publication \"%s\" does not exist",
+						   stmt->pubname));
+
 		AlterPublicationOptions(pstate, stmt, rel, tup);
+	}
 	else
 	{
 		List	   *relations = NIL;
 		List	   *exceptrelations = NIL;
 		List	   *schemaidlist = NIL;
-		Oid			pubid = pubform->oid;
 
 		ObjectsInPublicationToOids(stmt->pubobjects, pstate, &relations,
 								   &exceptrelations, &schemaidlist);
