@@ -3558,6 +3558,8 @@ build_new_indexes(Relation NewHeap, Relation OldHeap, List *OldIndexes)
 		result = lappend_oid(result, newindex);
 
 		index_close(ind, NoLock);
+
+		pgstat_progress_incr_param(PROGRESS_REPACK_INDEX_REBUILD_COUNT, 1);
 	}
 
 	return result;
