@@ -714,10 +714,9 @@ PrefetchSharedBuffer(SMgrRelation smgr_reln,
 
 	/* determine its hash code and partition lock ID */
 	newHash = BufTableHashCode(&newTag);
-	newPartitionLock = BufMappingPartitionLock(newHash);
+	newPartitionLock = BufMappingPartitionLock(newHash, LW_SHARED);
 
 	/* see if the block is in the buffer pool already */
-	LWLockAcquire(newPartitionLock, LW_SHARED);
 	buf_id = BufTableLookup(&newTag, newHash);
 	LWLockRelease(newPartitionLock);
 
@@ -2219,10 +2218,9 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 
 	/* determine its hash code and partition lock ID */
 	newHash = BufTableHashCode(&newTag);
-	newPartitionLock = BufMappingPartitionLock(newHash);
+	newPartitionLock = BufMappingPartitionLock(newHash, LW_SHARED);
 
 	/* see if the block is in the buffer pool already */
-	LWLockAcquire(newPartitionLock, LW_SHARED);
 	existing_buf_id = BufTableLookup(&newTag, newHash);
 	if (existing_buf_id >= 0)
 	{
@@ -2275,7 +2273,7 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 	 * somebody else inserted another buffer for the tag, we'll release the
 	 * victim buffer we acquired and use the already inserted one.
 	 */
-	LWLockAcquire(newPartitionLock, LW_EXCLUSIVE);
+	newPartitionLock = BufMappingPartitionLock(newHash, LW_EXCLUSIVE);
 	existing_buf_id = BufTableInsert(&newTag, newHash, victim_buf_hdr->buf_id);
 	if (existing_buf_id >= 0)
 	{
@@ -2388,15 +2386,13 @@ InvalidateBuffer(BufferDesc *buf)
 	 * here?  Probably not.
 	 */
 	oldHash = BufTableHashCode(&oldTag);
-	oldPartitionLock = BufMappingPartitionLock(oldHash);
-
 retry:
 
 	/*
 	 * Acquire exclusive mapping lock in preparation for changing the buffer's
 	 * association.
 	 */
-	LWLockAcquire(oldPartitionLock, LW_EXCLUSIVE);
+	oldPartitionLock = BufMappingPartitionLock(oldHash, LW_EXCLUSIVE);
 
 	/* Re-lock the buffer header */
 	buf_state = LockBufHdr(buf);
@@ -2483,9 +2479,7 @@ InvalidateVictimBuffer(BufferDesc *buf_hdr)
 	tag = buf_hdr->tag;
 
 	hash = BufTableHashCode(&tag);
-	partition_lock = BufMappingPartitionLock(hash);
-
-	LWLockAcquire(partition_lock, LW_EXCLUSIVE);
+	partition_lock = BufMappingPartitionLock(hash, LW_EXCLUSIVE);
 
 	/* lock the buffer header */
 	buf_state = LockBufHdr(buf_hdr);
@@ -2927,9 +2921,7 @@ ExtendBufferedRelShared(BufferManagerRelation bmr,
 		InitBufferTag(&tag, &BMR_GET_SMGR(bmr)->smgr_rlocator.locator, fork,
 					  first_block + i);
 		hash = BufTableHashCode(&tag);
-		partition_lock = BufMappingPartitionLock(hash);
-
-		LWLockAcquire(partition_lock, LW_EXCLUSIVE);
+		partition_lock = BufMappingPartitionLock(hash, LW_EXCLUSIVE);
 
 		existing_id = BufTableInsert(&tag, hash, victim_buf_hdr->buf_id);
 
@@ -5100,10 +5092,9 @@ FindAndDropRelationBuffers(RelFileLocator rlocator, ForkNumber forkNum,
 
 		/* determine its hash code and partition lock ID */
 		bufHash = BufTableHashCode(&bufTag);
-		bufPartitionLock = BufMappingPartitionLock(bufHash);
+		bufPartitionLock = BufMappingPartitionLock(bufHash, LW_SHARED);
 
 		/* Check that it is in the buffer pool. If not, do nothing. */
-		LWLockAcquire(bufPartitionLock, LW_SHARED);
 		buf_id = BufTableLookup(&bufTag, bufHash);
 		LWLockRelease(bufPartitionLock);
 
