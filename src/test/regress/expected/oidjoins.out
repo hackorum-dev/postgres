@@ -273,3 +273,4 @@ NOTICE:  checking pg_subscription {subowner} => pg_authid {oid}
 NOTICE:  checking pg_subscription {subserver} => pg_foreign_server {oid}
 NOTICE:  checking pg_subscription_rel {srsubid} => pg_subscription {oid}
 NOTICE:  checking pg_subscription_rel {srrelid} => pg_class {oid}
+NOTICE:  checking pg_matview_stat {mvrelid} => pg_class {oid}

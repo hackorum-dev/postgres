@@ -617,6 +617,17 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
      </row>
 
      <row>
+      <entry><structname>pg_stat_matviews</structname><indexterm><primary>pg_stat_matviews</primary></indexterm></entry>
+      <entry>
+       One row for each materialized view in the current database, showing
+       the last time it was refreshed with real data and how many times
+       that has happened.  See
+       <link linkend="monitoring-pg-stat-matviews-view">
+       <structname>pg_stat_matviews</structname></link> for details.
+      </entry>
+     </row>
+
+     <row>
       <entry><structname>pg_stat_autovacuum_scores</structname><indexterm><primary>pg_stat_autovacuum_scores</primary></indexterm></entry>
       <entry>
        One row for each table in the current database, showing the current
@@ -4797,6 +4808,100 @@ description | Waiting for a newly initialized WAL file to reach durable storage
        <para>
         Time at which these statistics were last reset
        </para></entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+ </sect2>
+
+ <sect2 id="monitoring-pg-stat-matviews-view">
+  <title><structname>pg_stat_matviews</structname></title>
+
+  <indexterm zone="monitoring-pg-stat-matviews-view">
+   <primary>pg_stat_matviews</primary>
+  </indexterm>
+
+  <para>
+   The <structname>pg_stat_matviews</structname> view will contain one row
+   for each materialized view in the current database, showing the last
+   time it was refreshed with real data and how many times that has
+   happened.  Unlike most <structname>pg_stat_*</structname> views, this
+   information is not collected by the cumulative statistics subsystem: it
+   is tracked in the regular system catalog
+   <link linkend="catalog-pg-matview-stat"><structname>pg_matview_stat</structname></link>,
+   so that it participates correctly in transactions -- if a
+   <command>REFRESH MATERIALIZED VIEW</command> is rolled back, the refresh
+   it would have recorded here is rolled back too.  A materialized view
+   that has never been refreshed with real data (that is, it was only ever
+   created or refreshed <literal>WITH NO DATA</literal>) still appears in
+   this view, with null <structfield>last_refresh</structfield> and a
+   <structfield>refresh_count</structfield> of zero.
+  </para>
+
+  <table id="pg-stat-matviews-view" xreflabel="pg_stat_matviews">
+   <title><structname>pg_stat_matviews</structname> View</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       Column Type
+      </para>
+      <para>
+       Description
+      </para></entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>relid</structfield> <type>oid</type>
+       (references <link linkend="catalog-pg-class"><structname>pg_class</structname></link>.<structfield>oid</structfield>)
+      </para>
+      <para>
+       OID of the materialized view
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>schemaname</structfield> <type>name</type>
+      </para>
+      <para>
+       Name of the schema that the materialized view is in
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>matviewname</structfield> <type>name</type>
+      </para>
+      <para>
+       Name of the materialized view
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>last_refresh</structfield> <type>timestamp with time zone</type>
+      </para>
+      <para>
+       Time of the most recent refresh that populated the materialized view
+       with real data, or null if it has never been so refreshed.  A
+       <command>REFRESH MATERIALIZED VIEW ... WITH NO DATA</command> does
+       not update this.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>refresh_count</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Number of times the materialized view has been refreshed with real
+       data
+      </para></entry>
      </row>
     </tbody>
    </tgroup>

@@ -33,4 +33,6 @@ extern DestReceiver *CreateTransientRelDestReceiver(Oid transientoid);
 
 extern bool MatViewIncrementalMaintenanceIsEnabled(void);
 
+extern void MatViewStatRemove(Oid relid);
+
 #endif							/* MATVIEW_H */

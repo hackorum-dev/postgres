@@ -201,6 +201,11 @@
      </row>
 
      <row>
+      <entry><link linkend="catalog-pg-matview-stat"><structname>pg_matview_stat</structname></link></entry>
+      <entry>materialized view refresh statistics</entry>
+     </row>
+
+     <row>
       <entry><link linkend="catalog-pg-namespace"><structname>pg_namespace</structname></link></entry>
       <entry>schemas</entry>
      </row>
@@ -5109,6 +5114,82 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       </para>
       <para>
        Access privileges; see <xref linkend="ddl-priv"/> for details
+      </para></entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
+
+
+ <sect1 id="catalog-pg-matview-stat">
+  <title><structname>pg_matview_stat</structname></title>
+
+  <indexterm zone="catalog-pg-matview-stat">
+   <primary>pg_matview_stat</primary>
+  </indexterm>
+
+  <para>
+   The catalog <structname>pg_matview_stat</structname> stores, for each
+   materialized view that has been populated with real data at least once,
+   the time of its last such refresh and how many times it has happened.
+   There is one row per materialized view that has ever been refreshed with
+   data; a materialized view that was only ever created or refreshed with
+   <literal>WITH NO DATA</literal> has no row here.
+  </para>
+
+  <para>
+   This catalog is normally examined through the more convenient view
+   <link linkend="monitoring-pg-stat-matviews-view"><structname>pg_stat_matviews</structname></link>,
+   which joins it with <structname>pg_class</structname> and
+   <structname>pg_namespace</structname> and lists every materialized
+   view, refreshed or not.
+  </para>
+
+  <table>
+   <title><structname>pg_matview_stat</structname> Columns</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       Column Type
+      </para>
+      <para>
+       Description
+      </para></entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>mvrelid</structfield> <type>oid</type>
+       (references <link linkend="catalog-pg-class"><structname>pg_class</structname></link>.<structfield>oid</structfield>)
+      </para>
+      <para>
+       Reference to the materialized view
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>mvrefreshcount</structfield> <type>int8</type>
+      </para>
+      <para>
+       Number of times the materialized view has been refreshed with real
+       data (that is, without <literal>WITH NO DATA</literal>)
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>mvlastrefresh</structfield> <type>timestamptz</type>
+      </para>
+      <para>
+       Time of the most recent refresh that populated the materialized view
+       with real data.  A subsequent <command>REFRESH MATERIALIZED VIEW
+       ... WITH NO DATA</command> does not change this column, so it keeps
+       showing the last time the view actually held valid data.
       </para></entry>
      </row>
     </tbody>

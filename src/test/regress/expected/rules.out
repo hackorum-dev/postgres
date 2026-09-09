@@ -1981,6 +1981,15 @@ pg_stat_lock| SELECT locktype,
     fastpath_exceeded,
     stats_reset
    FROM pg_stat_get_lock() l(locktype, waits, wait_time, fastpath_exceeded, stats_reset);
+pg_stat_matviews| SELECT c.oid AS relid,
+    n.nspname AS schemaname,
+    c.relname AS matviewname,
+    s.mvlastrefresh AS last_refresh,
+    COALESCE(s.mvrefreshcount, (0)::bigint) AS refresh_count
+   FROM ((pg_class c
+     LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace)))
+     LEFT JOIN pg_matview_stat s ON ((s.mvrelid = c.oid)))
+  WHERE (c.relkind = 'm'::"char");
 pg_stat_progress_analyze| SELECT s.pid,
     s.datid,
     d.datname,

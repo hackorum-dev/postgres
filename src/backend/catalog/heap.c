@@ -54,6 +54,7 @@
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_type.h"
 #include "catalog/storage.h"
+#include "commands/matview.h"
 #include "commands/tablecmds.h"
 #include "commands/typecmds.h"
 #include "common/int.h"
@@ -1937,6 +1938,11 @@ heap_drop_with_catalog(Oid relid)
 	 * delete statistics
 	 */
 	RemoveStatistics(relid, 0);
+
+	/*
+	 * delete any recorded materialized view refresh statistics
+	 */
+	MatViewStatRemove(relid);
 
 	/*
 	 * delete attribute tuples

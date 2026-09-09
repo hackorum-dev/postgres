@@ -156,6 +156,17 @@ CREATE VIEW pg_matviews AS
          LEFT JOIN pg_tablespace T ON (T.oid = C.reltablespace)
     WHERE C.relkind = 'm';
 
+CREATE VIEW pg_stat_matviews AS
+    SELECT
+        C.oid AS relid,
+        N.nspname AS schemaname,
+        C.relname AS matviewname,
+        S.mvlastrefresh AS last_refresh,
+        COALESCE(S.mvrefreshcount, 0::bigint) AS refresh_count
+    FROM pg_class C LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
+         LEFT JOIN pg_matview_stat S ON (S.mvrelid = C.oid)
+    WHERE C.relkind = 'm';
+
 CREATE VIEW pg_indexes AS
     SELECT
         N.nspname AS schemaname,

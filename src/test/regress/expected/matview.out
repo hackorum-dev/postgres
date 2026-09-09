@@ -699,3 +699,102 @@ NOTICE:  relation "matview_ine_tab" already exists, skipping
 (0 rows)
 
 DROP MATERIALIZED VIEW matview_ine_tab;
+-- pg_stat_matviews: last-refresh timestamp and refresh count
+CREATE MATERIALIZED VIEW mvtest_stat_mv1 AS SELECT * FROM mvtest_t;
+CREATE MATERIALIZED VIEW mvtest_stat_mv2 AS SELECT * FROM mvtest_t WITH NO DATA;
+-- freshly created WITH DATA: populated once already
+SELECT matviewname, last_refresh IS NOT NULL AS refreshed, refresh_count
+  FROM pg_stat_matviews WHERE matviewname = 'mvtest_stat_mv1';
+   matviewname   | refreshed | refresh_count 
+-----------------+-----------+---------------
+ mvtest_stat_mv1 | t         |             1
+(1 row)
+
+-- freshly created WITH NO DATA: never refreshed, but still listed
+SELECT matviewname, last_refresh, refresh_count
+  FROM pg_stat_matviews WHERE matviewname = 'mvtest_stat_mv2';
+   matviewname   | last_refresh | refresh_count 
+-----------------+--------------+---------------
+ mvtest_stat_mv2 |              |             0
+(1 row)
+
+-- a plain REFRESH bumps the count and advances the timestamp
+SELECT last_refresh AS mv1_refresh_1 FROM pg_stat_matviews
+  WHERE matviewname = 'mvtest_stat_mv1' \gset
+REFRESH MATERIALIZED VIEW mvtest_stat_mv1;
+SELECT refresh_count,
+       last_refresh > :'mv1_refresh_1' AS advanced
+  FROM pg_stat_matviews WHERE matviewname = 'mvtest_stat_mv1';
+ refresh_count | advanced 
+---------------+----------
+             2 | t
+(1 row)
+
+-- REFRESH ... WITH NO DATA does not touch the recorded stats
+SELECT last_refresh AS mv1_refresh_2 FROM pg_stat_matviews
+  WHERE matviewname = 'mvtest_stat_mv1' \gset
+REFRESH MATERIALIZED VIEW mvtest_stat_mv1 WITH NO DATA;
+SELECT refresh_count,
+       last_refresh = :'mv1_refresh_2' AS unchanged
+  FROM pg_stat_matviews WHERE matviewname = 'mvtest_stat_mv1';
+ refresh_count | unchanged 
+---------------+-----------
+             2 | t
+(1 row)
+
+-- a rolled-back REFRESH does not leave a trace
+BEGIN;
+REFRESH MATERIALIZED VIEW mvtest_stat_mv1;
+SELECT refresh_count FROM pg_stat_matviews WHERE matviewname = 'mvtest_stat_mv1';
+ refresh_count 
+---------------
+             3
+(1 row)
+
+ROLLBACK;
+SELECT refresh_count FROM pg_stat_matviews WHERE matviewname = 'mvtest_stat_mv1';
+ refresh_count 
+---------------
+             2
+(1 row)
+
+-- REFRESH ... WITH NO DATA on a never-refreshed matview still records nothing
+REFRESH MATERIALIZED VIEW mvtest_stat_mv2 WITH NO DATA;
+SELECT last_refresh, refresh_count
+  FROM pg_stat_matviews WHERE matviewname = 'mvtest_stat_mv2';
+ last_refresh | refresh_count 
+--------------+---------------
+              |             0
+(1 row)
+
+-- an actual REFRESH populates it
+REFRESH MATERIALIZED VIEW mvtest_stat_mv2;
+SELECT last_refresh IS NOT NULL AS refreshed, refresh_count
+  FROM pg_stat_matviews WHERE matviewname = 'mvtest_stat_mv2';
+ refreshed | refresh_count 
+-----------+---------------
+ t         |             1
+(1 row)
+
+-- REFRESH ... CONCURRENTLY is tracked the same way as a regular refresh
+CREATE UNIQUE INDEX mvtest_stat_mv1_id ON mvtest_stat_mv1 (id);
+REFRESH MATERIALIZED VIEW mvtest_stat_mv1; -- re-populate after the WITH NO DATA above
+SELECT refresh_count AS mv1_count_before FROM pg_stat_matviews
+  WHERE matviewname = 'mvtest_stat_mv1' \gset
+REFRESH MATERIALIZED VIEW CONCURRENTLY mvtest_stat_mv1;
+SELECT refresh_count = :mv1_count_before + 1 AS bumped
+  FROM pg_stat_matviews WHERE matviewname = 'mvtest_stat_mv1';
+ bumped 
+--------
+ t
+(1 row)
+
+-- dropping the matview removes its entry
+DROP MATERIALIZED VIEW mvtest_stat_mv1;
+SELECT count(*) FROM pg_stat_matviews WHERE matviewname = 'mvtest_stat_mv1';
+ count 
+-------
+     0
+(1 row)
+
+DROP MATERIALIZED VIEW mvtest_stat_mv2;

@@ -23,6 +23,7 @@
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_am.h"
+#include "catalog/pg_matview_stat.h"
 #include "catalog/pg_opclass.h"
 #include "commands/matview.h"
 #include "commands/repack.h"
@@ -36,10 +37,12 @@
 #include "storage/lmgr.h"
 #include "tcop/tcopprot.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "utils/timestamp.h"
 
 
 typedef struct
@@ -67,6 +70,7 @@ static void refresh_by_heap_swap(Oid matviewOid, Oid OIDNewHeap, char relpersist
 static bool is_usable_unique_index(Relation indexRel);
 static void OpenMatViewIncrementalMaintenance(void);
 static void CloseMatViewIncrementalMaintenance(void);
+static void MatViewStatRecordRefresh(Oid matviewOid);
 
 /*
  * SetMatViewPopulatedState
@@ -106,6 +110,107 @@ SetMatViewPopulatedState(Relation relation, bool newstate)
 	 * visible.
 	 */
 	CommandCounterIncrement();
+}
+
+/*
+ * MatViewStatRecordRefresh
+ *		Record, in pg_matview_stat, that matviewOid has just been refreshed
+ *		with real data: bump its refresh count and set its last-refresh
+ *		timestamp to now.
+ *
+ * Called only for refreshes that actually populate the view (i.e. not for
+ * REFRESH ... WITH NO DATA).  There is no pre-existing row for a
+ * materialized view until its first such refresh, so this upserts: it
+ * updates the row if one exists, or inserts a new one (with a refresh
+ * count of 1) otherwise.
+ */
+static void
+MatViewStatRecordRefresh(Oid matviewOid)
+{
+	Relation	rel;
+	HeapTuple	oldtup;
+	HeapTuple	newtup;
+	TimestampTz now = GetCurrentTimestamp();
+
+	rel = table_open(MatViewStatRelationId, RowExclusiveLock);
+
+	oldtup = SearchSysCacheCopy1(MATVIEWSTATRELID, ObjectIdGetDatum(matviewOid));
+	if (HeapTupleIsValid(oldtup))
+	{
+		bool		nulls[Natts_pg_matview_stat];
+		Datum		values[Natts_pg_matview_stat];
+		bool		replaces[Natts_pg_matview_stat];
+		Form_pg_matview_stat oldform = (Form_pg_matview_stat) GETSTRUCT(oldtup);
+
+		memset(values, 0, sizeof(values));
+		memset(nulls, false, sizeof(nulls));
+		memset(replaces, false, sizeof(replaces));
+
+		replaces[Anum_pg_matview_stat_mvrefreshcount - 1] = true;
+		values[Anum_pg_matview_stat_mvrefreshcount - 1] =
+			Int64GetDatum(oldform->mvrefreshcount + 1);
+
+		replaces[Anum_pg_matview_stat_mvlastrefresh - 1] = true;
+		values[Anum_pg_matview_stat_mvlastrefresh - 1] = TimestampTzGetDatum(now);
+
+		newtup = heap_modify_tuple(oldtup, RelationGetDescr(rel),
+								   values, nulls, replaces);
+		CatalogTupleUpdate(rel, &newtup->t_self, newtup);
+
+		heap_freetuple(oldtup);
+	}
+	else
+	{
+		bool		nulls[Natts_pg_matview_stat];
+		Datum		values[Natts_pg_matview_stat];
+
+		memset(values, 0, sizeof(values));
+		memset(nulls, false, sizeof(nulls));
+
+		values[Anum_pg_matview_stat_mvrelid - 1] = ObjectIdGetDatum(matviewOid);
+		values[Anum_pg_matview_stat_mvrefreshcount - 1] = Int64GetDatum(1);
+		values[Anum_pg_matview_stat_mvlastrefresh - 1] = TimestampTzGetDatum(now);
+
+		newtup = heap_form_tuple(RelationGetDescr(rel), values, nulls);
+		CatalogTupleInsert(rel, newtup);
+	}
+
+	heap_freetuple(newtup);
+	table_close(rel, RowExclusiveLock);
+}
+
+/*
+ * MatViewStatRemove
+ *		Drop the pg_matview_stat row for relid, if any.
+ *
+ * Called from heap_drop_with_catalog() for every dropped relation,
+ * mirroring how RemoveStatistics() is called there; relations other than
+ * materialized views simply never have a matching row.
+ */
+void
+MatViewStatRemove(Oid relid)
+{
+	Relation	rel;
+	SysScanDesc scan;
+	ScanKeyData key;
+	HeapTuple	tup;
+
+	rel = table_open(MatViewStatRelationId, RowExclusiveLock);
+
+	ScanKeyInit(&key,
+				Anum_pg_matview_stat_mvrelid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(relid));
+
+	scan = systable_beginscan(rel, MatViewStatRelidIndexId, true,
+							  NULL, 1, &key);
+
+	while (HeapTupleIsValid(tup = systable_getnext(scan)))
+		CatalogTupleDelete(rel, &tup->t_self);
+
+	systable_endscan(scan);
+
+	table_close(rel, RowExclusiveLock);
 }
 
 /*
@@ -363,6 +468,10 @@ RefreshMatViewByOid(Oid matviewOid, bool is_create, bool skipData,
 		if (!skipData)
 			pgstat_count_heap_insert(matviewRel, processed);
 	}
+
+	/* Update pg_stat_matviews to record the refresh. */
+	if (!skipData)
+		MatViewStatRecordRefresh(matviewOid);
 
 	table_close(matviewRel, NoLock);
 
