@@ -23,6 +23,7 @@
 #include "access/relation.h"
 #include "access/xact.h"
 #include "catalog/namespace.h"
+#include "commands/event_trigger.h"
 #include "pgstat.h"
 #include "storage/lmgr.h"
 #include "storage/lock.h"
@@ -73,6 +74,9 @@ relation_open(Oid relationId, LOCKMODE lockmode)
 	if (RelationUsesLocalBuffers(r))
 		MyXactFlags |= XACT_FLAGS_ACCESSEDTEMPNAMESPACE;
 
+	if (unlikely(in_table_rewrite_event))
+		EventTriggerCheckRelationAccess(r);
+
 	pgstat_init_relation(r);
 
 	return r;
@@ -122,6 +126,9 @@ try_relation_open(Oid relationId, LOCKMODE lockmode)
 	/* Make note that we've accessed a temporary relation */
 	if (RelationUsesLocalBuffers(r))
 		MyXactFlags |= XACT_FLAGS_ACCESSEDTEMPNAMESPACE;
+
+	if (unlikely(in_table_rewrite_event))
+		EventTriggerCheckRelationAccess(r);
 
 	pgstat_init_relation(r);
 
