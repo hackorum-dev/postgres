@@ -18,6 +18,7 @@
 #include "access/xlog.h"
 #include "access/xlogrecovery.h"
 #include "access/xlogwait.h"
+#include "access/xact.h"
 #include "catalog/pg_type_d.h"
 #include "commands/defrem.h"
 #include "commands/wait.h"
@@ -167,12 +168,18 @@ ExecWaitStmt(ParseState *pstate, WaitStmt *stmt, bool isTopLevel,
 	 */
 	InvalidateCatalogSnapshot();
 
+	/* Give up if we are in a transaction that uses a transaction snapshot. */
+	if (IsolationUsesXactSnapshot())
+		ereport(ERROR,
+				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				errmsg("WAIT FOR cannot be executed within a transaction with an isolation level higher than READ COMMITTED"));
+
+
 	/* Give up if there is still an active or registered snapshot. */
 	if (HaveRegisteredOrActiveSnapshot())
 		ereport(ERROR,
 				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				errmsg("WAIT FOR must be called without an active or registered snapshot"),
-				errdetail("WAIT FOR cannot be executed within a transaction with an isolation level higher than READ COMMITTED."));
+				errmsg("WAIT FOR must be called without an active or registered snapshot"));
 
 	/*
 	 * As the result we should hold no snapshot, and correspondingly our xmin
