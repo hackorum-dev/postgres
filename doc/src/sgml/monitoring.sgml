@@ -6806,8 +6806,8 @@ FROM pg_stat_get_backend_idset() AS backendid;
        <structfield>cluster_index_relid</structfield> <type>oid</type>
       </para>
       <para>
-       If the table is being scanned using an index, this is the OID of the
-       index being used; otherwise, it is zero.
+       OID of the index defining the order of the rewritten table, or zero
+       if no index ordering is requested.
       </para></entry>
      </row>
 
@@ -7480,8 +7480,8 @@ FROM pg_stat_get_backend_idset() AS backendid;
        <structfield>repack_index_relid</structfield> <type>oid</type>
       </para>
       <para>
-       If the table is being scanned using an index, this is the OID of the
-       index being used; otherwise, it is zero.
+       OID of the index defining the order of the rewritten table, or zero
+       if no index ordering is requested.
       </para></entry>
      </row>
 
