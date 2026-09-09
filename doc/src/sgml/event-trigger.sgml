@@ -159,6 +159,15 @@
     <literal>pg_event_trigger_table_rewrite_reason()</literal> (see <xref
     linkend="functions-event-triggers"/>).
    </para>
+   <para>
+    A <literal>table_rewrite</literal> trigger must not open relations being
+    physically rewritten by the command that fired it, including other
+    relations affected by an inherited alteration.  Their catalog definitions
+    have already been updated, but their stored rows might still have the old
+    layout.  Accessing these relations raises an error.  The trigger can query
+    the system catalogs and access unrelated relations, for example to record
+    the event in a log table.
+   </para>
    </sect2>
 
    <sect2 id="event-trigger-aborted-transactions">

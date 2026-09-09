@@ -20,6 +20,7 @@
 #include "tcop/cmdtag.h"
 #include "tcop/deparse_utility.h"
 #include "utils/aclchk_internal.h"
+#include "utils/relcache.h"
 
 typedef struct EventTriggerData
 {
@@ -30,6 +31,9 @@ typedef struct EventTriggerData
 } EventTriggerData;
 
 extern PGDLLIMPORT bool event_triggers;
+extern PGDLLIMPORT bool in_table_rewrite_event;
+
+extern void EventTriggerCheckRelationAccess(Relation rel);
 
 /*
  * Reasons for relation rewrites.
@@ -61,7 +65,8 @@ extern bool EventTriggerSupportsObject(const ObjectAddress *object);
 extern void EventTriggerDDLCommandStart(Node *parsetree);
 extern void EventTriggerDDLCommandEnd(Node *parsetree);
 extern void EventTriggerSQLDrop(Node *parsetree);
-extern void EventTriggerTableRewrite(Node *parsetree, Oid tableOid, int reason);
+extern void EventTriggerTableRewrite(Node *parsetree, Oid tableOid, int reason,
+									 List *rewriteOids, bool *registered);
 extern void EventTriggerOnLogin(void);
 
 extern bool EventTriggerBeginCompleteQuery(void);
