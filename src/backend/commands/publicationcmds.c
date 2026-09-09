@@ -1695,8 +1695,6 @@ AlterPublication(ParseState *pstate, AlterPublicationStmt *stmt)
 		ObjectsInPublicationToOids(stmt->pubobjects, pstate, &relations,
 								   &exceptrelations, &schemaidlist);
 
-		CheckAlterPublication(stmt, tup, relations, schemaidlist);
-
 		heap_freetuple(tup);
 
 		/* Lock the publication so nobody else can do anything with it. */
@@ -1715,6 +1713,17 @@ AlterPublication(ParseState *pstate, AlterPublicationStmt *stmt)
 					errcode(ERRCODE_UNDEFINED_OBJECT),
 					errmsg("publication \"%s\" does not exist",
 						   stmt->pubname));
+
+		/*
+		 * Validate after acquiring the lock so that the checks see the
+		 * publication state we are about to modify. A concurrent ALTER
+		 * PUBLICATION may otherwise change the state while we wait for the
+		 * lock, causing both commands to pass their checks independently.
+		 * LockDatabaseObject() accepts invalidation messages after acquiring
+		 * the lock, so the catalog scans below see concurrently committed
+		 * changes.
+		 */
+		CheckAlterPublication(stmt, tup, relations, schemaidlist);
 
 		relations = list_concat(relations, exceptrelations);
 		AlterPublicationTables(stmt, tup, relations, pstate->p_sourcetext,
