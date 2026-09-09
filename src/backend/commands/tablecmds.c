@@ -11766,7 +11766,7 @@ addFkRecurseReferencing(List **wqueue, Constraint *fkconstraint, Relation rel,
 			newcon->refrelid = RelationGetRelid(pkrel);
 			newcon->refindid = indexOid;
 			newcon->conid = parentConstr;
-			newcon->conwithperiod = fkconstraint->fk_with_period;
+			newcon->conwithperiod = with_period;
 			newcon->qual = (Node *) fkconstraint;
 
 			tab->constraints = lappend(tab->constraints, newcon);
@@ -13209,6 +13209,7 @@ ATExecAlterFKConstrEnforceability(List **wqueue, ATAlterConstraint *cmdcon,
 			newcon->refrelid = currcon->confrelid;
 			newcon->refindid = currcon->conindid;
 			newcon->conid = currcon->oid;
+			newcon->conwithperiod = currcon->conperiod;
 			newcon->qual = (Node *) fkconstraint;
 
 			/* Find or create work queue entry for this table */
@@ -14112,6 +14113,7 @@ QueueFKConstraintValidation(List **wqueue, Relation conrel, Relation fkrel,
 		newcon->refrelid = con->confrelid;
 		newcon->refindid = con->conindid;
 		newcon->conid = con->oid;
+		newcon->conwithperiod = con->conperiod;
 		newcon->qual = (Node *) fkconstraint;
 
 		/* Find or create work queue entry for this table */
