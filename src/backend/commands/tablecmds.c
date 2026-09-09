@@ -5898,6 +5898,8 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode,
 				AlterTableUtilityContext *context)
 {
 	ListCell   *ltab;
+	List	   *rewriteOids = NIL;
+	bool		rewriteRegistered = false;
 
 	/* Go through each table that needs to be checked or rewritten */
 	foreach(ltab, *wqueue)
@@ -6018,9 +6020,32 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode,
 			 * And fire it only once.
 			 */
 			if (parsetree)
+			{
+				/*
+				 * Relations physically rewritten by this queue have new catalog
+				 * definitions while their stored tuples still have the old
+				 * layout.
+				 */
+				if (rewriteOids == NIL)
+				{
+					ListCell   *lc;
+
+					foreach(lc, *wqueue)
+					{
+						AlteredTableInfo *other = lfirst(lc);
+
+						if (RELKIND_HAS_STORAGE(other->relkind) &&
+							other->rewrite > 0 &&
+							other->relkind != RELKIND_SEQUENCE)
+							rewriteOids = lappend_oid(rewriteOids,
+													   other->relid);
+					}
+				}
 				EventTriggerTableRewrite((Node *) parsetree,
 										 tab->relid,
-										 tab->rewrite);
+										 tab->rewrite, rewriteOids,
+										 &rewriteRegistered);
+			}
 
 			/*
 			 * Create transient table that will receive the modified data.
