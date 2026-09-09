@@ -1054,8 +1054,7 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 	 * disallow using WHERE clause and column lists on partitioned table in
 	 * this case.
 	 */
-	if (!pubform->puballtables && publish_via_partition_root_given &&
-		!publish_via_partition_root)
+	if (publish_via_partition_root_given && !publish_via_partition_root)
 	{
 		/*
 		 * Lock the publication so nobody else can do anything with it. This
@@ -1066,8 +1065,14 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 		LockDatabaseObject(PublicationRelationId, pubform->oid, 0,
 						   AccessShareLock);
 
-		root_relids = GetIncludedPublicationRelations(pubform->oid,
-													  PUBLICATION_PART_ROOT);
+		/*
+		 * pubform was read before acquiring the lock, so puballtables may be
+		 * stale if a concurrent ALTER PUBLICATION ... SET ALL TABLES committed
+		 * while we waited. Use the current publication state.
+		 */
+		if (!GetPublication(pubform->oid)->alltables)
+			root_relids = GetIncludedPublicationRelations(pubform->oid,
+														  PUBLICATION_PART_ROOT);
 
 		foreach(lc, root_relids)
 		{
