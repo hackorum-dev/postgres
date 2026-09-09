@@ -476,6 +476,53 @@ drop table rewriteme;
 drop event trigger no_rewrite_allowed;
 drop function test_evtrig_no_rewrite();
 
+-- table_rewrite triggers must not access tables with a partially updated layout.
+CREATE TABLE rewrite_target (a int, b text);
+INSERT INTO rewrite_target VALUES (1, 'original');
+CREATE FUNCTION rewrite_access() RETURNS event_trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO rewrite_target VALUES (999, 'rw');
+END;
+$$;
+CREATE EVENT TRIGGER rewrite_access ON table_rewrite
+  EXECUTE FUNCTION rewrite_access();
+ALTER TABLE rewrite_target ALTER COLUMN a TYPE bigint;
+-- Both the data and the type must survive the rejected ALTER unchanged.
+SELECT a, b, pg_typeof(a) FROM rewrite_target;
+
+-- Protect the whole work queue, not just the table firing the event.  Check
+-- all three levels at each event, catching errors to let the rewrite finish.
+CREATE TABLE rewrite_child () INHERITS (rewrite_target);
+CREATE TABLE rewrite_grandchild () INHERITS (rewrite_child);
+INSERT INTO rewrite_grandchild VALUES (2, 'grandchild');
+CREATE TABLE rewrite_log (relid oid, reason int);
+CREATE OR REPLACE FUNCTION rewrite_access() RETURNS event_trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+  relname text;
+BEGIN
+  FOREACH relname IN ARRAY ARRAY['rewrite_target', 'rewrite_child',
+                                'rewrite_grandchild'] LOOP
+    BEGIN
+      EXECUTE format('INSERT INTO %I VALUES (999, %L)', relname, 'rw');
+    EXCEPTION WHEN object_in_use THEN
+      RAISE NOTICE 'access to % rejected', relname;
+    END;
+  END LOOP;
+  -- Unrelated tables and catalog queries remain usable.
+  INSERT INTO rewrite_log
+    SELECT oid, pg_event_trigger_table_rewrite_reason()
+    FROM pg_class WHERE oid = pg_event_trigger_table_rewrite_oid();
+END;
+$$;
+ALTER TABLE rewrite_target ALTER COLUMN a TYPE bigint;
+SELECT a, b, pg_typeof(a) FROM rewrite_target ORDER BY a;
+SELECT relid::regclass, reason FROM rewrite_log ORDER BY relid::regclass::text;
+DROP EVENT TRIGGER rewrite_access;
+DROP FUNCTION rewrite_access();
+DROP TABLE rewrite_grandchild, rewrite_child, rewrite_target, rewrite_log;
+
 -- Tests for REINDEX
 CREATE OR REPLACE FUNCTION reindex_start_command()
 RETURNS event_trigger AS $$
