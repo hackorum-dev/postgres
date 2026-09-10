@@ -751,6 +751,63 @@ CREATE UNIQUE INDEX ON test3ci (x);  -- error
 SELECT string_to_array('ABC,DEF,GHI' COLLATE case_insensitive, ',', 'abc');
 SELECT string_to_array('ABCDEFGHI' COLLATE case_insensitive, NULL, 'b');
 
+-- Unique-ification of an IN/semijoin RHS must group under the join's collation
+-- rather than the one exposed by the RHS expression.  Otherwise values the join
+-- considers equal survive unique-ification and duplicate the outer rows.
+-- 'abc' collides with the existing 'ABC' only under case_insensitive.
+INSERT INTO test2cs VALUES ('abc');
+-- As-is the reused tables prefer a plain semi join.  Pin n_distinct so
+-- unique-ification looks worthwhile and the plans below stay the ones we mean.
+ALTER TABLE test2cs ALTER COLUMN x SET (n_distinct = 1);
+ANALYZE test1ci, test2cs;
+-- The predicate holds for exactly one row, so filtering on it must return one.
+SELECT x, x COLLATE case_insensitive IN
+       (SELECT x FROM test2cs WHERE x IN ('abc', 'ABC')) AS p
+FROM test1ci ORDER BY 1;
+SELECT count(*) FROM test1ci
+WHERE x COLLATE case_insensitive IN
+      (SELECT x FROM test2cs WHERE x IN ('abc', 'ABC'));
+
+-- Both unique-ification strategies must use the join collation.
+SET enable_hashagg TO off;
+SET enable_hashjoin TO off;
+SET enable_mergejoin TO off;
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM test1ci
+WHERE x COLLATE case_insensitive IN
+      (SELECT x FROM test2cs WHERE x IN ('abc', 'ABC'));
+SELECT count(*) FROM test1ci
+WHERE x COLLATE case_insensitive IN
+      (SELECT x FROM test2cs WHERE x IN ('abc', 'ABC'));
+RESET enable_hashagg;
+RESET enable_hashjoin;
+RESET enable_mergejoin;
+
+SET enable_sort TO off;
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM test1ci
+WHERE x COLLATE case_insensitive IN
+      (SELECT x FROM test2cs WHERE x IN ('abc', 'ABC'));
+SELECT count(*) FROM test1ci
+WHERE x COLLATE case_insensitive IN
+      (SELECT x FROM test2cs WHERE x IN ('abc', 'ABC'));
+RESET enable_sort;
+ALTER TABLE test2cs ALTER COLUMN x RESET (n_distinct);
+
+-- A unique index on the RHS proves uniqueness under its own collation only, so
+-- it must not be taken as a reason to skip unique-ification for a join that
+-- compares under a different one.  The filler rows are what make unique-ifying
+-- the RHS look worthwhile, and so put that decision on the table at all; the
+-- plan is checked too, so that a costing change cannot quietly turn this into
+-- a test of nothing.
+INSERT INTO test1cs VALUES ('v1'), ('v2');
+ANALYZE test1cs;
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM test1ci
+WHERE x COLLATE case_insensitive IN (SELECT x FROM test1cs);
+SELECT count(*) FROM test1ci
+WHERE x COLLATE case_insensitive IN (SELECT x FROM test1cs);
+
 -- These queries should be able to use the index on test1ci.x:
 SET enable_seqscan = off;
 SET enable_indexonlyscan = off;
