@@ -19541,16 +19541,31 @@ ATPrepChangePersistence(AlteredTableInfo *tab, Relation rel, bool toLogged)
 	}
 
 	/*
-	 * Check that the table is not part of any publication when changing to
-	 * UNLOGGED, as UNLOGGED tables can't be published.
+	 * UNLOGGED tables cannot be published, and they are not allowed in a
+	 * publication's EXCEPT clause either, so reject the change if the table
+	 * is referenced by a publication in either way.
 	 */
-	if (!toLogged &&
-		GetRelationIncludedPublications(RelationGetRelid(rel)) != NIL)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("cannot change table \"%s\" to unlogged because it is part of a publication",
-						RelationGetRelationName(rel)),
-				 errdetail("Unlogged relations cannot be replicated.")));
+	if (!toLogged)
+	{
+		bool		isexcept;
+
+		if (RelationHasPublication(RelationGetRelid(rel), &isexcept))
+		{
+			if (isexcept)
+				ereport(ERROR,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("cannot change table \"%s\" to unlogged because it is referenced in a publication EXCEPT clause",
+								RelationGetRelationName(rel)),
+						 errdetail("Unlogged relations cannot be specified in a publication EXCEPT clause."),
+						 errhint("Remove the table from the EXCEPT clause using ALTER PUBLICATION ... SET ALL TABLES first.")));
+			else
+				ereport(ERROR,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("cannot change table \"%s\" to unlogged because it is part of a publication",
+								RelationGetRelationName(rel)),
+						 errdetail("Unlogged relations cannot be replicated.")));
+		}
+	}
 
 	/*
 	 * Check existing foreign key constraints to preserve the invariant that

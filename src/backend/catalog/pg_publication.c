@@ -929,6 +929,41 @@ GetRelationExcludedPublications(Oid relid)
 }
 
 /*
+ * Check whether the relation is referenced by any publication.
+ *
+ * Returns true if the relation has a pg_publication_rel entry, and sets
+ * *isexcept according to whether that entry names the relation in the
+ * publication's EXCEPT clause rather than including it in the publication.
+ *
+ * This examines only the first entry found, so it avoids building a list of
+ * publication oids when the caller only needs to know whether the relation is
+ * referenced and in which way.
+ */
+bool
+RelationHasPublication(Oid relid, bool *isexcept)
+{
+	CatCList   *pubrellist;
+	bool		found = false;
+
+	/* Every entry in this list is for relid, so the first one will do. */
+	pubrellist = SearchSysCacheList1(PUBLICATIONRELMAP,
+									 ObjectIdGetDatum(relid));
+	if (pubrellist->n_members > 0)
+	{
+		HeapTuple	tup = &pubrellist->members[0]->tuple;
+		Form_pg_publication_rel pubrel;
+
+		pubrel = (Form_pg_publication_rel) GETSTRUCT(tup);
+		*isexcept = pubrel->prexcept;
+		found = true;
+	}
+
+	ReleaseSysCacheList(pubrellist);
+
+	return found;
+}
+
+/*
  * Internal function to get the list of relation oids for a publication.
  *
  * If except_flag is true, returns the list of relations specified in the
