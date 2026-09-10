@@ -1382,12 +1382,19 @@ NIImportOOAffixes(IspellDict *Conf, const char *filename)
 			/* First line is the number of aliases */
 			if (!Conf->useFlagAliases)
 			{
+				char	   *end;
+				long		naliases;
+
 				Conf->useFlagAliases = true;
-				naffix = atoi(sflag);
-				if (naffix <= 0)
+				errno = 0;
+				naliases = strtol(sflag, &end, 10);
+				if (sflag == end || errno == ERANGE ||
+					naliases <= 0 || naliases >= INT_MAX)
 					ereport(ERROR,
 							(errcode(ERRCODE_CONFIG_FILE_ERROR),
 							 errmsg("invalid number of flag vector aliases")));
+
+				naffix = (int) naliases;
 
 				/* Also reserve place for empty flag set */
 				naffix++;

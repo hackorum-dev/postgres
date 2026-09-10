@@ -138,6 +138,13 @@ CREATE TEXT SEARCH DICTIONARY hunspell_err (
 						AffFile=hunspell_sample_long
 );
 
+-- Over-wide AF alias count (4294967297) must be rejected.
+CREATE TEXT SEARCH DICTIONARY hunspell_afoverflow (
+						Template=ispell,
+						DictFile=hunspell_afoverflow,
+						AffFile=hunspell_afoverflow
+);
+
 -- Synonym dictionary
 CREATE TEXT SEARCH DICTIONARY synonym (
 						Template=synonym,
