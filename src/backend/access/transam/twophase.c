@@ -561,15 +561,7 @@ LockGXact(const char *gid, Oid user)
 {
 	int			i;
 
-	/* on first call, register the exit hook */
-	if (!twophaseExitRegistered)
-	{
-		before_shmem_exit(AtProcExit_Twophase, 0);
-		twophaseExitRegistered = true;
-	}
-
-	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
-
+	Assert(LWLockHeldByMeInMode(TwoPhaseStateLock, LW_EXCLUSIVE));
 	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
 	{
 		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
@@ -610,11 +602,10 @@ LockGXact(const char *gid, Oid user)
 		gxact->locking_backend = MyProcNumber;
 		MyLockedGxact = gxact;
 
-		LWLockRelease(TwoPhaseStateLock);
-
 		return gxact;
 	}
 
+	/* Release acquired lock before error, lock is held check placed on method header */
 	LWLockRelease(TwoPhaseStateLock);
 
 	ereport(ERROR,
@@ -1522,6 +1513,15 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	xl_xact_stats_item *abortstats;
 	SharedInvalidationMessage *invalmsgs;
 
+	/* on first call, register the exit hook */
+	if (!twophaseExitRegistered)
+	{
+		before_shmem_exit(AtProcExit_Twophase, 0);
+		twophaseExitRegistered = true;
+	}
+
+	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
+
 	/*
 	 * Validate the GID, and lock the GXACT to ensure that two backends do not
 	 * try to commit the same GID at once.
@@ -1541,6 +1541,7 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	else
 		XlogReadTwoPhaseData(gxact->prepare_start_lsn, &buf, NULL);
 
+	LWLockRelease(TwoPhaseStateLock);
 
 	/*
 	 * Disassemble the header area
