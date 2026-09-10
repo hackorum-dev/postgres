@@ -551,6 +551,15 @@ SELECT subxact_count IS NULL AS count_hidden,
        subxact_overflowed IS NULL AS overflow_hidden
 FROM pg_stat_get_backend_subxact(:beid);
 RESET ROLE;
+
+GRANT pg_read_all_stats TO regress_stat_subxact_role;
+SET ROLE regress_stat_subxact_role;
+-- pg_read_all_stats sees the values again
+SELECT subxact_count IS NULL AS count_hidden,
+       subxact_overflowed IS NULL AS overflow_hidden
+FROM pg_stat_get_backend_subxact(:beid);
+
+RESET ROLE;
 DROP ROLE regress_stat_subxact_role;
 
 -----
