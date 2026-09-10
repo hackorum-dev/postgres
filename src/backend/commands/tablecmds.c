@@ -19553,6 +19553,18 @@ ATPrepChangePersistence(AlteredTableInfo *tab, Relation rel, bool toLogged)
 				 errdetail("Unlogged relations cannot be replicated.")));
 
 	/*
+	 * Likewise, reject the change if the table is named in a publication's
+	 * EXCEPT clause, since unlogged tables are not allowed there.
+	 */
+	if (!toLogged &&
+		GetRelationExcludedPublications(RelationGetRelid(rel)) != NIL)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("cannot change table \"%s\" to unlogged because it is referenced in a publication EXCEPT clause",
+						RelationGetRelationName(rel)),
+				 errhint("Remove the table from the EXCEPT clause using ALTER PUBLICATION ... SET ALL TABLES first.")));
+
+	/*
 	 * Check existing foreign key constraints to preserve the invariant that
 	 * permanent tables cannot reference unlogged ones.  Self-referencing
 	 * foreign keys can safely be ignored.
