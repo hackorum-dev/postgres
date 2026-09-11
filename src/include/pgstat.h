@@ -596,6 +596,7 @@ typedef struct PgStat_Backend
 	PgStat_WalCounters wal_counters;
 	PgStat_PendingLock lock_stats;
 	int			pid;			/* PID of the backend owning these stats */
+	Oid			userid;			/* role owning the backend, or InvalidOid */
 } PgStat_Backend;
 
 /* ---------
@@ -674,7 +675,7 @@ extern PgStat_Backend *pgstat_fetch_stat_backend(ProcNumber procNumber);
 extern PgStat_Backend *pgstat_fetch_stat_backend_by_pid(int pid,
 														BackendType *bktype);
 extern bool pgstat_tracks_backend_bktype(BackendType bktype);
-extern void pgstat_create_backend(ProcNumber procnum);
+extern void pgstat_create_backend(ProcNumber procnum, Oid userid);
 
 /*
  * Functions in pgstat_bgwriter.c
