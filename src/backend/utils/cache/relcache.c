@@ -5810,6 +5810,7 @@ RelationBuildPublicationDesc(Relation relation, PublicationDesc *pubdesc)
 	Oid			schemaid;
 	List	   *ancestors = NIL;
 	Oid			relid = RelationGetRelid(relation);
+	bool		am_partition = relation->rd_rel->relispartition;
 
 	/*
 	 * If not publishable, it publishes no actions.  (pgoutput_change() will
@@ -5846,12 +5847,22 @@ RelationBuildPublicationDesc(Relation relation, PublicationDesc *pubdesc)
 	schemaid = RelationGetNamespace(relation);
 	puboids = list_concat_unique_oid(puboids, GetSchemaPublications(schemaid));
 
-	if (relation->rd_rel->relispartition)
+	/*
+	 * A partition whose concurrent detach has been committed but not
+	 * finalized reports no ancestors, even though relispartition is still
+	 * set. It is handled below like the standalone table it has effectively
+	 * become, which is also how it is handled once the detach completes.
+	 */
+	if (am_partition)
+	{
+		ancestors = get_partition_ancestors(relid);
+		am_partition = (ancestors != NIL);
+	}
+
+	if (am_partition)
 	{
 		Oid			last_ancestor_relid;
 
-		/* Add publications that the ancestors are in too. */
-		ancestors = get_partition_ancestors(relid);
 		last_ancestor_relid = llast_oid(ancestors);
 
 		foreach(lc, ancestors)
