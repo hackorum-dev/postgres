@@ -537,7 +537,9 @@ typedef struct PgStatShared_Backend
 	PgStatShared_Common header;
 	PgStat_Backend stats;
 
+	/* copies of the fields of "stats" to restore after a reset */
 	int			pid;
+	Oid			userid;
 } PgStatShared_Backend;
 
 /*
