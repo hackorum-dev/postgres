@@ -137,6 +137,25 @@ else
   }
 endif
 
+# ICU headers are included by public server headers, so extensions that
+# include those need the ICU include directory on the compiler search path.
+# Makefile.global adds $(ICU_CFLAGS) to CPPFLAGS, so populate it here, as the
+# autoconf build does via pkg-config.
+icu_cflags = ''
+if icu.found()
+  icu_incdir = icu.get_variable(pkgconfig: 'includedir',
+                                cmake: 'ICU_INCLUDE_DIRS',
+                                default_value: '')
+  if icu_incdir != ''
+    # cmake may return a ';'-separated list; take the first entry
+    icu_cflags = '-I' + icu_incdir.split(';')[0].strip()
+  endif
+endif
+
+pgxs_kv += {
+  'ICU_CFLAGS': icu_cflags,
+}
+
 pgxs_bins = {
   'AR':
     find_program(['ar'], native: true, required: false),
@@ -156,8 +175,6 @@ pgxs_bins = {
 }
 
 pgxs_empty = [
-  'ICU_CFLAGS', # needs to be added, included by public server headers
-
   # hard to see why we'd need these ones?
   'ZIC',
   'TCLSH',

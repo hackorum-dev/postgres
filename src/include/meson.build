@@ -47,7 +47,20 @@ else
   var_cxx = 'g++'
   var_cxxflags = ''
 endif
-var_cppflags = ' '.join(cppflags)
+# libpq-be.h, a public server header, includes openssl/ssl.h.  Extensions
+# built with PGXS that include such headers need the OpenSSL include directory
+# on the compiler search path.  The autoconf build gets this from CPPFLAGS
+# passed to configure; meson tracks it in the dependency object, so extract
+# it here so that it ends up in CPPFLAGS as well.
+openssl_cppflags = []
+if ssl.found()
+  openssl_incdir = ssl.get_variable(pkgconfig: 'includedir', default_value: '')
+  if openssl_incdir != ''
+    openssl_cppflags += '-I' + openssl_incdir
+  endif
+endif
+
+var_cppflags = ' '.join(cppflags + openssl_cppflags)
 var_cflags_sl = ' '.join(cc.get_supported_arguments('-fPIC'))
 # explicitly add -Wl,--as-needed, normally added by meson, but we want it for
 # PGXS compatibility
