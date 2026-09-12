@@ -4064,7 +4064,9 @@ getObjectDescription(const ObjectAddress *object, bool missing_ok)
 			}
 
 		default:
-			elog(ERROR, "unsupported object class: %u", object->classId);
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("unsupported object class: %u", object->classId)));
 	}
 
 	/* an empty buffer is equivalent to no object found */
