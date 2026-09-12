@@ -1155,6 +1155,7 @@ heapam_index_build_range_scan(Relation heapRelation,
 	BlockNumber previous_blkno = InvalidBlockNumber;
 	BlockNumber root_blkno = InvalidBlockNumber;
 	OffsetNumber root_offsets[MaxHeapTuplesPerPage];
+	bool		indexed_root[MaxHeapTuplesPerPage];
 
 	/*
 	 * sanity checks
@@ -1331,9 +1332,15 @@ heapam_index_build_range_scan(Relation heapRelation,
 		 * the chain root locations won't, so this info doesn't need to be
 		 * rebuilt after waiting for another transaction.
 		 *
-		 * Note the implied assumption that there is no more than one live
-		 * tuple per HOT-chain --- else we could create more than one index
-		 * entry pointing to the same root tuple.
+		 * That liveness change is not hypothetical.  System catalog
+		 * modifications release their relation lock before commit, so a
+		 * non-unique index build can observe both a still-live root and a
+		 * heap-only HOT update from another transaction.  Indexing both
+		 * would emit two entries for the same root TID.  We do not wait for
+		 * the inserting transaction: that reintroduces VACUUM FULL/CLUSTER
+		 * deadlocks on catalogs (commit 1ddc2703a936).  Instead,
+		 * indexed_root[] records which root offsets we already handed to the
+		 * AM on this page.
 		 */
 		if (hscan->rs_cblock != root_blkno)
 		{
@@ -1343,6 +1350,7 @@ heapam_index_build_range_scan(Relation heapRelation,
 			heap_get_root_tuples(page, root_offsets);
 			LockBuffer(hscan->rs_cbuf, BUFFER_LOCK_UNLOCK);
 
+			MemSet(indexed_root, 0, sizeof(indexed_root));
 			root_blkno = hscan->rs_cblock;
 		}
 
@@ -1445,6 +1453,12 @@ heapam_index_build_range_scan(Relation heapRelation,
 						 * such a tuple could lead to a bogus uniqueness
 						 * failure.  In that case we wait for the inserting
 						 * transaction to finish and check again.
+						 *
+						 * We do not wait merely because the tuple is part of
+						 * a HOT chain.  That would re-introduce catalog
+						 * deadlocks with VACUUM FULL/CLUSTER (1ddc2703a936).
+						 * Duplicate root TIDs from a mid-scan HOT update are
+						 * suppressed via indexed_root[] instead.
 						 */
 						if (checking_uniqueness)
 						{
@@ -1616,51 +1630,76 @@ heapam_index_build_range_scan(Relation heapRelation,
 		 * pass the values[] and isnull[] arrays, instead.
 		 */
 
-		if (HeapTupleIsHeapOnly(heapTuple))
 		{
-			/*
-			 * For a heap-only tuple, pretend its TID is that of the root. See
-			 * src/backend/access/heap/README.HOT for discussion.
-			 */
 			ItemPointerData tid;
-			OffsetNumber offnum;
+			ItemPointer tidptr;
+			OffsetNumber emitoff;
 
-			offnum = ItemPointerGetOffsetNumber(&heapTuple->t_self);
-
-			/*
-			 * If a HOT tuple points to a root that we don't know about,
-			 * obtain root items afresh.  If that still fails, report it as
-			 * corruption.
-			 */
-			if (root_offsets[offnum - 1] == InvalidOffsetNumber)
+			if (HeapTupleIsHeapOnly(heapTuple))
 			{
-				Page		page = BufferGetPage(hscan->rs_cbuf);
+				/*
+				 * For a heap-only tuple, pretend its TID is that of the root.
+				 * See src/backend/access/heap/README.HOT for discussion.
+				 */
+				OffsetNumber offnum;
 
-				LockBuffer(hscan->rs_cbuf, BUFFER_LOCK_SHARE);
-				heap_get_root_tuples(page, root_offsets);
-				LockBuffer(hscan->rs_cbuf, BUFFER_LOCK_UNLOCK);
+				offnum = ItemPointerGetOffsetNumber(&heapTuple->t_self);
+
+				/*
+				 * If a HOT tuple points to a root that we don't know about,
+				 * obtain root items afresh.  If that still fails, report it
+				 * as corruption.
+				 */
+				if (root_offsets[offnum - 1] == InvalidOffsetNumber)
+				{
+					Page		page = BufferGetPage(hscan->rs_cbuf);
+
+					LockBuffer(hscan->rs_cbuf, BUFFER_LOCK_SHARE);
+					heap_get_root_tuples(page, root_offsets);
+					LockBuffer(hscan->rs_cbuf, BUFFER_LOCK_UNLOCK);
+
+					/*
+					 * Leave indexed_root[] unchanged; it tracks TIDs we
+					 * already emitted on this page.
+					 */
+				}
+
+				if (!OffsetNumberIsValid(root_offsets[offnum - 1]))
+					ereport(ERROR,
+							(errcode(ERRCODE_DATA_CORRUPTED),
+							 errmsg_internal("failed to find parent tuple for heap-only tuple at (%u,%u) in table \"%s\"",
+											 ItemPointerGetBlockNumber(&heapTuple->t_self),
+											 offnum,
+											 RelationGetRelationName(heapRelation))));
+
+				ItemPointerSet(&tid, ItemPointerGetBlockNumber(&heapTuple->t_self),
+							   root_offsets[offnum - 1]);
+				tidptr = &tid;
+				emitoff = root_offsets[offnum - 1];
+			}
+			else
+			{
+				tidptr = &heapTuple->t_self;
+				emitoff = ItemPointerGetOffsetNumber(&heapTuple->t_self);
 			}
 
-			if (!OffsetNumberIsValid(root_offsets[offnum - 1]))
-				ereport(ERROR,
-						(errcode(ERRCODE_DATA_CORRUPTED),
-						 errmsg_internal("failed to find parent tuple for heap-only tuple at (%u,%u) in table \"%s\"",
-										 ItemPointerGetBlockNumber(&heapTuple->t_self),
-										 offnum,
-										 RelationGetRelationName(heapRelation))));
+			/*
+			 * HOT chains are confined to one page and must produce at most
+			 * one index entry.  If we already emitted this root TID on the
+			 * current page, skip; the earlier callback used the same TID
+			 * (and, for a well-formed HOT chain, the same key).
+			 *
+			 * Record the emission only here, after the partial-index
+			 * predicate has accepted the tuple, so a rejected member does not
+			 * suppress a later one.
+			 */
+			Assert(OffsetNumberIsValid(emitoff));
+			if (indexed_root[emitoff - 1])
+				continue;
+			indexed_root[emitoff - 1] = true;
 
-			ItemPointerSet(&tid, ItemPointerGetBlockNumber(&heapTuple->t_self),
-						   root_offsets[offnum - 1]);
-
-			/* Call the AM's callback routine to process the tuple */
-			callback(indexRelation, &tid, values, isnull, tupleIsAlive,
+			callback(indexRelation, tidptr, values, isnull, tupleIsAlive,
 					 callback_state);
-		}
-		else
-		{
-			/* Call the AM's callback routine to process the tuple */
-			callback(indexRelation, &heapTuple->t_self, values, isnull,
-					 tupleIsAlive, callback_state);
 		}
 	}
 
