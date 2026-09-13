@@ -81,6 +81,9 @@ extern PGDLLEXPORT void injection_notice(const char *name,
 extern PGDLLEXPORT void injection_wait(const char *name,
 									   const void *private_data,
 									   void *arg);
+extern PGDLLEXPORT void injection_exit(const char *name,
+									   const void *private_data,
+									   void *arg);
 
 /* track if injection points attached in this process are linked to it */
 static bool injection_point_local = false;
@@ -220,6 +223,13 @@ injection_notice(const char *name, const void *private_data, void *arg)
 			 name, argstr);
 	else
 		elog(NOTICE, "notice triggered for injection point %s", name);
+}
+
+/* Exit without reporting an error. */
+void
+injection_exit(const char *name, const void *private_data, void *arg)
+{
+	proc_exit(1);
 }
 
 /*

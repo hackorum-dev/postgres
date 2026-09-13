@@ -219,6 +219,8 @@ static Oid	determine_clustered_index(Relation rel, bool usingindex,
 static void start_repack_decoding_worker(Oid relid);
 static void stop_repack_decoding_worker(void);
 static void stop_repack_decoding_worker_cb(int code, Datum arg);
+static void wait_for_repack_worker_file(DecodingWorkerShared *shared,
+										int expected_file);
 static Snapshot get_initial_snapshot(DecodingWorker *worker);
 
 static void ProcessRepackMessage(StringInfo msg);
@@ -3113,29 +3115,8 @@ process_concurrent_changes(XLogRecPtr end_of_wal, ChangeContext *chgcxt, bool do
 	shared->done = done;
 	SpinLockRelease(&shared->mutex);
 
-	/*
-	 * The worker needs to finish processing of the current WAL record. Even
-	 * if it's idle, it'll need to close the output file. Thus we're likely to
-	 * wait, so prepare for sleep.
-	 */
-	ConditionVariablePrepareToSleep(&shared->cv);
-	for (;;)
-	{
-		int			last_exported;
-
-		SpinLockAcquire(&shared->mutex);
-		last_exported = shared->last_exported;
-		SpinLockRelease(&shared->mutex);
-
-		/*
-		 * Has the worker exported the file we are waiting for?
-		 */
-		if (last_exported == chgcxt->cc_file_seq)
-			break;
-
-		ConditionVariableSleep(&shared->cv, WAIT_EVENT_REPACK_WORKER_EXPORT);
-	}
-	ConditionVariableCancelSleep();
+	/* Wait for the worker to finish and close the requested file. */
+	wait_for_repack_worker_file(shared, chgcxt->cc_file_seq);
 
 	/* Open the file. */
 	DecodingWorkerFileName(fname, shared->relid, chgcxt->cc_file_seq);
@@ -3801,10 +3782,23 @@ start_repack_decoding_worker(Oid relid)
 	 * waiting for the caller's transaction to end. Therefore wait here until
 	 * the worker indicates that it has the logical decoding initialized.
 	 */
-	ConditionVariablePrepareToSleep(&shared->cv);
 	for (;;)
 	{
+		BgwHandleStatus status;
 		bool		initialized;
+		pid_t		pid;
+
+		ResetLatch(MyLatch);
+		CHECK_FOR_INTERRUPTS();
+
+		/* See wait_for_repack_worker_file() for the wait protocol. */
+		ConditionVariablePrepareToSleep(&shared->cv);
+
+		/*
+		 * Read status first, so a worker that initializes and then exits
+		 * still satisfies the predicate below.
+		 */
+		status = GetBackgroundWorkerPid(decoding_worker->handle, &pid);
 
 		SpinLockAcquire(&shared->mutex);
 		initialized = shared->initialized;
@@ -3813,7 +3807,21 @@ start_repack_decoding_worker(Oid relid)
 		if (initialized)
 			break;
 
-		ConditionVariableSleep(&shared->cv, WAIT_EVENT_REPACK_WORKER_EXPORT);
+		if (status == BGWH_STOPPED)
+		{
+			/* Report a queued worker error, if one is available. */
+			ConditionVariableCancelSleep();
+			ProcessRepackMessages();
+
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("REPACK worker failed to initialize"),
+					 errhint("More details may be available in the server log.")));
+		}
+
+		(void) WaitLatch(MyLatch,
+						 WL_LATCH_SET | WL_EXIT_ON_PM_DEATH,
+						 -1, WAIT_EVENT_REPACK_WORKER_EXPORT);
 	}
 	ConditionVariableCancelSleep();
 }
@@ -3876,6 +3884,56 @@ stop_repack_decoding_worker_cb(int code, Datum arg)
 }
 
 /*
+ * Wait for the decoding worker to export a requested file.
+ *
+ * Worker exit sets our latch without signaling the CV, so wait on the latch
+ * directly.  Re-register on the CV before each predicate check, since a CV
+ * signal removes us from its wait list and WaitLatch() does not re-add us.
+ */
+static void
+wait_for_repack_worker_file(DecodingWorkerShared *shared, int expected_file)
+{
+	for (;;)
+	{
+		BgwHandleStatus status;
+		int			last_exported;
+		pid_t		pid;
+
+		ResetLatch(MyLatch);
+		CHECK_FOR_INTERRUPTS();
+		ConditionVariablePrepareToSleep(&shared->cv);
+
+		/*
+		 * Read status before the counter, so a worker that publishes its
+		 * final file and then exits still satisfies the predicate below.
+		 */
+		status = GetBackgroundWorkerPid(decoding_worker->handle, &pid);
+		SpinLockAcquire(&shared->mutex);
+		last_exported = shared->last_exported;
+		SpinLockRelease(&shared->mutex);
+
+		if (last_exported == expected_file)
+			break;
+
+		if (status == BGWH_STOPPED)
+		{
+			ConditionVariableCancelSleep();
+			/* Preserve any error the worker queued before exiting. */
+			ProcessRepackMessages();
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("REPACK worker exited before exporting requested data"),
+					 errhint("More details may be available in the server log.")));
+		}
+
+		(void) WaitLatch(MyLatch,
+						 WL_LATCH_SET | WL_EXIT_ON_PM_DEATH,
+						 -1, WAIT_EVENT_REPACK_WORKER_EXPORT);
+	}
+	ConditionVariableCancelSleep();
+}
+
+/*
  * Get the initial snapshot from the decoding worker.
  */
 static Snapshot
@@ -3890,29 +3948,8 @@ get_initial_snapshot(DecodingWorker *worker)
 
 	shared = (DecodingWorkerShared *) dsm_segment_address(worker->seg);
 
-	/*
-	 * The worker needs to initialize the logical decoding, which usually
-	 * takes some time. Therefore it makes sense to prepare for the sleep
-	 * first.
-	 */
-	ConditionVariablePrepareToSleep(&shared->cv);
-	for (;;)
-	{
-		int			last_exported;
-
-		SpinLockAcquire(&shared->mutex);
-		last_exported = shared->last_exported;
-		SpinLockRelease(&shared->mutex);
-
-		/*
-		 * Has the worker exported the file we are waiting for?
-		 */
-		if (last_exported == WORKER_FILE_SNAPSHOT)
-			break;
-
-		ConditionVariableSleep(&shared->cv, WAIT_EVENT_REPACK_WORKER_EXPORT);
-	}
-	ConditionVariableCancelSleep();
+	/* Wait for the worker to export the initial snapshot. */
+	wait_for_repack_worker_file(shared, WORKER_FILE_SNAPSHOT);
 
 	/* Read the snapshot from a file. */
 	DecodingWorkerFileName(fname, shared->relid, WORKER_FILE_SNAPSHOT);

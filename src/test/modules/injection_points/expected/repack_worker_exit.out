@@ -1,0 +1,100 @@
+Parsed test spec with 1 sessions
+
+starting permutation: repack init_error repack detach_init repack snapshot_error repack detach_snapshot repack detach_replay check_failure check_data repack check_success check_data
+step repack: REPACK (CONCURRENTLY) repack_worker_exit;
+ERROR:  REPACK worker failed to initialize
+step init_error: 
+	SELECT injection_points_detach('repack-worker-after-error-queue-attach');
+	SELECT injection_points_attach('repack-worker-after-error-queue-attach', 'error');
+
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step repack: REPACK (CONCURRENTLY) repack_worker_exit;
+ERROR:  error triggered for injection point repack-worker-after-error-queue-attach
+step detach_init: 
+	SELECT injection_points_detach('repack-worker-after-error-queue-attach');
+
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+step repack: REPACK (CONCURRENTLY) repack_worker_exit;
+ERROR:  REPACK worker exited before exporting requested data
+step snapshot_error: 
+	SELECT injection_points_detach('repack-worker-before-snapshot-export');
+	SELECT injection_points_attach('repack-worker-before-snapshot-export', 'error');
+
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step repack: REPACK (CONCURRENTLY) repack_worker_exit;
+ERROR:  error triggered for injection point repack-worker-before-snapshot-export
+step detach_snapshot: 
+	SELECT injection_points_detach('repack-worker-before-snapshot-export');
+
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+step repack: REPACK (CONCURRENTLY) repack_worker_exit;
+ERROR:  REPACK worker exited before exporting requested data
+step detach_replay: 
+	SELECT injection_points_detach('repack-worker-before-replay-export');
+
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+step check_failure: 
+	SELECT pg_relation_filenode('repack_worker_exit') = node AS failure_unchanged
+	FROM original_node;
+
+failure_unchanged
+-----------------
+t                
+(1 row)
+
+step check_data: SELECT * FROM repack_worker_exit ORDER BY i;
+i|j    
+-+-----
+1|one  
+2|two  
+3|three
+(3 rows)
+
+step repack: REPACK (CONCURRENTLY) repack_worker_exit;
+step check_success: 
+	SELECT pg_relation_filenode('repack_worker_exit') <> node AS success_rewritten
+	FROM original_node;
+
+success_rewritten
+-----------------
+t                
+(1 row)
+
+step check_data: SELECT * FROM repack_worker_exit ORDER BY i;
+i|j    
+-+-----
+1|one  
+2|two  
+3|three
+(3 rows)
+

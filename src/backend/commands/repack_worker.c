@@ -26,6 +26,7 @@
 #include "storage/ipc.h"
 #include "storage/proc.h"
 #include "tcop/tcopprot.h"
+#include "utils/injection_point.h"
 #include "utils/memutils.h"
 
 #define PGREPACK_PLUGIN   "pgrepack"
@@ -100,6 +101,7 @@ RepackWorkerMain(Datum main_arg)
 	pq_redirect_to_shm_mq(seg, mqh);
 	pq_set_parallel_leader(shared->backend_pid,
 						   shared->backend_proc_number);
+	INJECTION_POINT("repack-worker-after-error-queue-attach", NULL);
 
 	/*
 	 * Connect to the database, skipping the connection authorization checks
@@ -147,6 +149,7 @@ RepackWorkerMain(Datum main_arg)
 
 	/* Build the initial snapshot and export it. */
 	snapshot = SnapBuildInitialSnapshot(decoding_ctx->snapshot_builder);
+	INJECTION_POINT("repack-worker-before-snapshot-export", NULL);
 	export_initial_snapshot(snapshot, shared);
 
 	/*
@@ -487,6 +490,7 @@ decode_concurrent_changes(LogicalDecodingContext *ctx,
 	/*
 	 * Close the file so we can make it available to the backend.
 	 */
+	INJECTION_POINT("repack-worker-before-replay-export", NULL);
 	BufFileClose(dstate->file);
 	dstate->file = NULL;
 	SpinLockAcquire(&shared->mutex);
