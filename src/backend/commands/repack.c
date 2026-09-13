@@ -3801,10 +3801,33 @@ start_repack_decoding_worker(Oid relid)
 	 * waiting for the caller's transaction to end. Therefore wait here until
 	 * the worker indicates that it has the logical decoding initialized.
 	 */
-	ConditionVariablePrepareToSleep(&shared->cv);
 	for (;;)
 	{
+		BgwHandleStatus status;
 		bool		initialized;
+		pid_t		pid;
+
+		/*
+		 * Background worker state changes set our latch, but they don't signal
+		 * the condition variable.  Wait on the latch directly so that a worker
+		 * which fails before initializing cannot leave us asleep forever.
+		 */
+		ResetLatch(MyLatch);
+		CHECK_FOR_INTERRUPTS();
+
+		/*
+		 * ConditionVariableSignal() removes us from the wait list, while the
+		 * direct latch wait below does not re-add us.  Re-register on every
+		 * iteration so we cannot miss an initialization signal.
+		 */
+		ConditionVariablePrepareToSleep(&shared->cv);
+
+		/*
+		 * Check the worker state before the shared flag.  If the worker sets
+		 * the flag and then exits, the flag still makes initialization
+		 * successful even though the handle is already stopped.
+		 */
+		status = GetBackgroundWorkerPid(decoding_worker->handle, &pid);
 
 		SpinLockAcquire(&shared->mutex);
 		initialized = shared->initialized;
@@ -3813,7 +3836,21 @@ start_repack_decoding_worker(Oid relid)
 		if (initialized)
 			break;
 
-		ConditionVariableSleep(&shared->cv, WAIT_EVENT_REPACK_WORKER_EXPORT);
+		if (status == BGWH_STOPPED)
+		{
+			/* Report a queued worker error, if one is available. */
+			ConditionVariableCancelSleep();
+			ProcessRepackMessages();
+
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("REPACK worker failed to initialize"),
+					 errhint("More details may be available in the server log.")));
+		}
+
+		(void) WaitLatch(MyLatch,
+						 WL_LATCH_SET | WL_EXIT_ON_PM_DEATH,
+						 -1, WAIT_EVENT_REPACK_WORKER_EXPORT);
 	}
 	ConditionVariableCancelSleep();
 }
