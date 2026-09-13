@@ -27,6 +27,7 @@
 #include "storage/ipc.h"
 #include "storage/proc.h"
 #include "tcop/tcopprot.h"
+#include "utils/injection_point.h"
 #include "utils/memutils.h"
 
 #define PGREPACK_PLUGIN   "pgrepack"
@@ -68,6 +69,7 @@ RepackWorkerMain(Datum main_arg)
 	am_repack_worker = true;
 
 	BackgroundWorkerUnblockSignals();
+	INJECTION_POINT("repack-worker-before-dsm-attach", NULL);
 
 	seg = dsm_attach(DatumGetUInt32(main_arg));
 	if (seg == NULL)
@@ -97,6 +99,7 @@ RepackWorkerMain(Datum main_arg)
 	pq_redirect_to_shm_mq(seg, mqh);
 	pq_set_parallel_leader(shared->backend_pid,
 						   shared->backend_proc_number);
+	INJECTION_POINT("repack-worker-after-error-queue-attach", NULL);
 
 	/*
 	 * Connect to the database, skipping the connection authorization checks
