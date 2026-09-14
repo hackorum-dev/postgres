@@ -278,6 +278,27 @@ heapam_tuple_lock(Relation relation, ItemPointer tid, Snapshot snapshot,
 
 	Assert(TTS_IS_BUFFERTUPLE(slot));
 
+	/*
+	 * Reject a TID that does not name a heap block before it reaches
+	 * ReadBuffer() below, which would read InvalidBlockNumber as P_NEW and
+	 * extend the relation, leaving an uninitialized block behind that later
+	 * breaks sequential scans with "invalid page in block".  A caller that
+	 * gets here with such a TID has a bug, so fail cleanly instead.
+	 *
+	 * The moved-partitions marker also encodes InvalidBlockNumber, but it is
+	 * a legitimate value that the retry loop below reports on its own terms,
+	 * so let it through.  Test the offset first, since
+	 * ItemPointerIndicatesMovedPartitions() reads it through the checked
+	 * accessor, which would assert on an offset of 0.
+	 */
+	if (unlikely(ItemPointerGetBlockNumberNoCheck(tid) == InvalidBlockNumber &&
+				 (ItemPointerGetOffsetNumberNoCheck(tid) == InvalidOffsetNumber ||
+				  !ItemPointerIndicatesMovedPartitions(tid))))
+		elog(ERROR, "cannot lock tuple with invalid TID (%u,%u) in relation \"%s\"",
+			 ItemPointerGetBlockNumberNoCheck(tid),
+			 ItemPointerGetOffsetNumberNoCheck(tid),
+			 RelationGetRelationName(relation));
+
 tuple_lock_retry:
 	tuple->t_self = *tid;
 	result = heap_lock_tuple(relation, tuple, cid, mode, wait_policy,
