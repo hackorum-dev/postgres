@@ -57,6 +57,7 @@
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
+#include "utils/resowner.h"
 #include "utils/rls.h"
 #include "utils/ruleutils.h"
 #include "utils/snapmgr.h"
@@ -283,6 +284,7 @@ typedef struct RI_FastPathEntry
 	TupleTableSlot *pk_slot;
 	TupleTableSlot *fk_slot;
 	MemoryContext flush_cxt;	/* short-lived context for per-flush work */
+	ResourceOwner resowner;		/* owner of relation and tuple descriptor refs */
 
 	/*
 	 * TODO: batch[] is HeapTuple[] because the AFTER trigger machinery
@@ -300,7 +302,7 @@ typedef struct RI_FastPathEntry
 	bool		flushing;
 
 	/*
-	 * Subtransaction whose resource owner opened this entry's relations.
+	 * Subtransaction in which this entry's resources were acquired.
 	 * AtEOSubXact_RI() drops only entries matching an aborting subxact, so a
 	 * subxact abort during outer-level trigger firing leaves the outer batch
 	 * intact.
@@ -419,6 +421,7 @@ pg_noreturn static void ri_ReportViolation(const RI_ConstraintInfo *riinfo,
 static RI_FastPathEntry *ri_FastPathGetEntry(RI_ConstraintInfo *riinfo,
 											 Relation fk_rel);
 static void ri_FastPathEndBatch(void *arg);
+static void ri_FastPathReleaseEntry(RI_FastPathEntry *entry);
 static void ri_FastPathTeardown(int depth);
 
 
@@ -4569,6 +4572,27 @@ ri_FastPathEndBatch(void *arg)
 	ri_FastPathTeardown(my_depth);
 }
 
+/* Release resources owned by one fast-path cache entry. */
+static void
+ri_FastPathReleaseEntry(RI_FastPathEntry *entry)
+{
+	ResourceOwner save_resowner = CurrentResourceOwner;
+
+	/* Abort cleanup can run outside the portal that owns these references. */
+	CurrentResourceOwner = entry->resowner;
+	if (entry->idx_rel)
+		index_close(entry->idx_rel, NoLock);
+	if (entry->pk_rel)
+		table_close(entry->pk_rel, NoLock);
+	if (entry->pk_slot)
+		ExecDropSingleTupleTableSlot(entry->pk_slot);
+	if (entry->fk_slot)
+		ExecDropSingleTupleTableSlot(entry->fk_slot);
+	if (entry->flush_cxt)
+		MemoryContextDelete(entry->flush_cxt);
+	CurrentResourceOwner = save_resowner;
+}
+
 /*
  * ri_FastPathTeardown
  *		Release and remove the cached entries of one firing cycle, and drop
@@ -4593,16 +4617,7 @@ ri_FastPathTeardown(int depth)
 	{
 		if (entry->key.query_depth != depth)
 			continue;
-		if (entry->idx_rel)
-			index_close(entry->idx_rel, NoLock);
-		if (entry->pk_rel)
-			table_close(entry->pk_rel, NoLock);
-		if (entry->pk_slot)
-			ExecDropSingleTupleTableSlot(entry->pk_slot);
-		if (entry->fk_slot)
-			ExecDropSingleTupleTableSlot(entry->fk_slot);
-		if (entry->flush_cxt)
-			MemoryContextDelete(entry->flush_cxt);
+		ri_FastPathReleaseEntry(entry);
 		hash_search(ri_fastpath_cache, &entry->key, HASH_REMOVE, NULL);
 	}
 
@@ -4686,9 +4701,9 @@ AtEOXact_RI(bool isCommit)
  * AtEOSubXact_RI
  *		Reset fast-path batching state at subtransaction end.
  *
- * Called from CommitSubTransaction() with isCommit true and from
- * AbortSubTransaction() with isCommit false, in both cases after the
- * subtransaction's ResourceOwnerRelease().
+ * Called from CommitSubTransaction() with isCommit true after the
+ * subtransaction's ResourceOwnerRelease(), and from AbortSubTransaction()
+ * with isCommit false before ResourceOwnerRelease().
  *
  * Fast-path cache entries are normally flushed and removed at the end of
  * their trigger-firing cycle, and the cache is destroyed when its last entry
@@ -4696,14 +4711,11 @@ AtEOXact_RI(bool isCommit)
  *
  * The exception is a batch flush that errors out partway and is caught by this
  * subtransaction (e.g. a PL/pgSQL EXCEPTION block): ri_FastPathEndBatch()'s
- * teardown was skipped, so the cache still contains entries whose relations
- * were opened under this subtransaction's resource owner.  That owner has
- * just released those relations, making the entries stale.  Remove those
- * entries so a later firing cycle cannot reuse them.  Entries belonging to
- * outer subtransactions remain valid and are preserved.
- *
- * The remaining slot storage and per-entry flush contexts are reclaimed when
- * TopTransactionContext is reset at top-level transaction end.
+ * teardown was skipped, so the cache still contains entries whose resources
+ * were acquired in this subtransaction, possibly under a portal's resource
+ * owner.  Release and remove those entries before resource-owner cleanup so a
+ * later firing cycle cannot reuse them.  Entries belonging to outer
+ * subtransactions remain valid and are preserved.
  */
 void
 AtEOSubXact_RI(bool isCommit, SubTransactionId mySubid,
@@ -4736,7 +4748,10 @@ AtEOSubXact_RI(bool isCommit, SubTransactionId mySubid,
 			entry->subid = parentSubid;
 		}
 		else
+		{
+			ri_FastPathReleaseEntry(entry);
 			hash_search(ri_fastpath_cache, &entry->key, HASH_REMOVE, NULL);
+		}
 	}
 
 	/* If that emptied the cache, drop it so the next batch starts clean. */
@@ -4799,6 +4814,9 @@ ri_FastPathGetEntry(RI_ConstraintInfo *riinfo, Relation fk_rel)
 		 */
 		memset(((char *) entry) + offsetof(RI_FastPathEntry, pk_rel), 0,
 			   sizeof(RI_FastPathEntry) - offsetof(RI_FastPathEntry, pk_rel));
+		/* Make even a partially initialized entry safe for abort cleanup. */
+		entry->subid = GetCurrentSubTransactionId();
+		entry->resowner = CurrentResourceOwner;
 
 		oldcxt = MemoryContextSwitchTo(TopTransactionContext);
 
@@ -4894,7 +4912,6 @@ ri_FastPathGetEntry(RI_ConstraintInfo *riinfo, Relation fk_rel)
 
 		entry->flushing = false;
 		entry->batch_count = 0;
-		entry->subid = GetCurrentSubTransactionId();
 	}
 	else
 	{
