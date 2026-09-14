@@ -123,6 +123,22 @@ $node->reload;
 $log_start =
   $node->wait_for_log(qr/reloading configuration files/, $log_start);
 
+# An all-whitespace library list parses as an empty list.  Reject it without
+# crashing the postmaster during HBA reload.
+$node->append_conf('postgresql.conf',
+	"oauth_validator_libraries = '   '\n");
+$node->reload;
+$log_start = $node->wait_for_log(
+	qr/parameter "oauth_validator_libraries" must be set/, $log_start);
+is($bgconn->query_safe('SELECT 1'), '1',
+	'postmaster survives an empty OAuth validator list on reload');
+
+$node->append_conf('postgresql.conf',
+	"oauth_validator_libraries = 'validator'\n");
+$node->reload;
+$log_start =
+  $node->wait_for_log(qr/reloading configuration files/, $log_start);
+
 # Check pg_hba_file_rules() support.
 my $contents = $bgconn->query_safe(
 	qq(SELECT rule_number, auth_method, options

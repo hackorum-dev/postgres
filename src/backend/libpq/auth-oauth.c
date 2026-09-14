@@ -863,19 +863,6 @@ check_oauth_validator(HbaLine *hbaline, int elevel, char **err_msg)
 
 	*err_msg = NULL;
 
-	if (oauth_validator_libraries_string[0] == '\0')
-	{
-		ereport(elevel,
-				errcode(ERRCODE_CONFIG_FILE_ERROR),
-				errmsg("parameter \"%s\" must be set for authentication method \"%s\"",
-					   "oauth_validator_libraries", "oauth"),
-				errcontext("line %d of configuration file \"%s\"",
-						   line_num, file_name));
-		*err_msg = psprintf("parameter \"%s\" must be set for authentication method \"%s\"",
-							"oauth_validator_libraries", "oauth");
-		return false;
-	}
-
 	/* SplitDirectoriesString needs a modifiable copy */
 	rawstring = pstrdup(oauth_validator_libraries_string);
 
@@ -888,6 +875,24 @@ check_oauth_validator(HbaLine *hbaline, int elevel, char **err_msg)
 					   "oauth_validator_libraries"));
 		*err_msg = psprintf("invalid list syntax in parameter \"%s\"",
 							"oauth_validator_libraries");
+		goto done;
+	}
+
+	/*
+	 * An empty or all-whitespace setting is accepted by
+	 * SplitDirectoriesString(), which returns an empty list for it, so the
+	 * parse result has to be checked rather than the raw string.
+	 */
+	if (elemlist == NIL)
+	{
+		ereport(elevel,
+				errcode(ERRCODE_CONFIG_FILE_ERROR),
+				errmsg("parameter \"%s\" must be set for authentication method \"%s\"",
+					   "oauth_validator_libraries", "oauth"),
+				errcontext("line %d of configuration file \"%s\"",
+						   line_num, file_name));
+		*err_msg = psprintf("parameter \"%s\" must be set for authentication method \"%s\"",
+							"oauth_validator_libraries", "oauth");
 		goto done;
 	}
 
