@@ -269,7 +269,8 @@ main(int argc, char *argv[])
 	printf(_("Latest checkpoint's NextXID:          %u:%u\n"),
 		   EpochFromFullTransactionId(ControlFile->checkPointCopy.nextXid),
 		   XidFromFullTransactionId(ControlFile->checkPointCopy.nextXid));
-	printf(_("Latest checkpoint's NextOID:          " OID8_FORMAT "\n"),
+	/* Use PRIu64 because xgettext does not recognize OID8_FORMAT. */
+	printf(_("Latest checkpoint's NextOID:          %" PRIu64 "\n"),
 		   ControlFile->checkPointCopy.nextOid);
 	printf(_("Latest checkpoint's NextMultiXactId:  %u\n"),
 		   ControlFile->checkPointCopy.nextMulti);
