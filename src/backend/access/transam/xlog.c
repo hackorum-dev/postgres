@@ -61,6 +61,7 @@
 #include "access/xloginsert.h"
 #include "access/xlogreader.h"
 #include "access/xlogrecovery.h"
+#include "access/xlogupgrade.h"
 #include "access/xlogutils.h"
 #include "access/xlogwait.h"
 #include "backup/basebackup.h"
@@ -546,6 +547,14 @@ typedef struct XLogCtlData
 	bool		upgradeBoundaryRequested;
 
 	/*
+	 * inplaceUpgradeMode says whether an in-place upgrade is in progress (see
+	 * GetInplaceUpgradeMode()).  Initialized from the control file, settled
+	 * by the startup process after a takeover, and read without locking as a
+	 * single byte.
+	 */
+	bool		inplaceUpgradeMode;
+
+	/*
 	 * During recovery, we keep a copy of the latest checkpoint record here.
 	 * lastCheckPointRecPtr points to start of checkpoint record and
 	 * lastCheckPointEndPtr points to end+1 of checkpoint record.  Used by the
@@ -760,6 +769,7 @@ static XLogRecPtr CreateOverwriteContrecordRecord(XLogRecPtr aborted_lsn,
 												  XLogRecPtr pagePtr,
 												  TimeLineID newTLI);
 static void CheckPointGuts(XLogRecPtr checkPointRedo, int flags);
+static bool ControlFileInplaceUpgradeMode(const ControlFileData *cf);
 static void KeepLogSeg(XLogRecPtr recptr, XLogSegNo *logSegNo);
 
 static void AdvanceXLInsertBuffer(XLogRecPtr upto, TimeLineID tli,
@@ -4535,41 +4545,53 @@ ReadControlFile(void)
 				 errhint("This could be a problem of mismatched byte ordering.  It looks like you need to initdb.")));
 
 	if (ControlFile->pg_control_version != PG_CONTROL_VERSION)
-		ereport(FATAL,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("database files are incompatible with server"),
-				 errdetail("The database cluster was initialized with PG_CONTROL_VERSION %d,"
-						   " but the server was compiled with PG_CONTROL_VERSION %d.",
-						   ControlFile->pg_control_version, PG_CONTROL_VERSION),
-				 errhint("It looks like you need to initdb.")));
+	{
+		/*
+		 * A control file from an old major version is accepted when that
+		 * version shut the cluster down at an upgrade boundary.  The
+		 * translator has already checked the CRC in the old layout, and the
+		 * version numbers stay the old ones until the startup process takes
+		 * over the cluster.
+		 */
+		if (!InplaceUpgradeTranslateControlFile(ControlFile))
+			ereport(FATAL,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("database files are incompatible with server"),
+					 errdetail("The database cluster was initialized with PG_CONTROL_VERSION %d,"
+							   " but the server was compiled with PG_CONTROL_VERSION %d.",
+							   ControlFile->pg_control_version, PG_CONTROL_VERSION),
+					 errhint("It looks like you need to initdb.")));
+	}
+	else
+	{
+		/* Now check the CRC. */
+		INIT_CRC32C(crc);
+		COMP_CRC32C(crc,
+					ControlFile,
+					offsetof(ControlFileData, crc));
+		FIN_CRC32C(crc);
 
-	/* Now check the CRC. */
-	INIT_CRC32C(crc);
-	COMP_CRC32C(crc,
-				ControlFile,
-				offsetof(ControlFileData, crc));
-	FIN_CRC32C(crc);
+		if (!EQ_CRC32C(crc, ControlFile->crc))
+			ereport(FATAL,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("incorrect checksum in control file")));
 
-	if (!EQ_CRC32C(crc, ControlFile->crc))
-		ereport(FATAL,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("incorrect checksum in control file")));
-
-	/*
-	 * Do compatibility checking immediately.  If the database isn't
-	 * compatible with the backend executable, we want to abort before we can
-	 * possibly do any damage.
-	 */
-	if (ControlFile->catalog_version_no != CATALOG_VERSION_NO)
-		ereport(FATAL,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("database files are incompatible with server"),
-		/* translator: %s is a variable name and %d is its value */
-				 errdetail("The database cluster was initialized with %s %d,"
-						   " but the server was compiled with %s %d.",
-						   "CATALOG_VERSION_NO", ControlFile->catalog_version_no,
-						   "CATALOG_VERSION_NO", CATALOG_VERSION_NO),
-				 errhint("It looks like you need to initdb.")));
+		/*
+		 * Do compatibility checking immediately.  If the database isn't
+		 * compatible with the backend executable, we want to abort before we
+		 * can possibly do any damage.
+		 */
+		if (ControlFile->catalog_version_no != CATALOG_VERSION_NO)
+			ereport(FATAL,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("database files are incompatible with server"),
+			/* translator: %s is a variable name and %d is its value */
+					 errdetail("The database cluster was initialized with %s %d,"
+							   " but the server was compiled with %s %d.",
+							   "CATALOG_VERSION_NO", ControlFile->catalog_version_no,
+							   "CATALOG_VERSION_NO", CATALOG_VERSION_NO),
+					 errhint("It looks like you need to initdb.")));
+	}
 	if (ControlFile->maxAlign != MAXIMUM_ALIGNOF)
 		ereport(FATAL,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -5594,6 +5616,7 @@ XLOGShmemInit(void *arg)
 		memcpy(ControlFile, LocalControlFile, sizeof(ControlFileData));
 		pfree(LocalControlFile);
 		LocalControlFile = NULL;
+		XLogCtl->inplaceUpgradeMode = ControlFileInplaceUpgradeMode(ControlFile);
 	}
 
 	/*
@@ -6114,6 +6137,26 @@ StartupXLOG(void)
 	Assert(CurrentResourceOwner == NULL ||
 		   CurrentResourceOwner == AuxProcessResourceOwner);
 	CurrentResourceOwner = AuxProcessResourceOwner;
+
+	/*
+	 * If a previous major version shut down at an upgrade boundary, we need
+	 * to take over the cluster before reading anything else.
+	 */
+	if (ControlFile->pg_control_version != PG_CONTROL_VERSION)
+		InplaceUpgradeTakeover(ControlFile);
+
+	/*
+	 * Shared memory counted a pending takeover as upgrade mode (see
+	 * GetInplaceUpgradeMode()).  The takeover is done, and the cluster is now
+	 * in upgrade mode.
+	 */
+	XLogCtl->inplaceUpgradeMode = ControlFile->inplaceUpgradeMode;
+	if (ControlFile->inplaceUpgradeMode)
+	{
+		ereport(LOG,
+				(errmsg("database system is in in-place upgrade mode"),
+				 errdetail("Only superusers can connect until the upgrade goes live.")));
+	}
 
 	/*
 	 * Check that contents look valid.
@@ -7404,6 +7447,40 @@ GetLastSegSwitchData(XLogRecPtr *lastSwitchLSN)
 	LWLockRelease(WALWriteLock);
 
 	return result;
+}
+
+/*
+ * Is an in-place major version upgrade in progress on this server?
+ *
+ * Once shared memory exists, XLogCtl has the answer.  Before that, the
+ * answer comes from this process's copy of the control file.  A control file
+ * in an old version's layout also counts, because the startup process is
+ * about to take the cluster over.  XLogCtl is initialized the same way, so
+ * the postmaster gets the right answer before the startup process runs.
+ *
+ * The postmaster, single-user mode, and EXEC_BACKEND children use this to
+ * check PG_VERSION before they attach to shared memory.
+ */
+bool
+GetInplaceUpgradeMode(void)
+{
+	if (XLogCtl != NULL)
+		return XLogCtl->inplaceUpgradeMode;
+
+	/* Bootstrap mode reads no control file */
+	return ControlFile != NULL && ControlFileInplaceUpgradeMode(ControlFile);
+}
+
+/*
+ * Does a control file say that an in-place upgrade is in progress, or that
+ * the startup process is about to begin one by taking over the cluster (see
+ * StartupXLOG)?
+ */
+static bool
+ControlFileInplaceUpgradeMode(const ControlFileData *cf)
+{
+	return cf->inplaceUpgradeMode ||
+		cf->pg_control_version != PG_CONTROL_VERSION;
 }
 
 /*

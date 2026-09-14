@@ -30,6 +30,7 @@
 
 #include "access/htup_details.h"
 #include "access/parallel.h"
+#include "access/xlog.h"
 #include "catalog/pg_authid.h"
 #include "common/file_perm.h"
 #include "libpq/libpq.h"
@@ -291,7 +292,10 @@ SetDatabasePath(const char *path)
 /*
  * Validate the proposed data directory.
  *
- * Also initialize file and directory create modes and mode mask.
+ * Also initialize file and directory create modes and mode mask.  The
+ * PG_VERSION check is the caller's, with ValidatePgVersion(): during an
+ * in-place upgrade the file still names the previous major version, which
+ * only the control file can justify.
  */
 void
 checkDataDir(void)
@@ -377,9 +381,6 @@ checkDataDir(void)
 	umask(pg_mode_mask);
 	data_directory_mode = pg_dir_create_mode;
 #endif
-
-	/* Check for PG_VERSION */
-	ValidatePgVersion(DataDir);
 }
 
 /*
@@ -1763,6 +1764,14 @@ ValidatePgVersion(const char *path)
 				 errhint("You might need to initdb.")));
 
 	FreeFile(file);
+
+	/*
+	 * During an in-place upgrade the files still name the version the cluster
+	 * came from; which versions can be upgraded from is decided when the
+	 * control file is read.  Only a newer version is wrong here.
+	 */
+	if (GetInplaceUpgradeMode() && file_major < my_major)
+		return;
 
 	if (my_major != file_major)
 		ereport(FATAL,

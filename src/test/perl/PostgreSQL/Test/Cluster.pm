@@ -472,6 +472,27 @@ sub install_path
 
 =pod
 
+=item $node->set_install_path($path)
+
+Use the installation at $path for the node's binaries from now on; with an
+undefined $path, the installation found in the environment, as for a node
+created without install_path.  This is how an existing data directory gets
+started with another version's binaries.  The node must be stopped.
+
+=cut
+
+sub set_install_path
+{
+	my ($self, $path) = @_;
+
+	$self->{_install_path} = $path;
+	$self->_set_pg_version;
+	$self->dump_info;
+	return;
+}
+
+=pod
+
 =item $node->pg_version()
 
 The version number for the node, from PostgreSQL::Version.

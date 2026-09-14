@@ -21,6 +21,7 @@ typedef enum UpgradePosture
 	UPGRADE_POSTURE_UNREADABLE, /* the facts could not be read */
 	UPGRADE_POSTURE_NOT_PREPARED,	/* the old version's, not at a boundary */
 	UPGRADE_POSTURE_AT_BOUNDARY,	/* shut down at an upgrade boundary */
+	UPGRADE_POSTURE_TAKEN_OVER, /* taken over, migration not begun */
 	UPGRADE_POSTURE_LIVE,		/* the new version's for good */
 } UpgradePosture;
 

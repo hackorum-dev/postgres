@@ -974,6 +974,22 @@ InitPostgres(const char *in_dbname, Oid dboid,
 	}
 
 	/*
+	 * Likewise during an in-place upgrade, which also admits no WAL senders:
+	 * nothing written before the upgrade goes live may leave this server.
+	 */
+	if (GetInplaceUpgradeMode())
+	{
+		if (!am_superuser)
+			ereport(FATAL,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must be superuser to connect during an in-place upgrade")));
+		if (am_walsender)
+			ereport(FATAL,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("cannot start WAL sender during an in-place upgrade")));
+	}
+
+	/*
 	 * The last few regular connection slots are reserved for superusers and
 	 * roles with privileges of pg_use_reserved_connections.  We do not apply
 	 * these limits to background processes, since they all have their own

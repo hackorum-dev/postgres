@@ -152,6 +152,7 @@ header_subdirs = [
   'tcop',
   'snowball',
   'tsearch',
+  'upgrade',
   'utils',
   'port',
   'portability',

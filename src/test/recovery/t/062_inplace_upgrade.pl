@@ -25,6 +25,8 @@ use warnings FATAL => 'all';
 use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use PostgreSQL::Version;
+use Digest::SHA qw(sha256_hex);
+use File::Find;
 use Test::More;
 
 if (!defined $ENV{PG_TEST_INPLACE_OLDINSTALL})
@@ -74,6 +76,20 @@ sub checkpoint_flag
 	return (
 		status_field($node, 'Latest checkpoint') =~ /\(upgrade flag (\S+)\)$/)
 	  [0];
+}
+
+# Fetch one field from the control file, read by the node's own version, for
+# what the status command does not show
+sub control_field
+{
+	my ($node, $field) = @_;
+
+	my ($stdout, $stderr) = run_command(
+		[ $node->installed_command('pg_controldata'), $node->data_dir ]);
+	die "$field not found in control file\n"
+	  unless $stdout =~ /^\Q$field\E:\s*(.*)$/m;
+
+	return $1;
 }
 
 # The initdb template belongs to the current build, so force initdb to get
@@ -164,4 +180,176 @@ is( $standby->safe_psql('postgres', 'SELECT pg_get_wal_replay_pause_state()'),
 	'standby paused at the upgrade boundary');
 is($standby->safe_psql('postgres', 'SELECT pg_upgrade_boundary_lsn()'),
 	$boundary_lsn, 'standby boundary is the primary shutdown checkpoint');
+# Digest of a file, for comparing copies of binary files
+sub file_digest
+{
+	my ($path) = @_;
+	return sha256_hex(slurp_file($path));
+}
+
+# The files the takeover replaces, as the old version left them
+my $old_control_digest =
+  file_digest($primary->data_dir . '/global/pg_control');
+
+# An old-version cluster that was not shut down at an upgrade boundary is
+# refused by the new version as any other incompatible cluster, untouched.
+my $plain =
+  PostgreSQL::Test::Cluster->new('plain', install_path => $oldinstall);
+$plain->init(force_initdb => 1);
+$plain->start;
+$plain->stop;
+$plain->set_install_path(undef);
+$plain->start(fail_ok => 1);
+like(
+	slurp_file($plain->logfile),
+	qr/database files are incompatible with server/,
+	'new version refuses an old-version cluster not at an upgrade boundary');
+
+# Everything in a node's data directory, by path, with the digest of each
+# file.  Every start of either version rewrites postmaster.opts.
+sub datadir_contents
+{
+	my ($node) = @_;
+	my $datadir = $node->data_dir;
+	my %contents;
+
+	find(
+		{
+			no_chdir => 1,
+			wanted => sub {
+				my $path = substr($File::Find::name, length($datadir));
+				return if $path eq '/postmaster.opts';
+				$contents{$path} =
+				  -d $File::Find::name ? 'd' : file_digest($File::Find::name);
+			}
+		},
+		$datadir);
+	return \%contents;
+}
+
+# The new version refuses to take over a cluster that ran with commit
+# timestamps, before it changes anything in the data directory, so the old
+# version starts on it again as usual.
+my $commit_ts =
+  PostgreSQL::Test::Cluster->new('commit_ts', install_path => $oldinstall);
+$commit_ts->init(force_initdb => 1);
+$commit_ts->append_conf('postgresql.conf', 'track_commit_timestamp = on');
+$commit_ts->start;
+$commit_ts->safe_psql('postgres', 'SELECT pg_request_upgrade_boundary()');
+$commit_ts->stop;
+my $commit_ts_contents = datadir_contents($commit_ts);
+
+$commit_ts->set_install_path(undef);
+ok(!$commit_ts->start(fail_ok => 1),
+	'new version refuses the takeover with track_commit_timestamp');
+like(
+	slurp_file($commit_ts->logfile),
+	qr/FATAL:  cannot take over a database cluster for an in-place upgrade while "track_commit_timestamp" is enabled/,
+	'refusal names the setting');
+is_deeply(datadir_contents($commit_ts),
+	$commit_ts_contents, 'refused data directory untouched');
+
+$commit_ts->set_install_path($oldinstall);
+ok($commit_ts->start(fail_ok => 1),
+	'old version starts on the refused cluster again')
+  and $commit_ts->stop;
+
+# Swap the primary's binaries and start it.  The new version's startup
+# process takes over the cluster and comes up in upgrade mode.  Let the
+# authentication file that prepare wrote admit the application role again,
+# before its rejecting rules, so that it is the server itself that refuses it.
+my $hba_file = $primary->data_dir . '/pg_inplace_upgrade_hba.conf';
+my $hba = slurp_file($hba_file);
+$hba =~ s/^local\tall\tall\treject$/local all app trust\n$&/m
+  or die "no rejecting rule in $hba_file";
+open my $fh, '>', $hba_file or die "cannot write $hba_file: $!";
+print $fh $hba;
+close $fh;
+$primary->set_install_path(undef);
+$primary->start;
+like(
+	slurp_file($primary->logfile),
+	qr/took over the database cluster for an in-place upgrade/,
+	'primary taken over at startup');
+is(status_field($primary, 'Upgrade posture'),
+	'taken over', 'primary is in upgrade mode');
+is(checkpoint_flag($primary),
+	'start', 'primary started from the start checkpoint');
+my $start_lsn = checkpoint_location($primary);
+is( slurp_file($primary->data_dir . '/PG_VERSION'),
+	($new_version->major - 1) . "\n",
+	'PG_VERSION still names the old major version');
+cmp_ok($start_lsn, 'gt', $boundary_lsn,
+	'start checkpoint lies past the boundary');
+
+# The next transaction ID moved up to a pg_xact segment boundary
+my $next_xid = control_field($primary, "Latest checkpoint's NextXID");
+my $xacts_per_segment =
+  control_field($primary, 'Database block size') * 4 *
+  control_field($primary, 'Pages per SLRU segment');
+$next_xid =~ s/^\d+://;
+is($next_xid % $xacts_per_segment,
+	0, 'next transaction ID is at a pg_xact segment boundary');
+
+# What the takeover replaced is kept, and what it created is listed
+my $stash = $primary->data_dir . '/pg_inplace_upgrade_bundle';
+is(file_digest("$stash/pg_control"),
+	$old_control_digest, 'old control file kept');
+like(slurp_file("$stash/created_files"),
+	qr/^pg_wal\/[0-9A-F]{24}\n$/,
+	'created files list names the new WAL segment');
+
+# The start checkpoint is new-version WAL, and the boundary segment is
+# untouched.
+command_like(
+	[
+		"$newbindir/pg_waldump",
+		'--path' => $primary->data_dir . '/pg_wal',
+		'--start' => $start_lsn,
+		'--limit' => 1
+	],
+	qr/CHECKPOINT_SHUTDOWN .*upgrade flag start/,
+	'new pg_waldump shows the start checkpoint');
+my @waldump_args = (
+	'--path' => $primary->data_dir . '/pg_wal',
+	'--start' => $boundary_lsn,
+	'--limit' => 1);
+command_like(
+	[ $oldinstall . '/bin/pg_waldump', @waldump_args ],
+	qr/CHECKPOINT_SHUTDOWN .*upgrade flag boundary/,
+	'old pg_waldump still shows the boundary checkpoint');
+
+# Only superusers get in
+$primary->connect_fails(
+	$primary->connstr('postgres') . ' user=app',
+	'application connection refused in upgrade mode',
+	expected_stderr =>
+	  qr/must be superuser to connect during an in-place upgrade/);
+$primary->connect_fails(
+	$primary->connstr('postgres') . ' replication=true',
+	'replication connection refused in upgrade mode',
+	expected_stderr => qr/cannot start WAL sender during an in-place upgrade/
+);
+is($primary->safe_psql('postgres', 'SELECT count(*) FROM t'),
+	'1000', 'superuser connection admitted, data readable');
+
+# The old version refuses the taken-over cluster; the new version comes back
+# up in upgrade mode.
+$primary->stop;
+is(status_field($primary, 'Upgrade posture'),
+	'taken over', 'upgrade mode persists across a shutdown');
+$primary->set_install_path($oldinstall);
+ok(!$primary->start(fail_ok => 1),
+	'old version refuses the taken-over cluster');
+like(
+	slurp_file($primary->logfile),
+	qr/database files are incompatible with server/,
+	'refusal is the version mismatch');
+$primary->set_install_path(undef);
+$primary->start;
+is(status_field($primary, 'Upgrade posture'),
+	'taken over', 'primary restarted in upgrade mode');
+is($primary->safe_psql('postgres', 'SELECT count(*) FROM t'),
+	'1000', 'superuser connection admitted after the restart');
+
 done_testing();

@@ -1122,6 +1122,8 @@ posture_name(const ClusterPosture *cp)
 			return _("not prepared");
 		case UPGRADE_POSTURE_AT_BOUNDARY:
 			return _("at an upgrade boundary");
+		case UPGRADE_POSTURE_TAKEN_OVER:
+			return _("taken over");
 		case UPGRADE_POSTURE_LIVE:
 			return _("live");
 	}

@@ -356,6 +356,7 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	 * into it
 	 */
 	checkDataDir();
+	ValidatePgVersion(DataDir);
 	ChangeToDataDir();
 
 	CreateDataDirLockFile(false);

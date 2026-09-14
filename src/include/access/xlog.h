@@ -300,6 +300,7 @@ extern XLogRecPtr GetFlushRecPtr(TimeLineID *insertTLI);
 extern TimeLineID GetWALInsertionTimeLine(void);
 extern TimeLineID GetWALInsertionTimeLineIfSet(void);
 extern XLogRecPtr GetLastImportantRecPtr(void);
+extern bool GetInplaceUpgradeMode(void);
 extern void SetUpgradeBoundaryRequest(bool request);
 extern bool UpgradeBoundaryActive(void);
 

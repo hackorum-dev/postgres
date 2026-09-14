@@ -29,6 +29,11 @@ typedef int XidStatus;
 #define TRANSACTION_STATUS_ABORTED			0x02
 #define TRANSACTION_STATUS_SUB_COMMITTED	0x03
 
+/* We need two bits per xact, so four xacts fit in a byte */
+#define CLOG_BITS_PER_XACT	2
+#define CLOG_XACTS_PER_BYTE 4
+#define CLOG_XACTS_PER_PAGE (BLCKSZ * CLOG_XACTS_PER_BYTE)
+
 typedef struct xl_clog_truncate
 {
 	int64		pageno;

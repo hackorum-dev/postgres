@@ -919,6 +919,13 @@ PostmasterMain(int argc, char *argv[])
 	LocalProcessControlFile(false);
 
 	/*
+	 * Now that we know whether an in-place upgrade is in progress, or about
+	 * to begin, check PG_VERSION: it names the previous major version until
+	 * the upgrade goes live.
+	 */
+	ValidatePgVersion(DataDir);
+
+	/*
 	 * Register the apply launcher.  It's probably a good idea to call this
 	 * before any modules had a chance to take the background worker slots.
 	 */

@@ -168,12 +168,14 @@ InplaceUpgradeReadControlFile(const char *path, ControlFileData *cf,
  * The old installation owns the cluster while the control file is in the old
  * layout.  Two major versions can share a layout and its version number, so
  * the old installation also owns a cluster with a control file in the
- * current layout if PG_VERSION names an earlier major version.  PG_VERSION
- * keeps naming the old version until the upgrade goes live.
+ * current layout if it is not in upgrade mode and PG_VERSION names an
+ * earlier major version.  PG_VERSION keeps naming the old version until the
+ * upgrade goes live.
  *
  * A cluster owned by the old version is at a boundary if its latest
  * checkpoint is a boundary checkpoint and it shut down there.  A cluster
- * owned by the new version is live.
+ * owned by the new version is taken over if it is in upgrade mode, and live
+ * otherwise.
  */
 void
 InplaceUpgradeGetPosture(const ControlFileData *cf, const char *datadir,
@@ -194,7 +196,7 @@ InplaceUpgradeGetPosture(const ControlFileData *cf, const char *datadir,
 	result->owner = UPGRADE_OWNER_NEW;
 	if (cf->pg_control_version != PG_CONTROL_VERSION)
 		result->owner = UPGRADE_OWNER_OLD;
-	else
+	else if (!cf->inplaceUpgradeMode)
 	{
 		int			major = data_major_version(datadir, result);
 
@@ -214,7 +216,10 @@ InplaceUpgradeGetPosture(const ControlFileData *cf, const char *datadir,
 		return;
 	}
 
-	result->posture = UPGRADE_POSTURE_LIVE;
+	if (!cf->inplaceUpgradeMode)
+		result->posture = UPGRADE_POSTURE_LIVE;
+	else
+		result->posture = UPGRADE_POSTURE_TAKEN_OVER;
 }
 
 /*

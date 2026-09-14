@@ -60,10 +60,6 @@
  * and page numbers in TruncateCLOG (see CLOGPagePrecedes).
  */
 
-/* We need two bits per xact, so four xacts fit in a byte */
-#define CLOG_BITS_PER_XACT	2
-#define CLOG_XACTS_PER_BYTE 4
-#define CLOG_XACTS_PER_PAGE (BLCKSZ * CLOG_XACTS_PER_BYTE)
 #define CLOG_XACT_BITMASK	((1 << CLOG_BITS_PER_XACT) - 1)
 
 /*

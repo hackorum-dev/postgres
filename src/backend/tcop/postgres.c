@@ -34,6 +34,7 @@
 #include "access/parallel.h"
 #include "access/printtup.h"
 #include "access/xact.h"
+#include "access/xlog.h"
 #include "catalog/pg_type.h"
 #include "commands/async.h"
 #include "commands/event_trigger.h"
@@ -4267,6 +4268,12 @@ PostgresSingleUserMain(int argc, char *argv[],
 
 	/* read control file (error checking and contains config ) */
 	LocalProcessControlFile(false);
+
+	/*
+	 * PG_VERSION may name the previous major version during an in-place
+	 * upgrade
+	 */
+	ValidatePgVersion(DataDir);
 
 	/* Register the shared memory needs of all core subsystems. */
 	RegisterBuiltinShmemCallbacks();

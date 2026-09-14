@@ -667,6 +667,12 @@ SubPostmasterMain(int argc, char *argv[])
 	 */
 	LocalProcessControlFile(false);
 
+	/*
+	 * PG_VERSION may name the previous major version during an in-place
+	 * upgrade
+	 */
+	ValidatePgVersion(DataDir);
+
 	RegisterBuiltinShmemCallbacks();
 
 	/*

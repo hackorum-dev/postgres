@@ -198,6 +198,14 @@ typedef struct ControlFileData
 	bool		backupEndRequired;
 
 	/*
+	 * True while an in-place major version upgrade is in progress on this
+	 * server: set when the new version's startup process takes over a cluster
+	 * that the old version shut down at an upgrade boundary, cleared when the
+	 * upgrade goes live.  While set, only superusers may connect.
+	 */
+	bool		inplaceUpgradeMode;
+
+	/*
 	 * Parameter settings that determine if the WAL can be used for archival
 	 * or hot standby.
 	 */
