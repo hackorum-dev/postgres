@@ -2891,12 +2891,31 @@ BEGIN
         RAISE NOTICE 'caught fk violation';
     END;
 
+    -- The failed batch's per-entry context must be gone with its cache entry.
+    IF EXISTS (SELECT FROM pg_backend_memory_contexts
+               WHERE name = 'RI fast path flush temporary context') THEN
+        RAISE EXCEPTION 'failed RI batch leaked its memory context';
+    END IF;
+
     -- Reuse the same FK with a full batch in the same transaction.  The
     -- entry must be empty after the caught violation: no stale rows from the
     -- rolled-back batch (in particular no 999), and no array overflow.
     INSERT INTO fp_reentry_fk2 SELECT 1 FROM generate_series(1, 64);
 END$$;
 SELECT count(*), max(a) FROM fp_reentry_fk2;  -- 64 rows, max 1
+
+-- Exercise the same cleanup when the entry's resources belong to a portal
+-- below an explicit savepoint's resource owner.
+BEGIN;
+SAVEPOINT fp_savepoint;
+INSERT INTO fp_reentry_fk2
+    SELECT CASE WHEN g = 64 THEN 999 ELSE 1 END
+    FROM generate_series(1, 64) g;
+ROLLBACK TO fp_savepoint;
+SELECT count(*) FROM pg_backend_memory_contexts
+    WHERE name = 'RI fast path flush temporary context';
+COMMIT;
+
 DROP TABLE fp_reentry_fk2, fp_reentry_pk2;
 
 -- Subtransaction abort during after-trigger firing must not drop FK checks
