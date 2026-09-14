@@ -150,6 +150,12 @@ typedef struct PgStat_TableCounts
 	PgStat_Counter tuples_deleted;
 	PgStat_Counter tuples_hot_updated;
 	PgStat_Counter tuples_newpage_updated;
+
+	/* on-access (opportunistic) pruning */
+	PgStat_Counter prune_onaccess;
+	PgStat_Counter prune_onaccess_missed;
+	PgStat_Counter pages_all_visible_onaccess;
+
 	bool		truncdropped;
 
 	PgStat_Counter delta_live_tuples;
@@ -251,7 +257,7 @@ typedef struct PgStat_TableXactStatus
  * ------------------------------------------------------------
  */
 
-#define PGSTAT_FILE_FORMAT_ID	0x01A5BCBD
+#define PGSTAT_FILE_FORMAT_ID	0x01A5BCBE
 
 typedef struct PgStat_ArchiverStats
 {
@@ -494,6 +500,11 @@ typedef struct PgStat_StatTabEntry
 	PgStat_Counter tuples_deleted;
 	PgStat_Counter tuples_hot_updated;
 	PgStat_Counter tuples_newpage_updated;
+
+	PgStat_Counter prune_onaccess;
+	PgStat_Counter prune_onaccess_missed;
+	PgStat_Counter pages_all_visible_onaccess;
+	PgStat_Counter vacuum_missed_dead_pages;
 
 	PgStat_Counter live_tuples;
 	PgStat_Counter dead_tuples;
@@ -758,6 +769,7 @@ extern void pgstat_unlink_relation(Relation rel);
 
 extern void pgstat_report_vacuum(Relation rel, PgStat_Counter livetuples,
 								 PgStat_Counter deadtuples,
+								 PgStat_Counter missed_dead_pages,
 								 TimestampTz starttime);
 extern void pgstat_report_analyze(Relation rel,
 								  PgStat_Counter livetuples, PgStat_Counter deadtuples,
@@ -842,6 +854,8 @@ extern void pgstat_count_heap_update(Relation rel, bool hot, bool newpage);
 extern void pgstat_count_heap_delete(Relation rel);
 extern void pgstat_count_truncate(Relation rel);
 extern void pgstat_update_heap_dead_tuples(Relation rel, int delta);
+extern void pgstat_count_prune_onaccess(Relation rel, bool newly_all_visible);
+extern void pgstat_count_prune_onaccess_missed(Relation rel);
 
 extern void pgstat_twophase_postcommit(FullTransactionId fxid, uint16 info,
 									   void *recdata, uint32 len);
