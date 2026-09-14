@@ -5391,6 +5391,8 @@ AbortSubTransaction(void)
 
 		CallSubXactCallbacks(SUBXACT_EVENT_ABORT_SUB, s->subTransactionId,
 							 s->parent->subTransactionId);
+		AtEOSubXact_RI(false, s->subTransactionId,
+					   s->parent->subTransactionId);
 
 		ResourceOwnerRelease(s->curTransactionOwner,
 							 RESOURCE_RELEASE_BEFORE_LOCKS,
@@ -5419,7 +5421,6 @@ AbortSubTransaction(void)
 						  s->parent->subTransactionId);
 		AtEOSubXact_HashTables(false, s->nestingLevel);
 		AtEOSubXact_PgStat(false, s->nestingLevel);
-		AtEOSubXact_RI(false, s->subTransactionId, s->parent->subTransactionId);
 		AtSubAbort_Snapshot(s->nestingLevel);
 	}
 
