@@ -689,7 +689,12 @@ typedef uint64_t uint64;
 #define INT64CONST(x)  INT64_C(x)
 #define UINT64CONST(x) UINT64_C(x)
 
-/* snprintf format strings to use for 64-bit integers */
+/*
+ * snprintf format strings to use for 64-bit integers
+ *		xgettext does not recognize these macros, resulting in incomplete
+ *		msgids in PO files. Use the corresponding PRI* macros directly in
+ *		translatable strings instead.
+ */
 #define INT64_FORMAT "%" PRId64
 #define UINT64_FORMAT "%" PRIu64
 #define OID8_FORMAT "%" PRIu64
