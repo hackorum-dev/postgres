@@ -456,6 +456,22 @@ push(@dump_command, '--extra-float-digits', '0')
   if ($oldnode->pg_version < 12);
 $newnode->command_ok(\@dump_command, 'dump before running pg_upgrade');
 
+# A dump reports the type of chunk_id when the reloptions say nothing about
+# it, so that a restore recreates the TOAST table with the same type.
+# toasttest_oid8 is defined in strings.sql, which resets the reloption.
+if (!defined($ENV{olddump}))
+{
+	like(
+		slurp_file($dump1_file),
+		qr/^
+			\QCREATE TABLE public.toasttest_oid8 (\E\n
+			\s+\Qf1 bytea\E\n
+			\Q)\E\n
+			\QWITH (toast_value_type=oid8);\E
+			/xm,
+		'dump reports the chunk_id type after a reset of toast_value_type');
+}
+
 # After dumping, update references to the old source tree's regress.so
 # to point to the new tree.
 if (defined($ENV{oldinstall}))

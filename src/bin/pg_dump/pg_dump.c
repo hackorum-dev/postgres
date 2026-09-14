@@ -7154,6 +7154,7 @@ getTables(Archive *fout, int *numTables)
 	int			i;
 	PQExpBuffer query = createPQExpBuffer();
 	TableInfo  *tblinfo;
+	bool		dump_toast_value_type;
 	int			i_reltableoid;
 	int			i_reloid;
 	int			i_relname;
@@ -7187,6 +7188,7 @@ getTables(Archive *fout, int *numTables)
 	int			i_reloptions;
 	int			i_checkoption;
 	int			i_toastreloptions;
+	int			i_toastvaluetype;
 	int			i_reloftype;
 	int			i_foreignserver;
 	int			i_amname;
@@ -7211,6 +7213,9 @@ getTables(Archive *fout, int *numTables)
 	 * (for instance, pg_get_partkeydef()).  Those are likely to fail or give
 	 * wrong answers if any concurrent DDL is happening.
 	 */
+
+	dump_toast_value_type = (fout->remoteVersion >= 200000 &&
+							 !dopt->binary_upgrade);
 
 	appendPQExpBufferStr(query,
 						 "SELECT c.tableoid, c.oid, c.relname, "
@@ -7266,6 +7271,34 @@ getTables(Archive *fout, int *numTables)
 						 "CASE WHEN 'check_option=local' = ANY (c.reloptions) THEN 'LOCAL'::text "
 						 "WHEN 'check_option=cascaded' = ANY (c.reloptions) THEN 'CASCADED'::text ELSE NULL END AS checkoption, ");
 
+	/*
+	 * A reset of toast_value_type removes the entry from the reloptions of a
+	 * relation but leaves its TOAST table alone, which keeps the chunk_id
+	 * type it was created with. The reloptions then say nothing about the
+	 * type in use, and a WITH clause built from the reloptions alone would
+	 * have the restore create the TOAST table with the default type instead.
+	 * Report the type of chunk_id for such a relation. Only OID8 needs to be
+	 * reported, as a relation using OID matches the default. A value present
+	 * in the reloptions is a request to change the type, and takes
+	 * precedence.
+	 *
+	 * Nothing is reported in binary upgrade mode. There the type is carried
+	 * by binary_upgrade_set_next_toast_chunk_id_typoid and the reloption is
+	 * not read at all, so a WITH clause would only add an entry the
+	 * reloptions of the old cluster do not have.
+	 */
+	if (dump_toast_value_type)
+		appendPQExpBufferStr(query,
+							 "CASE WHEN ta.atttypid = "
+							 CppAsString2(OID8OID) " AND "
+							 "NOT EXISTS (SELECT 1 FROM "
+							 "unnest(coalesce(c.reloptions, '{}')) AS o "
+							 "WHERE split_part(o, '=', 1) = 'toast_value_type') "
+							 "THEN 'oid8' ELSE NULL END AS toast_value_type, ");
+	else
+		appendPQExpBufferStr(query,
+							 "NULL AS toast_value_type, ");
+
 	appendPQExpBufferStr(query,
 						 "am.amname, ");
 
@@ -7305,6 +7338,15 @@ getTables(Archive *fout, int *numTables)
 						 "LEFT JOIN pg_class tc ON (c.reltoastrelid = tc.oid"
 						 " AND tc.relkind = " CppAsString2(RELKIND_TOASTVALUE)
 						 " AND c.relkind <> " CppAsString2(RELKIND_PARTITIONED_TABLE) ")\n");
+
+	/*
+	 * Left join to pg_attribute to pick up the type of chunk_id in use by the
+	 * TOAST table.
+	 */
+	if (dump_toast_value_type)
+		appendPQExpBufferStr(query,
+							 "LEFT JOIN pg_attribute ta ON (ta.attrelid = tc.oid"
+							 " AND ta.attname = 'chunk_id')\n");
 
 	/*
 	 * Restrict to interesting relkinds (in particular, not indexes).  Not all
@@ -7377,6 +7419,7 @@ getTables(Archive *fout, int *numTables)
 	i_reloptions = PQfnumber(res, "reloptions");
 	i_checkoption = PQfnumber(res, "checkoption");
 	i_toastreloptions = PQfnumber(res, "toast_reloptions");
+	i_toastvaluetype = PQfnumber(res, "toast_value_type");
 	i_reloftype = PQfnumber(res, "reloftype");
 	i_foreignserver = PQfnumber(res, "foreignserver");
 	i_amname = PQfnumber(res, "amname");
@@ -7458,6 +7501,10 @@ getTables(Archive *fout, int *numTables)
 		else
 			tblinfo[i].checkoption = pg_strdup(PQgetvalue(res, i, i_checkoption));
 		tblinfo[i].toast_reloptions = pg_strdup(PQgetvalue(res, i, i_toastreloptions));
+		if (PQgetisnull(res, i, i_toastvaluetype))
+			tblinfo[i].toast_value_type = NULL;
+		else
+			tblinfo[i].toast_value_type = pg_strdup(PQgetvalue(res, i, i_toastvaluetype));
 		tblinfo[i].reloftype = atooid(PQgetvalue(res, i, i_reloftype));
 		tblinfo[i].foreign_server = atooid(PQgetvalue(res, i, i_foreignserver));
 		if (PQgetisnull(res, i, i_amname))
@@ -17390,7 +17437,8 @@ dumpTableSchema(Archive *fout, const TableInfo *tbinfo)
 		}
 
 		if (nonemptyReloptions(tbinfo->reloptions) ||
-			nonemptyReloptions(tbinfo->toast_reloptions))
+			nonemptyReloptions(tbinfo->toast_reloptions) ||
+			tbinfo->toast_value_type != NULL)
 		{
 			bool		addcomma = false;
 
@@ -17399,6 +17447,14 @@ dumpTableSchema(Archive *fout, const TableInfo *tbinfo)
 			{
 				addcomma = true;
 				appendReloptionsArrayAH(q, tbinfo->reloptions, "", fout);
+			}
+			if (tbinfo->toast_value_type != NULL)
+			{
+				if (addcomma)
+					appendPQExpBufferStr(q, ", ");
+				addcomma = true;
+				appendPQExpBuffer(q, "toast_value_type=%s",
+								  tbinfo->toast_value_type);
 			}
 			if (nonemptyReloptions(tbinfo->toast_reloptions))
 			{
