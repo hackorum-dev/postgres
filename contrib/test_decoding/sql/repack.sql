@@ -40,6 +40,15 @@ CREATE UNIQUE INDEX CONCURRENTLY repack_conc_invidx_uq ON repack_conc_invidx (j)
 CREATE INDEX CONCURRENTLY repack_conc_invalid_expr ON repack_conc_invidx ((1/j));
 REPACK repack_conc_invidx;
 REPACK (CONCURRENTLY) repack_conc_invidx;
+DROP INDEX repack_conc_invidx_uq, repack_conc_invalid_expr;
+-- An index that is ready but not valid, as left behind by CREATE INDEX
+-- CONCURRENTLY failing during validation, must be rejected as well.
+CREATE INDEX repack_conc_invidx_ready ON repack_conc_invidx (j);
+UPDATE pg_index SET indisvalid = false
+  WHERE indexrelid = 'repack_conc_invidx_ready'::regclass;
+REPACK repack_conc_invidx;
+REPACK (CONCURRENTLY) repack_conc_invidx;
+DROP TABLE repack_conc_invidx;
 
 -- Error cases for concurrent mode
 

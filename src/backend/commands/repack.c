@@ -886,13 +886,14 @@ mark_index_clustered(Relation rel, Oid indexOid, bool is_internal)
 /*
  * check_index_requirements: verify index state on relation being processed
  *
- * Throw an error if any !indisready indexes are found.
+ * Throw an error if any !indisvalid indexes are found.
  *
- * Indexes that are not ready for inserts, such as ones left behind by failed
- * CREATE INDEX CONCURRENTLY, are not maintained by DML.  In some cases they
- * may fail to build altogether.  Throwing an error here forces the user to
- * take action on these indexes separately from the table reconstruction,
- * which prevents perpetuating them for no reason.
+ * Invalid indexes, such as ones left behind by failed CREATE INDEX
+ * CONCURRENTLY, may fail to build altogether: a unique index that failed
+ * during validation is ready for inserts, but the table contains
+ * duplicates.  Throwing an error here forces the user to take action on
+ * these indexes separately from the table reconstruction, which prevents
+ * perpetuating them for no reason.
  */
 static void
 check_index_requirements(Relation rel, RepackCommand cmd)
@@ -920,9 +921,8 @@ check_index_requirements(Relation rel, RepackCommand cmd)
 	{
 		Form_pg_index index = (Form_pg_index) GETSTRUCT(htup);
 
-		if (!index->indisready)
+		if (!index->indisvalid)
 		{
-			Assert(!index->indisvalid);
 			if (num_invalid_idxs == 0)
 				appendStringInfo(&dest, _("\"%s\""), get_rel_name(index->indexrelid));
 			else
