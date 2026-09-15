@@ -4078,6 +4078,9 @@ ProcessRepackMessages(void)
 	MemoryContext oldcontext;
 	static MemoryContext hpm_context = NULL;
 
+	/* Reset the flag saying there are messages to process. */
+	RepackMessagePending = false;
+
 	/*
 	 * Nothing to do if we haven't launched the worker yet or have already
 	 * terminated it. Stopping the worker detaches the error message queue
@@ -4109,9 +4112,6 @@ ProcessRepackMessages(void)
 		MemoryContextReset(hpm_context);
 
 	oldcontext = MemoryContextSwitchTo(hpm_context);
-
-	/* OK to process messages.  Reset the flag saying there are more to do. */
-	RepackMessagePending = false;
 
 	/*
 	 * Read as many messages as we can from the worker, but stop when either
