@@ -17355,6 +17355,36 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 	newOptions = transformRelOptions(datum, defList, NULL, validnsps, false,
 									 operation == AT_ResetRelOptions);
 
+	/*
+	 * A reset of toast_value_type leaves the TOAST relation alone, so a
+	 * relation created with oid8 keeps it, and pg_attribute becomes the only
+	 * place recording the type in use.  Nothing fails, but a later dump and
+	 * restore recreates the TOAST relation from the reloptions and so hands
+	 * the relation back limited to 2^32 out-of-line values.  Say so, since
+	 * the loss is otherwise silent and only shows up on the restore.
+	 */
+	if (operation == AT_ResetRelOptions &&
+		RelationGetToastChunkIdType(rel) == OID8OID)
+	{
+		ListCell   *cell;
+
+		foreach(cell, defList)
+		{
+			DefElem    *def = (DefElem *) lfirst(cell);
+
+			if (def->defnamespace != NULL ||
+				strcmp(def->defname, "toast_value_type") != 0)
+				continue;
+
+			ereport(WARNING,
+					(errmsg("TOAST relation of \"%s\" keeps \"oid8\" as the type of its \"chunk_id\"",
+							RelationGetRelationName(rel)),
+					 errdetail("The type in use is only read when the TOAST relation is created."),
+					 errhint("Set \"toast_value_type\" to \"oid8\" to have a dump and restore preserve it.")));
+			break;
+		}
+	}
+
 	/* Validate */
 	switch (rel->rd_rel->relkind)
 	{

@@ -2304,6 +2304,9 @@ SELECT c1.relname, a.atttypid::regtype
 
 ALTER TABLE toasttest_oid RESET (toast_value_type);
 ALTER TABLE toasttest_oid8 RESET (toast_value_type);
+WARNING:  TOAST relation of "toasttest_oid8" keeps "oid8" as the type of its "chunk_id"
+DETAIL:  The type in use is only read when the TOAST relation is created.
+HINT:  Set "toast_value_type" to "oid8" to have a dump and restore preserve it.
 -- Reset column storage to its default
 ALTER TABLE toasttest_oid ALTER COLUMN f1 SET STORAGE EXTENDED;
 ALTER TABLE toasttest_oid8 ALTER COLUMN f1 SET STORAGE EXTENDED;
