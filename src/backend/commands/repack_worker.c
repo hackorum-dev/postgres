@@ -21,6 +21,7 @@
 #include "access/xlogwait.h"
 #include "commands/repack.h"
 #include "commands/repack_internal.h"
+#include "libpq/libpq.h"
 #include "libpq/pqmq.h"
 #include "replication/snapbuild.h"
 #include "storage/ipc.h"
@@ -44,8 +45,9 @@ static bool am_repack_worker = false;
 /* The WAL segment being decoded. */
 static XLogSegNo repack_current_segment = 0;
 
-/* Our DSM segment, for shutting down */
-static dsm_segment *worker_dsm_segment = NULL;
+/* Backend that launched us, for shutting down */
+static pid_t repack_backend_pid;
+static ProcNumber repack_backend_proc_number;
 
 /*
  * Keep track of the table we're processing, to skip logical decoding of data
@@ -76,12 +78,13 @@ RepackWorkerMain(Datum main_arg)
 		ereport(ERROR,
 				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				errmsg("could not map dynamic shared memory segment"));
-	worker_dsm_segment = seg;
 
 	shared = (DecodingWorkerShared *) dsm_segment_address(seg);
 
 	/* Arrange to signal the leader if we exit. */
-	before_shmem_exit(RepackWorkerShutdown, PointerGetDatum(shared));
+	repack_backend_pid = shared->backend_pid;
+	repack_backend_proc_number = shared->backend_proc_number;
+	before_shmem_exit(RepackWorkerShutdown, PointerGetDatum(seg));
 
 	/*
 	 * Join locking group - see the comments around the call of
@@ -167,6 +170,9 @@ RepackWorkerMain(Datum main_arg)
 	/* Cleanup. */
 	repack_cleanup_logical_decoding(decoding_ctx);
 	CommitTransactionCommand();
+
+	/* Report success, so that our exit does not look like a failure. */
+	pq_putmessage(PqMsg_Terminate, NULL, 0);
 }
 
 /*
@@ -175,13 +181,18 @@ RepackWorkerMain(Datum main_arg)
 static void
 RepackWorkerShutdown(int code, Datum arg)
 {
-	DecodingWorkerShared *shared = (DecodingWorkerShared *) DatumGetPointer(arg);
+	/*
+	 * Detach from the shared memory segment before we signal the backend.
+	 * Detaching also detaches the error message queue, and the backend learns
+	 * that we are gone by reading that queue when it handles our signal. If
+	 * we signaled first, the backend could read the queue while it still
+	 * looks attached, and nothing would make it read again.
+	 */
+	dsm_detach((dsm_segment *) DatumGetPointer(arg));
 
-	SendProcSignal(shared->backend_pid,
+	SendProcSignal(repack_backend_pid,
 				   PROCSIG_REPACK_MESSAGE,
-				   shared->backend_proc_number);
-
-	dsm_detach(worker_dsm_segment);
+				   repack_backend_proc_number);
 }
 
 bool
