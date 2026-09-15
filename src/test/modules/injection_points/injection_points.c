@@ -41,6 +41,13 @@ PG_MODULE_MAGIC;
 #define INJ_MAX_WAIT	8
 #define INJ_NAME_MAXLEN	64
 
+/*
+ * Length of the notice emitted by injection_notice_oversized(), chosen to
+ * exceed the size of any shared message queue that a background worker uses
+ * to talk to the process that launched it.
+ */
+#define INJ_OVERSIZED_NOTICE_LEN	(256 * 1024)
+
 /* Thresholds of waits */
 #define INJ_WAIT_INITIAL_US		10	/* 10us */
 #define INJ_WAIT_MAX_US			100000	/* 100ms */
@@ -81,6 +88,12 @@ extern PGDLLEXPORT void injection_notice(const char *name,
 extern PGDLLEXPORT void injection_wait(const char *name,
 									   const void *private_data,
 									   void *arg);
+extern PGDLLEXPORT void injection_exit(const char *name,
+									   const void *private_data,
+									   void *arg);
+extern PGDLLEXPORT void injection_notice_oversized(const char *name,
+												   const void *private_data,
+												   void *arg);
 
 /* track if injection points attached in this process are linked to it */
 static bool injection_point_local = false;
@@ -220,6 +233,33 @@ injection_notice(const char *name, const void *private_data, void *arg)
 			 name, argstr);
 	else
 		elog(NOTICE, "notice triggered for injection point %s", name);
+}
+
+/*
+ * Exit the process without reporting anything, the way a process that calls
+ * proc_exit() directly does.
+ */
+void
+injection_exit(const char *name, const void *private_data, void *arg)
+{
+	proc_exit(1);
+}
+
+/*
+ * Emit a notice too large to fit into the queue a background worker sends its
+ * messages through, so that the worker blocks until the process that launched
+ * it reads from that queue.
+ */
+void
+injection_notice_oversized(const char *name, const void *private_data,
+						   void *arg)
+{
+	char	   *message = palloc(INJ_OVERSIZED_NOTICE_LEN + 1);
+
+	memset(message, 'x', INJ_OVERSIZED_NOTICE_LEN);
+	message[INJ_OVERSIZED_NOTICE_LEN] = '\0';
+
+	elog(NOTICE, "%s", message);
 }
 
 /*
