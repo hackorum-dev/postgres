@@ -4114,10 +4114,12 @@ ProcessRepackMessages(void)
 	RepackMessagePending = false;
 
 	/*
-	 * Read as many messages as we can from the worker, but stop when no more
-	 * messages can be read from the worker without blocking.
+	 * Read as many messages as we can from the worker, but stop when either
+	 * (1) the worker's error message queue goes away, which can happen if we
+	 * receive a Terminate message from the worker; or (2) no more messages
+	 * can be read from the worker without blocking.
 	 */
-	while (true)
+	while (decoding_worker->error_mqh != NULL)
 	{
 		shm_mq_result res;
 		Size		nbytes;
@@ -4139,12 +4141,22 @@ ProcessRepackMessages(void)
 		else
 		{
 			/*
-			 * The decoding worker is special in that it exits as soon as it
-			 * has its work done. Thus the DETACHED result code is fine.
+			 * The worker detaches the error message queue when it exits, and
+			 * a worker that finished its work told us so with a Terminate
+			 * message. So the queue going away without that message means the
+			 * worker is gone with the work unfinished, and we must report it
+			 * here. Otherwise the REPACK command would wait forever for a
+			 * worker that will never answer.
+			 *
+			 * The worker may well have failed with an error of its own that
+			 * never reached us, so point to the server log for details.
 			 */
 			Assert(res == SHM_MQ_DETACHED);
 
-			break;
+			ereport(ERROR,
+					errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					errmsg("lost connection to REPACK decoding worker"),
+					errhint("More details may be available in the server log."));
 		}
 	}
 
@@ -4193,6 +4205,19 @@ ProcessRepackMessage(StringInfo msg)
 				/* Rethrow error or print notice. */
 				ThrowErrorData(&edata);
 
+				break;
+			}
+
+		case PqMsg_Terminate:
+			{
+				/*
+				 * The worker sends this once it has finished its work and is
+				 * about to exit, so stop watching its error message queue.
+				 * The queue going away then no longer means that the worker
+				 * is gone with the work unfinished.
+				 */
+				shm_mq_detach(decoding_worker->error_mqh);
+				decoding_worker->error_mqh = NULL;
 				break;
 			}
 
