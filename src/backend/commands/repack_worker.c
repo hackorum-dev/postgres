@@ -27,6 +27,7 @@
 #include "storage/ipc.h"
 #include "storage/proc.h"
 #include "tcop/tcopprot.h"
+#include "utils/injection_point.h"
 #include "utils/memutils.h"
 
 #define PGREPACK_PLUGIN   "pgrepack"
@@ -81,6 +82,9 @@ RepackWorkerMain(Datum main_arg)
 
 	shared = (DecodingWorkerShared *) dsm_segment_address(seg);
 
+	/* Leaving here means leaving silently: no error queue, no signal yet. */
+	INJECTION_POINT("repack-worker-before-error-queue-attach", NULL);
+
 	/* Arrange to signal the leader if we exit. */
 	repack_backend_pid = shared->backend_pid;
 	repack_backend_proc_number = shared->backend_proc_number;
@@ -103,6 +107,8 @@ RepackWorkerMain(Datum main_arg)
 	pq_redirect_to_shm_mq(seg, mqh);
 	pq_set_parallel_leader(shared->backend_pid,
 						   shared->backend_proc_number);
+
+	INJECTION_POINT("repack-worker-after-error-queue-attach", NULL);
 
 	/*
 	 * Connect to the database, skipping the connection authorization checks
@@ -150,7 +156,9 @@ RepackWorkerMain(Datum main_arg)
 
 	/* Build the initial snapshot and export it. */
 	snapshot = SnapBuildInitialSnapshot(decoding_ctx->snapshot_builder);
+	INJECTION_POINT("repack-worker-before-snapshot-export", NULL);
 	export_initial_snapshot(snapshot, shared);
+	INJECTION_POINT("repack-worker-after-snapshot-export", NULL);
 
 	/*
 	 * Only historic snapshots should be used now. Do not let us restrict the
@@ -181,6 +189,9 @@ RepackWorkerMain(Datum main_arg)
 static void
 RepackWorkerShutdown(int code, Datum arg)
 {
+	/* Anything we send from here on goes out with interrupts held. */
+	INJECTION_POINT("repack-worker-before-exit", NULL);
+
 	/*
 	 * Detach from the shared memory segment before we signal the backend.
 	 * Detaching also detaches the error message queue, and the backend learns
@@ -498,6 +509,7 @@ decode_concurrent_changes(LogicalDecodingContext *ctx,
 	/*
 	 * Close the file so we can make it available to the backend.
 	 */
+	INJECTION_POINT("repack-worker-before-changes-export", NULL);
 	BufFileClose(dstate->file);
 	dstate->file = NULL;
 	SpinLockAcquire(&shared->mutex);
