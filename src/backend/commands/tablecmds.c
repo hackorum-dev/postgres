@@ -46,6 +46,7 @@
 #include "catalog/pg_largeobject_metadata.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
+#include "catalog/pg_partitioned_table.h"
 #include "catalog/pg_policy.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_publication_rel.h"
@@ -661,6 +662,8 @@ static void ATPrepAlterColumnType(List **wqueue,
 								  AlterTableCmd *cmd, LOCKMODE lockmode,
 								  AlterTableUtilityContext *context);
 static bool ATColumnChangeRequiresRewrite(Node *expr, AttrNumber varattno);
+static bool stored_expr_has_rowtype_const(Oid classId, Oid objectId,
+										  Oid typeOid);
 static ObjectAddress ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 										   AlterTableCmd *cmd, LOCKMODE lockmode);
 static void RememberAllDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype,
@@ -6991,6 +6994,268 @@ ATTypedTableRecursion(List **wqueue, Relation rel, AlterTableCmd *cmd,
 
 
 /*
+ * Context for has_rowtype_const_walker: the row type we are looking for.
+ */
+typedef struct
+{
+	Oid			typeOid;
+} HasRowtypeConstContext;
+
+/*
+ * Does this expression tree embed a non-null Const of the given row type?
+ */
+static bool
+has_rowtype_const_walker(Node *node, HasRowtypeConstContext *context)
+{
+	if (node == NULL)
+		return false;
+	if (IsA(node, Const))
+	{
+		Const	   *con = (Const *) node;
+
+		if (con->consttype == context->typeOid && !con->constisnull)
+			return true;
+	}
+	if (IsA(node, Query))
+		return query_tree_walker((Query *) node, has_rowtype_const_walker,
+								 context, 0);
+	return expression_tree_walker(node, has_rowtype_const_walker, context);
+}
+
+/*
+ * Catalogs that store a parsed expression which is deformed later, and the
+ * columns that hold it.
+ *
+ * pg_proc is not here because its defaults are reached through the syscache.
+ * Index and partition expressions are not here either: pg_depend records them
+ * as whole-relation dependencies, so they arrive at the relation branch of
+ * find_composite_type_dependencies() instead.
+ */
+typedef struct
+{
+	Oid			classId;
+	Oid			oidIndexId;
+	AttrNumber	oidAttNum;
+	AttrNumber	exprAttNum[2];	/* a zero ends the list */
+} StoredExprCatalog;
+
+static const StoredExprCatalog stored_expr_catalogs[] = {
+	{AttrDefaultRelationId, AttrDefaultOidIndexId, Anum_pg_attrdef_oid,
+	{Anum_pg_attrdef_adbin, 0}},
+	{ConstraintRelationId, ConstraintOidIndexId, Anum_pg_constraint_oid,
+	{Anum_pg_constraint_conbin, 0}},
+	{PolicyRelationId, PolicyOidIndexId, Anum_pg_policy_oid,
+	{Anum_pg_policy_polqual, Anum_pg_policy_polwithcheck}},
+	{RewriteRelationId, RewriteOidIndexId, Anum_pg_rewrite_oid,
+	{Anum_pg_rewrite_ev_action, Anum_pg_rewrite_ev_qual}},
+	{StatisticExtRelationId, StatisticExtOidIndexId, Anum_pg_statistic_ext_oid,
+	{Anum_pg_statistic_ext_stxexprs, 0}},
+	{TriggerRelationId, TriggerOidIndexId, Anum_pg_trigger_oid,
+	{Anum_pg_trigger_tgqual, 0}},
+};
+
+/*
+ * Is this catalog one that stores expressions we must inspect?
+ */
+static const StoredExprCatalog *
+stored_expr_catalog_lookup(Oid classId)
+{
+	for (int i = 0; i < lengthof(stored_expr_catalogs); i++)
+	{
+		if (stored_expr_catalogs[i].classId == classId)
+			return &stored_expr_catalogs[i];
+	}
+	return NULL;
+}
+
+/*
+ * stored_expr_has_rowtype_const
+ *
+ * Fetch the expression stored in the given catalog row, and report whether it
+ * contains a constant of the given row type.
+ *
+ * A composite Const carries a heap tuple image whose bytes were frozen when
+ * the expression was parsed.  ALTER TABLE ... ALTER COLUMN TYPE installs a new
+ * descriptor for the row type but cannot rewrite those images, so whoever
+ * deforms one afterwards reads the old bytes through the new descriptor.  That
+ * is not a display problem: if the new column is wider, or is a varlena where
+ * an integer used to be, the reader walks off the end of the image.
+ *
+ * Only pg_attrdef, pg_proc and pg_rewrite are examined; those are the places
+ * where a parsed expression is stored and later deformed.
+ */
+static bool
+stored_expr_has_rowtype_const(Oid classId, Oid objectId, Oid typeOid)
+{
+	HasRowtypeConstContext context;
+	Relation	catalog;
+	SysScanDesc scan;
+	ScanKeyData key;
+	HeapTuple	tup;
+	Datum		datum;
+	bool		isnull;
+	bool		found = false;
+	const StoredExprCatalog *cat;
+
+	context.typeOid = typeOid;
+
+	if (classId == ProcedureRelationId)
+	{
+		tup = SearchSysCache1(PROCOID, ObjectIdGetDatum(objectId));
+		if (!HeapTupleIsValid(tup))
+			return false;
+		datum = SysCacheGetAttr(PROCOID, tup,
+								Anum_pg_proc_proargdefaults, &isnull);
+		if (!isnull)
+			found = has_rowtype_const_walker(stringToNode(TextDatumGetCString(datum)),
+											 &context);
+		if (!found)
+		{
+			/* A standard-conforming SQL body is stored parsed, too */
+			datum = SysCacheGetAttr(PROCOID, tup,
+									Anum_pg_proc_prosqlbody, &isnull);
+			if (!isnull)
+				found = has_rowtype_const_walker(stringToNode(TextDatumGetCString(datum)),
+												 &context);
+		}
+		ReleaseSysCache(tup);
+		return found;
+	}
+
+	cat = stored_expr_catalog_lookup(classId);
+	if (cat == NULL)
+		return false;
+
+	catalog = table_open(classId, AccessShareLock);
+
+	ScanKeyInit(&key,
+				cat->oidAttNum,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(objectId));
+
+	scan = systable_beginscan(catalog, cat->oidIndexId, true, NULL, 1, &key);
+
+	tup = systable_getnext(scan);
+	if (HeapTupleIsValid(tup))
+	{
+		for (int i = 0; i < lengthof(cat->exprAttNum); i++)
+		{
+			if (cat->exprAttNum[i] == 0)
+				break;
+			datum = heap_getattr(tup, cat->exprAttNum[i],
+								 RelationGetDescr(catalog), &isnull);
+			if (isnull)
+				continue;
+			if (has_rowtype_const_walker(stringToNode(TextDatumGetCString(datum)),
+										 &context))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+
+	systable_endscan(scan);
+	table_close(catalog, AccessShareLock);
+
+	return found;
+}
+
+/*
+ * report_stored_rowtype_const
+ *
+ * Refuse the ALTER because 'objdesc' stores a constant of the row type being
+ * altered.  The wording follows the column checks in
+ * find_composite_type_dependencies(): altering a stand-alone composite type
+ * is "altering a type", not a table, whether it arrives as origTypeName or as
+ * the composite type's own relation (ALTER TYPE ... ALTER/DROP ATTRIBUTE).
+ */
+static void
+report_stored_rowtype_const(Relation origRelation, const char *origTypeName,
+							const char *objdesc)
+{
+	if (origTypeName ||
+		origRelation->rd_rel->relkind == RELKIND_COMPOSITE_TYPE)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot alter type \"%s\" because %s stores a constant of that type",
+						origTypeName ? origTypeName :
+						RelationGetRelationName(origRelation),
+						objdesc),
+				 errdetail("The stored constant holds a row image that the altered type would misinterpret.")));
+	else if (origRelation->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot alter foreign table \"%s\" because %s stores a constant of its row type",
+						RelationGetRelationName(origRelation), objdesc),
+				 errdetail("The stored constant holds a row image that the altered type would misinterpret.")));
+	else
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot alter table \"%s\" because %s stores a constant of its row type",
+						RelationGetRelationName(origRelation), objdesc),
+				 errdetail("The stored constant holds a row image that the altered type would misinterpret.")));
+}
+
+/*
+ * relation_expr_has_rowtype_const
+ *
+ * Same question as stored_expr_has_rowtype_const(), for the expressions that
+ * hang off a relation rather than off a catalog row of their own: index
+ * expressions and predicates, and partition key expressions.  pg_depend
+ * records those as whole-relation dependencies.
+ */
+static bool
+relation_expr_has_rowtype_const(Relation rel, Oid typeOid)
+{
+	HasRowtypeConstContext context;
+	HeapTuple	tup;
+	Datum		datum;
+	bool		isnull;
+	bool		found = false;
+
+	context.typeOid = typeOid;
+
+	if (rel->rd_rel->relkind == RELKIND_INDEX ||
+		rel->rd_rel->relkind == RELKIND_PARTITIONED_INDEX)
+	{
+		tup = SearchSysCache1(INDEXRELID,
+							  ObjectIdGetDatum(RelationGetRelid(rel)));
+		if (!HeapTupleIsValid(tup))
+			return false;
+		datum = SysCacheGetAttr(INDEXRELID, tup, Anum_pg_index_indexprs,
+								&isnull);
+		if (!isnull)
+			found = has_rowtype_const_walker(stringToNode(TextDatumGetCString(datum)),
+											 &context);
+		if (!found)
+		{
+			datum = SysCacheGetAttr(INDEXRELID, tup, Anum_pg_index_indpred,
+									&isnull);
+			if (!isnull)
+				found = has_rowtype_const_walker(stringToNode(TextDatumGetCString(datum)),
+												 &context);
+		}
+		ReleaseSysCache(tup);
+	}
+	else if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+	{
+		tup = SearchSysCache1(PARTRELID,
+							  ObjectIdGetDatum(RelationGetRelid(rel)));
+		if (!HeapTupleIsValid(tup))
+			return false;
+		datum = SysCacheGetAttr(PARTRELID, tup,
+								Anum_pg_partitioned_table_partexprs, &isnull);
+		if (!isnull)
+			found = has_rowtype_const_walker(stringToNode(TextDatumGetCString(datum)),
+											 &context);
+		ReleaseSysCache(tup);
+	}
+
+	return found;
+}
+
+/*
  * find_composite_type_dependencies
  *
  * Check to see if the type "typeOid" is being used as a column in some table
@@ -7006,8 +7271,9 @@ ATTypedTableRecursion(List **wqueue, Relation rel, AlterTableCmd *cmd,
  * these things.  The name of this function is therefore somewhat historical,
  * but it's not worth changing.
  *
- * We assume that functions and views depending on the type are not reasons
- * to reject the ALTER.  (How safe is this really?)
+ * Functions and views depending on the type are generally not reasons to
+ * reject the ALTER, with one exception: a stored expression that embeds a
+ * *constant* of the row type.  See stored_expr_has_rowtype_const().
  */
 void
 find_composite_type_dependencies(Oid typeOid, Relation origRelation,
@@ -7062,12 +7328,53 @@ find_composite_type_dependencies(Oid typeOid, Relation origRelation,
 			continue;
 		}
 
+		/*
+		 * A stored expression is not a reason to reject the ALTER by itself,
+		 * but one that embeds a *constant* of this row type is: the constant
+		 * holds a tuple image that we cannot rewrite here, and reading it
+		 * afterwards through the new descriptor is an out-of-bounds read, not
+		 * a wrong answer.
+		 */
+		if (pg_depend->classid == ProcedureRelationId ||
+			stored_expr_catalog_lookup(pg_depend->classid) != NULL)
+		{
+			if (stored_expr_has_rowtype_const(pg_depend->classid,
+											  pg_depend->objid, typeOid))
+			{
+				ObjectAddress obj;
+				char	   *objdesc;
+
+				ObjectAddressSet(obj, pg_depend->classid, pg_depend->objid);
+				objdesc = getObjectDescription(&obj, false);
+
+				report_stored_rowtype_const(origRelation, origTypeName, objdesc);
+			}
+			continue;
+		}
+
 		/* Else, ignore dependees that aren't relations */
 		if (pg_depend->classid != RelationRelationId)
 			continue;
 
 		rel = relation_open(pg_depend->objid, AccessShareLock);
 		tupleDesc = RelationGetDescr(rel);
+
+		/*
+		 * Index and partition key expressions reach us as whole-relation
+		 * dependencies, so look inside them here.  A constant of the row type
+		 * in one of them is as dangerous as in any other stored expression.
+		 */
+		if (relation_expr_has_rowtype_const(rel, typeOid))
+		{
+			ObjectAddress obj;
+			char	   *objdesc;
+
+			ObjectAddressSet(obj, RelationRelationId, RelationGetRelid(rel));
+			objdesc = getObjectDescription(&obj, false);
+			relation_close(rel, AccessShareLock);
+
+			report_stored_rowtype_const(origRelation, origTypeName, objdesc);
+		}
 
 		/*
 		 * If objsubid identifies a specific column, refer to that in error

@@ -1448,6 +1448,38 @@ create table at_tab2 (x int, y text, check((x,y)::at_tab1 = (1,'42')::at_tab1));
 alter table at_tab1 alter column b type varchar; -- allowed, but ...
 insert into at_tab2 values(1,'42'); -- ... this will fail
 drop table at_tab1, at_tab2;
+-- A stored *constant* of the row type is rejected: it holds a tuple image
+-- that ALTER COLUMN TYPE cannot rewrite, and reading it afterwards through
+-- the new descriptor is an out-of-bounds read, not a wrong answer.
+create table at_tab1 (a int, b text);
+create table at_tab2 (x int default (('(1,42)'::at_tab1).a));
+alter table at_tab1 alter column b type varchar; -- fails
+drop table at_tab2;
+create view at_view1 as select '(1,42)'::at_tab1 as x;
+alter table at_tab1 alter column b type varchar; -- fails
+drop view at_view1;
+create table at_tab2 (x int check (x = ('(1,42)'::at_tab1).a));
+alter table at_tab1 alter column b type varchar; -- fails
+drop table at_tab2;
+create table at_tab2 (x int);
+create index at_tab2_idx on at_tab2 ((x + ('(1,42)'::at_tab1).a));
+alter table at_tab1 alter column b type varchar; -- fails
+drop table at_tab2;
+create function at_func1(arg at_tab1 default '(1,42)'::at_tab1)
+  returns int language sql as 'select 1';
+alter table at_tab1 alter column b type varchar; -- fails
+drop function at_func1;
+-- but merely mentioning the row type, with no constant stored, is fine
+create function at_func1(arg at_tab1) returns int language sql as 'select 1';
+alter table at_tab1 alter column b type varchar; -- allowed
+drop function at_func1;
+drop table at_tab1;
+-- the same for a stand-alone composite type, reported as a type
+create type at_type1 as (a int, b text);
+create view at_view1 as select '(1,42)'::at_type1 as x;
+alter type at_type1 alter attribute b type varchar; -- fails
+drop view at_view1;
+drop type at_type1;
 -- Check it for a partitioned table, too
 create table at_tab1 (a int, b text) partition by list(a);
 create table at_tab2 (x int, y at_tab1);
