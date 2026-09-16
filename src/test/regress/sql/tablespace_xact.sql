@@ -1,0 +1,251 @@
+
+--
+-- Deferred heap copy for ALTER TABLE SET TABLESPACE on indexed tables
+--
+SET allow_in_place_tablespaces = true;
+SET client_min_messages = DEBUG1;
+SET enable_seqscan = off;
+SET enable_bitmapscan = off;
+
+CREATE SCHEMA tablespace_xact;
+SET search_path TO tablespace_xact;
+
+CREATE TABLESPACE xact_tblspace LOCATION '';
+CREATE TABLESPACE xact_tblspace2 LOCATION '';
+PREPARE check_tablespace AS
+  SELECT c.relname, coalesce(s.spcname, '(default)') AS tablespace
+  FROM pg_class c
+  LEFT JOIN pg_tablespace s ON s.oid = c.reltablespace
+  LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'tablespace_xact'
+  ORDER BY 1;
+
+-- COMMIT
+CREATE TABLE defer_t (a int);
+EXECUTE check_tablespace;
+CREATE INDEX defer_t_idx ON defer_t (a);
+INSERT INTO defer_t VALUES (1);
+BEGIN;
+INSERT INTO defer_t VALUES (2);
+ALTER TABLE defer_t SET TABLESPACE xact_tblspace;
+INSERT INTO defer_t VALUES (3);
+COMMIT;
+EXECUTE check_tablespace;
+INSERT INTO defer_t VALUES (4), (5);
+SELECT ctid, a FROM defer_t ORDER BY a;
+DROP TABLE defer_t;
+
+-- ROLLBACK
+CREATE TABLE defer_t (a int);
+CREATE INDEX defer_t_idx ON defer_t (a);
+INSERT INTO defer_t VALUES (1);
+BEGIN;
+INSERT INTO defer_t VALUES (2);
+ALTER TABLE defer_t SET TABLESPACE xact_tblspace;
+INSERT INTO defer_t VALUES (3);
+ROLLBACK;
+EXECUTE check_tablespace;
+INSERT INTO defer_t VALUES (4), (5);
+SELECT ctid, a FROM defer_t ORDER BY a;
+DROP TABLE defer_t;
+
+-- COMMIT ENDING UP IN THE SAME SPACE
+
+CREATE TABLE defer_t (a int);
+CREATE INDEX defer_t_idx ON defer_t (a);
+INSERT INTO defer_t VALUES (1);
+BEGIN;
+INSERT INTO defer_t VALUES (2);
+ALTER TABLE defer_t SET TABLESPACE xact_tblspace;
+INSERT INTO defer_t VALUES (3);
+ALTER TABLE defer_t SET TABLESPACE pg_default;
+INSERT INTO defer_t VALUES (4);
+COMMIT;
+EXECUTE check_tablespace;
+INSERT INTO defer_t VALUES (5);
+SELECT ctid, a FROM defer_t ORDER BY a;
+DROP TABLE defer_t;
+
+-- PREPARE TRANSACTION, COMMIT PREPARED
+CREATE TABLE defer_t (a int);
+CREATE INDEX defer_t_idx ON defer_t (a);
+INSERT INTO defer_t VALUES (1);
+BEGIN;
+INSERT INTO defer_t VALUES (2);
+ALTER TABLE defer_t SET TABLESPACE xact_tblspace;
+INSERT INTO defer_t VALUES (3);
+PREPARE TRANSACTION 'defer_tblsp_prep_commit';
+COMMIT PREPARED 'defer_tblsp_prep_commit';
+EXECUTE check_tablespace;
+INSERT INTO defer_t VALUES (4), (5);
+SELECT ctid, a FROM defer_t ORDER BY a;
+DROP TABLE defer_t;
+
+-- PREPARE TRANSACTION, ROLLBACK PREPARED
+CREATE TABLE defer_t (a int);
+CREATE INDEX defer_t_idx ON defer_t (a);
+INSERT INTO defer_t VALUES (1);
+BEGIN;
+INSERT INTO defer_t VALUES (2);
+ALTER TABLE defer_t SET TABLESPACE xact_tblspace2;
+INSERT INTO defer_t VALUES (3);
+PREPARE TRANSACTION 'defer_tblsp_prep_rollback';
+ROLLBACK PREPARED 'defer_tblsp_prep_rollback';
+EXECUTE check_tablespace;
+INSERT INTO defer_t VALUES (4), (5);
+SELECT ctid, a FROM defer_t ORDER BY a;
+DROP TABLE defer_t;
+
+-- Subtransaction: move in savepoint, subcommit, then top-level commit
+CREATE TABLE defer_t (a int);
+CREATE INDEX defer_t_idx ON defer_t (a);
+INSERT INTO defer_t VALUES (1);
+BEGIN;
+INSERT INTO defer_t VALUES (2);
+SAVEPOINT sp1;
+INSERT INTO defer_t VALUES (3);
+ALTER TABLE defer_t SET TABLESPACE xact_tblspace;
+INSERT INTO defer_t VALUES (4);
+RELEASE SAVEPOINT sp1;
+INSERT INTO defer_t VALUES (5);
+COMMIT;
+EXECUTE check_tablespace;
+INSERT INTO defer_t VALUES (6), (7);
+SELECT ctid, a FROM defer_t ORDER BY a;
+DROP TABLE defer_t;
+
+-- Subtransaction: move in savepoint, then rollback to savepoint
+CREATE TABLE defer_t (a int);
+CREATE INDEX defer_t_idx ON defer_t (a);
+INSERT INTO defer_t VALUES (1);
+BEGIN;
+INSERT INTO defer_t VALUES (2);
+SAVEPOINT sp1;
+INSERT INTO defer_t VALUES (3);
+ALTER TABLE defer_t SET TABLESPACE xact_tblspace;
+INSERT INTO defer_t VALUES (4);
+ROLLBACK TO SAVEPOINT sp1;
+INSERT INTO defer_t VALUES (5);
+COMMIT;
+EXECUTE check_tablespace;
+INSERT INTO defer_t VALUES (6), (7), (8);
+SELECT ctid, a FROM defer_t ORDER BY a;
+DROP TABLE defer_t;
+
+-- Subtransaction: subcommit move, then top-level rollback cancels move
+CREATE TABLE defer_t (a int);
+CREATE INDEX defer_t_idx ON defer_t (a);
+INSERT INTO defer_t VALUES (1);
+BEGIN;
+INSERT INTO defer_t VALUES (2);
+SAVEPOINT sp1;
+INSERT INTO defer_t VALUES (3);
+ALTER TABLE defer_t SET TABLESPACE xact_tblspace;
+INSERT INTO defer_t VALUES (4);
+RELEASE SAVEPOINT sp1;
+INSERT INTO defer_t VALUES (5);
+ROLLBACK;
+EXECUTE check_tablespace;
+INSERT INTO defer_t VALUES (6), (7), (8);
+SELECT ctid, a FROM defer_t ORDER BY a;
+DROP TABLE defer_t;
+
+-- Subtransaction: two deferred moves in one transaction
+CREATE TABLE defer_t (a int);
+CREATE INDEX defer_t_idx ON defer_t (a);
+INSERT INTO defer_t VALUES (1);
+BEGIN;
+INSERT INTO defer_t VALUES (2);
+SAVEPOINT sp1;
+INSERT INTO defer_t VALUES (3);
+ALTER TABLE defer_t SET TABLESPACE xact_tblspace;
+INSERT INTO defer_t VALUES (4);
+SAVEPOINT sp2;
+INSERT INTO defer_t VALUES (5);
+ALTER TABLE defer_t SET TABLESPACE xact_tblspace2;
+INSERT INTO defer_t VALUES (6);
+COMMIT;
+EXECUTE check_tablespace;
+INSERT INTO defer_t VALUES (7), (8), (9);
+SELECT ctid, a FROM defer_t ORDER BY a;
+DROP TABLE defer_t;
+
+CREATE TABLE defer_t (a int);
+CREATE INDEX defer_t_idx ON defer_t (a);
+INSERT INTO defer_t VALUES (1);
+BEGIN;
+INSERT INTO defer_t VALUES (2);
+SAVEPOINT sp1;
+INSERT INTO defer_t VALUES (3);
+ALTER TABLE defer_t SET TABLESPACE xact_tblspace;
+INSERT INTO defer_t VALUES (4);
+SAVEPOINT sp2;
+INSERT INTO defer_t VALUES (5);
+ALTER TABLE defer_t SET TABLESPACE xact_tblspace2;
+INSERT INTO defer_t VALUES (6);
+ROLLBACK;
+EXECUTE check_tablespace;
+INSERT INTO defer_t VALUES (7), (8), (9);
+SELECT ctid, a FROM defer_t ORDER BY a;
+DROP TABLE defer_t;
+
+-- Partitioned table: SET TABLESPACE in a transaction; new partitions use it
+CREATE TABLE defer_part (a int) PARTITION BY RANGE (a);
+CREATE TABLE defer_part_p0 PARTITION OF defer_part FOR VALUES FROM (0) TO (10);
+CREATE INDEX ON defer_part(a);
+
+INSERT INTO defer_part VALUES (1);
+EXECUTE check_tablespace;
+BEGIN;
+ALTER TABLE defer_part SET TABLESPACE xact_tblspace;
+-- defer_part tablespace is updated, but partitions are not moved
+EXECUTE check_tablespace;
+-- new partitions created in the new table space
+CREATE TABLE defer_part_p1 PARTITION OF defer_part FOR VALUES FROM (10) TO (20);
+INSERT INTO defer_part VALUES (15);
+ALTER TABLE defer_part SET TABLESPACE xact_tblspace2;
+CREATE TABLE defer_part_p2 PARTITION OF defer_part FOR VALUES FROM (20) TO (30);
+ALTER TABLE defer_part SET TABLESPACE pg_default;
+CREATE TABLE defer_part_p3 PARTITION OF defer_part FOR VALUES FROM (30) TO (40);
+EXECUTE check_tablespace;
+ROLLBACK; -- rollback delete partitions created in the transaction
+EXECUTE check_tablespace;
+
+-- Partitioned table: SET TABLESPACE in a transaction; new partitions use it
+CREATE TABLE defer_part (a int) PARTITION BY RANGE (a);
+CREATE TABLE defer_part_p0 PARTITION OF defer_part FOR VALUES FROM (0) TO (10);
+CREATE INDEX ON defer_part(a);
+INSERT INTO defer_part VALUES (1);
+EXECUTE check_tablespace;
+BEGIN;
+ALTER TABLE defer_part SET TABLESPACE xact_tblspace;
+-- defer_part tablespace is updated, but partitions are not moved
+EXECUTE check_tablespace;
+-- new partitions created in the new table space
+CREATE TABLE defer_part_p1 PARTITION OF defer_part FOR VALUES FROM (10) TO (20);
+INSERT INTO defer_part VALUES (15);
+ALTER TABLE defer_part SET TABLESPACE xact_tblspace2;
+CREATE TABLE defer_part_p2 PARTITION OF defer_part FOR VALUES FROM (20) TO (30);
+ALTER TABLE defer_part SET TABLESPACE pg_default;
+CREATE TABLE defer_part_p3 PARTITION OF defer_part FOR VALUES FROM (30) TO (40);
+EXECUTE check_tablespace;
+ROLLBACK; -- rollback delete partitions created in the transaction
+EXECUTE check_tablespace;
+
+BEGIN;
+ALTER TABLE defer_part SET TABLESPACE xact_tblspace;
+CREATE TABLE defer_part_p1 PARTITION OF defer_part FOR VALUES FROM (10) TO (20);
+INSERT INTO defer_part VALUES (15);
+ALTER TABLE defer_part SET TABLESPACE xact_tblspace2;
+CREATE TABLE defer_part_p2 PARTITION OF defer_part FOR VALUES FROM (20) TO (30);
+ALTER TABLE defer_part SET TABLESPACE pg_default;
+CREATE TABLE defer_part_p3 PARTITION OF defer_part FOR VALUES FROM (30) TO (40);
+COMMIT; -- commit persists partitions created in the transaction
+EXECUTE check_tablespace;
+DROP TABLE defer_part;
+EXECUTE check_tablespace;
+
+DROP TABLESPACE xact_tblspace;
+DROP TABLESPACE xact_tblspace2;
+
+DROP SCHEMA CASCADE tablespace_xact;
