@@ -1926,10 +1926,31 @@ get_object_address_publication_rel(ObjectType objtype, List *object,
 						 errmsg("publication excluded relation \"%s\" in publication \"%s\" does not exist",
 								RelationGetRelationName(relation), pubname)));
 			else
-				ereport(ERROR,
-						(errcode(ERRCODE_UNDEFINED_OBJECT),
-						 errmsg("publication relation \"%s\" in publication \"%s\" does not exist",
-								RelationGetRelationName(relation), pubname)));
+			{
+				/*
+				 * A table can be published without a pg_publication_rel
+				 * entry of its own: through FOR ALL TABLES, FOR TABLES IN
+				 * SCHEMA, or a partitioned ancestor.  Say so, since otherwise
+				 * the message flatly contradicts pg_publication_tables, which
+				 * does list the table.  Sequences are left out: they are
+				 * never published as tables.
+				 */
+				if (is_publishable_relation(relation) &&
+					relation->rd_rel->relkind != RELKIND_SEQUENCE &&
+					is_table_publishable_in_publication(RelationGetRelid(relation),
+														pub))
+					ereport(ERROR,
+							(errcode(ERRCODE_UNDEFINED_OBJECT),
+							 errmsg("publication relation \"%s\" in publication \"%s\" does not exist",
+									RelationGetRelationName(relation), pubname),
+							 errdetail("Table \"%s\" is published by publication \"%s\" without an entry of its own, through FOR ALL TABLES, FOR TABLES IN SCHEMA, or a partitioned ancestor.",
+									   RelationGetRelationName(relation), pubname)));
+				else
+					ereport(ERROR,
+							(errcode(ERRCODE_UNDEFINED_OBJECT),
+							 errmsg("publication relation \"%s\" in publication \"%s\" does not exist",
+									RelationGetRelationName(relation), pubname)));
+			}
 		}
 		relation_close(relation, AccessShareLock);
 		return address;
