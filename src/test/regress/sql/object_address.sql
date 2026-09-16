@@ -317,3 +317,25 @@ ORDER BY objects.classid, objects.objid, objects.objsubid;
 
 -- restore normal output mode
 \a\t
+
+-- A table published through FOR TABLES IN SCHEMA or through a partitioned
+-- ancestor has no pg_publication_rel entry of its own, so it has no object
+-- address of this kind even though it is published.  Check that the message
+-- says so, and that it stays quiet for a relation that really is not
+-- published.  (FOR ALL TABLES behaves the same way, but such a publication
+-- would disturb the tests running in parallel with this one.)
+CREATE SCHEMA addr_pub_nsp;
+CREATE TABLE addr_pub_nsp.tbl (a int);
+CREATE TABLE addr_pub_nsp.unpublished (a int);
+CREATE PUBLICATION addr_pub_sch FOR TABLES IN SCHEMA addr_pub_nsp;
+SELECT pg_get_object_address('publication relation',
+                             '{addr_pub_nsp, tbl}', '{addr_pub_sch}');
+CREATE TABLE addr_pub_nsp.parted (a int) PARTITION BY RANGE (a);
+CREATE TABLE addr_pub_nsp.part1 PARTITION OF addr_pub_nsp.parted FOR VALUES FROM (0) TO (10);
+CREATE PUBLICATION addr_pub_one FOR TABLE addr_pub_nsp.tbl, addr_pub_nsp.parted;
+SELECT pg_get_object_address('publication relation',
+                             '{addr_pub_nsp, part1}', '{addr_pub_one}');
+SELECT pg_get_object_address('publication relation',
+                             '{addr_pub_nsp, unpublished}', '{addr_pub_one}');
+DROP PUBLICATION addr_pub_sch, addr_pub_one;
+DROP SCHEMA addr_pub_nsp CASCADE;
