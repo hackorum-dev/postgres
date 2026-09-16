@@ -227,10 +227,12 @@ WAIT FOR LSN '<replaceable class="parameter">lsn</replaceable>'
   <para>
    <command>WAIT</command> must be executed as a top-level command.
    It cannot be executed from a function, procedure, or
-   <command>DO</command> block. It also requires that no active or
-   registered snapshot be held, and therefore cannot be used in contexts
-   where such a snapshot must remain active, including transactions running
-   at isolation levels higher than <literal>READ COMMITTED</literal>.
+   <command>DO</command> block.  It also requires that no active or
+   registered snapshot be held.  A transaction running at an isolation
+   level higher than <literal>READ COMMITTED</literal> holds one from its
+   first query until it ends, so <command>WAIT</command> is accepted before
+   that query and rejected after it.  An open cursor or an exported
+   snapshot has the same effect at any isolation level.
   </para>
 
   <para>
