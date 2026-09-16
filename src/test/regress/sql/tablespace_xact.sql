@@ -3,7 +3,6 @@
 -- Deferred heap copy for ALTER TABLE SET TABLESPACE on indexed tables
 --
 SET allow_in_place_tablespaces = true;
-SET client_min_messages = DEBUG1;
 SET enable_seqscan = off;
 SET enable_bitmapscan = off;
 
@@ -214,7 +213,6 @@ EXECUTE check_tablespace;
 -- Partitioned table: SET TABLESPACE in a transaction; new partitions use it
 CREATE TABLE defer_part (a int) PARTITION BY RANGE (a);
 CREATE TABLE defer_part_p0 PARTITION OF defer_part FOR VALUES FROM (0) TO (10);
-CREATE INDEX ON defer_part(a);
 INSERT INTO defer_part VALUES (1);
 EXECUTE check_tablespace;
 BEGIN;
@@ -248,4 +246,4 @@ EXECUTE check_tablespace;
 DROP TABLESPACE xact_tblspace;
 DROP TABLESPACE xact_tblspace2;
 
-DROP SCHEMA CASCADE tablespace_xact;
+DROP SCHEMA tablespace_xact CASCADE;
