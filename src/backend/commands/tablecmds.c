@@ -133,6 +133,16 @@ typedef struct OnCommitItem
 
 static List *on_commits = NIL;
 
+typedef struct PendingTablespaceMove
+{
+	Oid			relid;
+	Oid			newTableSpace;
+	SubTransactionId creating_subid;
+}			PendingTablespaceMove;
+
+static List *deferred_tablespace_moves = NIL;
+
+
 
 /*
  * State information for ALTER TABLE
@@ -695,6 +705,9 @@ static void ATPrepChangePersistence(AlteredTableInfo *tab, Relation rel,
 									bool toLogged);
 static void ATPrepSetTableSpace(AlteredTableInfo *tab, Relation rel,
 								const char *tablespacename, LOCKMODE lockmode);
+static bool ATRelationIsFreeToMove(Relation rel);
+static void ATExecSetTableSpaceCopy(Oid tableOid, Oid newTableSpace,
+									LOCKMODE lockmode);
 static void ATExecSetTableSpace(Oid tableOid, Oid newTableSpace, LOCKMODE lockmode);
 static void ATExecSetTableSpaceNoStorage(Relation rel, Oid newTableSpace);
 static void ATExecSetRelOptions(Relation rel, List *defList,
@@ -17517,7 +17530,7 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
  * rewriting to be done, so we just want to copy the data as fast as possible.
  */
 static void
-ATExecSetTableSpace(Oid tableOid, Oid newTableSpace, LOCKMODE lockmode)
+ATExecSetTableSpaceCopy(Oid tableOid, Oid newTableSpace, LOCKMODE lockmode)
 {
 	Relation	rel;
 	Oid			reltoastrelid;
@@ -17540,6 +17553,9 @@ ATExecSetTableSpace(Oid tableOid, Oid newTableSpace, LOCKMODE lockmode)
 		return;
 	}
 
+	elog(DEBUG1, "ATExecSetTableSpaceCopy: rel %d to tblspace %d (copying)",
+		 tableOid, newTableSpace
+		);
 	reltoastrelid = rel->rd_rel->reltoastrelid;
 	/* Fetch the list of indexes on toast relation if necessary */
 	if (OidIsValid(reltoastrelid))
@@ -17607,6 +17623,75 @@ ATExecSetTableSpace(Oid tableOid, Oid newTableSpace, LOCKMODE lockmode)
 
 	/* Clean up */
 	list_free(reltoastidxids);
+}
+
+
+/*
+ * ATRelationIsFreeToMove
+ *
+ * Determines whether a relation file can be copied immediately or it has to
+ * wait until the transaction commit.
+ *
+ * When the relation has indices in the old tablespace because we have to
+ * keep also invisible rows produced after the tablespace update must remain
+ * consistent in the case of a rollback.
+ */
+static bool
+ATRelationIsFreeToMove(Relation rel)
+{
+	char		relkind = rel->rd_rel->relkind;
+
+	if (relkind != RELKIND_RELATION && relkind != RELKIND_MATVIEW)
+		return true;
+
+	return RelationGetIndexList(rel) == NIL;
+}
+
+/*
+ * ATExecSetTableSpace
+ *
+ * Either copy the relation files, or push the an item to the list of
+ * deferred tablespace moves, that are handled at commit.
+ */
+static void
+ATExecSetTableSpace(Oid tableOid, Oid newTableSpace, LOCKMODE lockmode)
+{
+	Relation	rel;
+	PendingTablespaceMove *pending;
+
+	rel = relation_open(tableOid, lockmode);
+
+	if (ATRelationIsFreeToMove(rel))
+	{
+		relation_close(rel, NoLock);
+		ATExecSetTableSpaceCopy(tableOid, newTableSpace, lockmode);
+	}
+	else
+	{
+		MemoryContext oldcxt;
+
+		CheckRelationTableSpaceMove(rel, newTableSpace);
+
+		elog(DEBUG1, "ATExecSetTableSpace: rel %d to tblspace %d (deferred copy)",
+			 tableOid, newTableSpace
+			);
+
+		/*
+		 * Keep both the list cells and entries in TopTransactionContext for
+		 * the whole transaction, like on_commits uses CacheMemoryContext.
+		 */
+		oldcxt = MemoryContextSwitchTo(TopTransactionContext);
+		pending = MemoryContextAlloc(TopTransactionContext,
+									 sizeof(PendingTablespaceMove));
+		pending->relid = tableOid;
+		pending->newTableSpace = newTableSpace;
+		pending->creating_subid = GetCurrentSubTransactionId();
+		deferred_tablespace_moves = lappend(deferred_tablespace_moves, pending);
+
+		MemoryContextSwitchTo(oldcxt);
+
+		relation_close(rel, NoLock);
+	}
 }
 
 /*
@@ -20113,6 +20198,100 @@ PreCommit_on_commit_actions(void)
 #endif
 	}
 }
+
+
+static int
+deferred_tablespace_move_compare_relid(const ListCell *a, const ListCell *b)
+{
+	PendingTablespaceMove *ca = lfirst_node(PendingTablespaceMove, a);
+	PendingTablespaceMove *cb = lfirst_node(PendingTablespaceMove, b);
+	int			t = pg_cmp_u32(ca->relid, cb->relid);
+
+	if (t == 0)					/* compare pointers for stability */
+		t = (a < b) ? -1 : 1;
+	return t;
+}
+
+/*
+ * Perform the file copies that might have been deferred during the
+ * transaction.
+ * See also: ATRelationIsFreeToMove
+ */
+void
+PreCommit_deferred_tablespace_moves(void)
+{
+	ListCell   *lc;
+	PendingTablespaceMove *prev = NULL;
+	PendingTablespaceMove *pending = NULL;
+
+	/*
+	 * Cluster moves by relation id, then for each relation apply the last
+	 * change.
+	 */
+	list_sort(deferred_tablespace_moves, deferred_tablespace_move_compare_relid);
+	foreach(lc, deferred_tablespace_moves)
+	{
+		pending = (PendingTablespaceMove *) lfirst(lc);
+		if (prev != NULL && prev->relid != pending->relid)
+		{
+			ATExecSetTableSpaceCopy(prev->relid, prev->newTableSpace,
+									AccessExclusiveLock);
+		}
+		prev = pending;
+	}
+
+	if (prev != NULL)
+		ATExecSetTableSpaceCopy(prev->relid, prev->newTableSpace,
+								AccessExclusiveLock);
+	deferred_tablespace_moves = NIL;
+}
+
+/*
+ * Propagate deferred tablespace moves from sub transactions.
+ * The move should be performed only at the commit of the top level
+ * transaction.
+ */
+void
+AtEOSubXact_deferred_tablespace_moves(bool isCommit, SubTransactionId mySubid,
+									  SubTransactionId parentSubid)
+{
+	ListCell   *cur_item;
+
+	foreach(cur_item, deferred_tablespace_moves)
+	{
+		PendingTablespaceMove *pending = (PendingTablespaceMove *) lfirst(cur_item);
+
+		if (pending->creating_subid != mySubid)
+			continue;
+
+		if (isCommit)
+		{
+			pending->creating_subid = parentSubid;
+			continue;
+		}
+
+		deferred_tablespace_moves = foreach_delete_current(deferred_tablespace_moves,
+														   cur_item);
+		pfree(pending);
+	}
+}
+
+/*
+ * Clean up deferred tablespace moves list at top level transaction
+ */
+void
+AtEOXact_deferred_tablespace_moves(bool isCommit)
+{
+	if (!isCommit)
+	{
+		/*
+		 * TopTransactionContext is about to be reset, so just drop the
+		 * pointer.  Do not pfree entries here.
+		 */
+		deferred_tablespace_moves = NIL;
+	}
+}
+
 
 /*
  * Post-commit or post-abort cleanup for ON COMMIT management.
