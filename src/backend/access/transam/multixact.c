@@ -2167,7 +2167,7 @@ SetMultiXactIdLimit(MultiXactId oldest_datminmxid, Oid oldest_datoid)
 	 * Offsets are 64-bits wide and never wrap around, so we don't need to
 	 * consider them for emergency autovacuum purposes.  But now that we're in
 	 * a consistent state, determine MultiXactState->oldestOffset.  It will be
-	 * used to adjust the freezing cutoff, to keep the offsets disk usage in
+	 * used to adjust the freezing cutoff, to keep the members disk usage in
 	 * check.
 	 */
 	SetOldestOffset();
