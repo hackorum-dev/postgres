@@ -701,6 +701,9 @@ pgoutput_commit_prepared_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	OutputPluginPrepareWrite(ctx, true);
 	logicalrep_write_commit_prepared(ctx->out, txn, commit_lsn);
 	OutputPluginWrite(ctx, true);
+
+	if (rbtxn_is_streamed(txn))
+		cleanup_rel_sync_cache(txn->xid, true);
 }
 
 /*
@@ -718,6 +721,9 @@ pgoutput_rollback_prepared_txn(LogicalDecodingContext *ctx,
 	logicalrep_write_rollback_prepared(ctx->out, txn, prepare_end_lsn,
 									   prepare_time);
 	OutputPluginWrite(ctx, true);
+
+	if (rbtxn_is_streamed(txn))
+		cleanup_rel_sync_cache(txn->xid, false);
 }
 
 /*
