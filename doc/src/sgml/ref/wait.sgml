@@ -260,10 +260,32 @@ WAIT FOR LSN '<replaceable class="parameter">lsn</replaceable>'
   <para>
    <command>WAIT</command> must be executed as a top-level command.
    It cannot be executed from a function, procedure, or
-   <command>DO</command> block. It also requires that no active or
-   registered snapshot be held, and therefore cannot be used in contexts
-   where such a snapshot must remain active, including transactions running
-   at isolation levels higher than <literal>READ COMMITTED</literal>.
+   <command>DO</command> block.  It also cannot be executed while the
+   current transaction holds a snapshot.  A transaction running at an
+   isolation level higher than <literal>READ COMMITTED</literal> holds one
+   from its first query until it ends, so <command>WAIT</command> is
+   accepted before that query and rejected after it.  An open cursor or an
+   exported snapshot has the same effect at any isolation level.
+  </para>
+
+  <para>
+   The restriction above exists because such a snapshot could stand in
+   the way of the very replay being waited for: replaying a record that
+   removes rows the snapshot can still see raises a recovery conflict.
+   This conflict could be resolved by delaying the replay or by cancelling
+   this session.  Having to run without a snapshot is also the reason why
+   <command>WAIT</command> is a command rather than a function or a procedure,
+   which execute with one held.
+  </para>
+
+  <para>
+   The other standby modes are not independent of replay either, even though
+   they do not wait for it directly.  Their positions advance as WAL arrives,
+   but WAL is recycled only at restartpoints, and a restartpoint cannot be
+   created past a checkpoint record that replay has not reached.  While
+   replay is held back, <filename>pg_wal</filename> therefore keeps growing
+   past <xref linkend="guc-max-wal-size"/>, and reception stops once the file
+   system fills.
   </para>
 
   <para>
