@@ -4171,6 +4171,49 @@ explain (costs off)
     lateral (select x.q1 from (select distinct q2 from int8_tbl) s union all
              select q2 from int8_tbl) ss(v);
 
+-- lateral UNION ALL referencing a join alias Var that needs a PHV; the
+-- appendrel parent and children must share the PHV
+-- Here the Var is a whole-row reference to a nullable join.
+explain (verbose, costs off)
+select ss.j from
+  int4_tbl a left join (int4_tbl b cross join int4_tbl c) j on true,
+  lateral ((select j offset 0) union all select null) ss;
+explain (verbose, costs off)
+select ss.j from
+  int4_tbl a left join (int4_tbl b cross join int4_tbl c) j on true,
+  lateral (select j union all select null) ss;
+-- Here the Var is a merged column of a full join with a non-Var input
+explain (verbose, costs off)
+select ss.c from
+  int4_tbl a left join
+  ((select f1 + 0 as c from int4_tbl) s full join int4_tbl b(c) using (c)) j
+  on true,
+  lateral ((select j.c offset 0) union all select 1) ss;
+explain (verbose, costs off)
+select ss.c from
+  int4_tbl a left join
+  ((select f1 + 0 as c from int4_tbl) s full join int4_tbl b(c) using (c)) j
+  on true,
+  lateral (select j.c union all select 1) ss;
+-- Here the UNION ALL is nested in a pulled-up lateral subquery
+explain (verbose, costs off)
+select ss.j from
+  int4_tbl a left join (int4_tbl b cross join int4_tbl c) j on true,
+  lateral (select * from ((select j offset 0) union all select null) s) ss;
+explain (verbose, costs off)
+select ss.j from
+  int4_tbl a left join (int4_tbl b cross join int4_tbl c) j on true,
+  lateral (select * from (select j union all select null) s) ss;
+
+-- join alias Var needing a PHV, referenced in both the tlist and the quals of
+-- a pulled-up subquery; both references must share the PHV
+explain (verbose, costs off)
+select * from
+  (select v.k from int4_tbl a
+     left join (int4_tbl b cross join int4_tbl c) j on true
+     left join lateral (select j as k from int4_tbl d) v on true
+   where v.k is not null) ss;
+
 -- lateral with VALUES
 explain (costs off)
   select count(*) from tenk1 a,
