@@ -1367,7 +1367,7 @@ GetPublicationByName(const char *pubname, bool missing_ok)
  * Note: this leaks memory for the ancestors list into the current memory
  * context.
  */
-static bool
+bool
 is_table_publishable_in_publication(Oid relid, Publication *pub)
 {
 	bool		relispartition;
