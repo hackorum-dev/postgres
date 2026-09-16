@@ -2172,6 +2172,42 @@ alter table at_tab1 alter column b type varchar; -- allowed, but ...
 insert into at_tab2 values(1,'42'); -- ... this will fail
 ERROR:  ROW() column has type text instead of type character varying
 drop table at_tab1, at_tab2;
+-- A stored *constant* of the row type is rejected: it holds a tuple image
+-- that ALTER COLUMN TYPE cannot rewrite, and reading it afterwards through
+-- the new descriptor is an out-of-bounds read, not a wrong answer.
+create table at_tab1 (a int, b text);
+create table at_tab2 (x int default (('(1,42)'::at_tab1).a));
+alter table at_tab1 alter column b type varchar; -- fails
+ERROR:  cannot alter table "at_tab1" because default value for column x of table at_tab2 stores a constant of its row type
+DETAIL:  The stored constant holds a row image that the altered type would misinterpret.
+drop table at_tab2;
+create view at_view1 as select '(1,42)'::at_tab1 as x;
+alter table at_tab1 alter column b type varchar; -- fails
+ERROR:  cannot alter table "at_tab1" because rule _RETURN on view at_view1 stores a constant of its row type
+DETAIL:  The stored constant holds a row image that the altered type would misinterpret.
+drop view at_view1;
+create table at_tab2 (x int check (x = ('(1,42)'::at_tab1).a));
+alter table at_tab1 alter column b type varchar; -- fails
+ERROR:  cannot alter table "at_tab1" because constraint at_tab2_x_check on table at_tab2 stores a constant of its row type
+DETAIL:  The stored constant holds a row image that the altered type would misinterpret.
+drop table at_tab2;
+create table at_tab2 (x int);
+create index at_tab2_idx on at_tab2 ((x + ('(1,42)'::at_tab1).a));
+alter table at_tab1 alter column b type varchar; -- fails
+ERROR:  cannot alter table "at_tab1" because an expression of "at_tab2_idx" stores a constant of its row type
+DETAIL:  The stored constant holds a row image that the altered type would misinterpret.
+drop table at_tab2;
+create function at_func1(arg at_tab1 default '(1,42)'::at_tab1)
+  returns int language sql as 'select 1';
+alter table at_tab1 alter column b type varchar; -- fails
+ERROR:  cannot alter table "at_tab1" because function at_func1(at_tab1) stores a constant of its row type
+DETAIL:  The stored constant holds a row image that the altered type would misinterpret.
+drop function at_func1;
+-- but merely mentioning the row type, with no constant stored, is fine
+create function at_func1(arg at_tab1) returns int language sql as 'select 1';
+alter table at_tab1 alter column b type varchar; -- allowed
+drop function at_func1;
+drop table at_tab1;
 -- Check it for a partitioned table, too
 create table at_tab1 (a int, b text) partition by list(a);
 create table at_tab2 (x int, y at_tab1);
