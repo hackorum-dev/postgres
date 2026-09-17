@@ -1187,6 +1187,7 @@ utility_option_elem:
 			utility_option_name utility_option_arg
 				{
 					$$ = makeDefElem($1, $2, @1);
+					$$->arg_location = @2;
 				}
 		;
 
