@@ -1397,6 +1397,14 @@ from int8_tbl t1 left join
   on (t1.q2 = t23.q1)
 group by t23 order by 1;
 
+-- nulled whole-row Var of a zero-column join, referenced from a subquery
+select t1.q1, t1.q2, (select t23::text)
+from int8_tbl t1 left join
+  ((select from int4_tbl where f1 = 0) t2
+   cross join (select from int4_tbl where f1 = 0) t3) t23
+  on (t1.q1 = 123)
+order by 1, 2;
+
 --
 -- test incorrect failure to NULL pulled-up subexpressions
 --

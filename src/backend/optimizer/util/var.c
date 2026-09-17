@@ -791,6 +791,8 @@ flatten_join_alias_vars(PlannerInfo *root, Query *query, Node *node)
 	 * it's okay to immediately increment sublevels_up.
 	 */
 	Assert(node != (Node *) query);
+	/* add_nullingrels_if_needed relies on this */
+	Assert(root == NULL || query == root->parse);
 
 	context.root = root;
 	context.query = query;
@@ -1257,8 +1259,7 @@ add_nullingrels_if_needed(PlannerInfo *root, Node *newnode, Var *oldvar)
 
 		if (bms_is_empty(phrels))	/* variable-free? */
 		{
-			if (levelsup != 0)	/* this won't work otherwise */
-				elog(ERROR, "unsupported join alias expression");
+			/* oldvar belongs to root->parse even when levelsup > 0 */
 			phrels = get_relids_for_join(root->parse, oldvar->varno);
 			/* If it's an outer join, eval below not above the join */
 			phrels = bms_del_member(phrels, oldvar->varno);
