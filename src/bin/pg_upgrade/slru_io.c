@@ -20,6 +20,8 @@
 
 static SlruSegState *AllocSlruSegState(const char *dir);
 static char *SlruFileName(SlruSegState *state, int64 segno);
+static bool SlruReadSwitchSegment(SlruSegState *state, int64 segno, bool missing_ok);
+static void SlruReadCloseSegment(SlruSegState *state);
 static void SlruFlush(SlruSegState *state);
 
 /* common parts of AllocSlruRead and AllocSlruWrite */
@@ -70,6 +72,49 @@ AllocSlruRead(const char *dir, bool long_segment_names)
 }
 
 /*
+ * Open the given segment, closing old one first if required.
+ *
+ * If 'missing_ok' is true and the file does not exist, returns false.
+ * Otherwise a missing file is fatal.
+ */
+static bool
+SlruReadSwitchSegment(SlruSegState *state, int64 segno, bool missing_ok)
+{
+	SlruReadCloseSegment(state);
+
+	state->fn = SlruFileName(state, segno);
+	if ((state->fd = open(state->fn, O_RDONLY | PG_BINARY, 0)) < 0)
+	{
+		if (missing_ok && errno == ENOENT)
+		{
+			pg_free(state->fn);
+			return false;
+		}
+		pg_fatal("could not open file \"%s\": %m", state->fn);
+	}
+	state->segno = segno;
+	return true;
+}
+
+/*
+ * Close the current segment file, if any.
+ */
+static void
+SlruReadCloseSegment(SlruSegState *state)
+{
+	if (state->segno != -1)
+	{
+		close(state->fd);
+		state->fd = -1;
+
+		pg_free(state->fn);
+		state->fn = NULL;
+
+		state->segno = -1;
+	}
+}
+
+/*
  * Read the given page into memory buffer.
  *
  * Reading can be done in random order.
@@ -96,23 +141,7 @@ SlruReadSwitchPageSlow(SlruSegState *state, uint64 pageno)
 	/* If the new page is on a different SLRU segment, open the new segment */
 	segno = pageno / SLRU_PAGES_PER_SEGMENT;
 	if (segno != state->segno)
-	{
-		if (state->segno != -1)
-		{
-			close(state->fd);
-			state->fd = -1;
-
-			pg_free(state->fn);
-			state->fn = NULL;
-
-			state->segno = -1;
-		}
-
-		state->fn = SlruFileName(state, segno);
-		if ((state->fd = open(state->fn, O_RDONLY | PG_BINARY, 0)) < 0)
-			pg_fatal("could not open file \"%s\": %m", state->fn);
-		state->segno = segno;
-	}
+		SlruReadSwitchSegment(state, segno, false);
 
 	offset = (pageno % SLRU_PAGES_PER_SEGMENT) * BLCKSZ;
 	bytes_read = 0;
@@ -144,6 +173,17 @@ SlruReadSwitchPageSlow(SlruSegState *state, uint64 pageno)
 	state->pageno = pageno;
 
 	return state->buf.data;
+}
+
+/*
+ * Return true if the segment file containing given page exists.
+ */
+bool
+SlruReadSegmentExists(SlruSegState *state, uint64 pageno)
+{
+	int64		segno = pageno / SLRU_PAGES_PER_SEGMENT;
+
+	return SlruReadSwitchSegment(state, segno, true);
 }
 
 /*

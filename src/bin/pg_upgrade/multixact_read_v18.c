@@ -116,7 +116,8 @@ MXOffsetToFlagsBitShift(MultiXactOffset32 offset)
  * Returns the malloced memory used by the all other calls in this module.
  */
 OldMultiXactReader *
-AllocOldMultiXactRead(char *pgdata, MultiXactId nextMulti,
+AllocOldMultiXactRead(char *pgdata,
+					  MultiXactId oldestMulti, MultiXactId nextMulti,
 					  MultiXactOffset32 nextOffset)
 {
 	OldMultiXactReader *state = pg_malloc_object(OldMultiXactReader);
@@ -130,6 +131,24 @@ AllocOldMultiXactRead(char *pgdata, MultiXactId nextMulti,
 
 	pg_sprintf(dir, "%s/pg_multixact/members", pgdata);
 	state->members = AllocSlruRead(dir, false);
+
+	/*
+	 * If oldestMulti is 1 (FirstMultiXactId), check that the corresponding
+	 * offsets segment exists.  You'd get an error later anyway when trying to
+	 * read it, but we want to give a special error message for that case
+	 * because there was a bug in old versions of pg_upgrade where oldestMulti
+	 * was incorrectly set to 1.  See commit a61daa14d5 that fixed that bug.
+	 */
+	if (oldestMulti == FirstMultiXactId && nextMulti != oldestMulti &&
+		!SlruReadSegmentExists(state->offset, MultiXactIdToOffsetPage(oldestMulti)))
+	{
+		pg_log(PG_REPORT, "fatal");
+		pg_fatal("Segment file containing multixid %u does not exist.\n"
+				 "This can happen if an old version of pg_upgrade was used in the\n"
+				 "past to upgrade the cluster to version 9.3. If that is the cause,\n"
+				 "it can be fixed by running VACUUM FREEZE before upgrade.",
+				 oldestMulti);
+	}
 
 	return state;
 }

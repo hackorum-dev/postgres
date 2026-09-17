@@ -27,7 +27,7 @@ typedef struct OldMultiXactReader
 } OldMultiXactReader;
 
 extern OldMultiXactReader *AllocOldMultiXactRead(char *pgdata,
-												 MultiXactId nextMulti,
+												 MultiXactId oldestMulti, MultiXactId nextMulti,
 												 MultiXactOffset32 nextOffset);
 extern bool GetOldMultiXactIdSingleMember(OldMultiXactReader *state,
 										  MultiXactId multi,

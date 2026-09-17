@@ -26,6 +26,7 @@ typedef struct SlruSegState
 } SlruSegState;
 
 extern SlruSegState *AllocSlruRead(const char *dir, bool long_segment_names);
+extern bool SlruReadSegmentExists(SlruSegState *state, uint64 pageno);
 extern char *SlruReadSwitchPageSlow(SlruSegState *state, uint64 pageno);
 extern void FreeSlruRead(SlruSegState *state);
 

@@ -62,7 +62,7 @@ rewrite_multixacts(MultiXactId from_multi, MultiXactId to_multi)
 	 * old cluster.
 	 */
 	old_reader = AllocOldMultiXactRead(old_cluster.pgdata,
-									   old_cluster.controldata.chkpnt_nxtmulti,
+									   from_multi, old_cluster.controldata.chkpnt_nxtmulti,
 									   old_cluster.controldata.chkpnt_nxtmxoff);
 
 	for (MultiXactId multi = from_multi; multi != to_multi;)
@@ -76,8 +76,8 @@ rewrite_multixacts(MultiXactId from_multi, MultiXactId to_multi)
 		 * Locking-only XIDs that may be part of multi-xids don't matter after
 		 * upgrade, as there can be no transactions running across upgrade. So
 		 * as a small optimization, we only read one member from each
-		 * multixid: the one updating one, or if there was no update,
-		 * arbitrarily the first locking xid.
+		 * multixid: the updating one, or if there was no update, arbitrarily
+		 * the first locking xid.
 		 */
 		multixid_valid = GetOldMultiXactIdSingleMember(old_reader, multi, &member);
 
