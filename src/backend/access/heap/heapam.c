@@ -908,10 +908,20 @@ heapgettup_advance_block(HeapScanDesc scan, BlockNumber block, ScanDirection dir
 		if (block == scan->rs_startblock)
 			return InvalidBlockNumber;
 
-		/* check if the limit imposed by heap_setscanlimits() is met */
+		/*
+		 * Check if the limit imposed by heap_setscanlimits() is met.  The
+		 * limit is a fixed window of rs_numblocks blocks starting at
+		 * rs_startblock, so compare against its end rather than counting
+		 * down a budget; a scan that changes direction (a SCROLL cursor)
+		 * would otherwise exhaust the budget and stop early.
+		 */
 		if (scan->rs_numblocks != InvalidBlockNumber)
 		{
-			if (--scan->rs_numblocks == 0)
+			BlockNumber endblock;
+
+			endblock = (scan->rs_startblock + scan->rs_numblocks) %
+				scan->rs_nblocks;
+			if (block == endblock)
 				return InvalidBlockNumber;
 		}
 
@@ -919,16 +929,14 @@ heapgettup_advance_block(HeapScanDesc scan, BlockNumber block, ScanDirection dir
 	}
 	else
 	{
-		/* we're done if the last block is the start position */
+		/*
+		 * We're done if the last block is the start position.  This also
+		 * covers the limit imposed by heap_setscanlimits(), since the window
+		 * begins at rs_startblock and heapgettup_initial_block() started us
+		 * at its last block.
+		 */
 		if (block == scan->rs_startblock)
 			return InvalidBlockNumber;
-
-		/* check if the limit imposed by heap_setscanlimits() is met */
-		if (scan->rs_numblocks != InvalidBlockNumber)
-		{
-			if (--scan->rs_numblocks == 0)
-				return InvalidBlockNumber;
-		}
 
 		/* wrap to the end of the heap when the last page was page 0 */
 		if (block == 0)

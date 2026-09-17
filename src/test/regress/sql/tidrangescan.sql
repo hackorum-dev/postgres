@@ -96,6 +96,16 @@ FETCH FIRST c;
 FETCH LAST c;
 COMMIT;
 
+-- a scrollable cursor that changes direction mid-scan must still stay within
+-- the block range computed by heap_setscanlimits()
+BEGIN;
+DECLARE c SCROLL CURSOR FOR SELECT ctid FROM tidrangescan WHERE ctid >= '(0,1)' AND ctid <= '(2,10)';
+MOVE FORWARD 25 c;
+FETCH BACKWARD 2 c;
+FETCH BACKWARD ALL c;
+FETCH FORWARD ALL c;
+COMMIT;
+
 DROP TABLE tidrangescan;
 
 -- Tests for parallel TID Range Scans
