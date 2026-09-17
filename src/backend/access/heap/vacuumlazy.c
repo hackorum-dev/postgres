@@ -3057,6 +3057,15 @@ lazy_vacuum_one_index(Relation indrel, IndexBulkDeleteResult *istat,
 	pgstat_progress_update_param(PROGRESS_VACUUM_CURRENT_INDEX_RELID,
 								 (int64) RelationGetRelid(indrel));
 
+#ifdef USE_INJECTION_POINTS
+
+	/*
+	 * Used by tests to inspect pg_stat_progress_vacuum while a known index
+	 * is in progress.
+	 */
+	INJECTION_POINT("vacuum-index-in-progress", NULL);
+#endif
+
 	/*
 	 * Update error traceback information.
 	 *
