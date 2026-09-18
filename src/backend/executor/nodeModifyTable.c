@@ -3561,10 +3561,20 @@ lmerge_matched:
 							 errmsg("could not serialize access due to concurrent delete")));
 
 				/*
-				 * If the tuple was already deleted, set matched to false to
-				 * let caller handle it under NOT MATCHED [BY TARGET] clauses.
+				 * If this was a MATCHED case, the source row still exists, so
+				 * let the caller handle it under NOT MATCHED [BY TARGET]
+				 * clauses.
+				 *
+				 * If this was originally a NOT MATCHED BY SOURCE case, leave
+				 * matched true.  Since neither a source row nor a target row
+				 * now exists, there is no further action to execute.
+				 *
+				 * If this was originally MATCHED but a concurrent update had
+				 * already changed it to NOT MATCHED BY SOURCE, matched is
+				 * already false and should remain so.
 				 */
-				*matched = false;
+				if (relaction->mas_action->matchKind == MERGE_WHEN_MATCHED)
+					*matched = false;
 				goto out;
 
 			case TM_Updated:
