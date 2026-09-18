@@ -7600,8 +7600,39 @@ FROM pg_stat_get_backend_idset() AS backendid;
     <row>
      <entry><literal>initializing</literal></entry>
      <entry>
-       The command is preparing to begin scanning the heap.  This phase is
-       expected to be very brief.
+       The command is performing initial setup.  For
+       <command>REPACK (CONCURRENTLY)</command>, this includes starting the
+       logical decoding worker.  This phase is expected to be very brief.
+     </entry>
+    </row>
+    <row>
+     <entry><literal>enabling logical decoding</literal></entry>
+     <entry>
+       <command>REPACK (CONCURRENTLY)</command> is enabling logical decoding.
+       If logical decoding is not already enabled, this phase waits for all
+       backends to process a request to start writing the additional WAL
+       information required for logical decoding.
+       This phase is skipped when not in concurrent mode.
+     </entry>
+    </row>
+    <row>
+     <entry><literal>waiting for old transactions</literal></entry>
+     <entry>
+       <command>REPACK (CONCURRENTLY)</command> is waiting for old
+       transactions with assigned transaction IDs to end so that the initial
+       logical decoding snapshot can be built.  This can include prepared
+       transactions and other <command>REPACK (CONCURRENTLY)</command>
+       operations that have already acquired a transaction ID.
+       This phase is skipped when not in concurrent mode.
+     </entry>
+    </row>
+    <row>
+     <entry><literal>building initial snapshot</literal></entry>
+     <entry>
+       <command>REPACK (CONCURRENTLY)</command> is obtaining the initial
+       snapshot from its logical decoding worker and preparing to copy the
+       table.
+       This phase is skipped when not in concurrent mode.
      </entry>
     </row>
     <row>
@@ -7634,6 +7665,7 @@ FROM pg_stat_get_backend_idset() AS backendid;
        <command>REPACK CONCURRENTLY</command> is currently processing the DML
        commands that other transactions executed during any of the preceding
        phases.
+       This phase is skipped when not in concurrent mode.
      </entry>
     </row>
     <row>

@@ -519,6 +519,10 @@ cluster_rel(RepackCommand cmd, Relation OldHeap, Oid indexOid,
 	};
 	const int64 progress_values[] = {cmd, indexOid};
 
+	pgstat_progress_start_command(PROGRESS_COMMAND_REPACK, tableOid);
+	/* Report the ordering index even when using a sequential scan and sort. */
+	pgstat_progress_update_multi_param(2, progress_index, progress_values);
+
 	/* Determine the lock mode to use. */
 	lmode = RepackLockLevel(concurrent);
 
@@ -539,10 +543,6 @@ cluster_rel(RepackCommand cmd, Relation OldHeap, Oid indexOid,
 
 	/* Check for user-requested abort. */
 	CHECK_FOR_INTERRUPTS();
-
-	pgstat_progress_start_command(PROGRESS_COMMAND_REPACK, tableOid);
-	/* Report the ordering index even when using a sequential scan and sort. */
-	pgstat_progress_update_multi_param(2, progress_index, progress_values);
 
 	/*
 	 * Switch to the table owner's userid, so that any index functions are run
@@ -3745,6 +3745,8 @@ start_repack_decoding_worker(Oid relid)
 	DecodingWorkerShared *shared;
 	shm_mq	   *mq;
 	BackgroundWorker bgw;
+	RepackWorkerSetupState last_reported_state =
+		REPACK_WORKER_SETUP_STARTING;
 
 	decoding_worker = palloc0_object(DecodingWorker);
 
@@ -3754,7 +3756,7 @@ start_repack_decoding_worker(Oid relid)
 	decoding_worker->seg = dsm_create(size, 0);
 
 	shared = (DecodingWorkerShared *) dsm_segment_address(decoding_worker->seg);
-	shared->initialized = false;
+	shared->setup_state = REPACK_WORKER_SETUP_STARTING;
 	shared->lsn_upto = InvalidXLogRecPtr;
 	shared->done = false;
 	SharedFileSetInit(&shared->sfs, decoding_worker->seg);
@@ -3820,17 +3822,45 @@ start_repack_decoding_worker(Oid relid)
 	 * for any reason, otherwise the worker might end up in a deadlock,
 	 * waiting for the caller's transaction to end. Therefore wait here until
 	 * the worker indicates that it has the logical decoding initialized.
+	 * While waiting, report the setup state as the worker advances.
 	 */
 	ConditionVariablePrepareToSleep(&shared->cv);
 	for (;;)
 	{
-		bool		initialized;
+		RepackWorkerSetupState setup_state;
 
 		SpinLockAcquire(&shared->mutex);
-		initialized = shared->initialized;
+		setup_state = shared->setup_state;
 		SpinLockRelease(&shared->mutex);
 
-		if (initialized)
+		if (setup_state > last_reported_state)
+		{
+			int			progress_phase;
+
+			switch (setup_state)
+			{
+				case REPACK_WORKER_SETUP_ENABLING_LOGICAL_DECODING:
+					progress_phase =
+						PROGRESS_REPACK_PHASE_ENABLE_LOGICAL_DECODING;
+					break;
+				case REPACK_WORKER_SETUP_WAITING_FOR_OLD_TRANSACTIONS:
+					progress_phase = PROGRESS_REPACK_PHASE_WAIT_XACTS;
+					break;
+				case REPACK_WORKER_SETUP_BUILDING_INITIAL_SNAPSHOT:
+					progress_phase =
+						PROGRESS_REPACK_PHASE_BUILD_INITIAL_SNAPSHOT;
+					break;
+				default:
+					elog(ERROR, "unexpected REPACK worker setup state: %d",
+						 setup_state);
+			}
+
+			pgstat_progress_update_param(PROGRESS_REPACK_PHASE,
+										 progress_phase);
+			last_reported_state = setup_state;
+		}
+
+		if (setup_state == REPACK_WORKER_SETUP_BUILDING_INITIAL_SNAPSHOT)
 			break;
 
 		ConditionVariableSleep(&shared->cv, WAIT_EVENT_REPACK_WORKER_EXPORT);
@@ -3998,9 +4028,8 @@ get_initial_snapshot(DecodingWorker *worker)
 	shared = (DecodingWorkerShared *) dsm_segment_address(worker->seg);
 
 	/*
-	 * The worker needs to initialize the logical decoding, which usually
-	 * takes some time. Therefore it makes sense to prepare for the sleep
-	 * first.
+	 * Building and serializing the initial snapshot can take some time.
+	 * Therefore it makes sense to prepare for the sleep first.
 	 */
 	ConditionVariablePrepareToSleep(&shared->cv);
 	for (;;)

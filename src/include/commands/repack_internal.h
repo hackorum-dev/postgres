@@ -59,13 +59,25 @@ typedef struct RepackDecodingState
 } RepackDecodingState;
 
 /*
+ * Setup states reported by the decoding worker to the backend running REPACK,
+ * in transition order.
+ */
+typedef enum RepackWorkerSetupState
+{
+	REPACK_WORKER_SETUP_STARTING,
+	REPACK_WORKER_SETUP_ENABLING_LOGICAL_DECODING,
+	REPACK_WORKER_SETUP_WAITING_FOR_OLD_TRANSACTIONS,
+	REPACK_WORKER_SETUP_BUILDING_INITIAL_SNAPSHOT
+} RepackWorkerSetupState;
+
+/*
  * Shared memory used for communication between the backend running REPACK and
  * the worker that performs logical decoding of data changes.
  */
 typedef struct DecodingWorkerShared
 {
-	/* Is the decoding initialized? */
-	bool		initialized;
+	/* Current setup state. */
+	RepackWorkerSetupState setup_state;
 
 	/*
 	 * Once the worker has reached this LSN, it should close the current
