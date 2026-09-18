@@ -2644,6 +2644,7 @@ ReorderTuple
 RepackCommand
 RepackDecodingState
 RepackStmt
+RepackWorkerSetupState
 ReparameterizeForeignPathByChild_function
 ReplOriginId
 ReplOriginXactState

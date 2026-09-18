@@ -33,7 +33,10 @@
 #define PGREPACK_PLUGIN   "pgrepack"
 
 static void RepackWorkerShutdown(int code, Datum arg);
-static LogicalDecodingContext *repack_setup_logical_decoding(Oid relid);
+static void set_repack_worker_setup_state(DecodingWorkerShared *shared,
+										  RepackWorkerSetupState setup_state);
+static LogicalDecodingContext *repack_setup_logical_decoding(Oid relid,
+															 DecodingWorkerShared *shared);
 static void repack_cleanup_logical_decoding(LogicalDecodingContext *ctx);
 static void export_initial_snapshot(Snapshot snapshot,
 									DecodingWorkerShared *shared);
@@ -139,19 +142,15 @@ RepackWorkerMain(Datum main_arg)
 	/*
 	 * Prepare to capture the concurrent data changes ourselves.
 	 */
-	decoding_ctx = repack_setup_logical_decoding(shared->relid);
-
-	/* Announce that we're ready. */
-	SpinLockAcquire(&shared->mutex);
-	shared->initialized = true;
-	SpinLockRelease(&shared->mutex);
-	ConditionVariableSignal(&shared->cv);
+	decoding_ctx = repack_setup_logical_decoding(shared->relid, shared);
 
 	/* There doesn't seem to a nice API to set these */
 	XactIsoLevel = XACT_REPEATABLE_READ;
 	XactReadOnly = true;
 
 	/* Build the initial snapshot and export it. */
+	set_repack_worker_setup_state(shared,
+								  REPACK_WORKER_SETUP_BUILDING_INITIAL_SNAPSHOT);
 	snapshot = SnapBuildInitialSnapshot(decoding_ctx->snapshot_builder);
 	export_initial_snapshot(snapshot, shared);
 
@@ -213,6 +212,20 @@ AmRepackWorker(void)
 }
 
 /*
+ * Report the current setup state to the backend running REPACK.
+ */
+static void
+set_repack_worker_setup_state(DecodingWorkerShared *shared,
+							  RepackWorkerSetupState setup_state)
+{
+	SpinLockAcquire(&shared->mutex);
+	Assert(setup_state > shared->setup_state);
+	shared->setup_state = setup_state;
+	SpinLockRelease(&shared->mutex);
+	ConditionVariableSignal(&shared->cv);
+}
+
+/*
  * This function is much like pg_create_logical_replication_slot() except that
  * the new slot is neither released (if anyone else could read changes from
  * our slot, we could miss changes other backends do while we copy the
@@ -220,7 +233,7 @@ AmRepackWorker(void)
  * crash by restarting all the work from scratch).
  */
 static LogicalDecodingContext *
-repack_setup_logical_decoding(Oid relid)
+repack_setup_logical_decoding(Oid relid, DecodingWorkerShared *shared)
 {
 	Relation	rel;
 	Oid			toastrelid;
@@ -247,6 +260,8 @@ repack_setup_logical_decoding(Oid relid)
 	 * to make the slot name unique.
 	 */
 	snprintf(slotname, NAMEDATALEN, "pg_repack_%d", MyProcPid);
+	set_repack_worker_setup_state(shared,
+								  REPACK_WORKER_SETUP_ENABLING_LOGICAL_DECODING);
 	ReplicationSlotCreate(slotname, true, RS_TEMPORARY, false, true,
 						  false, false);
 	EnsureLogicalDecodingEnabled();
@@ -293,7 +308,12 @@ repack_setup_logical_decoding(Oid relid)
 	/* We don't have control on fast_forward, but verify it's sane */
 	Assert(!ctx->fast_forward);
 
-	/* Find our decoding starting point. */
+	/*
+	 * Find our decoding starting point, waiting for old transactions as
+	 * needed.
+	 */
+	set_repack_worker_setup_state(shared,
+								  REPACK_WORKER_SETUP_WAITING_FOR_OLD_TRANSACTIONS);
 	DecodingContextFindStartpoint(ctx);
 
 	/* From this point on, we need non-blocking WAL reads */
