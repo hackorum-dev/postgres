@@ -44,5 +44,24 @@ SELECT count(*) FROM bmscantest WHERE a = 1 OR b = 1;
   2485
 (1 row)
 
+-- Test a scalar-array B-tree bitmap scan, including duplicate index keys.
+SELECT count(*) FROM bmscantest WHERE a IN (1, 2, 3);
+ count 
+-------
+  3963
+(1 row)
+
+-- Two matches on one leaf page must include the scalar and batched TIDs.
+CREATE TABLE bmscan_small (a int);
+INSERT INTO bmscan_small VALUES (1), (2), (3);
+CREATE INDEX bmscan_small_idx ON bmscan_small(a);
+SELECT a FROM bmscan_small WHERE a BETWEEN 1 AND 2 ORDER BY a;
+ a 
+---
+ 1
+ 2
+(2 rows)
+
+DROP TABLE bmscan_small;
 -- clean up
 DROP TABLE bmscantest;

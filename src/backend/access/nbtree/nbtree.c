@@ -285,6 +285,58 @@ btgettuple(IndexScanDesc scan, ScanDirection dir)
 }
 
 /*
+ * _btgetbitmap_batch() -- add the rest of a primitive scan in batches
+ *
+ * The caller has found a saved leaf-page span with more than one item.
+ * Keeping the batch state in this helper leaves the common singleton path in
+ * btgetbitmap with the same local state as the original scalar loop.
+ */
+static pg_noinline int64
+_btgetbitmap_batch(IndexScanDesc scan, TIDBitmap *tbm)
+{
+	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+	int64		ntids = 0;
+	ItemPointerData *heapTids;
+	int			firstItem;
+	int			lastItem;
+	int			nitems;
+
+	heapTids = palloc_array(ItemPointerData, MaxTIDsPerBTreePage);
+	firstItem = so->currPos.itemIndex;
+	lastItem = so->currPos.lastItem;
+	nitems = lastItem - firstItem + 1;
+
+	for (;;)
+	{
+		/*
+		 * The heap TIDs are not contiguous in BTScanPosItem, so copy them
+		 * into a contiguous array before adding them to the bitmap. Pass the
+		 * saved leaf-page span in one call so tbm_add_tuples can reuse its
+		 * current-block lookup cache within the span.
+		 */
+		for (int i = 0; i < nitems; i++)
+			heapTids[i] = so->currPos.items[firstItem + i].heapTid;
+		tbm_add_tuples(tbm, heapTids, nitems, false);
+		ntids += nitems;
+
+		/*
+		 * Mark the current page consumed before letting _bt_next move to the
+		 * next one.
+		 */
+		so->currPos.itemIndex = lastItem;
+		if (!_bt_next(scan, ForwardScanDirection))
+			break;
+
+		firstItem = so->currPos.itemIndex;
+		lastItem = so->currPos.lastItem;
+		nitems = lastItem - firstItem + 1;
+	}
+
+	pfree(heapTids);
+	return ntids;
+}
+
+/*
  * btgetbitmap() -- gets all matching tuples, and adds them to a bitmap
  */
 int64
@@ -292,7 +344,6 @@ btgetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
 	int64		ntids = 0;
-	ItemPointer heapTid;
 
 	Assert(scan->heapRelation == NULL);
 
@@ -302,28 +353,27 @@ btgetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 		/* Fetch the first page & tuple */
 		if (_bt_first(scan, ForwardScanDirection))
 		{
-			/* Save tuple ID, and continue scanning */
-			heapTid = &scan->xs_heaptid;
-			tbm_add_tuples(tbm, heapTid, 1, false);
-			ntids++;
-
 			for (;;)
 			{
-				/*
-				 * Advance to next tuple within page.  This is the same as the
-				 * easy case in _bt_next().
-				 */
-				if (++so->currPos.itemIndex > so->currPos.lastItem)
+				/* Keep the current tuple on the original scalar path. */
+				tbm_add_tuples(tbm, &scan->xs_heaptid, 1, false);
+				ntids++;
+
+				++so->currPos.itemIndex;
+				if (so->currPos.itemIndex <= so->currPos.lastItem)
 				{
-					/* let _bt_next do the heavy lifting */
-					if (!_bt_next(scan, ForwardScanDirection))
-						break;
+					/*
+					 * A later item in the current span is available, so the
+					 * helper can consume the rest of this primitive scan in
+					 * batches.
+					 */
+					ntids += _btgetbitmap_batch(scan, tbm);
+					break;
 				}
 
-				/* Save tuple ID, and continue scanning */
-				heapTid = &so->currPos.items[so->currPos.itemIndex].heapTid;
-				tbm_add_tuples(tbm, heapTid, 1, false);
-				ntids++;
+				/* let _bt_next do the heavy lifting */
+				if (!_bt_next(scan, ForwardScanDirection))
+					break;
 			}
 		}
 		/* Now see if we need another primitive index scan */
