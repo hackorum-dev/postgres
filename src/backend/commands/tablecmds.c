@@ -692,6 +692,7 @@ static void ATPrepSetAccessMethod(AlteredTableInfo *tab, Relation rel, const cha
 static void ATExecSetAccessMethodNoStorage(Relation rel, Oid newAccessMethodId);
 static void ATPrepChangePersistence(AlteredTableInfo *tab, Relation rel,
 									bool toLogged);
+static void ATRewriteChangePersistence(AlteredTableInfo *tab);
 static void ATPrepSetTableSpace(AlteredTableInfo *tab, Relation rel,
 								const char *tablespacename, LOCKMODE lockmode);
 static void ATExecSetTableSpace(Oid tableOid, Oid newTableSpace, LOCKMODE lockmode);
@@ -6106,6 +6107,20 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode,
 				SequenceChangePersistence(seq_relid, tab->newrelpersistence);
 			}
 		}
+	}
+
+	/*
+	 * Event triggers, or DEFAULT/CHECK expressions evaluated during
+	 * the rewrite, can execute DDL that invalidates the persistence
+	 * checks performed during preparation, so repeat them now that
+	 * all tables have been rewritten.
+	 */ 
+	foreach(ltab, *wqueue)
+	{
+		AlteredTableInfo *tab = lfirst(ltab);
+
+		if (tab->chgPersistence)
+			ATRewriteChangePersistence(tab);
 	}
 
 	/*
@@ -19499,47 +19514,19 @@ ATExecSetCompression(Relation rel,
 	return address;
 }
 
-
 /*
- * Preparation phase for SET LOGGED/UNLOGGED
+ * Do common checks for SET LOGGED/UNLOGGED.
  *
- * This verifies that we're not trying to change a temp table.  Also,
- * existing foreign key constraints are checked to avoid ending up with
- * permanent tables referencing unlogged tables.
+ * Ensure that unlogged tables are not named in publications and that the
+ * persistence of tables connected by foreign key constraints is compatible.
  */
 static void
-ATPrepChangePersistence(AlteredTableInfo *tab, Relation rel, bool toLogged)
+CommonCheckForChangePersistence(Relation rel, bool toLogged)
 {
 	Relation	pg_constraint;
 	HeapTuple	tuple;
 	SysScanDesc scan;
 	ScanKeyData skey[1];
-
-	/*
-	 * Disallow changing status for a temp table.  Also verify whether we can
-	 * get away with doing nothing; in such cases we don't need to run the
-	 * checks below, either.
-	 */
-	switch (rel->rd_rel->relpersistence)
-	{
-		case RELPERSISTENCE_TEMP:
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-					 errmsg("cannot change logged status of table \"%s\" because it is temporary",
-							RelationGetRelationName(rel)),
-					 errtable(rel)));
-			break;
-		case RELPERSISTENCE_PERMANENT:
-			if (toLogged)
-				/* nothing to do */
-				return;
-			break;
-		case RELPERSISTENCE_UNLOGGED:
-			if (!toLogged)
-				/* nothing to do */
-				return;
-			break;
-	}
 
 	/*
 	 * UNLOGGED tables can neither be published nor be named in a
@@ -19620,6 +19607,45 @@ ATPrepChangePersistence(AlteredTableInfo *tab, Relation rel, bool toLogged)
 	systable_endscan(scan);
 
 	table_close(pg_constraint, AccessShareLock);
+}
+
+/*
+ * Preparation phase for SET LOGGED/UNLOGGED
+ *
+ * This verifies that we're not trying to change a temp table.  Also,
+ * existing foreign key constraints are checked to avoid ending up with
+ * permanent tables referencing unlogged tables.
+ */
+static void
+ATPrepChangePersistence(AlteredTableInfo *tab, Relation rel, bool toLogged)
+{
+	/*
+	 * Disallow changing status for a temp table.  Also verify whether we can
+	 * get away with doing nothing; in such cases we don't need to run the
+	 * checks below, either.
+	 */
+	switch (rel->rd_rel->relpersistence)
+	{
+		case RELPERSISTENCE_TEMP:
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("cannot change logged status of table \"%s\" because it is temporary",
+							RelationGetRelationName(rel)),
+					 errtable(rel)));
+			break;
+		case RELPERSISTENCE_PERMANENT:
+			if (toLogged)
+				/* nothing to do */
+				return;
+			break;
+		case RELPERSISTENCE_UNLOGGED:
+			if (!toLogged)
+				/* nothing to do */
+				return;
+			break;
+	}
+
+	CommonCheckForChangePersistence(rel, toLogged);
 
 	/* force rewrite if necessary; see comment in ATRewriteTables */
 	tab->rewrite |= AT_REWRITE_ALTER_PERSISTENCE;
@@ -19628,6 +19654,23 @@ ATPrepChangePersistence(AlteredTableInfo *tab, Relation rel, bool toLogged)
 	else
 		tab->newrelpersistence = RELPERSISTENCE_UNLOGGED;
 	tab->chgPersistence = true;
+}
+
+/*
+ * Same as ATPrepChangePersistence, but for the rewrite phase.
+ */
+static void
+ATRewriteChangePersistence(AlteredTableInfo *tab)
+{
+	Relation	rel;
+	bool		toLogged;
+
+	rel = table_open(tab->relid, AccessShareLock);
+	toLogged = (tab->newrelpersistence == RELPERSISTENCE_PERMANENT);
+
+	CommonCheckForChangePersistence(rel, toLogged);
+
+	table_close(rel, AccessShareLock);
 }
 
 /*
