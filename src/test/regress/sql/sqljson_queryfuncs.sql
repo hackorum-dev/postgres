@@ -149,6 +149,29 @@ SELECT JSON_VALUE(jsonb 'null', '$ts' PASSING timestamptz '2018-02-21 12:34:56 +
 select json_value('{"a": 1.234}', '$.a' returning int error on error);
 select json_value('{"a": "1.234"}', '$.a' returning int error on error);
 
+-- Test state leakage of null flags in JSON_VALUE with RETURNING json/jsonb
+-- (Checks that a NULL evaluation doesn't poison subsequent evaluations in the same statement)
+
+-- 1. Same statement, separate columns (JSONB)
+SELECT JSON_VALUE('null', '$' RETURNING jsonb) AS col1, 
+       JSON_VALUE('123', '$' RETURNING jsonb) AS col2;
+
+-- 2. Across multiple rows (JSONB)
+SELECT JSON_VALUE(x, '$' RETURNING jsonb) 
+FROM (VALUES ('1'::jsonb), ('null'), ('2')) v(x);
+
+-- 3. Same statement, separate columns (JSON)
+SELECT JSON_VALUE('null', '$' RETURNING json) AS col1, 
+       JSON_VALUE('123', '$' RETURNING json) AS col2;
+
+-- 4. Across multiple rows (JSON)
+SELECT JSON_VALUE(x, '$' RETURNING json) 
+FROM (VALUES ('1'::json), ('null'), ('2')) v(x);
+
+-- 5. Triggering NULL via EMPTY/NO MATCH (JSONB)
+SELECT JSON_VALUE('{"a": 1}', '$.b' RETURNING jsonb) AS col1,
+       JSON_VALUE('{"a": 1}', '$.a' RETURNING jsonb) AS col2;
+
 -- JSON_QUERY
 
 SELECT JSON_VALUE(NULL::jsonb, '$');
