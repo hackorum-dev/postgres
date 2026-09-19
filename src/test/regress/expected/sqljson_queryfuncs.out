@@ -1473,6 +1473,15 @@ SELECT JSON_QUERY(jsonb 'null', '$"Xyz"' PASSING 1 AS "Xyz");
  1
 (1 row)
 
+-- Test PASSING of a toasted text value
+CREATE TABLE test_passing_toast AS SELECT repeat('x', 10000) AS t;
+SELECT JSON_VALUE(jsonb 'null', '$a' PASSING t AS a) = t AS ok FROM test_passing_toast;
+ ok 
+----
+ t
+(1 row)
+
+DROP TABLE test_passing_toast;
 -- Test ON ERROR / EMPTY value validity for the function; all fail.
 SELECT JSON_EXISTS(jsonb '1', '$' DEFAULT 1 ON ERROR);
 ERROR:  invalid ON ERROR behavior

@@ -488,6 +488,11 @@ SELECT JSON_QUERY(jsonb 'null', '$Xyz' PASSING 1 AS Xyz);
 SELECT JSON_QUERY(jsonb 'null', '$Xyz' PASSING 1 AS "Xyz");
 SELECT JSON_QUERY(jsonb 'null', '$"Xyz"' PASSING 1 AS "Xyz");
 
+-- Test PASSING of a toasted text value
+CREATE TABLE test_passing_toast AS SELECT repeat('x', 10000) AS t;
+SELECT JSON_VALUE(jsonb 'null', '$a' PASSING t AS a) = t AS ok FROM test_passing_toast;
+DROP TABLE test_passing_toast;
+
 -- Test ON ERROR / EMPTY value validity for the function; all fail.
 SELECT JSON_EXISTS(jsonb '1', '$' DEFAULT 1 ON ERROR);
 SELECT JSON_VALUE(jsonb '1', '$' EMPTY ON ERROR);
