@@ -1760,6 +1760,141 @@ ExecParallelHashIncreaseNumBuckets(HashJoinTable hashtable)
 }
 
 /*
+ * ExecHashUnbatch
+ *		collapse a batched hash table back into a single batch
+ *
+ * nbatch and nbuckets are picked before execution starts, from the planner's
+ * estimate of the inner side.  When that estimate is much too high we end up
+ * with many batches and a large bucket array for a relation that would have
+ * fit in memory all along.  That costs one full clear of the bucket array per
+ * batch, plus two temp files per batch, and neither of those costs has
+ * anything to do with how much data there actually is.
+ *
+ * We have no way to fix that up front, but once the inner side has been read
+ * we know its real size, so redo the sizing decision with the real row count.
+ * If it now comes out at a single batch, rebuild the table that way.  This is
+ * the counterpart of ExecHashIncreaseNumBatches, which handles the opposite
+ * error.
+ *
+ * Changing nbuckets is only safe here because we are going to nbatch = 1: with
+ * a single batch ExecHashGetBucketAndBatch stops deriving the batch number
+ * from the bits above log2_nbuckets, so moving that boundary cannot strand a
+ * tuple in the wrong batch.
+ *
+ * Only the tuples already in memory are rehashed here.  The caller must load
+ * back whatever was spilled to the batch files, and close them.
+ *
+ * Returns false, leaving the hash table untouched, if the real size still
+ * needs more than one batch.
+ */
+bool
+ExecHashUnbatch(HashJoinTable hashtable, int tupwidth)
+{
+	size_t		space_allowed;
+	int			nbuckets;
+	int			nbatch;
+	int			num_skew_mcvs;
+	HashMemoryChunk oldchunks;
+	MemoryContext oldcxt;
+
+	Assert(hashtable->nbatch > 1);
+	Assert(hashtable->parallel_state == NULL);
+	Assert(hashtable->curbatch == 0);
+
+	/*
+	 * Skew tuples live outside the main bucket array and only mean anything
+	 * while we are batching, so leave those joins alone.
+	 */
+	if (hashtable->skewEnabled)
+		return false;
+
+	/* Redo the sizing decision, this time with the row count we measured. */
+	ExecChooseHashTableSize(hashtable->totalTuples, tupwidth,
+							false,	/* no skew table in a single-batch join */
+							false,	/* not parallel */
+							0,
+							&space_allowed,
+							&nbuckets, &nbatch, &num_skew_mcvs);
+
+	if (nbatch != 1)
+		return false;
+
+	/*
+	 * Keep nbuckets_original and nbatch_original as they were: EXPLAIN
+	 * reports them next to the current values, which is how the shrink
+	 * becomes visible.
+	 */
+	hashtable->nbatch = 1;
+	hashtable->nbuckets = nbuckets;
+	hashtable->nbuckets_optimal = nbuckets;
+	hashtable->log2_nbuckets = pg_ceil_log2_32(nbuckets);
+	hashtable->log2_nbuckets_optimal = hashtable->log2_nbuckets;
+	hashtable->spaceAllowed = space_allowed;
+	hashtable->spaceAllowedSkew = space_allowed * SKEW_HASH_MEM_PERCENT / 100;
+
+	Assert(hashtable->nbuckets == (1 << hashtable->log2_nbuckets));
+
+	/*
+	 * Rebuild the bucket array at the new size, then rehash everything that
+	 * is in memory into it.  As in ExecHashIncreaseNumBatches we walk the
+	 * dense-allocated chunks rather than the buckets, so we don't have to
+	 * keep track of which tuples have already been moved; the tuples are
+	 * copied into fresh chunks and the old ones freed as we go.
+	 */
+	oldchunks = hashtable->chunks;
+	hashtable->chunks = NULL;
+	hashtable->spaceUsed = 0;
+
+	pfree(hashtable->buckets.unshared);
+	oldcxt = MemoryContextSwitchTo(hashtable->batchCxt);
+	hashtable->buckets.unshared = palloc0_array(HashJoinTuple, nbuckets);
+	MemoryContextSwitchTo(oldcxt);
+
+	while (oldchunks != NULL)
+	{
+		HashMemoryChunk nextchunk = oldchunks->next.unshared;
+		size_t		idx = 0;
+
+		while (idx < oldchunks->used)
+		{
+			HashJoinTuple hashTuple = (HashJoinTuple) (HASH_CHUNK_DATA(oldchunks) + idx);
+			int			hashTupleSize = (HJTUPLE_OVERHEAD +
+										 HJTUPLE_MINTUPLE(hashTuple)->t_len);
+			HashJoinTuple copyTuple;
+			int			bucketno;
+			int			batchno;
+
+			ExecHashGetBucketAndBatch(hashtable, hashTuple->hashvalue,
+									  &bucketno, &batchno);
+			Assert(batchno == 0);
+
+			copyTuple = (HashJoinTuple) dense_alloc(hashtable, hashTupleSize);
+			memcpy(copyTuple, hashTuple, hashTupleSize);
+
+			copyTuple->next.unshared = hashtable->buckets.unshared[bucketno];
+			hashtable->buckets.unshared[bucketno] = copyTuple;
+
+			hashtable->spaceUsed += hashTupleSize;
+
+			idx += MAXALIGN(hashTupleSize);
+
+			CHECK_FOR_INTERRUPTS();
+		}
+
+		pfree(oldchunks);
+		oldchunks = nextchunk;
+	}
+
+#ifdef HJDEBUG
+	printf("Hashjoin %p: unbatched %d batches into 1, nbuckets %d => %d\n",
+		   hashtable, hashtable->nbatch_original,
+		   hashtable->nbuckets_original, hashtable->nbuckets);
+#endif
+
+	return true;
+}
+
+/*
  * ExecHashTableInsert
  *		insert a tuple into the hash table depending on the hash value
  *		it may just go to a temp file for later batches
