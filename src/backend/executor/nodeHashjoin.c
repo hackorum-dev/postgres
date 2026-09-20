@@ -204,6 +204,7 @@ static TupleTableSlot *ExecHashJoinGetSavedTuple(HashJoinState *hjstate,
 												 uint32 *hashvalue,
 												 TupleTableSlot *tupleSlot);
 static bool ExecHashJoinNewBatch(HashJoinState *hjstate);
+static void ExecHashJoinUnbatch(HashJoinState *hjstate, HashState *hashNode);
 static bool ExecParallelHashJoinNewBatch(HashJoinState *hjstate);
 static void ExecParallelHashJoinPartitionOuter(HashJoinState *hjstate);
 
@@ -374,6 +375,17 @@ ExecHashJoinImpl(PlanState *pstate, bool parallel)
 					}
 					return NULL;
 				}
+
+				/*
+				 * The batch count was chosen from the planner's estimate of
+				 * the inner side.  Now that we have actually read it we know
+				 * how big it really is, so if it would have fit in memory all
+				 * along, collapse the batches before we touch the outer side.
+				 * That saves a bucket-array clear per batch, and saves
+				 * spilling the outer side at all.
+				 */
+				if (!parallel && hashtable->nbatch > 1)
+					ExecHashJoinUnbatch(node, hashNode);
 
 				/*
 				 * need to remember whether nbatch has increased since we
@@ -1599,6 +1611,72 @@ ExecHashJoinSaveTuple(MinimalTuple tuple, uint32 hashvalue,
 
 	BufFileWrite(file, &hashvalue, sizeof(uint32));
 	BufFileWrite(file, tuple, tuple->t_len);
+}
+
+/*
+ * ExecHashJoinUnbatch
+ *		collapse the batches once we know the inner side is small enough
+ *
+ * ExecHashUnbatch decides whether this is worth doing and rebuilds the bucket
+ * array for a single batch; what is left for us is to read back the tuples
+ * that were spilled and get rid of the batch files.
+ *
+ * plan_width is only an estimate, so the tuples we read back can turn out to
+ * need more memory than the sizing decision assumed.  In that case
+ * ExecHashTableInsert starts batching again underneath us.  To keep that safe
+ * we detach the old file array first: a new one is then allocated for the new
+ * batches, and the tuples we have not read yet are still reachable through our
+ * own pointer and get redistributed as they are inserted.
+ */
+static void
+ExecHashJoinUnbatch(HashJoinState *hjstate, HashState *hashNode)
+{
+	HashJoinTable hashtable = hjstate->hj_HashTable;
+	int			oldnbatch = hashtable->nbatch;
+	Plan	   *innerPlan = outerPlan((Hash *) hashNode->ps.plan);
+	BufFile   **oldInnerFiles;
+	BufFile   **oldOuterFiles;
+	int			i;
+
+	if (!ExecHashUnbatch(hashtable, innerPlan->plan_width))
+		return;
+
+	Assert(hashtable->nbatch == 1);
+
+	oldInnerFiles = hashtable->innerBatchFile;
+	oldOuterFiles = hashtable->outerBatchFile;
+	hashtable->innerBatchFile = NULL;
+	hashtable->outerBatchFile = NULL;
+
+	for (i = 1; i < oldnbatch; i++)
+	{
+		BufFile    *innerFile = oldInnerFiles[i];
+		TupleTableSlot *slot;
+		uint32		hashvalue;
+
+		/* The outer side has not been scanned yet, so it has no files. */
+		Assert(oldOuterFiles[i] == NULL);
+
+		if (innerFile == NULL)
+			continue;
+
+		if (BufFileSeek(innerFile, 0, 0, SEEK_SET))
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not rewind hash-join temporary file")));
+
+		while ((slot = ExecHashJoinGetSavedTuple(hjstate,
+												 innerFile,
+												 &hashvalue,
+												 hjstate->hj_HashTupleSlot)))
+			ExecHashTableInsert(hashtable, slot, hashvalue);
+
+		BufFileClose(innerFile);
+		oldInnerFiles[i] = NULL;
+	}
+
+	pfree(oldInnerFiles);
+	pfree(oldOuterFiles);
 }
 
 /*
