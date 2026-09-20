@@ -1047,6 +1047,12 @@ parseNumericAffixFlag(const char *s)
 		ereport(ERROR,
 				(errcode(ERRCODE_CONFIG_FILE_ERROR),
 				 errmsg("invalid affix flag \"%s\"", s)));
+	while (isspace((unsigned char) *next))
+		next++;
+	if (*next != '\0')
+		ereport(ERROR,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg("invalid affix flag \"%s\"", s)));
 	if (i < 0 || i > FLAGNUM_MAXSIZE)
 		ereport(ERROR,
 				(errcode(ERRCODE_CONFIG_FILE_ERROR),
