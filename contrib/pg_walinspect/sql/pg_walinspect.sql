@@ -31,6 +31,14 @@ SELECT * FROM pg_get_wal_records_info(:'wal_lsn2', :'wal_lsn1');
 SELECT * FROM pg_get_wal_stats(:'wal_lsn2', :'wal_lsn1');
 SELECT * FROM pg_get_wal_block_info(:'wal_lsn2', :'wal_lsn1');
 
+-- Empty ranges.
+SELECT pg_current_wal_flush_lsn() AS wal_lsn_end \gset
+SELECT COUNT(*) = 0 AS ok FROM pg_get_wal_records_info(:'wal_lsn_end', :'wal_lsn_end');
+SELECT COUNT(*) >= 1 AND SUM(count) = 0 AS ok
+  FROM pg_get_wal_stats(:'wal_lsn_end', :'wal_lsn_end');
+SELECT COUNT(*) = 0 AS ok FROM pg_get_wal_stats(:'wal_lsn_end', :'wal_lsn_end', true);
+SELECT COUNT(*) = 0 AS ok FROM pg_get_wal_block_info(:'wal_lsn_end', :'wal_lsn_end');
+
 -- LSNs with the highest value possible.
 SELECT * FROM pg_get_wal_record_info('FFFFFFFF/FFFFFFFF');
 -- Success with end LSNs.

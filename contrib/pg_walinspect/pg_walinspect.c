@@ -435,6 +435,10 @@ pg_get_wal_block_info(PG_FUNCTION_ARGS)
 
 	InitMaterializedSRF(fcinfo, 0);
 
+	/* An empty range cannot contain any WAL records. */
+	if (start_lsn == end_lsn)
+		PG_RETURN_VOID();
+
 	xlogreader = InitXLogReaderState(start_lsn);
 
 	tmp_cxt = AllocSetContextCreate(CurrentMemoryContext,
@@ -559,6 +563,10 @@ GetWALRecordsInfo(FunctionCallInfo fcinfo, XLogRecPtr start_lsn,
 	Assert(start_lsn <= end_lsn);
 
 	InitMaterializedSRF(fcinfo, 0);
+
+	/* An empty range cannot contain any WAL records. */
+	if (start_lsn == end_lsn)
+		return;
 
 	xlogreader = InitXLogReaderState(start_lsn);
 
@@ -787,18 +795,22 @@ GetWalStats(FunctionCallInfo fcinfo, XLogRecPtr start_lsn, XLogRecPtr end_lsn,
 
 	InitMaterializedSRF(fcinfo, 0);
 
-	xlogreader = InitXLogReaderState(start_lsn);
-
-	while (ReadNextXLogRecord(xlogreader) &&
-		   xlogreader->EndRecPtr <= end_lsn)
+	/* An empty range cannot contain any WAL records. */
+	if (start_lsn < end_lsn)
 	{
-		XLogRecStoreStats(&stats, xlogreader);
+		xlogreader = InitXLogReaderState(start_lsn);
 
-		CHECK_FOR_INTERRUPTS();
+		while (ReadNextXLogRecord(xlogreader) &&
+			   xlogreader->EndRecPtr <= end_lsn)
+		{
+			XLogRecStoreStats(&stats, xlogreader);
+
+			CHECK_FOR_INTERRUPTS();
+		}
+
+		pfree(xlogreader->private_data);
+		XLogReaderFree(xlogreader);
 	}
-
-	pfree(xlogreader->private_data);
-	XLogReaderFree(xlogreader);
 
 	GetXLogSummaryStats(&stats, rsinfo, values, nulls,
 						PG_GET_WAL_STATS_COLS,
