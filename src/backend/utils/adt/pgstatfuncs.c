@@ -2204,7 +2204,8 @@ pg_stat_reset_backend_stats(PG_FUNCTION_ARGS)
 	if (!pgstat_tracks_backend_bktype(beentry->st_backendType))
 		PG_RETURN_VOID();
 
-	pgstat_reset(PGSTAT_KIND_BACKEND, InvalidOid, procNumber);
+	pgstat_reset(PGSTAT_KIND_BACKEND, InvalidOid,
+				 PGSTAT_BACKEND_OBJID(backend_pid, procNumber));
 
 	PG_RETURN_VOID();
 }

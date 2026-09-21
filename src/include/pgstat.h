@@ -665,11 +665,20 @@ extern void pgstat_count_backend_io_op(IOObject io_object,
 									   IOOp io_op, uint32 cnt,
 									   uint64 bytes);
 
+/*
+ * Object ID of the stats entry of a backend.  The PID is part of the key, so
+ * that an entry cached for an older backend that used the same proc number,
+ * for example in a stats snapshot, is never mistaken for the entry of the
+ * backend currently using this proc number.
+ */
+#define PGSTAT_BACKEND_OBJID(pid, procnum) \
+	((((uint64) (uint32) (pid)) << 32) | (uint32) (procnum))
+
 /* used by pgstat_lock.c for lock stats tracked in backends */
 extern void pgstat_count_backend_lock_waits(uint8 locktag_type, PgStat_Counter usecs);
 extern void pgstat_count_backend_lock_fastpath_exceeded(uint8 locktag_type);
 
-extern PgStat_Backend *pgstat_fetch_stat_backend(ProcNumber procNumber);
+extern PgStat_Backend *pgstat_fetch_stat_backend(int pid, ProcNumber procNumber);
 extern PgStat_Backend *pgstat_fetch_stat_backend_by_pid(int pid,
 														BackendType *bktype,
 														Oid *userid);

@@ -121,15 +121,16 @@ pgstat_count_backend_lock_fastpath_exceeded(uint8 locktag_type)
 }
 
 /*
- * Returns statistics of a backend by proc number.
+ * Returns statistics of a backend by PID and proc number.
  */
 PgStat_Backend *
-pgstat_fetch_stat_backend(ProcNumber procNumber)
+pgstat_fetch_stat_backend(int pid, ProcNumber procNumber)
 {
 	PgStat_Backend *backend_entry;
 
 	backend_entry = (PgStat_Backend *) pgstat_fetch_entry(PGSTAT_KIND_BACKEND,
-														  InvalidOid, procNumber,
+														  InvalidOid,
+														  PGSTAT_BACKEND_OBJID(pid, procNumber),
 														  NULL);
 
 	return backend_entry;
@@ -188,7 +189,7 @@ pgstat_fetch_stat_backend_by_pid(int pid, BackendType *bktype, Oid *userid)
 	 * Retrieve the entry.  Note that "beentry" may be freed depending on the
 	 * value of stats_fetch_consistency, so do not access it from this point.
 	 */
-	backend_stats = pgstat_fetch_stat_backend(procNumber);
+	backend_stats = pgstat_fetch_stat_backend(pid, procNumber);
 	if (!backend_stats)
 	{
 		if (bktype)
@@ -366,7 +367,8 @@ pgstat_flush_backend(bool nowait, uint32 flags)
 		return false;
 
 	entry_ref = pgstat_get_entry_ref_locked(PGSTAT_KIND_BACKEND, InvalidOid,
-											MyProcNumber, nowait);
+											PGSTAT_BACKEND_OBJID(MyProcPid, MyProcNumber),
+											nowait);
 	if (!entry_ref)
 		return true;
 
@@ -406,7 +408,8 @@ pgstat_create_backend(ProcNumber procnum)
 	PgStatShared_Backend *shstatent;
 
 	entry_ref = pgstat_get_entry_ref_locked(PGSTAT_KIND_BACKEND, InvalidOid,
-											procnum, false);
+											PGSTAT_BACKEND_OBJID(MyProcPid, procnum),
+											false);
 	shstatent = (PgStatShared_Backend *) entry_ref->shared_stats;
 
 	/*
