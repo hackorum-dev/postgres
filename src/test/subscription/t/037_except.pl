@@ -373,4 +373,46 @@ $result = $node_subscriber->safe_psql('postgres',
 is($result, qq(1),
 	'detach-pending partition is replicated as a standalone table');
 
+# The catalog agrees with the decoding side about the detach-pending partition
+# being a table of its own: it is listed regardless of
+# publish_via_partition_root, and its former root in the EXCEPT clause does
+# not exclude it.
+$node_publisher->safe_psql(
+	'postgres', qq(
+	CREATE PUBLICATION tap_pub_detach_except FOR ALL TABLES EXCEPT (TABLE tab_detach)
+		WITH (publish_via_partition_root = true)));
+$result = $node_publisher->safe_psql('postgres',
+	"SELECT pubname FROM pg_publication_tables WHERE tablename = 'tab_detach1' ORDER BY pubname"
+);
+is( $result, qq(tap_pub_detach
+tap_pub_detach_except
+tap_pub_detach_viaroot),
+	'detach-pending partition is listed in pg_publication_tables');
+
+# Initial sync and replication via a publish_via_partition_root publication
+# use the partition itself.
+$node_subscriber->safe_psql(
+	'postgres', qq(
+	DROP SUBSCRIPTION tap_sub;
+	TRUNCATE tab_detach1;
+	CREATE TABLE tab_detach (a int PRIMARY KEY);
+	CREATE SUBSCRIPTION tap_sub CONNECTION '$publisher_connstr' PUBLICATION tap_pub_detach_viaroot;
+));
+$node_subscriber->wait_for_subscription_sync($node_publisher, 'tap_sub');
+
+$result = $node_subscriber->safe_psql('postgres',
+	"SELECT * FROM tab_detach1");
+is($result, qq(1),
+	'detach-pending partition is synced via a publish_via_partition_root publication'
+);
+
+$node_publisher->safe_psql('postgres', "DELETE FROM tab_detach1");
+$node_publisher->wait_for_catchup('tap_sub');
+
+$result = $node_subscriber->safe_psql('postgres',
+	"SELECT count(*) FROM tab_detach1");
+is($result, qq(0),
+	'detach-pending partition is replicated via a publish_via_partition_root publication'
+);
+
 done_testing();
