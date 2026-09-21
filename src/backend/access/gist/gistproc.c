@@ -141,19 +141,31 @@ gist_box_consistent(PG_FUNCTION_ARGS)
 }
 
 /*
- * Increase BOX b to include addon.
+ * Increase BOX b to include addon. A NaN in either box grows b to the
+ * corresponding infinity.
  */
 static void
 adjustBox(BOX *b, const BOX *addon)
 {
-	if (float8_lt(b->high.x, addon->high.x))
-		b->high.x = addon->high.x;
-	if (float8_gt(b->low.x, addon->low.x))
-		b->low.x = addon->low.x;
-	if (float8_lt(b->high.y, addon->high.y))
-		b->high.y = addon->high.y;
-	if (float8_gt(b->low.y, addon->low.y))
-		b->low.y = addon->low.y;
+	b->high.x = float8_bound_max(b->high.x, addon->high.x);
+	b->low.x = float8_bound_min(b->low.x, addon->low.x);
+	b->high.y = float8_bound_max(b->high.y, addon->high.y);
+	b->low.y = float8_bound_min(b->low.y, addon->low.y);
+}
+
+/* Copy a BOX, mapping NaNs to infinities. */
+static void
+snapBox(BOX *b, const BOX *box)
+{
+	*b = *box;
+	if (isnan(b->high.x))
+		b->high.x = get_float8_infinity();
+	if (isnan(b->high.y))
+		b->high.y = get_float8_infinity();
+	if (isnan(b->low.x))
+		b->low.x = -get_float8_infinity();
+	if (isnan(b->low.y))
+		b->low.y = -get_float8_infinity();
 }
 
 /*
@@ -239,7 +251,7 @@ fallbackSplit(GistEntryVector *entryvec, GIST_SPLITVEC *v)
 			if (unionL == NULL)
 			{
 				unionL = palloc_object(BOX);
-				*unionL = *cur;
+				snapBox(unionL, cur);
 			}
 			else
 				adjustBox(unionL, cur);
@@ -252,7 +264,7 @@ fallbackSplit(GistEntryVector *entryvec, GIST_SPLITVEC *v)
 			if (unionR == NULL)
 			{
 				unionR = palloc_object(BOX);
-				*unionR = *cur;
+				snapBox(unionR, cur);
 			}
 			else
 				adjustBox(unionR, cur);
@@ -526,7 +538,7 @@ gist_box_picksplit(PG_FUNCTION_ARGS)
 	{
 		box = DatumGetBoxP(entryvec->vector[i].key);
 		if (i == FirstOffsetNumber)
-			context.boundingBox = *box;
+			snapBox(&context.boundingBox, box);
 		else
 			adjustBox(&context.boundingBox, box);
 	}
@@ -715,7 +727,7 @@ gist_box_picksplit(PG_FUNCTION_ARGS)
 		if (v->spl_nleft > 0)					\
 			adjustBox(leftBox, box);			\
 		else									\
-			*leftBox = *(box);					\
+			snapBox(leftBox, box);				\
 		v->spl_left[v->spl_nleft++] = off;		\
 	} while(0)
 
@@ -724,7 +736,7 @@ gist_box_picksplit(PG_FUNCTION_ARGS)
 		if (v->spl_nright > 0)					\
 			adjustBox(rightBox, box);			\
 		else									\
-			*rightBox = *(box);					\
+			snapBox(rightBox, box);				\
 		v->spl_right[v->spl_nright++] = off;	\
 	} while(0)
 

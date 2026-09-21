@@ -589,3 +589,37 @@ CREATE INDEX brin_insert_optimization_idx ON brin_insert_optimization USING brin
 UPDATE brin_insert_optimization SET a = a;
 REINDEX INDEX CONCURRENTLY brin_insert_optimization_idx;
 DROP TABLE brin_insert_optimization;
+-- a box with a NaN coordinate must not hide the other rows of its page
+-- range (bug #19705)
+CREATE TABLE brin_box_nan (v box);
+INSERT INTO brin_box_nan SELECT box '(0,0),(1,1)' FROM generate_series(1, 100);
+INSERT INTO brin_box_nan VALUES (box '(NaN,NaN),(0,0)');
+CREATE INDEX brin_box_nan_idx ON brin_box_nan USING brin (v);
+SET enable_seqscan = off;
+SELECT count(*) FROM brin_box_nan WHERE v && box '(-2,-2),(2,2)';
+ count 
+-------
+   100
+(1 row)
+
+SELECT count(*) FROM brin_box_nan WHERE v @> point '(0.5,0.5)';
+ count 
+-------
+   100
+(1 row)
+
+SELECT count(*) FROM brin_box_nan WHERE v ~= box '(0,0),(1,1)';
+ count 
+-------
+   100
+(1 row)
+
+-- the NaN row is found too: unmergeable ranges are always scanned
+SELECT count(*) FROM brin_box_nan WHERE v ~= box '(NaN,NaN),(0,0)';
+ count 
+-------
+     1
+(1 row)
+
+RESET enable_seqscan;
+DROP TABLE brin_box_nan;

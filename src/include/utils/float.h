@@ -336,4 +336,26 @@ float8_max(const float8 val1, const float8 val2)
 	return float8_gt(val1, val2) ? val1 : val2;
 }
 
+/*
+ * float8_bound_max/min: like float8_max/float8_min, but a NaN is mapped
+ * to the corresponding infinity.  Used for geometric bounds, where a NaN
+ * would make every comparison with the bound false and thus hide the
+ * values it was meant to cover.
+ */
+static inline float8
+float8_bound_max(const float8 val1, const float8 val2)
+{
+	if (isnan(val1) || isnan(val2))
+		return get_float8_infinity();
+	return float8_max(val1, val2);
+}
+
+static inline float8
+float8_bound_min(const float8 val1, const float8 val2)
+{
+	if (isnan(val1) || isnan(val2))
+		return -get_float8_infinity();
+	return float8_min(val1, val2);
+}
+
 #endif							/* FLOAT_H */
