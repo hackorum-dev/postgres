@@ -135,6 +135,15 @@ EXPLAIN (COSTS OFF)
 SELECT i FROM inet_tbl WHERE i << '192.168.1.0/24'::cidr ORDER BY i;
 SELECT i FROM inet_tbl WHERE i << '192.168.1.0/24'::cidr ORDER BY i;
 
+CREATE TABLE inet_tbl_mixedfamily (i inet);
+INSERT INTO inet_tbl_mixedfamily SELECT '10.0.0.1/32' FROM generate_series(1, 100);
+INSERT INTO inet_tbl_mixedfamily SELECT '0.0.0.0/0' FROM generate_series(1, 100);
+INSERT INTO inet_tbl_mixedfamily SELECT '::1' FROM generate_series(1, 100);
+CREATE INDEX inet_idx_mixedfamily ON inet_tbl_mixedfamily USING spgist (i);
+SELECT count(*) FROM inet_tbl_mixedfamily WHERE i = '::1';
+SELECT count(*) FROM inet_tbl_mixedfamily WHERE i = '10.0.0.1';
+DROP TABLE inet_tbl_mixedfamily;
+
 SET enable_seqscan TO on;
 DROP INDEX inet_idx3;
 
