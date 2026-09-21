@@ -2376,7 +2376,11 @@ DETAIL:  <replaceable class="parameter">detailed_explanation</replaceable>[: <re
        <row>
         <entry><literal>replica_identity</literal></entry>
         <entry><type>json</type></entry>
-        <entry>The JSON representation of the replica identity key values identifying the conflicting row. This is <literal>NULL</literal> when <literal>replica_identity_full</literal> is <literal>true</literal> or when replica identity is not applicable.</entry>
+        <entry>The replica identity key values identifying the conflicting row,
+        as a <acronym>JSON</acronym> object keyed by column name; see below for
+        how the values are represented. This is <literal>NULL</literal> when
+        <literal>replica_identity_full</literal> is <literal>true</literal> or
+        when replica identity is not applicable.</entry>
        </row>
        <row>
         <entry><literal>local_conflicts</literal></entry>
@@ -2391,14 +2395,71 @@ DETAIL:  <replaceable class="parameter">detailed_explanation</replaceable>[: <re
          <literal>delete_missing</literal> conflicts).
         </entry>
        </row>
+       <row>
+        <entry><literal>has_omitted_values</literal></entry>
+        <entry><type>boolean</type></entry>
+        <entry>Indicates whether any value in
+        <literal>replica_identity</literal> was too large to be recorded and
+        was replaced by an <literal>omitted</literal> marker.</entry>
+       </row>
       </tbody>
      </tgroup>
     </table>
 
     <para>
-     The replica identity key values (<literal>replica_identity</literal>)
-     and the associated local conflict details (<literal>local_conflicts</literal>) are stored in
-     <type>json</type> formats for flexible querying and analysis.
+     Every value in <literal>replica_identity</literal> is written as a
+     <acronym>JSON</acronym> string containing the same text a
+     <command>SELECT</command> of that column would show.  Values are quoted
+     whatever the column's type, so numbers, booleans and <type>jsonb</type>
+     documents all appear as strings:
+<programlisting>
+CREATE TABLE t (id int, tag text, doc jsonb, PRIMARY KEY (id, tag, doc));
+
+SELECT replica_identity FROM pg_conflict.pg_conflict_log_16392;
+                 replica_identity
+-------------------------------------------------
+ {"id":"1","tag":"abc","doc":"{\"x\": 1}"}
+</programlisting>
+    </para>
+
+    <para>
+     Extracting a value with the <literal>-&gt;&gt;</literal> operator yields a
+     form that can be cast back to the column's type, so a recorded replica
+     identity can be used to locate the row it identifies:
+<programlisting>
+SELECT t.* FROM pg_conflict.pg_conflict_log_16392 c, t
+  WHERE t.id  = (c.replica_identity->>'id')::int
+    AND t.tag =  c.replica_identity->>'tag'
+    AND t.doc = (c.replica_identity->>'doc')::jsonb;
+</programlisting>
+     Because container values such as <type>jsonb</type>, arrays and composite
+     types are recorded as strings rather than as nested
+     <acronym>JSON</acronym>, looking inside one requires an explicit cast:
+<programlisting>
+SELECT replica_identity->'doc'->>'x'           FROM ...;   -- NULL
+SELECT (replica_identity->>'doc')::jsonb->>'x' FROM ...;   -- 1
+</programlisting>
+    </para>
+
+    <para>
+     A value is either recorded exactly or not at all; it is never truncated,
+     because a partial value in a queryable table would silently give wrong
+     answers to equality and join conditions.  A value larger than 1kB is
+     replaced by an object recording that it was omitted together with its
+     length in bytes, and <literal>has_omitted_values</literal> is set for that
+     row:
+<programlisting>
+ {"id":"1","tag":"abc","doc":{"omitted":true,"length":4096}}
+</programlisting>
+     The flag allows incomplete rows to be found without searching the
+     <type>json</type> column:
+<programlisting>
+SELECT * FROM pg_conflict.pg_conflict_log_16392 WHERE has_omitted_values;
+</programlisting>
+     A value omitted this way is not recoverable from the conflict log table.
+     The limit is necessary because <literal>replica_identity</literal> is of
+     type <type>json</type>, no value of which may exceed 1GB, while the
+     textual representation of a value can be far larger than the value itself.
     </para>
    </sect3>
   </sect2>
