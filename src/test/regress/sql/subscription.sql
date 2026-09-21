@@ -231,6 +231,14 @@ ALTER SUBSCRIPTION regress_testsub SKIP (lsn = '0/12345');
 -- ok - with lsn = NONE
 ALTER SUBSCRIPTION regress_testsub SKIP (lsn = NONE);
 
+-- fail - LSN must not be behind the replication origin
+RESET SESSION AUTHORIZATION;
+SELECT pg_replication_origin_advance(
+    'pg_' || (SELECT oid FROM pg_subscription WHERE subname = 'regress_testsub'),
+    '0/12346') \gset
+ALTER SUBSCRIPTION regress_testsub SKIP (lsn = '0/12345');
+SET SESSION AUTHORIZATION regress_subscription_user;
+
 -- fail
 ALTER SUBSCRIPTION regress_testsub SKIP (lsn = '0/0');
 
