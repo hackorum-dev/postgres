@@ -591,6 +591,7 @@ typedef struct PgStat_WalStats
  */
 typedef struct PgStat_Backend
 {
+	int			pid;			/* PID of the backend owning these stats */
 	TimestampTz stat_reset_timestamp;
 	PgStat_BktypeIO io_stats;
 	PgStat_WalCounters wal_counters;
