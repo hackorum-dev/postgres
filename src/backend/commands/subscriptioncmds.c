@@ -1341,6 +1341,21 @@ AlterSubscription_refresh(Subscription *sub, bool copy_data,
 
 				RemoveSubscriptionRel(sub->oid, relid);
 
+				/*
+				 * A sequence sync worker may already be running with this
+				 * sequence in its to-do list. If it has fetched the value
+				 * from the publisher but not yet marked the sequence READY,
+				 * its UpdateSubscriptionRelState() would fail once we commit,
+				 * as the row no longer exists. So stop the worker, as we do
+				 * for tablesync workers above, and as
+				 * AlterSubscription_refresh_seq() does. The worker's update
+				 * is blocked by the AccessExclusiveLock on the subscription
+				 * object until we commit, see AlterSubscription_refresh_seq()
+				 * for why this is race-free.
+				 */
+				logicalrep_worker_stop(WORKERTYPE_SEQUENCESYNC, sub->oid,
+									   InvalidOid);
+
 				ereport(DEBUG1,
 						errmsg_internal("sequence \"%s.%s\" removed from subscription \"%s\"",
 										get_namespace_name(get_rel_namespace(relid)),

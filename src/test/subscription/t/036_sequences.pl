@@ -294,6 +294,79 @@ $node_subscriber->poll_query_until('postgres', $synced_query)
   or die "Timed out while waiting for subscriber to synchronize data";
 
 ##########
+# ALTER SUBSCRIPTION ... SET PUBLICATION (or REFRESH PUBLICATION) removing a
+# sequence must stop a running sequencesync worker, as it does for tablesync
+# workers. Otherwise the worker, which has already captured the sequence in
+# its to-do list, fails with an internal error when it tries to mark the
+# removed sequence as READY, and with disable_on_error the whole subscription
+# gets disabled.
+##########
+
+$node_publisher->safe_psql('postgres',
+	"CREATE PUBLICATION regress_seq_pub_empty");
+
+$node_subscriber->safe_psql('postgres',
+	"ALTER SUBSCRIPTION regress_seq_sub SET (disable_on_error = true)");
+
+# Block the sequencesync worker's batch query on the publisher, after the
+# worker has captured its list of sequences to sync.
+$pub_session = $node_publisher->background_psql('postgres');
+$pub_session->query_safe(
+	qq(
+	BEGIN;
+	DROP SEQUENCE regress_s1;
+));
+
+$node_subscriber->safe_psql('postgres',
+	"ALTER SUBSCRIPTION regress_seq_sub REFRESH SEQUENCES");
+
+$node_publisher->poll_query_until(
+	'postgres', qq(
+	SELECT EXISTS (
+		SELECT 1 FROM pg_locks
+		WHERE relation = 'regress_s1'::regclass
+		  AND mode = 'AccessShareLock'
+		  AND NOT granted);
+)) or die "timed out waiting for sequencesync worker to block on publisher";
+
+# Remove all sequences from the subscription while the worker is blocked.
+$node_subscriber->safe_psql('postgres',
+	"ALTER SUBSCRIPTION regress_seq_sub SET PUBLICATION regress_seq_pub_empty"
+);
+
+# Let the worker continue.
+$pub_session->query_safe("ROLLBACK");
+$pub_session->quit;
+
+# Wait for the sequencesync worker to exit, then verify that the subscription
+# was not disabled.
+$node_subscriber->poll_query_until(
+	'postgres', qq(
+	SELECT NOT EXISTS (
+		SELECT 1 FROM pg_stat_subscription
+		WHERE subname = 'regress_seq_sub'
+		  AND worker_type = 'sequence synchronization');
+)) or die "timed out waiting for sequencesync worker to exit";
+
+is( $node_subscriber->safe_psql(
+		'postgres',
+		"SELECT subenabled FROM pg_subscription WHERE subname = 'regress_seq_sub'"
+	),
+	't',
+	'subscription stays enabled after sequences are removed during sync');
+
+# Restore the original publication and settings, and wait for the sequences
+# to be synced again.
+$node_subscriber->safe_psql(
+	'postgres', qq(
+	ALTER SUBSCRIPTION regress_seq_sub SET (disable_on_error = false);
+	ALTER SUBSCRIPTION regress_seq_sub SET PUBLICATION regress_seq_pub;
+));
+
+$node_subscriber->poll_query_until('postgres', $synced_query)
+  or die "Timed out while waiting for subscriber to synchronize data";
+
+##########
 # ALTER SUBSCRIPTION ... REFRESH PUBLICATION should report an error when:
 # a) sequence definitions differ between the publisher and subscriber, or
 # b) a sequence is missing on the publisher.
