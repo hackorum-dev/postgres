@@ -2016,6 +2016,7 @@ pgpa_planner_get_proot(pgpa_planner_state *pps, PlannerInfo *root)
 	/* Set plan name and alternative plan name. */
 	new_proot->plan_name = root->plan_name;
 	new_proot->alternative_plan_name = root->alternative_plan_name;
+	new_proot->has_set_operations = root->parse->setOperations != NULL;
 
 	/*
 	 * If the newly-created proot shares an alternative_plan_name with one or

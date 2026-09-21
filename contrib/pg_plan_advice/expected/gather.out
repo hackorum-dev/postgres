@@ -166,6 +166,71 @@ EXPLAIN (COSTS OFF, PLAN_ADVICE)
 (17 rows)
 
 COMMIT;
+-- Gather over a set-operation upper relation cannot be controlled by advice.
+EXPLAIN (COSTS OFF, PLAN_ADVICE)
+	SELECT id FROM gt_dim UNION SELECT id FROM gt_dim;
+                       QUERY PLAN                       
+--------------------------------------------------------
+ HashAggregate
+   Group Key: gt_dim.id
+   ->  Gather
+         Workers Planned: 1
+         ->  Parallel Append
+               ->  Parallel Seq Scan on gt_dim
+               ->  Parallel Seq Scan on gt_dim gt_dim_1
+ Generated Plan Advice:
+   SEQ_SCAN(gt_dim@setop_1 gt_dim@setop_2)
+(9 rows)
+
+EXPLAIN (COSTS OFF, PLAN_ADVICE)
+	SELECT * FROM (SELECT id FROM gt_dim UNION SELECT id FROM gt_dim) s;
+                       QUERY PLAN                       
+--------------------------------------------------------
+ HashAggregate
+   Group Key: gt_dim.id
+   ->  Gather
+         Workers Planned: 1
+         ->  Parallel Append
+               ->  Parallel Seq Scan on gt_dim
+               ->  Parallel Seq Scan on gt_dim gt_dim_1
+ Generated Plan Advice:
+   SEQ_SCAN(gt_dim@setop_1 gt_dim@setop_2)
+   NO_GATHER(s)
+(10 rows)
+
+-- Gather within the input queries remains controllable.
+EXPLAIN (COSTS OFF, PLAN_ADVICE)
+	SELECT id FROM gt_dim INTERSECT SELECT id FROM gt_dim;
+                    QUERY PLAN                    
+--------------------------------------------------
+ HashSetOp Intersect
+   ->  Gather
+         Workers Planned: 1
+         ->  Parallel Seq Scan on gt_dim
+   ->  Gather
+         Workers Planned: 1
+         ->  Parallel Seq Scan on gt_dim gt_dim_1
+ Generated Plan Advice:
+   SEQ_SCAN(gt_dim@setop_1 gt_dim@setop_2)
+   GATHER(gt_dim@setop_1 gt_dim@setop_2)
+   NO_GATHER(unnamed_subquery unnamed_subquery#2)
+(11 rows)
+
+-- A flattened UNION ALL is planned as an append relation, not an upper relation.
+EXPLAIN (COSTS OFF, PLAN_ADVICE)
+	SELECT id FROM gt_dim UNION ALL SELECT id FROM gt_dim;
+                    QUERY PLAN                    
+--------------------------------------------------
+ Gather
+   Workers Planned: 1
+   ->  Parallel Append
+         ->  Parallel Seq Scan on gt_dim
+         ->  Parallel Seq Scan on gt_dim gt_dim_1
+ Generated Plan Advice:
+   SEQ_SCAN(gt_dim gt_dim#2)
+   GATHER(unnamed_subquery)
+(8 rows)
+
 -- Force a Gather or Gather Merge on one relation but no parallelism on other.
 BEGIN;
 SET LOCAL pg_plan_advice.advice = 'gather_merge(f) no_gather(d)';

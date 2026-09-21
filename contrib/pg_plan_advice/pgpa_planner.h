@@ -52,6 +52,9 @@ typedef struct pgpa_planner_info
 	bool		has_rtoffset;
 	Index		rtoffset;
 
+	/* Does this query level contain a set operation? */
+	bool		has_set_operations;
+
 	/*
 	 * List of Bitmapset objects. Each represents the relid set of a relation
 	 * that the planner considers making unique during semijoin planning.

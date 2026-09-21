@@ -45,6 +45,20 @@ EXPLAIN (COSTS OFF, PLAN_ADVICE)
 	SELECT * FROM gt_fact f JOIN gt_dim d ON f.dim_id = d.id ORDER BY d.id;
 COMMIT;
 
+-- Gather over a set-operation upper relation cannot be controlled by advice.
+EXPLAIN (COSTS OFF, PLAN_ADVICE)
+	SELECT id FROM gt_dim UNION SELECT id FROM gt_dim;
+EXPLAIN (COSTS OFF, PLAN_ADVICE)
+	SELECT * FROM (SELECT id FROM gt_dim UNION SELECT id FROM gt_dim) s;
+
+-- Gather within the input queries remains controllable.
+EXPLAIN (COSTS OFF, PLAN_ADVICE)
+	SELECT id FROM gt_dim INTERSECT SELECT id FROM gt_dim;
+
+-- A flattened UNION ALL is planned as an append relation, not an upper relation.
+EXPLAIN (COSTS OFF, PLAN_ADVICE)
+	SELECT id FROM gt_dim UNION ALL SELECT id FROM gt_dim;
+
 -- Force a Gather or Gather Merge on one relation but no parallelism on other.
 BEGIN;
 SET LOCAL pg_plan_advice.advice = 'gather_merge(f) no_gather(d)';

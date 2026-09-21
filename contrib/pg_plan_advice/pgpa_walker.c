@@ -82,6 +82,7 @@ pgpa_plan_walker(pgpa_plan_walker_context *walker, PlannedStmt *pstmt,
 	ListCell   *lc;
 	List	   *sj_unique_rtis = NULL;
 	List	   *sj_nonunique_qfs = NULL;
+	List	   *setop_relid_sets = NIL;
 	List	   *chosen_proots;
 	List	   *discarded_proots;
 
@@ -101,9 +102,24 @@ pgpa_plan_walker(pgpa_plan_walker_context *walker, PlannedStmt *pstmt,
 			pgpa_walk_recursively(walker, plan, false, NULL, NIL, false);
 	}
 
-	/* Adjust RTIs from sj_unique_rels for the flattened range table. */
+	/* Collect query-level RTIs using the final, flattened range table. */
 	foreach_ptr(pgpa_planner_info, proot, proots)
 	{
+		if (proot->has_set_operations && proot->has_rtoffset)
+		{
+			Bitmapset  *relids = NULL;
+
+			for (int rti = 1; rti <= proot->rid_array_size; ++rti)
+			{
+				if (proot->rid_array[rti - 1].alias_name != NULL)
+					relids = bms_add_member(relids,
+											rti + proot->rtoffset);
+			}
+
+			if (relids != NULL)
+				setop_relid_sets = lappend(setop_relid_sets, relids);
+		}
+
 		/* If there are no sj_unique_rels for this proot, we can skip it. */
 		if (proot->sj_unique_rels == NIL)
 			continue;
@@ -168,6 +184,10 @@ pgpa_plan_walker(pgpa_plan_walker_context *walker, PlannedStmt *pstmt,
 	 * (Should the Partial Aggregates in such a case be created in an
 	 * UPPERREL_GROUP_AGG with a non-empty relid set? Right now that doesn't
 	 * happen, but it seems like it would make life easier for us if it did.)
+	 *
+	 * Likewise, omit Gather advice for a set-operation upper relation, which
+	 * cannot enforce such advice. Gather nodes within a set-operation input
+	 * query use different RTIs and remain controllable.
 	 */
 	for (int t = 0; t < NUM_PGPA_QF_TYPES; ++t)
 	{
@@ -175,6 +195,24 @@ pgpa_plan_walker(pgpa_plan_walker_context *walker, PlannedStmt *pstmt,
 
 		foreach_ptr(pgpa_query_feature, qf, walker->query_features[t])
 		{
+			bool		over_setop = false;
+
+			if ((t == PGPAQF_GATHER || t == PGPAQF_GATHER_MERGE) &&
+				qf->relids != NULL)
+			{
+				foreach_node(Bitmapset, setop_relids, setop_relid_sets)
+				{
+					if (bms_is_subset(qf->relids, setop_relids))
+					{
+						over_setop = true;
+						break;
+					}
+				}
+			}
+
+			if (over_setop)
+				continue;
+
 			if (qf->relids != NULL)
 				query_features = lappend(query_features, qf);
 			else
