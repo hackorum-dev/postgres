@@ -4408,6 +4408,32 @@ point_box(PG_FUNCTION_ARGS)
 }
 
 /*
+ * Helpers for boxes_bound_box
+ *
+ * A NaN coordinate has no position, so no finite bound can be said to include
+ * it.  We make the bound infinite on that side instead of letting the NaN
+ * through.  This matters because the box operators use plain C comparisons,
+ * which are all false for NaN.  BRIN's box_inclusion_ops uses bound_box to
+ * summarize a page range, and a NaN in the summary would make every operator
+ * say that the range cannot match, hiding all rows of the range.
+ */
+static inline float8
+bound_box_high(float8 val1, float8 val2)
+{
+	if (unlikely(isnan(val1) || isnan(val2)))
+		return get_float8_infinity();
+	return float8_max(val1, val2);
+}
+
+static inline float8
+bound_box_low(float8 val1, float8 val2)
+{
+	if (unlikely(isnan(val1) || isnan(val2)))
+		return -get_float8_infinity();
+	return float8_min(val1, val2);
+}
+
+/*
  * Smallest bounding box that includes both of the given boxes
  */
 Datum
@@ -4419,10 +4445,10 @@ boxes_bound_box(PG_FUNCTION_ARGS)
 
 	container = palloc_object(BOX);
 
-	container->high.x = float8_max(box1->high.x, box2->high.x);
-	container->low.x = float8_min(box1->low.x, box2->low.x);
-	container->high.y = float8_max(box1->high.y, box2->high.y);
-	container->low.y = float8_min(box1->low.y, box2->low.y);
+	container->high.x = bound_box_high(box1->high.x, box2->high.x);
+	container->low.x = bound_box_low(box1->low.x, box2->low.x);
+	container->high.y = bound_box_high(box1->high.y, box2->high.y);
+	container->low.y = bound_box_low(box1->low.y, box2->low.y);
 
 	PG_RETURN_BOX_P(container);
 }
