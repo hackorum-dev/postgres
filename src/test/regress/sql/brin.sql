@@ -534,3 +534,17 @@ CREATE INDEX brin_insert_optimization_idx ON brin_insert_optimization USING brin
 UPDATE brin_insert_optimization SET a = a;
 REINDEX INDEX CONCURRENTLY brin_insert_optimization_idx;
 DROP TABLE brin_insert_optimization;
+
+-- A box with a NaN coordinate must not hide the other rows of its page range
+CREATE TABLE brin_box_nan (b box);
+INSERT INTO brin_box_nan SELECT box '(0,0),(1,1)' FROM generate_series(1, 100);
+INSERT INTO brin_box_nan VALUES (box '(NaN,NaN),(0,0)');
+CREATE INDEX ON brin_box_nan USING brin (b);
+SET enable_seqscan = off;
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM brin_box_nan WHERE b && box '(-2,-2),(2,2)';
+SELECT count(*) FROM brin_box_nan WHERE b && box '(-2,-2),(2,2)';
+SELECT count(*) FROM brin_box_nan WHERE b @> point '(0.5,0.5)';
+SELECT count(*) FROM brin_box_nan WHERE b ~= box '(0,0),(1,1)';
+RESET enable_seqscan;
+DROP TABLE brin_box_nan;
