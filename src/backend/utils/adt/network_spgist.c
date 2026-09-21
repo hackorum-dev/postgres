@@ -81,8 +81,19 @@ inet_spg_choose(PG_FUNCTION_ARGS)
 	 */
 	if (!in->hasPrefix)
 	{
-		/* allTheSame isn't possible for such a tuple */
-		Assert(!in->allTheSame);
+		/*
+		 * We are forced allTheSame mode here if picksplit put all entries
+		 * in one node
+		 */
+		if (in->allTheSame)
+		{
+			out->resultType = spgMatchNode;
+			out->result.matchNode.nodeN = 0 /* Doesn't matter, will bee overwritten */;
+			out->result.matchNode.restDatum = InetPGetDatum(val);
+
+			PG_RETURN_VOID();
+		}
+
 		Assert(in->nNodes == 2);
 
 		out->resultType = spgMatchNode;
@@ -191,9 +202,8 @@ inet_spg_picksplit(PG_FUNCTION_ARGS)
 
 		if (ip_bits(tmp) < commonbits)
 			commonbits = ip_bits(tmp);
-		commonbits = bitncommon(ip_addr(prefix), ip_addr(tmp), commonbits);
-		if (commonbits == 0)
-			break;
+		if (commonbits != 0)
+			commonbits = bitncommon(ip_addr(prefix), ip_addr(tmp), commonbits);
 	}
 
 	/* Don't need labels; allocate output arrays */
@@ -245,9 +255,12 @@ inet_spg_inner_consistent(PG_FUNCTION_ARGS)
 	int			i;
 	int			which;
 
-	if (!in->hasPrefix)
+	if (!in->hasPrefix && in->allTheSame)
 	{
-		Assert(!in->allTheSame);
+		/* Recurse in all subtrees. */
+		which = ~0;
+	} else if (!in->hasPrefix)
+	{
 		Assert(in->nNodes == 2);
 
 		/* Identify which child nodes need to be visited */
