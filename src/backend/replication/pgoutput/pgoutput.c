@@ -2211,10 +2211,19 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 			if (pub->alltables)
 			{
 				List	   *exceptpubids = NIL;
+				List	   *ancestors = NIL;
 
+				/*
+				 * A partition whose concurrent detach has been committed but
+				 * not finalized reports no ancestors, even though
+				 * relispartition is still set. Treat such a partition as a
+				 * standalone table, as after the detach is finalized.
+				 */
 				if (am_partition)
+					ancestors = get_partition_ancestors(relid);
+
+				if (ancestors)
 				{
-					List	   *ancestors = get_partition_ancestors(relid);
 					Oid			last_ancestor_relid = llast_oid(ancestors);
 
 					/*

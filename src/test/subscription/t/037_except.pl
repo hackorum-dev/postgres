@@ -287,4 +287,90 @@ is( $result, qq(1
 	"check replication of a table in the EXCEPT clause of one publication but included by another"
 );
 
+# ============================================
+# Partition whose concurrent detach has not been finalized
+# ============================================
+# ALTER TABLE ... DETACH PARTITION ... CONCURRENTLY leaves the partition
+# detach-pending when it is interrupted while waiting for lockers.  In that
+# state relispartition is still set but the partition has no ancestors, and
+# decoding its changes for a FOR ALL TABLES publication must not look for a
+# top-most ancestor to evaluate the EXCEPT clause on.
+$node_subscriber->safe_psql('postgres', "DROP SUBSCRIPTION tap_sub");
+$node_publisher->safe_psql(
+	'postgres', qq(
+	DROP PUBLICATION tap_pub1, tap_pub2;
+	CREATE TABLE tab_detach (a int PRIMARY KEY) PARTITION BY LIST (a);
+	CREATE TABLE tab_detach1 PARTITION OF tab_detach FOR VALUES IN (1);
+	INSERT INTO tab_detach VALUES (1);
+));
+$node_subscriber->safe_psql('postgres',
+	"CREATE TABLE tab_detach1 (a int PRIMARY KEY)");
+
+# Hold a lock on the partition so the concurrent detach blocks after its
+# first transaction has committed, then cancel it while it waits.
+my $lock_session = $node_publisher->background_psql('postgres');
+$lock_session->query_safe("BEGIN; SELECT * FROM tab_detach;");
+
+my $detach_session =
+  $node_publisher->background_psql('postgres', on_error_stop => 0);
+my $detach_pid = $detach_session->query('SELECT pg_backend_pid()');
+$detach_session->query_until(qr//,
+	"ALTER TABLE tab_detach DETACH PARTITION tab_detach1 CONCURRENTLY;\n");
+
+$node_publisher->poll_query_until('postgres',
+	"SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = $detach_pid"
+) or die "timed out waiting for the concurrent detach to block";
+
+$node_publisher->safe_psql('postgres',
+	"SELECT pg_cancel_backend($detach_pid)");
+ok( pump_until(
+		$detach_session->{run}, $detach_session->{timeout},
+		\$detach_session->{stderr},
+		qr/canceling statement due to user request/),
+	'concurrent detach canceled');
+$detach_session->quit;
+$lock_session->query_safe("COMMIT");
+$lock_session->quit;
+
+$result = $node_publisher->safe_psql(
+	'postgres', qq(
+	SELECT c.relispartition, i.inhdetachpending
+	FROM pg_class c JOIN pg_inherits i ON i.inhrelid = c.oid
+	WHERE c.oid = 'tab_detach1'::regclass));
+is($result, qq(t|t), 'partition is left detach-pending');
+
+# Decode an update of the detach-pending partition for FOR ALL TABLES
+# publications, with and without publish_via_partition_root.
+$node_publisher->safe_psql(
+	'postgres', qq(
+	CREATE PUBLICATION tap_pub_detach FOR ALL TABLES;
+	CREATE PUBLICATION tap_pub_detach_viaroot FOR ALL TABLES
+		WITH (publish_via_partition_root = true);
+	SELECT pg_replication_slot_advance('test_slot', pg_current_wal_lsn());
+	UPDATE tab_detach1 SET a = 1;
+));
+
+foreach my $pub (qw(tap_pub_detach tap_pub_detach_viaroot))
+{
+	$result = $node_publisher->safe_psql('postgres',
+		"SELECT count(*) > 0 FROM pg_logical_slot_peek_binary_changes('test_slot', NULL, NULL, 'proto_version', '1', 'publication_names', '$pub')"
+	);
+	is($result, qq(t),
+		"changes of a detach-pending partition are decoded for $pub");
+}
+
+# The detach-pending partition is published like a standalone table.
+$node_subscriber->safe_psql('postgres',
+	"CREATE SUBSCRIPTION tap_sub CONNECTION '$publisher_connstr' PUBLICATION tap_pub_detach"
+);
+$node_subscriber->wait_for_subscription_sync($node_publisher, 'tap_sub');
+
+$node_publisher->safe_psql('postgres', "UPDATE tab_detach1 SET a = 1");
+$node_publisher->wait_for_catchup('tap_sub');
+
+$result = $node_subscriber->safe_psql('postgres',
+	"SELECT * FROM tab_detach1");
+is($result, qq(1),
+	'detach-pending partition is replicated as a standalone table');
+
 done_testing();
