@@ -4419,12 +4419,33 @@ boxes_bound_box(PG_FUNCTION_ARGS)
 
 	container = palloc_object(BOX);
 
-	container->high.x = float8_max(box1->high.x, box2->high.x);
-	container->low.x = float8_min(box1->low.x, box2->low.x);
-	container->high.y = float8_max(box1->high.y, box2->high.y);
-	container->low.y = float8_min(box1->low.y, box2->low.y);
+	/* NaNs become infinite bounds, never NaNs. */
+	container->high.x = float8_bound_max(box1->high.x, box2->high.x);
+	container->low.x = float8_bound_min(box1->low.x, box2->low.x);
+	container->high.y = float8_bound_max(box1->high.y, box2->high.y);
+	container->low.y = float8_bound_min(box1->low.y, box2->low.y);
 
 	PG_RETURN_BOX_P(container);
+}
+
+/*
+ * Boxes with NaN coordinates cannot be merged, since no operator can match a NaN summary.
+ * Used in BRIN box_inclusion_ops PROCNUM_MERGEABLE support.
+ */
+extern Datum box_mergeable(PG_FUNCTION_ARGS);
+Datum
+box_mergeable(PG_FUNCTION_ARGS)
+{
+	BOX	   *box1 = PG_GETARG_BOX_P(0),
+		   *box2 = PG_GETARG_BOX_P(1);
+
+	if (isnan(box1->high.x) || isnan(box1->high.y) ||
+		isnan(box1->low.x) || isnan(box1->low.y) ||
+		isnan(box2->high.x) || isnan(box2->high.y) ||
+		isnan(box2->low.x) || isnan(box2->low.y))
+		PG_RETURN_BOOL(false);
+
+	PG_RETURN_BOOL(true);
 }
 
 

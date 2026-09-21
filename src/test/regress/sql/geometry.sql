@@ -529,3 +529,9 @@ SELECT pg_input_is_valid('(1', 'circle');
 SELECT * FROM pg_input_error_info('1,', 'circle');
 SELECT pg_input_is_valid('(1,2),-1', 'circle');
 SELECT * FROM pg_input_error_info('(1,2),-1', 'circle');
+
+-- NaN becomes an infinite bound (bug #19705)
+SELECT bound_box(box '(0,0),(1,1)', box '(NaN,3),(0,2)');
+-- box_mergeable() rejects NaN coordinates (BRIN box_inclusion_ops)
+SELECT box_mergeable(box '(0,0),(1,1)', box '(NaN,3),(0,2)');
+SELECT box_mergeable(box '(0,0),(1,1)', box '(2,3),(0,2)');

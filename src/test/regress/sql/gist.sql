@@ -236,3 +236,20 @@ create index gist_tbl_box_index on gist_tbl using gist (b);
 insert into gist_tbl
   select box(point(0.05*i, 0.05*i)) from generate_series(0,10) as i;
 drop table gist_tbl;
+
+-- a box with a NaN coordinate must not poison the union keys (bug #19705)
+create table gist_nan_tbl (b box);
+insert into gist_nan_tbl select box '(1,1),(2,2)' from generate_series(1, 1000);
+insert into gist_nan_tbl values (box '(NaN,NaN),(0,0)');
+create index gist_nan_tbl_index on gist_nan_tbl using gist (b);
+-- also insert rows after the build, to exercise the insertion path
+insert into gist_nan_tbl select box '(3,3),(4,4)' from generate_series(1, 1000);
+insert into gist_nan_tbl values (box '(NaN,NaN),(0,0)');
+set enable_seqscan = off;
+set enable_bitmapscan = off;
+select count(*) from gist_nan_tbl where b && box(point(0,0), point(5,5));
+select count(*) from gist_nan_tbl where b <@ box(point(0,0), point(5,5));
+select count(*) from gist_nan_tbl where b @> point '(1.5,1.5)';
+reset enable_seqscan;
+reset enable_bitmapscan;
+drop table gist_nan_tbl;
