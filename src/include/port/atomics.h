@@ -65,6 +65,8 @@
  */
 #if defined(__arm__) || defined(__aarch64__)
 #include "port/atomics/arch-arm.h"
+#elif defined(__loongarch_lp64)
+#include "port/atomics/arch-loongarch.h"
 #elif defined(__i386__) || defined(__x86_64__)
 #include "port/atomics/arch-x86.h"
 #elif defined(__powerpc__) || defined(__powerpc64__)
