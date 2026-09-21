@@ -183,6 +183,10 @@ pgstat_fetch_stat_backend_by_pid(int pid, BackendType *bktype)
 	 * value of stats_fetch_consistency, so do not access it from this point.
 	 */
 	backend_stats = pgstat_fetch_stat_backend(procNumber);
+
+	if (backend_stats && backend_stats->pid != pid)
+		backend_stats = NULL;
+
 	if (!backend_stats)
 	{
 		if (bktype)
@@ -406,6 +410,8 @@ pgstat_create_backend(ProcNumber procnum)
 	 * e.g. if we previously used this proc number.
 	 */
 	memset(&shstatent->stats, 0, sizeof(shstatent->stats));
+	shstatent->stats.pid = MyProcPid;
+	shstatent->pid = MyProcPid;
 	pgstat_unlock_entry(entry_ref);
 
 	MemSet(&PendingBackendStats, 0, sizeof(PgStat_BackendPending));
@@ -475,5 +481,10 @@ pgstat_tracks_backend_bktype(BackendType bktype)
 void
 pgstat_backend_reset_timestamp_cb(PgStatShared_Common *header, TimestampTz ts)
 {
-	((PgStatShared_Backend *) header)->stats.stat_reset_timestamp = ts;
+	PgStatShared_Backend *shstatent = (PgStatShared_Backend *) header;
+
+	shstatent->stats.stat_reset_timestamp = ts;
+
+	/* a reset zeroes the whole entry, so restore the PID of its owner */
+	shstatent->stats.pid = shstatent->pid;
 }

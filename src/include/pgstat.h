@@ -595,6 +595,7 @@ typedef struct PgStat_Backend
 	PgStat_BktypeIO io_stats;
 	PgStat_WalCounters wal_counters;
 	PgStat_PendingLock lock_stats;
+	int			pid;			/* PID of the backend owning these stats */
 } PgStat_Backend;
 
 /* ---------

@@ -536,6 +536,8 @@ typedef struct PgStatShared_Backend
 {
 	PgStatShared_Common header;
 	PgStat_Backend stats;
+
+	int			pid;
 } PgStatShared_Backend;
 
 /*
