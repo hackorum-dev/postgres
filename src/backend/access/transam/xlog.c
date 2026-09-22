@@ -9648,6 +9648,7 @@ xlog_redo(XLogReaderState *record)
 		 * disabling logical decoding because logical decoding cannot process
 		 * subsequent WAL records, which may not contain logical information.
 		 */
+		SetLogicalDecodingStatusChangeLSN(record->EndRecPtr);
 		if (status)
 			EnableLogicalDecoding();
 		else

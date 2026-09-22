@@ -95,6 +95,13 @@ typedef struct LogicalDecodingCtlData
 
 	/* True if logical decoding might need to be disabled */
 	bool		pending_disable;
+
+	/*
+	 * End LSN of the last XLOG_LOGICAL_DECODING_STATUS_CHANGE record
+	 * replayed, or InvalidXLogRecPtr if none has been replayed since the
+	 * server started. Only maintained during recovery.
+	 */
+	XLogRecPtr	status_change_end_lsn;
 } LogicalDecodingCtlData;
 
 static LogicalDecodingCtlData *LogicalDecodingCtl = NULL;
@@ -208,6 +215,49 @@ IsLogicalDecodingEnabled(void)
 	LWLockRelease(LogicalDecodingControlLock);
 
 	return enabled;
+}
+
+/*
+ * Return true if logical decoding is enabled and the given lsn is at or after
+ * the end of the XLOG_LOGICAL_DECODING_STATUS_CHANGE record that enabled it
+ * last. This means that WAL from the lsn onward was written with logical
+ * decoding enabled.
+ *
+ * Note that status_change_end_lsn lives only in shared memory and is updated
+ * only by WAL replay, so this is accurate only during recovery and for an lsn
+ * at or after the point where WAL replay started in this server run. For an
+ * older lsn, this returns the same result as IsLogicalDecodingEnabled() if no
+ * status change record has been replayed yet, and false otherwise.
+ */
+bool
+IsLogicalDecodingEnabledSince(XLogRecPtr lsn)
+{
+	bool		result;
+
+	LWLockAcquire(LogicalDecodingControlLock, LW_SHARED);
+	result = LogicalDecodingCtl->logical_decoding_enabled &&
+		lsn >= LogicalDecodingCtl->status_change_end_lsn;
+	LWLockRelease(LogicalDecodingControlLock);
+
+	return result;
+}
+
+/*
+ * Remember the end LSN of the XLOG_LOGICAL_DECODING_STATUS_CHANGE record
+ * being replayed.
+ *
+ * This must be called before the record changes the status, so that
+ * IsLogicalDecodingEnabledSince() never sees the new status paired with the
+ * LSN of an older record.
+ */
+void
+SetLogicalDecodingStatusChangeLSN(XLogRecPtr lsn)
+{
+	Assert(RecoveryInProgress());
+
+	LWLockAcquire(LogicalDecodingControlLock, LW_EXCLUSIVE);
+	LogicalDecodingCtl->status_change_end_lsn = lsn;
+	LWLockRelease(LogicalDecodingControlLock);
 }
 
 /*
