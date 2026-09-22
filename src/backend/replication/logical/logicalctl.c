@@ -95,6 +95,9 @@ typedef struct LogicalDecodingCtlData
 
 	/* True if logical decoding might need to be disabled */
 	bool		pending_disable;
+
+	/* Incremented whenever logical_decoding_enabled changes */
+	uint64		status_generation;
 } LogicalDecodingCtlData;
 
 static LogicalDecodingCtlData *LogicalDecodingCtl = NULL;
@@ -208,6 +211,38 @@ IsLogicalDecodingEnabled(void)
 	LWLockRelease(LogicalDecodingControlLock);
 
 	return enabled;
+}
+
+/*
+ * Return the generation of the current logical decoding status.
+ */
+uint64
+GetLogicalDecodingStatusGeneration(void)
+{
+	uint64		generation;
+
+	LWLockAcquire(LogicalDecodingControlLock, LW_SHARED);
+	generation = LogicalDecodingCtl->status_generation;
+	LWLockRelease(LogicalDecodingControlLock);
+
+	return generation;
+}
+
+/*
+ * Return true if logical decoding is enabled and its status has not changed
+ * since the given generation was read.
+ */
+bool
+LogicalDecodingStatusMatches(uint64 generation)
+{
+	bool		matches;
+
+	LWLockAcquire(LogicalDecodingControlLock, LW_SHARED);
+	matches = LogicalDecodingCtl->logical_decoding_enabled &&
+		LogicalDecodingCtl->status_generation == generation;
+	LWLockRelease(LogicalDecodingControlLock);
+
+	return matches;
 }
 
 /*
@@ -421,6 +456,7 @@ EnableLogicalDecoding(void)
 	 * first.
 	 */
 	LogicalDecodingCtl->logical_decoding_enabled = true;
+	LogicalDecodingCtl->status_generation++;
 
 	if (!in_recovery)
 		write_logical_decoding_status_update_record(true);
@@ -558,6 +594,8 @@ DisableLogicalDecoding(void)
 	 * processes WAL records with insufficient information.
 	 */
 	LogicalDecodingCtl->logical_decoding_enabled = false;
+	if (was_enabled)
+		LogicalDecodingCtl->status_generation++;
 
 	/* Write the WAL to disable logical decoding on standbys too */
 	if (!in_recovery && was_enabled)
@@ -653,6 +691,7 @@ UpdateLogicalDecodingStatusEndOfRecovery(void)
 		 */
 		LogicalDecodingCtl->xlog_logical_info = new_status;
 		LogicalDecodingCtl->logical_decoding_enabled = new_status;
+		LogicalDecodingCtl->status_generation++;
 
 		elog(DEBUG1,
 			 "update logical decoding status to %d at the end of recovery",

@@ -177,6 +177,9 @@ typedef struct RemoteSlot
 
 	/* RS_INVAL_NONE if valid, or the reason of invalidation */
 	ReplicationSlotInvalidationCause invalidated;
+
+	/* Local logical decoding status when this slot was fetched */
+	uint64		logical_decoding_generation;
 } RemoteSlot;
 
 static void slotsync_failure_callback(int code, Datum arg);
@@ -731,24 +734,22 @@ update_and_persist_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 	 * before persisting it. This way, even if the status change record is
 	 * replayed after this check, the replay will invalidate our slot.
 	 *
-	 * If the check fails, we keep the temporary slot and let the caller
-	 * retry; the next cycle fetches the remote slot information again and
-	 * will drop this slot as the remote slot no longer exists.
-	 *
-	 * XXX: this check cannot detect the case where logical decoding is
-	 * already re-enabled by a slot creation on the primary at this point.
-	 * Detecting that would require comparing the slot's restart_lsn with the
-	 * LSN at which logical decoding was last enabled.
+	 * If the check fails, drop the temporary slot and let the caller retry.
+	 * The next cycle fetches the remote slot information again, which is
+	 * necessary if logical decoding was disabled and then re-enabled in the
+	 * meantime.
 	 */
-	if (!IsLogicalDecodingEnabled())
+	if (!LogicalDecodingStatusMatches(remote_slot->logical_decoding_generation))
 	{
 		ereport(LOG,
 				errmsg("could not synchronize replication slot \"%s\"",
 					   remote_slot->name),
-				errdetail("Logical decoding was concurrently disabled."));
+				errdetail("Logical decoding status changed concurrently."));
 
 		if (slot_persistence_pending)
 			*slot_persistence_pending = true;
+
+		ReplicationSlotDropAcquired(false);
 
 		return false;
 	}
@@ -931,7 +932,8 @@ synchronize_one_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 		slot_updated = true;
 	}
 
-	ReplicationSlotRelease();
+	if (MyReplicationSlot)
+		ReplicationSlotRelease();
 
 	return slot_updated;
 }
@@ -956,6 +958,10 @@ fetch_remote_slots(WalReceiverConn *wrconn, List *slot_names)
 	TupleTableSlot *tupslot;
 	List	   *remote_slot_list = NIL;
 	StringInfoData query;
+	uint64		logical_decoding_generation;
+
+	/* Detect status changes while fetching and synchronizing these slots. */
+	logical_decoding_generation = GetLogicalDecodingStatusGeneration();
 
 	initStringInfo(&query);
 	appendStringInfoString(&query,
@@ -1001,6 +1007,9 @@ fetch_remote_slots(WalReceiverConn *wrconn, List *slot_names)
 		RemoteSlot *remote_slot = palloc0_object(RemoteSlot);
 		Datum		d;
 		int			col = 0;
+
+		remote_slot->logical_decoding_generation =
+			logical_decoding_generation;
 
 		remote_slot->name = TextDatumGetCString(slot_getattr(tupslot, ++col,
 															 &isnull));

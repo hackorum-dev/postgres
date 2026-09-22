@@ -18,6 +18,8 @@ extern void StartupLogicalDecodingStatus(bool last_status);
 extern void InitializeProcessXLogLogicalInfo(void);
 extern bool ProcessBarrierUpdateXLogLogicalInfo(void);
 extern bool IsLogicalDecodingEnabled(void);
+extern uint64 GetLogicalDecodingStatusGeneration(void);
+extern bool LogicalDecodingStatusMatches(uint64 generation);
 extern bool IsXLogLogicalInfoEnabled(void);
 extern void AtEOXact_LogicalCtl(void);
 extern void EnsureLogicalDecodingEnabled(void);
