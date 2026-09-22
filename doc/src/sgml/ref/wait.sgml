@@ -383,17 +383,19 @@ WAIT FOR LSN '<replaceable class="parameter">lsn</replaceable>'
    <literal>COMMIT</literal> record.  In the default autocommit mode shown
    here, the <command>UPDATE</command> commits before the subsequent
    <command>SELECT</command>.  This example uses
-   <function>pg_current_wal_insert_lsn</function> on primary server to get
-   the <acronym>lsn</acronym> given that
-   <varname>synchronous_commit</varname> could be set to
-   <literal>off</literal>.
+   <function>pg_current_wal_insert_end_lsn</function> on the primary to get
+   a position covering the commit even when
+   <varname>synchronous_commit</varname> is <literal>off</literal>.
+   At a WAL page boundary, this function returns the record end without
+   including the next page's header, so reaching the target does not require
+   another WAL record merely to cross that header.
 
    <programlisting>
 postgres=# UPDATE movie SET genre = 'Dramatic' WHERE genre = 'Drama';
 UPDATE 100
-postgres=# SELECT pg_current_wal_insert_lsn();
- pg_current_wal_insert_lsn
----------------------------
+postgres=# SELECT pg_current_wal_insert_end_lsn();
+ pg_current_wal_insert_end_lsn
+-------------------------------
  0/0306EE20
 (1 row)
 </programlisting>
