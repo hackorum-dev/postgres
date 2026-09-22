@@ -3410,11 +3410,12 @@ LaunchMissingBackgroundProcesses(void)
 
 	/*
 	 * If WAL archiving is enabled always, we are allowed to start archiver
-	 * even during recovery.
+	 * even during recovery.  Nothing is archived during an in-place upgrade.
 	 */
 	if (PgArchPMChild == NULL &&
 		((XLogArchivingActive() && pmState == PM_RUN) ||
 		 (XLogArchivingAlways() && (pmState == PM_RECOVERY || pmState == PM_HOT_STANDBY))) &&
+		!GetInplaceUpgradeMode() &&
 		PgArchCanRestart())
 		PgArchPMChild = StartChildProcess(B_ARCHIVER);
 

@@ -169,6 +169,8 @@ extern PGDLLIMPORT bool XLOG_DEBUG;
 #define CHECKPOINT_FLUSH_UNLOGGED	0x0010	/* Flush unlogged tables */
 #define CHECKPOINT_UPGRADE_BOUNDARY 0x0200	/* Mark shutdown checkpoint as an
 											 * upgrade boundary */
+#define CHECKPOINT_UPGRADE_GOLIVE 0x0400	/* Checkpoint takes an in-place
+											 * upgrade live */
 /* These are important to RequestCheckpoint */
 #define CHECKPOINT_WAIT			0x0020	/* Wait for completion */
 #define CHECKPOINT_REQUESTED	0x0040	/* Checkpoint request has been made */

@@ -7574,7 +7574,7 @@ CheckpointFlagsString(int flags)
 {
 	static char buf[128];
 
-	snprintf(buf, sizeof(buf), "%s%s%s%s%s%s%s%s%s",
+	snprintf(buf, sizeof(buf), "%s%s%s%s%s%s%s%s%s%s",
 			 (flags & CHECKPOINT_IS_SHUTDOWN) ? " shutdown" : "",
 			 (flags & CHECKPOINT_END_OF_RECOVERY) ? " end-of-recovery" : "",
 			 (flags & CHECKPOINT_FAST) ? " fast" : "",
@@ -7583,7 +7583,8 @@ CheckpointFlagsString(int flags)
 			 (flags & CHECKPOINT_CAUSE_XLOG) ? " wal" : "",
 			 (flags & CHECKPOINT_CAUSE_TIME) ? " time" : "",
 			 (flags & CHECKPOINT_FLUSH_UNLOGGED) ? " flush-unlogged" : "",
-			 (flags & CHECKPOINT_UPGRADE_BOUNDARY) ? " upgrade-boundary" : "");
+			 (flags & CHECKPOINT_UPGRADE_BOUNDARY) ? " upgrade-boundary" : "",
+			 (flags & CHECKPOINT_UPGRADE_GOLIVE) ? " upgrade-golive" : "");
 
 	return buf;
 }
@@ -7847,6 +7848,16 @@ CreateCheckPoint(int flags)
 	/* sanity check */
 	if (RecoveryInProgress() && (flags & CHECKPOINT_END_OF_RECOVERY) == 0)
 		elog(ERROR, "can't create a checkpoint during recovery");
+
+	/*
+	 * During an in-place upgrade, the checkpointer lets through only the
+	 * requests that a restart or the upgrade itself needs; see
+	 * CheckpointerMain.  Catch anything that got here another way.
+	 */
+	if (XLogCtl->inplaceUpgradeMode &&
+		(flags & (CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_END_OF_RECOVERY |
+				  CHECKPOINT_UPGRADE_GOLIVE)) == 0)
+		elog(ERROR, "can't create a checkpoint during an in-place upgrade");
 
 	/*
 	 * Prepare to accumulate statistics.
@@ -8333,23 +8344,32 @@ CreateCheckPoint(int flags)
 	/*
 	 * Delete old log files, those no longer needed for last checkpoint to
 	 * prevent the disk holding the xlog from growing full.
+	 *
+	 * NB: Not during an in-place upgrade.  Rolling the upgrade back restarts
+	 * the previous version from its last checkpoint, which lies before the
+	 * redo pointer of every checkpoint written since, so everything from that
+	 * segment on must stay until the upgrade goes live.  Removal also creates
+	 * the archive status files that the upgrade suppresses.
 	 */
-	XLByteToSeg(RedoRecPtr, _logSegNo, wal_segment_size);
-	KeepLogSeg(recptr, &_logSegNo);
-	if (InvalidateObsoleteReplicationSlots(RS_INVAL_WAL_REMOVED | RS_INVAL_IDLE_TIMEOUT,
-										   _logSegNo, InvalidOid,
-										   InvalidTransactionId))
+	if (!XLogCtl->inplaceUpgradeMode)
 	{
-		/*
-		 * Some slots have been invalidated; recalculate the old-segment
-		 * horizon, starting again from RedoRecPtr.
-		 */
 		XLByteToSeg(RedoRecPtr, _logSegNo, wal_segment_size);
 		KeepLogSeg(recptr, &_logSegNo);
+		if (InvalidateObsoleteReplicationSlots(RS_INVAL_WAL_REMOVED | RS_INVAL_IDLE_TIMEOUT,
+											   _logSegNo, InvalidOid,
+											   InvalidTransactionId))
+		{
+			/*
+			 * Some slots have been invalidated; recalculate the old-segment
+			 * horizon, starting again from RedoRecPtr.
+			 */
+			XLByteToSeg(RedoRecPtr, _logSegNo, wal_segment_size);
+			KeepLogSeg(recptr, &_logSegNo);
+		}
+		_logSegNo--;
+		RemoveOldXlogFiles(_logSegNo, RedoRecPtr, recptr,
+						   checkPoint.ThisTimeLineID);
 	}
-	_logSegNo--;
-	RemoveOldXlogFiles(_logSegNo, RedoRecPtr, recptr,
-					   checkPoint.ThisTimeLineID);
 
 	/*
 	 * Make more log segments if needed.  (Do this after recycling old log

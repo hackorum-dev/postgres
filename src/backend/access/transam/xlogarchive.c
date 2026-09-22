@@ -448,6 +448,15 @@ XLogArchiveNotify(const char *xlog)
 	char		archiveStatusPath[MAXPGPATH];
 	FILE	   *fd;
 
+	/*
+	 * Archive nothing during an in-place upgrade, because the upgrade may
+	 * still be rolled back.  Without a status file, the segment gets one from
+	 * XLogArchiveCheckDone at a checkpoint after go-live, and the archiver
+	 * picks it up then.
+	 */
+	if (GetInplaceUpgradeMode())
+		return;
+
 	/* insert an otherwise empty file called <XLOG>.ready */
 	StatusFilePath(archiveStatusPath, xlog, ".ready");
 	fd = AllocateFile(archiveStatusPath, "w");

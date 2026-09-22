@@ -98,6 +98,14 @@ my $primary =
   PostgreSQL::Test::Cluster->new('primary', install_path => $oldinstall);
 $primary->init(allows_streaming => 1, force_initdb => 1);
 
+# Archive with a command that succeeds without doing anything, so that we
+# can test that the server suppresses archiving in upgrade mode
+$primary->append_conf(
+	'postgresql.conf', q{
+archive_mode = on
+archive_command = 'true'
+});
+
 # Check the two installations before relying on them: one major version
 # apart.
 my ($new_version) = run_command([ "$newbindir/pg_config", '--version' ]);
@@ -266,6 +274,7 @@ open my $fh, '>', $hba_file or die "cannot write $hba_file: $!";
 print $fh $hba;
 close $fh;
 $primary->set_install_path(undef);
+my $log_offset = -s $primary->logfile;
 $primary->start;
 like(
 	slurp_file($primary->logfile),
@@ -333,9 +342,37 @@ $primary->connect_fails(
 is($primary->safe_psql('postgres', 'SELECT count(*) FROM t'),
 	'1000', 'superuser connection admitted, data readable');
 
+# Archiving is fenced: no archiver runs, and switching WAL segments creates
+# no .ready file.
+my $switched_segment =
+  $primary->safe_psql('postgres', 'SELECT pg_walfile_name(pg_switch_wal())');
+my $archivers = $primary->safe_psql('postgres',
+	"SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'archiver'");
+ok( $archivers eq '0'
+	  && !-e $primary->data_dir
+	  . "/pg_wal/archive_status/$switched_segment.ready",
+	'no archiver runs and no .ready file is created in upgrade mode');
+
+# The checkpointer is suppressed: an explicit request fails.
+my ($ret, $out, $err) = $primary->psql('postgres', 'CHECKPOINT');
+like($err, qr/checkpoint request failed/, 'CHECKPOINT fails in upgrade mode');
+
 # The old version refuses the taken-over cluster; the new version comes back
-# up in upgrade mode.
+# up in upgrade mode.  Its shutdown checkpoint removes no WAL, so the old
+# version still finds the boundary after a rollback.
+my $boundary_segment =
+  $primary->safe_psql('postgres', "SELECT pg_walfile_name('$boundary_lsn')");
+opendir(my $dh, $primary->data_dir . '/pg_wal')
+  or die "could not open pg_wal: $!";
+my @segments_before = sort grep { /^[0-9A-F]{24}$/ } readdir($dh);
+closedir($dh);
+ok( grep({ $_ eq $boundary_segment } @segments_before),
+	'boundary segment present before the shutdown');
 $primary->stop;
+my @segments_missing =
+  grep { !-e $primary->data_dir . "/pg_wal/$_" } @segments_before;
+is_deeply(\@segments_missing, [],
+	'shutdown in upgrade mode removed no WAL segment');
 is(status_field($primary, 'Upgrade posture'),
 	'taken over', 'upgrade mode persists across a shutdown');
 $primary->set_install_path($oldinstall);

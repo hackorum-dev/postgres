@@ -186,6 +186,7 @@ static pg_time_t last_xlog_switch_time;
 /* Prototypes for private functions */
 
 static void ProcessCheckpointerInterrupts(void);
+static bool RefuseCheckpointRequest(void);
 static void CheckArchiveTimeout(void);
 static bool IsCheckpointOnSchedule(double progress);
 static bool FastCheckpointRequested(void);
@@ -372,6 +373,7 @@ CheckpointerMain(const void *startup_data, size_t startup_data_len)
 		int			cur_timeout;
 		bool		chkpt_or_rstpt_requested = false;
 		bool		chkpt_or_rstpt_timed = false;
+		bool		upgrading;
 
 		/* Clear any already-pending wakeups */
 		ResetLatch(MyLatch);
@@ -386,14 +388,30 @@ CheckpointerMain(const void *startup_data, size_t startup_data_len)
 			break;
 
 		/*
+		 * During an in-place upgrade, no checkpoint is requested until the
+		 * upgrade goes live, so that a rollback can discard what the upgrade
+		 * wrote.  The time trigger is off, and a request is refused unless it
+		 * carries the go-live bit or ends a recovery.  The shutdown
+		 * checkpoint doesn't come through here.
+		 */
+		upgrading = GetInplaceUpgradeMode();
+
+		/*
 		 * Detect a pending checkpoint request by checking whether the flags
 		 * word in shared memory is nonzero.  We shouldn't need to acquire the
 		 * ckpt_lck for this.
 		 */
 		if (((volatile CheckpointerShmemStruct *) CheckpointerShmem)->ckpt_flags)
 		{
-			do_checkpoint = true;
-			chkpt_or_rstpt_requested = true;
+			if (upgrading && RefuseCheckpointRequest())
+			{
+				/* consumed without a checkpoint */
+			}
+			else
+			{
+				do_checkpoint = true;
+				chkpt_or_rstpt_requested = true;
+			}
 		}
 
 		/*
@@ -404,7 +422,7 @@ CheckpointerMain(const void *startup_data, size_t startup_data_len)
 		 */
 		now = (pg_time_t) time(NULL);
 		elapsed_secs = now - last_checkpoint_time;
-		if (elapsed_secs >= CheckPointTimeout)
+		if (elapsed_secs >= CheckPointTimeout && !upgrading)
 		{
 			if (!do_checkpoint)
 				chkpt_or_rstpt_timed = true;
@@ -589,9 +607,14 @@ CheckpointerMain(const void *startup_data, size_t startup_data_len)
 		 */
 		now = (pg_time_t) time(NULL);
 		elapsed_secs = now - last_checkpoint_time;
-		if (elapsed_secs >= CheckPointTimeout)
-			continue;			/* no sleep for us ... */
-		cur_timeout = CheckPointTimeout - elapsed_secs;
+		if (upgrading)
+			cur_timeout = CheckPointTimeout;
+		else
+		{
+			if (elapsed_secs >= CheckPointTimeout)
+				continue;		/* no sleep for us ... */
+			cur_timeout = CheckPointTimeout - elapsed_secs;
+		}
 		if (XLogArchiveTimeout > 0 && !RecoveryInProgress())
 		{
 			elapsed_secs = now - last_xlog_switch_time;
@@ -656,6 +679,42 @@ CheckpointerMain(const void *startup_data, size_t startup_data_len)
 
 	/* Normal exit from the checkpointer is here */
 	proc_exit(0);				/* done */
+}
+
+/*
+ * During an in-place upgrade, refuse the pending checkpoint request
+ * unless it takes the upgrade live or ends a crash recovery.
+ * Returns true if refused.
+ *
+ * A refused request is consumed like a failed checkpoint, so that a
+ * requester waiting on it gets an error instead of a checkpoint, and is
+ * logged when someone is waiting.
+ */
+static bool
+RefuseCheckpointRequest(void)
+{
+	int			flags;
+
+	SpinLockAcquire(&CheckpointerShmem->ckpt_lck);
+	flags = CheckpointerShmem->ckpt_flags;
+	if (flags & (CHECKPOINT_UPGRADE_GOLIVE | CHECKPOINT_END_OF_RECOVERY))
+	{
+		SpinLockRelease(&CheckpointerShmem->ckpt_lck);
+		return false;
+	}
+	CheckpointerShmem->ckpt_flags = 0;
+	CheckpointerShmem->ckpt_started++;
+	CheckpointerShmem->ckpt_failed++;
+	CheckpointerShmem->ckpt_done = CheckpointerShmem->ckpt_started;
+	SpinLockRelease(&CheckpointerShmem->ckpt_lck);
+
+	ConditionVariableBroadcast(&CheckpointerShmem->start_cv);
+	ConditionVariableBroadcast(&CheckpointerShmem->done_cv);
+
+	ereport((flags & CHECKPOINT_WAIT) ? LOG : DEBUG1,
+			(errmsg("checkpoint request refused during an in-place upgrade")));
+
+	return true;
 }
 
 /*
