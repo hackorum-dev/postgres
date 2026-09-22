@@ -338,6 +338,28 @@ pg_current_wal_insert_lsn(PG_FUNCTION_ARGS)
 }
 
 /*
+ * Report the end of the WAL space reserved for insertion.
+ *
+ * Unlike pg_current_wal_insert_lsn(), this does not include the following
+ * page header when the reserved space ends at a WAL page boundary.
+ */
+Datum
+pg_current_wal_insert_end_lsn(PG_FUNCTION_ARGS)
+{
+	XLogRecPtr	current_recptr;
+
+	if (RecoveryInProgress())
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("recovery is in progress"),
+				 errhint("WAL control functions cannot be executed during recovery.")));
+
+	current_recptr = GetXLogInsertEndRecPtr();
+
+	PG_RETURN_LSN(current_recptr);
+}
+
+/*
  * Report the current WAL flush location (same format as pg_backup_start etc)
  *
  * This function is mostly for debugging purposes.
