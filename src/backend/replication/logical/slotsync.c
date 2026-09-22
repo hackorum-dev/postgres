@@ -718,41 +718,6 @@ update_and_persist_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 		return false;
 	}
 
-	/*
-	 * Do not persist the slot if logical decoding got disabled concurrently.
-	 * This can happen if the last logical slot on the primary was dropped and
-	 * the corresponding XLOG_LOGICAL_DECODING_STATUS_CHANGE record was
-	 * replayed after we fetched the remote slot information: WAL records
-	 * following the slot's restart_lsn might lack the information required by
-	 * logical decoding, and the slot invalidation performed when replaying
-	 * the record could not find our slot as it was not created yet.
-	 *
-	 * It is important to perform this check after creating the slot and
-	 * before persisting it. This way, even if the status change record is
-	 * replayed after this check, the replay will invalidate our slot.
-	 *
-	 * If the check fails, we keep the temporary slot and let the caller
-	 * retry; the next cycle fetches the remote slot information again and
-	 * will drop this slot as the remote slot no longer exists.
-	 *
-	 * XXX: this check cannot detect the case where logical decoding is
-	 * already re-enabled by a slot creation on the primary at this point.
-	 * Detecting that would require comparing the slot's restart_lsn with the
-	 * LSN at which logical decoding was last enabled.
-	 */
-	if (!IsLogicalDecodingEnabled())
-	{
-		ereport(LOG,
-				errmsg("could not synchronize replication slot \"%s\"",
-					   remote_slot->name),
-				errdetail("Logical decoding was concurrently disabled."));
-
-		if (slot_persistence_pending)
-			*slot_persistence_pending = true;
-
-		return false;
-	}
-
 	ReplicationSlotPersist();
 
 	ereport(LOG,
@@ -883,6 +848,7 @@ synchronize_one_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 	{
 		NameData	plugin_name;
 		TransactionId xmin_horizon = InvalidTransactionId;
+		XLogRecPtr	replay_lsn;
 
 		/* Skip creating the local slot if remote_slot is invalidated already */
 		if (remote_slot->invalidated != RS_INVAL_NONE)
@@ -900,6 +866,52 @@ synchronize_one_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 							  false,
 							  remote_slot->failover,
 							  true);
+
+		/*
+		 * The remote slot information can predate a status change record that
+		 * this standby has already replayed. That happens when the last
+		 * logical slot on the primary is dropped, and possibly re-created
+		 * with the same name, after fetch_remote_slots() ran: the
+		 * deactivation could not invalidate our slot because it did not exist
+		 * yet, and WAL following the remote restart_lsn may lack the
+		 * information logical decoding needs. Checking only whether logical
+		 * decoding is enabled is not enough, as it can have been disabled and
+		 * enabled again in the meantime.
+		 *
+		 * The check has to come after ReplicationSlotCreate(), which makes
+		 * the slot both visible and acquired. A deactivation replayed from
+		 * here on finds the slot in InvalidatePossiblyObsoleteSlot(), signals
+		 * a recovery conflict and waits for the slot to be released before
+		 * invalidating it, so replay cannot get past that record behind our
+		 * back. That is also why the status needs no recheck before the slot
+		 * is persisted. (The invalidation is performed only in hot standby,
+		 * which slot synchronization requires anyway.)
+		 *
+		 * WAL beyond the replay position tells us nothing, so a remote
+		 * restart_lsn past it is accepted and left to the interlock above.
+		 *
+		 * The comparison uses the remote restart_lsn rather than the local
+		 * one, so a slot that would have been usable may be dropped; the next
+		 * cycle fetches fresh information. The slot cannot be kept, as it
+		 * would go on using the stale restart_lsn.
+		 */
+		replay_lsn = GetXLogReplayRecPtr(NULL);
+		if (remote_slot->restart_lsn <= replay_lsn &&
+			!StandbyLogicalDecodingEnabledSince(remote_slot->restart_lsn))
+		{
+			ereport(LOG,
+					errmsg("could not synchronize replication slot \"%s\"",
+						   remote_slot->name),
+					errdetail("Logical decoding was disabled after the remote slot's restart LSN %X/%08X.",
+							  LSN_FORMAT_ARGS(remote_slot->restart_lsn)));
+
+			ReplicationSlotDropAcquired(false);
+
+			if (slot_persistence_pending)
+				*slot_persistence_pending = true;
+
+			return false;
+		}
 
 		/* For shorter lines. */
 		slot = MyReplicationSlot;
