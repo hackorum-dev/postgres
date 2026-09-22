@@ -71,6 +71,7 @@ typedef struct
 	List	   *active_fns;
 	Node	   *case_val;
 	bool		estimate;
+	bool		is_qual;		/* true if simplifying a qual expression */
 } eval_const_expressions_context;
 
 typedef struct
@@ -144,10 +145,12 @@ static bool ece_function_is_safe(Oid funcid,
 								 eval_const_expressions_context *context);
 static List *simplify_or_arguments(List *args,
 								   eval_const_expressions_context *context,
-								   bool *haveNull, bool *forceTrue);
+								   bool *haveNull, bool *forceTrue,
+								   bool is_qual);
 static List *simplify_and_arguments(List *args,
 									eval_const_expressions_context *context,
-									bool *haveNull, bool *forceFalse);
+									bool *haveNull, bool *forceFalse,
+									bool is_qual);
 static Node *simplify_boolean_equality(Oid opno, List *args);
 static Expr *simplify_function(Oid funcid,
 							   Oid result_type, int32 result_typmod,
@@ -2647,6 +2650,34 @@ eval_const_expressions(PlannerInfo *root, Node *node)
 	context.active_fns = NIL;	/* nothing being recursively simplified */
 	context.case_val = NULL;	/* no CASE being examined */
 	context.estimate = false;	/* safe transformations only */
+	context.is_qual = false;	/* not a qual expression */
+	return eval_const_expressions_mutator(node, &context);
+}
+
+/*--------------------
+ * eval_const_expressions_qual
+ *
+ * Same as eval_const_expressions, but informs the simplifier that the
+ * expression is used as a qual (i.e., in a context where NULL and false have
+ * the same effect).  This enables additional simplifications, such as folding
+ * a NOT IN / <> ALL expression to constant false when the array contains a
+ * NULL element and the operator is strict.
+ *--------------------
+ */
+Node *
+eval_const_expressions_qual(PlannerInfo *root, Node *node)
+{
+	eval_const_expressions_context context;
+
+	if (root)
+		context.boundParams = root->glob->boundParams;	/* bound Params */
+	else
+		context.boundParams = NULL;
+	context.root = root;		/* for inlined-function dependencies */
+	context.active_fns = NIL;	/* nothing being recursively simplified */
+	context.case_val = NULL;	/* no CASE being examined */
+	context.estimate = false;	/* safe transformations only */
+	context.is_qual = true;		/* expression is used as a qual */
 	return eval_const_expressions_mutator(node, &context);
 }
 
@@ -2789,6 +2820,7 @@ estimate_expression_value(PlannerInfo *root, Node *node)
 	context.active_fns = NIL;	/* nothing being recursively simplified */
 	context.case_val = NULL;	/* no CASE being examined */
 	context.estimate = true;	/* unsafe transformations OK */
+	context.is_qual = false;	/* not a qual expression */
 	return eval_const_expressions_mutator(node, &context);
 }
 
@@ -2827,6 +2859,13 @@ static Node *
 eval_const_expressions_mutator(Node *node,
 							   eval_const_expressions_context *context)
 {
+	/*
+	 * Save and reset is_qual so that recursive calls don't inherit it by
+	 * default.
+	 */
+	bool		this_node_is_qual = context->is_qual;
+
+	context->is_qual = false;
 
 	/* since this function recurses, it could be driven to stack overflow */
 	check_stack_depth();
@@ -3294,6 +3333,44 @@ eval_const_expressions_mutator(Node *node,
 				set_sa_opfuncid(saop);
 
 				/*
+				 * When simplifying a qual expression (!useOr means NOT IN or
+				 * <> ALL), check whether the array contains a NULL element.
+				 * If the operator is strict, a NULL in the array means the
+				 * expression can never be true.
+				 */
+				if (this_node_is_qual && !saop->useOr &&
+					func_strict(saop->opfuncid))
+				{
+					Node	   *arrayarg = lsecond(saop->args);
+
+					if (IsA(arrayarg, Const) &&
+						!((Const *) arrayarg)->constisnull)
+					{
+						/* Constant array: check for NULLs using bitmap */
+						ArrayType  *arrayval =
+							DatumGetArrayTypeP(((Const *) arrayarg)->constvalue);
+
+						if (array_contains_nulls(arrayval))
+							return makeBoolConst(false, false);
+					}
+					else if (IsA(arrayarg, ArrayExpr) &&
+							 !((ArrayExpr *) arrayarg)->multidims)
+					{
+						/* Non-const array: check each element */
+						ListCell   *lc2;
+
+						foreach(lc2, ((ArrayExpr *) arrayarg)->elements)
+						{
+							Node	   *elem = (Node *) lfirst(lc2);
+
+							if (IsA(elem, Const) &&
+								((Const *) elem)->constisnull)
+								return makeBoolConst(false, false);
+						}
+					}
+				}
+
+				/*
 				 * If all arguments are Consts, and it's a safe function, we
 				 * can fold to a constant
 				 */
@@ -3317,7 +3394,8 @@ eval_const_expressions_mutator(Node *node,
 							newargs = simplify_or_arguments(expr->args,
 															context,
 															&haveNull,
-															&forceTrue);
+															&forceTrue,
+															this_node_is_qual);
 							if (forceTrue)
 								return makeBoolConst(true, false);
 							if (haveNull)
@@ -3345,7 +3423,8 @@ eval_const_expressions_mutator(Node *node,
 							newargs = simplify_and_arguments(expr->args,
 															 context,
 															 &haveNull,
-															 &forceFalse);
+															 &forceFalse,
+															 this_node_is_qual);
 							if (forceFalse)
 								return makeBoolConst(false, false);
 							if (haveNull)
@@ -4411,11 +4490,19 @@ ece_function_is_safe(Oid funcid, eval_const_expressions_context *context)
  * The output arguments *haveNull and *forceTrue must be initialized false
  * by the caller.  They will be set true if a NULL constant or TRUE constant,
  * respectively, is detected anywhere in the argument list.
+ *
+ * is_qual should be true if this OR expression is itself being simplified
+ * in a context where FALSE and NULL are interchangeable (see is_qual in
+ * eval_const_expressions_context); it is passed down to each argument's
+ * own eval_const_expressions_mutator() call, since context->is_qual gets
+ * reset to false as a side effect of every such recursive call and so
+ * cannot simply be left set across the whole loop.
  */
 static List *
 simplify_or_arguments(List *args,
 					  eval_const_expressions_context *context,
-					  bool *haveNull, bool *forceTrue)
+					  bool *haveNull, bool *forceTrue,
+					  bool is_qual)
 {
 	List	   *newargs = NIL;
 	List	   *unprocessed_args;
@@ -4451,6 +4538,7 @@ simplify_or_arguments(List *args,
 		}
 
 		/* If it's not an OR, simplify it */
+		context->is_qual = is_qual;
 		arg = eval_const_expressions_mutator(arg, context);
 
 		/*
@@ -4517,11 +4605,16 @@ simplify_or_arguments(List *args,
  * The output arguments *haveNull and *forceFalse must be initialized false
  * by the caller.  They will be set true if a null constant or false constant,
  * respectively, is detected anywhere in the argument list.
+ *
+ * is_qual should be true if this AND expression is itself being simplified
+ * in a context where FALSE and NULL are interchangeable; see comments in
+ * simplify_or_arguments.
  */
 static List *
 simplify_and_arguments(List *args,
 					   eval_const_expressions_context *context,
-					   bool *haveNull, bool *forceFalse)
+					   bool *haveNull, bool *forceFalse,
+					   bool is_qual)
 {
 	List	   *newargs = NIL;
 	List	   *unprocessed_args;
@@ -4547,6 +4640,7 @@ simplify_and_arguments(List *args,
 		}
 
 		/* If it's not an AND, simplify it */
+		context->is_qual = is_qual;
 		arg = eval_const_expressions_mutator(arg, context);
 
 		/*
