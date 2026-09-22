@@ -5955,7 +5955,10 @@ fetch_remote_statistics(Relation relation,
 
 	/*
 	 * If the remote table is partitioned, import relpages = 0, to match the
-	 * sampling case.
+	 * sampling case.  Otherwise, import the relpages value as-is even if the
+	 * remote definition of block size was different from the local one.  Note
+	 * that this is fine because it's only used for costing remote operations
+	 * on the foreign table.
 	 */
 	if (relkind == RELKIND_PARTITIONED_TABLE)
 		remstats->relpages = 0;
