@@ -783,7 +783,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	QUOTE QUOTES
 
 	RANGE READ REAL REASSIGN RECURSIVE REF_P REFERENCES REFERENCING
-	REFRESH REINDEX RELATIVE_P RELEASE RENAME REPACK REPEATABLE REPLACE REPLICA
+	REFRESH REINDEX RELATIVE_P RELEASE RELOAD RENAME REPACK REPEATABLE REPLACE REPLICA
 	RESET RESPECT_P RESTART RESTRICT RETURN RETURNING RETURNS REVOKE RIGHT ROLE ROLLBACK ROLLUP
 	ROUTINE ROUTINES ROW ROWS RULE
 
@@ -11846,6 +11846,7 @@ AlterSystemStmt:
 				{
 					AlterSystemStmt *n = makeNode(AlterSystemStmt);
 
+					n->action = ALTER_SYSTEM_SET;
 					n->setstmt = $4;
 					$$ = (Node *) n;
 				}
@@ -11853,7 +11854,15 @@ AlterSystemStmt:
 				{
 					AlterSystemStmt *n = makeNode(AlterSystemStmt);
 
+					n->action = ALTER_SYSTEM_RESET;
 					n->setstmt = $4;
+					$$ = (Node *) n;
+				}
+			| ALTER SYSTEM_P RELOAD
+				{
+					AlterSystemStmt *n = makeNode(AlterSystemStmt);
+
+					n->action = ALTER_SYSTEM_RELOAD;
 					$$ = (Node *) n;
 				}
 		;
@@ -18301,6 +18310,7 @@ unreserved_keyword:
 			| REINDEX
 			| RELATIVE_P
 			| RELEASE
+			| RELOAD
 			| RENAME
 			| REPACK
 			| REPEATABLE
@@ -18937,6 +18947,7 @@ bare_label_keyword:
 			| REINDEX
 			| RELATIVE_P
 			| RELEASE
+			| RELOAD
 			| RENAME
 			| REPACK
 			| REPEATABLE

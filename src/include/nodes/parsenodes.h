@@ -3987,9 +3987,17 @@ typedef struct DropdbStmt
  *		Alter System Statement
  * ----------------------
  */
+typedef enum AlterSystemAction
+{
+	ALTER_SYSTEM_SET,
+	ALTER_SYSTEM_RESET,
+	ALTER_SYSTEM_RELOAD
+} AlterSystemAction;
+
 typedef struct AlterSystemStmt
 {
 	NodeTag		type;
+	AlterSystemAction action;
 	VariableSetStmt *setstmt;	/* SET subcommand */
 } AlterSystemStmt;
 
