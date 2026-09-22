@@ -26,6 +26,7 @@
 
 #include <limits.h>
 #include <math.h>
+#include <signal.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -4783,6 +4784,27 @@ AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt)
 	FreeConfigVariables(head);
 
 	LWLockRelease(AutoFileLock);
+}
+
+/*
+ * Execute ALTER SYSTEM RELOAD.
+ */
+void
+AlterSystemReloadConfig(void)
+{
+	if (!AllowAlterSystem)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("ALTER SYSTEM is not allowed in this environment")));
+
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied to perform ALTER SYSTEM RELOAD")));
+
+	if (kill(PostmasterPid, SIGHUP))
+		ereport(ERROR,
+				(errmsg("failed to send signal to postmaster: %m")));
 }
 
 
