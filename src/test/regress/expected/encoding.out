@@ -60,6 +60,25 @@ SELECT reverse(good) FROM regress_encoding;
  éfac
 (1 row)
 
+-- padding with a multibyte character
+SELECT lpad(good, 7, 'é'), rpad(good, 7, 'é') FROM regress_encoding;
+  lpad   |  rpad   
+---------+---------
+ ééécafé | caféééé
+(1 row)
+
+-- padding with a lone lead byte of a multibyte character = error
+SELECT lpad(good, 7, test_bytea_to_text('\xc3')) FROM regress_encoding;
+ERROR:  invalid byte sequence for encoding "UTF8": 0xc3
+SELECT rpad(good, 7, test_bytea_to_text('\xc3')) FROM regress_encoding;
+ERROR:  invalid byte sequence for encoding "UTF8": 0xc3
+-- no error when no padding is needed
+SELECT lpad(good, 4, test_bytea_to_text('\xc3')), rpad(good, 4, test_bytea_to_text('\xc3')) FROM regress_encoding;
+ lpad | rpad 
+------+------
+ café | café
+(1 row)
+
 -- invalid short mb character = error
 SELECT length(truncated) FROM regress_encoding;
 ERROR:  invalid byte sequence for encoding "UTF8": 0xc3

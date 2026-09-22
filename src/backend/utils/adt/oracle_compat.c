@@ -213,15 +213,30 @@ lpad(PG_FUNCTION_ARGS)
 	ptr2end = ptr2 + s2len;
 	ptr_ret = VARDATA(ret);
 
-	while (m--)
+	if (s2len == 1 && m > 0)
 	{
-		int			mlen = pg_mblen_range(ptr2, ptr2end);
+		/*
+		 * A one-byte padding string is a single character repeated m times,
+		 * so fill it in with one memset() rather than one memcpy() per
+		 * character.  pg_mblen_range() is still called once so that a lone
+		 * lead byte of a multibyte character is rejected as before.
+		 */
+		(void) pg_mblen_range(ptr2, ptr2end);
+		memset(ptr_ret, *ptr2, m);
+		ptr_ret += m;
+	}
+	else
+	{
+		while (m--)
+		{
+			int			mlen = pg_mblen_range(ptr2, ptr2end);
 
-		memcpy(ptr_ret, ptr2, mlen);
-		ptr_ret += mlen;
-		ptr2 += mlen;
-		if (ptr2 == ptr2end)	/* wrap around at end of s2 */
-			ptr2 = ptr2start;
+			memcpy(ptr_ret, ptr2, mlen);
+			ptr_ret += mlen;
+			ptr2 += mlen;
+			if (ptr2 == ptr2end)	/* wrap around at end of s2 */
+				ptr2 = ptr2start;
+		}
 	}
 
 	ptr1 = VARDATA_ANY(string1);
@@ -323,15 +338,25 @@ rpad(PG_FUNCTION_ARGS)
 	ptr2 = ptr2start = VARDATA_ANY(string2);
 	ptr2end = ptr2 + s2len;
 
-	while (m--)
+	if (s2len == 1 && m > 0)
 	{
-		int			mlen = pg_mblen_range(ptr2, ptr2end);
+		/* Same one-byte padding fast path as in lpad() */
+		(void) pg_mblen_range(ptr2, ptr2end);
+		memset(ptr_ret, *ptr2, m);
+		ptr_ret += m;
+	}
+	else
+	{
+		while (m--)
+		{
+			int			mlen = pg_mblen_range(ptr2, ptr2end);
 
-		memcpy(ptr_ret, ptr2, mlen);
-		ptr_ret += mlen;
-		ptr2 += mlen;
-		if (ptr2 == ptr2end)	/* wrap around at end of s2 */
-			ptr2 = ptr2start;
+			memcpy(ptr_ret, ptr2, mlen);
+			ptr_ret += mlen;
+			ptr2 += mlen;
+			if (ptr2 == ptr2end)	/* wrap around at end of s2 */
+				ptr2 = ptr2start;
+		}
 	}
 
 	SET_VARSIZE(ret, ptr_ret - (char *) ret);
