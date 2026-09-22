@@ -1,0 +1,85 @@
+# REPACK (CONCURRENTLY);
+#
+# Test columns whose values are "missing" from the existing tuples, because
+# ALTER TABLE ... ADD COLUMN did not have to rewrite the table.
+setup
+{
+	CREATE EXTENSION IF NOT EXISTS injection_points;
+
+	CREATE TABLE repack_test(i int PRIMARY KEY, j int);
+	INSERT INTO repack_test(i, j) VALUES (1, 1), (2, 2), (3, 3);
+
+	-- A constant default does not rewrite the table, so the rows above keep
+	-- their shorter tuples and the values of "c" and "d" are only stored in
+	-- pg_attribute.attmissingval.  Use both a pass-by-value and a
+	-- pass-by-reference type.
+	ALTER TABLE repack_test ADD COLUMN c int NOT NULL DEFAULT 42;
+	ALTER TABLE repack_test ADD COLUMN d text NOT NULL DEFAULT 'xyz';
+
+	CREATE FUNCTION repack_return_old() RETURNS trigger
+	LANGUAGE plpgsql AS $$
+	BEGIN
+		RETURN OLD;
+	END;
+	$$;
+
+	-- By returning OLD, the trigger makes the new row version reuse the
+	-- shorter tuple, which is then what logical decoding sees.
+	CREATE TRIGGER return_old BEFORE UPDATE ON repack_test
+	FOR EACH ROW EXECUTE FUNCTION repack_return_old();
+}
+
+teardown
+{
+	DROP TABLE repack_test;
+	DROP FUNCTION repack_return_old();
+	DROP EXTENSION injection_points;
+}
+
+session s1
+setup
+{
+	SELECT injection_points_set_local();
+	SELECT injection_points_attach('repack-concurrently-before-lock', 'wait');
+}
+
+# Perform the initial load and wait for s2 to change the data.
+step s1_wait_before_lock
+{
+	REPACK (CONCURRENTLY) repack_test;
+}
+
+# The missing values must have survived the concurrent changes.  The second
+# query needs the MATERIALIZED CTE because the planner would otherwise use
+# attnotnull to answer it without looking at the heap.
+step s1_check
+{
+	SELECT i, j, c, d FROM repack_test ORDER BY i;
+
+	WITH s AS MATERIALIZED (SELECT c, d FROM repack_test)
+	SELECT count(*) FROM s WHERE c IS NULL OR d IS NULL;
+}
+teardown
+{
+	SELECT injection_points_detach('repack-concurrently-before-lock');
+}
+
+session s2
+
+# The trigger returns OLD, so these rows keep the tuples they had before the
+# ALTER TABLE ... ADD COLUMN above.
+step s2_update
+{
+	UPDATE repack_test SET j = j WHERE i IN (1, 2);
+}
+step s2_wakeup_before_lock
+{
+	SELECT injection_points_wakeup('repack-concurrently-before-lock');
+}
+
+# Test if the missing values find their way into the repacked table.
+permutation
+	s1_wait_before_lock
+	s2_update
+	s2_wakeup_before_lock
+	s1_check
