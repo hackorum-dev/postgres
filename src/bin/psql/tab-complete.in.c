@@ -2658,9 +2658,9 @@ match_previous_words(int pattern_id,
 	/* ALTER SERVER <name> VERSION <version> */
 	else if (Matches("ALTER", "SERVER", MatchAny, "VERSION", MatchAny))
 		COMPLETE_WITH("OPTIONS");
-	/* ALTER SYSTEM SET, RESET, RESET ALL */
+	/* ALTER SYSTEM SET, RESET, RESET ALL, RELOAD */
 	else if (Matches("ALTER", "SYSTEM"))
-		COMPLETE_WITH("SET", "RESET");
+		COMPLETE_WITH("SET", "RESET", "RELOAD");
 	else if (Matches("ALTER", "SYSTEM", "SET|RESET"))
 		COMPLETE_WITH_QUERY_VERBATIM_PLUS(Query_for_list_of_alter_system_set_vars,
 										  "ALL");
