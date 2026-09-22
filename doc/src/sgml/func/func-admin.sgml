@@ -379,6 +379,20 @@ LOG:  Grand total: 1651920 bytes in 201 blocks; 622360 free (88 chunks); 1029560
       <row>
        <entry role="func_table_entry"><para role="func_signature">
         <indexterm>
+         <primary>pg_current_wal_insert_end_lsn</primary>
+        </indexterm>
+        <function>pg_current_wal_insert_end_lsn</function> ()
+        <returnvalue>pg_lsn</returnvalue>
+       </para>
+       <para>
+        Returns the end of the write-ahead log space currently reserved for
+        insertion (see notes below).
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
          <primary>pg_current_wal_insert_lsn</primary>
         </indexterm>
         <function>pg_current_wal_insert_lsn</function> ()
@@ -596,6 +610,20 @@ LOG:  Grand total: 1651920 bytes in 201 blocks; 622360 free (88 chunks); 1029560
     log files.  The insertion and flush locations are made available primarily
     for server debugging purposes.  These are all read-only operations and do
     not require superuser permissions.
+   </para>
+
+   <para>
+    <function>pg_current_wal_insert_end_lsn</function> reports the same
+    reservation position as <function>pg_current_wal_insert_lsn</function>,
+    but represents it as a record end.  If the reserved space ends exactly
+    at a WAL page boundary, it returns that boundary, whereas
+    <function>pg_current_wal_insert_lsn</function> returns the next insertion
+    address, after the following page's header.  Otherwise, the two positions
+    are the same.  Neither function waits for concurrent WAL insertions to
+    finish or causes WAL to be written or flushed.  Both positions are
+    server-wide, rather than specific to the calling session or transaction,
+    and neither function can be executed during recovery.  Both are read-only
+    operations and do not require superuser permissions.
    </para>
 
    <para>
