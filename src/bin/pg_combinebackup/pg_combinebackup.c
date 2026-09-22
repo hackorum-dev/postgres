@@ -816,7 +816,7 @@ help(const char *progname)
 static bool
 parse_oid(char *s, Oid *result)
 {
-	Oid			oid;
+	unsigned long oid;
 	char	   *ep;
 
 	errno = 0;
@@ -824,7 +824,7 @@ parse_oid(char *s, Oid *result)
 	if (errno != 0 || *ep != '\0' || oid < 1 || oid > PG_UINT32_MAX)
 		return false;
 
-	*result = oid;
+	*result = (Oid) oid;
 	return true;
 }
 
