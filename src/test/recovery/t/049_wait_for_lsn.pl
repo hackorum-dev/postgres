@@ -110,12 +110,14 @@ $node_standby->append_conf(
 $node_standby->start;
 
 # 1. Make sure that WAIT FOR works: add new content to
-# primary and memorize primary's insert LSN, then wait for that LSN to be
-# replayed on standby.
+# primary and memorize primary's insertion end LSN, then wait for that LSN
+# to be replayed on standby.  Use a record-end position so a target at a
+# page boundary does not require another WAL record to cross the page header.
 $node_primary->safe_psql('postgres',
 	"INSERT INTO wait_test VALUES (generate_series(11, 20))");
 my $lsn1 =
-  $node_primary->safe_psql('postgres', "SELECT pg_current_wal_insert_lsn()");
+  $node_primary->safe_psql('postgres',
+	"SELECT pg_current_wal_insert_end_lsn()");
 my $output = $node_standby->safe_psql(
 	'postgres', qq[
 	WAIT FOR LSN '${lsn1}' WITH (timeout '1d');
@@ -131,7 +133,8 @@ ok((split("\n", $output))[-1] >= 0,
 $node_primary->safe_psql('postgres',
 	"INSERT INTO wait_test VALUES (generate_series(21, 30))");
 my $lsn2 =
-  $node_primary->safe_psql('postgres', "SELECT pg_current_wal_insert_lsn()");
+  $node_primary->safe_psql('postgres',
+	"SELECT pg_current_wal_insert_end_lsn()");
 $output = $node_standby->safe_psql(
 	'postgres', qq[
 	WAIT FOR LSN '${lsn2}';
@@ -147,7 +150,8 @@ ok((split("\n", $output))[-1] eq 30,
 $node_primary->safe_psql('postgres',
 	"INSERT INTO wait_test VALUES (generate_series(31, 40))");
 my $lsn_write =
-  $node_primary->safe_psql('postgres', "SELECT pg_current_wal_insert_lsn()");
+  $node_primary->safe_psql('postgres',
+	"SELECT pg_current_wal_insert_end_lsn()");
 $output = $node_standby->safe_psql(
 	'postgres', qq[
 	WAIT FOR LSN '${lsn_write}' WITH (MODE 'standby_write', timeout '1d');
@@ -161,7 +165,8 @@ ok( (split("\n", $output))[-1] >= 0,
 $node_primary->safe_psql('postgres',
 	"INSERT INTO wait_test VALUES (generate_series(41, 50))");
 my $lsn_flush =
-  $node_primary->safe_psql('postgres', "SELECT pg_current_wal_insert_lsn()");
+  $node_primary->safe_psql('postgres',
+	"SELECT pg_current_wal_insert_end_lsn()");
 $output = $node_standby->safe_psql(
 	'postgres', qq[
 	WAIT FOR LSN '${lsn_flush}' WITH (MODE 'standby_flush', timeout '1d');
@@ -176,7 +181,8 @@ ok( (split("\n", $output))[-1] >= 0,
 $node_primary->safe_psql('postgres',
 	"INSERT INTO wait_test VALUES (generate_series(51, 60))");
 my $lsn_primary_flush =
-  $node_primary->safe_psql('postgres', "SELECT pg_current_wal_insert_lsn()");
+  $node_primary->safe_psql('postgres',
+	"SELECT pg_current_wal_insert_end_lsn()");
 $output = $node_primary->safe_psql(
 	'postgres', qq[
 	WAIT FOR LSN '${lsn_primary_flush}' WITH (MODE 'primary_flush', timeout '1d');
@@ -192,7 +198,7 @@ ok( (split("\n", $output))[-1] >= 0,
 # the concurrent autovacuum could not affect that.
 my $lsn3 =
   $node_primary->safe_psql('postgres',
-	"SELECT pg_current_wal_insert_lsn() + 10000000000");
+	"SELECT pg_current_wal_insert_end_lsn() + 10000000000");
 my $stderr;
 $node_standby->safe_psql('postgres',
 	"WAIT FOR LSN '${lsn2}' WITH (timeout '10ms');");
@@ -219,7 +225,7 @@ ok($output eq "timeout", "WAIT FOR returns correct status after timeout");
 # After rolling back to the savepoint, a second WAIT FOR in the same backend
 # must be able to register itself again.
 my $subxact_lsn = $node_primary->safe_psql('postgres',
-	"SELECT pg_current_wal_insert_lsn() + 10000000000");
+	"SELECT pg_current_wal_insert_end_lsn() + 10000000000");
 my $subxact_appname = 'wait_for_lsn_subxact_cleanup';
 my $subxact_session =
   $node_primary->background_psql('postgres', on_error_stop => 0);
@@ -358,7 +364,8 @@ ok($stderr =~ /WAIT can only be executed as a top-level statement/,
 
 # 6. Check parameter validation error cases on standby before promotion
 my $test_lsn =
-  $node_primary->safe_psql('postgres', "SELECT pg_current_wal_insert_lsn()");
+  $node_primary->safe_psql('postgres',
+	"SELECT pg_current_wal_insert_end_lsn()");
 
 # Test negative timeout
 $node_standby->psql(
@@ -540,7 +547,7 @@ for (my $i = 0; $i < 5; $i++)
 		"INSERT INTO wait_test VALUES (${i});");
 	my $lsn =
 	  $node_primary->safe_psql('postgres',
-		"SELECT pg_current_wal_insert_lsn()");
+		"SELECT pg_current_wal_insert_end_lsn()");
 	$psql_sessions[$i] = $node_standby->background_psql('postgres');
 	$psql_sessions[$i]->query_until(
 		qr/start/, qq[
@@ -572,7 +579,7 @@ for (my $i = 0; $i < 5; $i++)
 		"INSERT INTO wait_test VALUES (100 + ${i});");
 	$write_lsns[$i] =
 	  $node_primary->safe_psql('postgres',
-		"SELECT pg_current_wal_insert_lsn()");
+		"SELECT pg_current_wal_insert_end_lsn()");
 }
 
 # Start standby_write waiters (they will block since walreceiver is stopped)
@@ -624,7 +631,7 @@ for (my $i = 0; $i < 5; $i++)
 		"INSERT INTO wait_test VALUES (200 + ${i});");
 	$flush_lsns[$i] =
 	  $node_primary->safe_psql('postgres',
-		"SELECT pg_current_wal_insert_lsn()");
+		"SELECT pg_current_wal_insert_end_lsn()");
 }
 
 # Start standby_flush waiters (they will block since walreceiver is stopped)
@@ -682,7 +689,8 @@ $node_standby->safe_psql('postgres', "SELECT pg_wal_replay_pause();");
 $node_primary->safe_psql('postgres',
 	"INSERT INTO wait_test VALUES (generate_series(301, 310));");
 my $mixed_target_lsn =
-  $node_primary->safe_psql('postgres', "SELECT pg_current_wal_insert_lsn()");
+  $node_primary->safe_psql('postgres',
+	"SELECT pg_current_wal_insert_end_lsn()");
 
 # Start 6 waiters: 2 for each mode
 my @mixed_sessions;
@@ -740,7 +748,7 @@ for (my $i = 0; $i < 5; $i++)
 		"INSERT INTO wait_test VALUES (400 + ${i});");
 	$primary_flush_lsns[$i] =
 	  $node_primary->safe_psql('postgres',
-		"SELECT pg_current_wal_insert_lsn()");
+		"SELECT pg_current_wal_insert_end_lsn()");
 }
 
 my $primary_flush_log_offset = -s $node_primary->logfile;
@@ -781,10 +789,11 @@ ok($output >= 0,
 # an error even after promotion.
 my $lsn4 =
   $node_primary->safe_psql('postgres',
-	"SELECT pg_current_wal_insert_lsn() + 10000000000");
+	"SELECT pg_current_wal_insert_end_lsn() + 10000000000");
 
 my $lsn5 =
-  $node_primary->safe_psql('postgres', "SELECT pg_current_wal_insert_lsn()");
+  $node_primary->safe_psql('postgres',
+	"SELECT pg_current_wal_insert_end_lsn()");
 
 # Start background sessions waiting for unreachable LSN with all modes
 my @wait_modes = ('standby_replay', 'standby_write', 'standby_flush');
@@ -799,9 +808,9 @@ for (my $i = 0; $i < 3; $i++)
 	]);
 }
 
-# Make sure standby will be promoted at least at the primary insert LSN we
-# have just observed.  Use pg_switch_wal() to force the insert LSN to be
-# written then wait for standby to catchup.
+# Make sure standby will be promoted at least at the primary insertion end
+# LSN we have just observed.  Use pg_switch_wal() to force that LSN to be
+# written, then wait for standby to catch up.
 $node_primary->safe_psql('postgres', 'SELECT pg_switch_wal();');
 $node_primary->wait_for_catchup($node_standby);
 
@@ -862,7 +871,8 @@ $arc_primary->backup($arc_backup_name);
 $arc_primary->safe_psql('postgres',
 	"INSERT INTO arc_test VALUES (generate_series(11, 20))");
 my $arc_target_lsn =
-  $arc_primary->safe_psql('postgres', "SELECT pg_current_wal_insert_lsn()");
+  $arc_primary->safe_psql('postgres',
+	"SELECT pg_current_wal_insert_end_lsn()");
 
 # Force WAL to be archived by switching segments, then wait for archiving.
 my $arc_segment = $arc_primary->safe_psql('postgres',
@@ -923,7 +933,8 @@ $arc_standby->safe_psql('postgres', "SELECT pg_wal_replay_pause()");
 $arc_primary->safe_psql('postgres',
 	"INSERT INTO arc_test VALUES (generate_series(21, 30))");
 my $arc_target_lsn2 =
-  $arc_primary->safe_psql('postgres', "SELECT pg_current_wal_insert_lsn()");
+  $arc_primary->safe_psql('postgres',
+	"SELECT pg_current_wal_insert_end_lsn()");
 
 my $arc_segment2 = $arc_primary->safe_psql('postgres',
 	"SELECT pg_walfile_name(pg_current_wal_lsn())");
@@ -1144,7 +1155,7 @@ SKIP:
 	stop_walreceiver($rcv_standby);
 	$rcv_primary->safe_psql('postgres', 'INSERT INTO rcv_test VALUES (300)');
 	my $stale_target = $rcv_primary->safe_psql('postgres',
-		'SELECT pg_current_wal_insert_lsn()');
+		'SELECT pg_current_wal_insert_end_lsn()');
 
 	# Keep WAIT FOR untimed.  After streaming resumes below, its own timeout
 	# could wake the backend and make the completion check pass even if the
@@ -1249,11 +1260,11 @@ $tl_primary->safe_psql('postgres',
 $tl_primary->wait_for_catchup($tl_standby1);
 $tl_standby1->wait_for_catchup($tl_standby2);
 
-# Target LSN well past current insert LSN, so reaching it requires
+# Target LSN well past the current insertion end LSN, so reaching it requires
 # WAL produced on the new timeline.  Pause replay on standby2 to
 # guarantee the waiter is asleep when the switch happens.
 my $tl_target = $tl_primary->safe_psql('postgres',
-	"SELECT (pg_current_wal_insert_lsn() + 65536)::text");
+	"SELECT (pg_current_wal_insert_end_lsn() + 65536)::text");
 
 $tl_standby2->safe_psql('postgres', "SELECT pg_wal_replay_pause()");
 $tl_standby2->poll_query_until('postgres',
@@ -1354,7 +1365,7 @@ my $target_lsn = $writer->query_safe(
 	q[
 	WITH p AS
 	(
-		SELECT pg_current_wal_insert_lsn() AS lsn,
+		SELECT pg_current_wal_insert_end_lsn() AS lsn,
 			   setting::numeric AS segsz
 		FROM pg_settings
 		WHERE name = 'wal_segment_size'
