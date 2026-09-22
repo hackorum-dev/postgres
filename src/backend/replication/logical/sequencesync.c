@@ -60,6 +60,7 @@
 #include "postmaster/interrupt.h"
 #include "replication/logicalworker.h"
 #include "replication/worker_internal.h"
+#include "storage/lmgr.h"
 #include "storage/lwlock.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -80,7 +81,8 @@ typedef enum CopySeqResult
 	COPYSEQ_MISMATCH,
 	COPYSEQ_SUBSCRIBER_INSUFFICIENT_PERM,
 	COPYSEQ_PUBLISHER_INSUFFICIENT_PERM,
-	COPYSEQ_SKIPPED
+	COPYSEQ_SKIPPED,
+	COPYSEQ_NOT_SUBSCRIBED
 } CopySeqResult;
 
 static List *seqinfos = NIL;
@@ -403,6 +405,36 @@ copy_sequence(LogicalRepSequenceInfo *seqinfo, Oid seqowner)
 	AclResult	aclresult;
 	bool		run_as_owner = MySubscription->runasowner;
 	Oid			seqoid = seqinfo->localrelid;
+	XLogRecPtr	statelsn;
+	Relation	rel;
+
+	/*
+	 * Acquire the locks that UpdateSubscriptionRelState() requires before
+	 * checking whether this sequence is still part of the subscription, and
+	 * hold them until the state has been updated below.
+	 *
+	 * ALTER SUBSCRIPTION ... REFRESH PUBLICATION can remove the sequence's
+	 * pg_subscription_rel row while we are synchronizing it. It holds both of
+	 * these locks in exclusive mode until it commits, see AlterSubscription()
+	 * and AlterSubscription_refresh(). Holding them here means the row cannot
+	 * disappear between the check below and the update at the end of this
+	 * function.
+	 */
+	LockSharedObject(SubscriptionRelationId, MySubscription->oid, 0,
+					 AccessShareLock);
+	rel = table_open(SubscriptionRelRelationId, RowExclusiveLock);
+
+	/*
+	 * The sequence may no longer be part of the subscription. There is
+	 * nothing left to synchronize, so leave the local sequence alone and let
+	 * the caller skip it.
+	 */
+	if (GetSubscriptionRelState(MySubscription->oid, seqoid,
+								&statelsn) == SUBREL_STATE_UNKNOWN)
+	{
+		table_close(rel, NoLock);
+		return COPYSEQ_NOT_SUBSCRIBED;
+	}
 
 	/*
 	 * If the user did not opt to run as the owner of the subscription
@@ -417,6 +449,8 @@ copy_sequence(LogicalRepSequenceInfo *seqinfo, Oid seqowner)
 	{
 		if (!run_as_owner)
 			RestoreUserContext(&ucxt);
+
+		table_close(rel, NoLock);
 
 		return COPYSEQ_SUBSCRIBER_INSUFFICIENT_PERM;
 	}
@@ -436,10 +470,13 @@ copy_sequence(LogicalRepSequenceInfo *seqinfo, Oid seqowner)
 
 	/*
 	 * Record the remote sequence's LSN in pg_subscription_rel and mark the
-	 * sequence as READY.
+	 * sequence as READY. The locks taken above are the ones this needs, so
+	 * tell it they are already held.
 	 */
 	UpdateSubscriptionRelState(MySubscription->oid, seqoid, SUBREL_STATE_READY,
-							   seqinfo->page_lsn, false);
+							   seqinfo->page_lsn, true);
+
+	table_close(rel, NoLock);
 
 	return COPYSEQ_SUCCESS;
 }
@@ -654,6 +691,19 @@ copy_sequences(WalReceiverConn *conn)
 									   seqinfo->seqname));
 						batch_skipped_count++;
 					}
+					break;
+				case COPYSEQ_NOT_SUBSCRIBED:
+
+					/*
+					 * A concurrent refresh removed this sequence from the
+					 * subscription. Skipping it is the only sensible action,
+					 * and it must not be treated as an error.
+					 */
+					ereport(LOG,
+							errmsg("skip synchronization of sequence \"%s.%s\" because it is no longer part of subscription \"%s\"",
+								   seqinfo->nspname, seqinfo->seqname,
+								   MySubscription->name));
+					batch_skipped_count++;
 					break;
 			}
 
