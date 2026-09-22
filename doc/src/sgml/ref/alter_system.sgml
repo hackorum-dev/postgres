@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>ALTER SYSTEM</refname>
-  <refpurpose>change a server configuration parameter</refpurpose>
+  <refpurpose>change or reload the server configuration</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -25,6 +25,7 @@ ALTER SYSTEM SET <replaceable class="parameter">configuration_parameter</replace
 
 ALTER SYSTEM RESET <replaceable class="parameter">configuration_parameter</replaceable>
 ALTER SYSTEM RESET ALL
+ALTER SYSTEM RELOAD
 </synopsis>
  </refsynopsisdiv>
 
@@ -32,11 +33,11 @@ ALTER SYSTEM RESET ALL
   <title>Description</title>
 
   <para>
-   <command>ALTER SYSTEM</command> is used for changing server configuration
-   parameters across the entire database cluster.  It can be more convenient
-   than the traditional method of manually editing
-   the <filename>postgresql.conf</filename> file.
-   <command>ALTER SYSTEM</command> writes the given parameter setting to
+   The <command>SET</command> and <command>RESET</command> variants of
+   <command>ALTER SYSTEM</command> change server configuration parameters
+   across the entire database cluster.  They can be more convenient than
+   manually editing the <filename>postgresql.conf</filename> file.
+   <command>SET</command> writes the given parameter setting to
    the <filename>postgresql.auto.conf</filename> file, which is read in
    addition to <filename>postgresql.conf</filename>.
    Setting a parameter to <literal>DEFAULT</literal>, or using the
@@ -46,19 +47,26 @@ ALTER SYSTEM RESET ALL
   </para>
 
   <para>
+   The <command>RELOAD</command> variant requests a reload of the server
+   configuration files.
+  </para>
+
+  <para>
    Values set with <command>ALTER SYSTEM</command> will be effective after
    the next server configuration reload, or after the next server restart
    in the case of parameters that can only be changed at server start.
-   A server configuration reload can be commanded by calling the SQL
-   function <function>pg_reload_conf()</function>, running <literal>pg_ctl reload</literal>,
-   or sending a <systemitem>SIGHUP</systemitem> signal to the main server process.
+   A server configuration reload can also be requested by calling the SQL
+   function <function>pg_reload_conf()</function> or running
+   <literal>pg_ctl reload</literal>.
   </para>
 
   <para>
    Only superusers and users granted <literal>ALTER SYSTEM</literal> privilege
-   on a parameter can change it using <command>ALTER SYSTEM</command>.  Also, since
-   this command acts directly on the file system and cannot be rolled back,
-   it is not allowed inside a transaction block or function.
+   on a parameter can change it using <command>ALTER SYSTEM</command>.
+   <command>ALTER SYSTEM RELOAD</command> can only be executed by a
+   superuser.  The <command>SET</command> and <command>RESET</command> variants
+   act directly on the file system and cannot be rolled back.  All variants
+   are disallowed inside a transaction block or function.
   </para>
  </refsect1>
 
@@ -138,6 +146,13 @@ ALTER SYSTEM SET wal_level = replica;
    in <filename>postgresql.conf</filename>:
 <programlisting>
 ALTER SYSTEM RESET wal_level;
+</programlisting>
+  </para>
+
+  <para>
+   Request a reload of the server configuration files:
+<programlisting>
+ALTER SYSTEM RELOAD;
 </programlisting>
   </para>
 
