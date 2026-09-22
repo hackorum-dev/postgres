@@ -869,8 +869,24 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 			break;
 
 		case T_AlterSystemStmt:
-			PreventInTransactionBlock(isTopLevel, "ALTER SYSTEM");
-			AlterSystemSetConfigFile((AlterSystemStmt *) parsetree);
+			{
+				AlterSystemStmt *stmt = (AlterSystemStmt *) parsetree;
+
+				PreventInTransactionBlock(isTopLevel, "ALTER SYSTEM");
+				switch (stmt->action)
+				{
+					case ALTER_SYSTEM_SET:
+					case ALTER_SYSTEM_RESET:
+						AlterSystemSetConfigFile(stmt);
+						break;
+					case ALTER_SYSTEM_RELOAD:
+						AlterSystemReloadConfig();
+						break;
+					default:
+						elog(ERROR, "unrecognized ALTER SYSTEM action: %d",
+							 (int) stmt->action);
+				}
+			}
 			break;
 
 		case T_VariableSetStmt:
