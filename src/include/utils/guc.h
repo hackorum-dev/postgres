@@ -461,6 +461,7 @@ extern int	set_config_with_handle(const char *name, config_handle *handle,
 								   int elevel, bool is_reload);
 extern config_handle *get_config_handle(const char *name);
 extern void AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt);
+extern void AlterSystemReloadConfig(void);
 extern char *GetConfigOptionByName(const char *name, const char **varname,
 								   bool missing_ok);
 
