@@ -12,6 +12,7 @@
  */
 #include "postgres.h"
 
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <time.h>
@@ -127,6 +128,7 @@ static void perform_base_backup(basebackup_options *opt, bbsink *sink,
 								IncrementalBackupInfo *ib);
 static void parse_basebackup_options(List *options, basebackup_options *opt);
 static int	compareWalFileNames(const ListCell *a, const ListCell *b);
+static void basebackup_fadvise_sequential(int fd);
 static ssize_t basebackup_read_file(int fd, char *buf, size_t nbytes, off_t offset,
 									const char *filename, bool partial_read_ok);
 
@@ -575,6 +577,7 @@ perform_base_backup(basebackup_options *opt, bbsink *sink,
 						(errcode_for_file_access(),
 						 errmsg("could not open file \"%s\": %m", pathbuf)));
 			}
+			basebackup_fadvise_sequential(fd);
 
 			if (fstat(fd, &statbuf) != 0)
 				ereport(ERROR,
@@ -1626,6 +1629,8 @@ sendFile(bbsink *sink, const char *readfilename, const char *tarfilename,
 				(errcode_for_file_access(),
 				 errmsg("could not open file \"%s\": %m", readfilename)));
 	}
+	if (incremental_blocks == NULL)
+		basebackup_fadvise_sequential(fd);
 
 	/*
 	 * Non-relation files may be replaced by a rename(), making irrelevant the
@@ -2203,6 +2208,16 @@ convert_link_to_directory(const char *pathbuf, struct stat *statbuf)
 	/* If symlink, write it as a directory anyway */
 	if (S_ISLNK(statbuf->st_mode))
 		statbuf->st_mode = S_IFDIR | pg_dir_create_mode;
+}
+
+static void
+basebackup_fadvise_sequential(int fd)
+{
+#if defined(USE_POSIX_FADVISE) && defined(POSIX_FADV_SEQUENTIAL)
+	(void) posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+#else
+	(void) fd;
+#endif
 }
 
 /*
