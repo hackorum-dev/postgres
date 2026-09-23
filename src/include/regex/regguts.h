@@ -320,7 +320,7 @@ struct arcbatch
 {								/* for bulk allocation of arcs */
 	struct arcbatch *next;		/* chain link */
 	size_t		narcs;			/* number of arcs allocated in this arcbatch */
-	struct arc	a[FLEXIBLE_ARRAY_MEMBER];
+	struct arc	a[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(narcs);
 };
 #define  ARCBATCHSIZE(n)  ((n) * sizeof(struct arc) + offsetof(struct arcbatch, a))
 /* first batch will have FIRSTABSIZE arcs; then double it until MAXABSIZE */
@@ -346,7 +346,7 @@ struct statebatch
 {								/* for bulk allocation of states */
 	struct statebatch *next;	/* chain link */
 	size_t		nstates;		/* number of states allocated in this batch */
-	struct state s[FLEXIBLE_ARRAY_MEMBER];
+	struct state s[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(nstates);
 };
 #define  STATEBATCHSIZE(n)  ((n) * sizeof(struct state) + offsetof(struct statebatch, s))
 /* first batch will have FIRSTSBSIZE states; then double it until MAXSBSIZE */

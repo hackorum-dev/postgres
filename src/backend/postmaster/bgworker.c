@@ -101,7 +101,7 @@ typedef struct BackgroundWorkerArray
 	int			total_slots;
 	uint32		parallel_register_count;
 	uint32		parallel_terminate_count;
-	BackgroundWorkerSlot slot[FLEXIBLE_ARRAY_MEMBER];
+	BackgroundWorkerSlot slot[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(total_slots);
 } BackgroundWorkerArray;
 
 struct BackgroundWorkerHandle

@@ -293,7 +293,7 @@ typedef struct mXactCacheEnt
 	MultiXactId multi;
 	int			nmembers;
 	dlist_node	node;
-	MultiXactMember members[FLEXIBLE_ARRAY_MEMBER];
+	MultiXactMember members[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(nmembers);
 } mXactCacheEnt;
 
 #define MAX_CACHE_ENTRIES	256
