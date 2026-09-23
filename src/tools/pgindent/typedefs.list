@@ -1704,6 +1704,7 @@ LogicalTape
 LogicalTapeSet
 LookupSet
 LsnReadQueue
+LsnReadQueueEntry
 LsnReadQueueNextFun
 LsnReadQueueNextStatus
 LtreeGistOptions
