@@ -147,22 +147,61 @@ casefold(PG_FUNCTION_ARGS)
  * Append m characters of the padding string s2 (s2len bytes) to dst,
  * cycling through s2 as needed, and return a pointer past the last byte
  * written.
+ *
+ * Note that s2 is only checked for a truncated multibyte character as far as
+ * we actually use it, so a bad tail is accepted when the padding stops short
+ * of it, as it always has been.
  */
 static char *
 append_padding(char *dst, const char *s2, int s2len, int m)
 {
 	const char *ptr2 = s2;
 	const char *ptr2end = s2 + s2len;
+	char	   *start = dst;
+	int			nchars = 0;
+	int			nbytes;
+	int			written;
 
-	while (m--)
+	/* Copy s2 once, one character at a time, or until m runs out. */
+	while (m > 0 && ptr2 < ptr2end)
 	{
 		int			mlen = pg_mblen_range(ptr2, ptr2end);
 
 		memcpy(dst, ptr2, mlen);
 		dst += mlen;
 		ptr2 += mlen;
-		if (ptr2 == ptr2end)	/* wrap around at end of s2 */
-			ptr2 = s2;
+		m--;
+		nchars++;
+	}
+
+	if (m == 0)
+		return dst;
+
+	/*
+	 * The rest of the padding is s2 repeated, so work out how many bytes that
+	 * is: whole copies of s2, plus the first m % nchars characters of one
+	 * more.
+	 */
+	nbytes = (m / nchars) * s2len;
+	ptr2 = s2;
+	for (m %= nchars; m > 0; m--)
+		ptr2 += pg_mblen_unbounded(ptr2);
+	nbytes += ptr2 - s2;
+
+	/*
+	 * Now produce those bytes by copying what we've already written, doubling
+	 * the length each time, so that the work is done by a few large memcpy()
+	 * calls rather than one per character.
+	 */
+	written = dst - start;
+	while (nbytes > 0)
+	{
+		int			chunk = Min(written, nbytes);
+
+		memcpy(dst, start, chunk);
+		dst += chunk;
+		nbytes -= chunk;
+		written += chunk;
 	}
 
 	return dst;
