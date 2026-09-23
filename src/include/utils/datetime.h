@@ -216,7 +216,7 @@ typedef struct TimeZoneAbbrevTable
 {
 	Size		tblsize;		/* size in bytes of TimeZoneAbbrevTable */
 	int			numabbrevs;		/* number of entries in abbrevs[] array */
-	datetkn		abbrevs[FLEXIBLE_ARRAY_MEMBER];
+	datetkn		abbrevs[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(numabbrevs);
 	/* DynamicZoneAbbrev(s) may follow the abbrevs[] array */
 } TimeZoneAbbrevTable;
 

@@ -34,7 +34,7 @@ PG_FUNCTION_INFO_V1(brin_revmap_data);
 typedef struct brin_column_state
 {
 	int			nstored;
-	FmgrInfo	outputFn[FLEXIBLE_ARRAY_MEMBER];
+	FmgrInfo	outputFn[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(nstored);
 } brin_column_state;
 
 

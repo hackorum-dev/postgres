@@ -145,7 +145,7 @@ typedef struct
 	 * Extra startup data, content depends on the child process.
 	 */
 	size_t		startup_data_len;
-	char		startup_data[FLEXIBLE_ARRAY_MEMBER];
+	char		startup_data[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(startup_data_len);
 } BackendParameters;
 
 #define SizeOfBackendParameters(startup_data_len) (offsetof(BackendParameters, startup_data) + startup_data_len)
