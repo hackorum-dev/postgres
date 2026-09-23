@@ -52,7 +52,7 @@ typedef struct Bitmapset
 
 	NodeTag		type;
 	int			nwords;			/* number of words in array */
-	bitmapword	words[FLEXIBLE_ARRAY_MEMBER];	/* really [nwords] */
+	bitmapword	words[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(nwords);
 } Bitmapset;
 
 

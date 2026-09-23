@@ -117,7 +117,7 @@ typedef struct LsnReadQueue
 	{
 		bool		io;
 		XLogRecPtr	lsn;
-	}			queue[FLEXIBLE_ARRAY_MEMBER];
+	}			queue[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(size);
 } LsnReadQueue;
 
 /*

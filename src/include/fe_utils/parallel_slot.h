@@ -40,7 +40,7 @@ typedef struct ParallelSlotArray
 	const char *progname;
 	bool		echo;
 	const char *initcmd;
-	ParallelSlot slots[FLEXIBLE_ARRAY_MEMBER];
+	ParallelSlot slots[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(numslots);
 } ParallelSlotArray;
 
 static inline void

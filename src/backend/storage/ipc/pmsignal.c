@@ -78,7 +78,7 @@ struct PMSignalData
 	QuitSignalReason sigquit_reason;	/* why SIGQUIT was sent */
 	/* per-child-process flags */
 	int			num_child_flags;	/* # of entries in PMChildFlags[] */
-	sig_atomic_t PMChildFlags[FLEXIBLE_ARRAY_MEMBER];
+	sig_atomic_t PMChildFlags[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(num_child_flags);
 };
 
 /* PMSignalState pointer is valid in both postmaster and child processes */

@@ -50,7 +50,7 @@ typedef struct
 typedef struct SPNode
 {
 	uint32		length;
-	SPNodeData	data[FLEXIBLE_ARRAY_MEMBER];
+	SPNodeData	data[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(length);
 } SPNode;
 
 #define SPNHDRSZ	(offsetof(SPNode,data))
