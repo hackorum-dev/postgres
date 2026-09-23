@@ -239,6 +239,17 @@ sub write_source
 # by post_indent().
 my @alignas_stash;
 
+sub stash_alignas
+{
+	my $text = shift;
+
+	push(@alignas_stash, $text);
+	my $tag = 'alignas_' . $#alignas_stash;
+	$tag .= '_' x (length($text) - length($tag))
+	  if length($text) > length($tag);
+	return $tag;
+}
+
 sub pre_indent
 {
 	my $source = shift;
@@ -276,8 +287,7 @@ sub pre_indent
 		\b alignas \s*
 		( \( (?: [^()]++ | (?1) )*+ \) )
 	!
-		push(@alignas_stash, "alignas" . $1);
-		"alignas_" . $#alignas_stash . "_";
+		stash_alignas("alignas" . $1);
 	!gex;
 
 	return $source;
@@ -288,7 +298,7 @@ sub post_indent
 	my $source = shift;
 
 	# Restore alignas(...)
-	$source =~ s!\balignas_(\d+)_!$alignas_stash[$1]!g;
+	$source =~ s!\balignas_(\d+)_*!$alignas_stash[$1]!g;
 
 	# Restore CATALOG lines
 	$source =~ s!^/\*(CATALOG\(.*)\*/$!$1!gm;
