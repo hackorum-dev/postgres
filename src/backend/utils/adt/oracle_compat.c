@@ -147,22 +147,63 @@ casefold(PG_FUNCTION_ARGS)
  * Append m characters of the padding string pad (padlen bytes) to dst,
  * cycling through pad as needed, and return a pointer past the last byte
  * written.
+ *
+ * The pad string is validated with pg_mblen_range() only as far as it is
+ * used, so an incomplete multibyte character at its end is an error only
+ * if the padding reaches it.
  */
 static char *
 append_padding(char *dst, const char *pad, int padlen, int m)
 {
 	const char *p = pad;
 	const char *pend = pad + padlen;
+	char	   *start = dst;
+	int			nchars = 0;
+	int			nbytes;
+	int			written;
 
-	while (m--)
+	/* copy pad once, one character at a time, or until m runs out */
+	while (m > 0 && p < pend)
 	{
 		int			mlen = pg_mblen_range(p, pend);
 
 		memcpy(dst, p, mlen);
 		dst += mlen;
 		p += mlen;
-		if (p == pend)			/* wrap around at end of pad */
-			p = pad;
+		m--;
+		nchars++;
+	}
+
+	if (m == 0)
+		return dst;
+
+	/*
+	 * The rest of the padding is pad repeated, so work out how many bytes
+	 * that is: whole copies of pad, plus the first m % nchars characters of
+	 * one more.
+	 */
+	nbytes = (m / nchars) * padlen;
+	p = pad;
+	for (m %= nchars; m > 0; m--)
+		p += pg_mblen_unbounded(p);
+	nbytes += p - pad;
+
+	/*
+	 * Produce those bytes by copying what has already been written onto the
+	 * end, doubling the length each time, so the work is done by a few large
+	 * memcpy() calls rather than one per character.  The last chunk, if
+	 * shorter, is a prefix of the padding written so far and therefore of
+	 * pad, which is the partial final repetition.
+	 */
+	written = dst - start;
+	while (nbytes > 0)
+	{
+		int			chunk = Min(written, nbytes);
+
+		memcpy(dst, start, chunk);
+		dst += chunk;
+		nbytes -= chunk;
+		written += chunk;
 	}
 
 	return dst;
