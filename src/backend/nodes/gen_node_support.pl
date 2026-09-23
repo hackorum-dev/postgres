@@ -226,6 +226,8 @@ foreach my $infile (@ARGV)
 		$lineno++;
 		chomp $line;
 		$line =~ s/\s*$//;
+		# counted_by() annotations are not interesting for node support
+		$line =~ s/\s*pg_attribute_counted_by\(\w+\)//;
 		next if $line eq '';
 		next if $line =~ /^#(define|ifdef|endif)/;
 
