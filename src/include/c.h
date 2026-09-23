@@ -76,6 +76,9 @@
 #if defined(WIN32) || defined(__CYGWIN__)
 #include <fcntl.h>				/* ensure O_BINARY is available */
 #endif
+#ifdef _MSC_VER
+#include <sal.h>
+#endif
 #include <locale.h>
 #ifdef HAVE_XLOCALE_H
 #include <xlocale.h>
@@ -310,10 +313,17 @@ extern "C++"
  *   including after either member is updated
  *
  * The attribute is ignored in C++ due to lack of compiler support.
+ *
+ * MSVC has no equivalent of its own, but its source annotation language spells
+ * the same property _Field_size_(), which its static analyzer understands.
+ * That only has an effect under /analyze; in an ordinary build it expands to
+ * nothing.
  */
 #ifndef __cplusplus
 #if __has_attribute (counted_by)
 #define pg_attribute_counted_by(count) __attribute__((counted_by(count)))
+#elif defined(_MSC_VER)
+#define pg_attribute_counted_by(count) _Field_size_(count)
 #else
 #define pg_attribute_counted_by(count)
 #endif
