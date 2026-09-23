@@ -122,7 +122,7 @@ typedef struct LsnReadQueue
 	uint32		head;
 	uint32		tail;
 	uint32		size;
-	LsnReadQueueEntry queue[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(size);
+	pg_attribute_counted_by(size) LsnReadQueueEntry queue[FLEXIBLE_ARRAY_MEMBER];
 } LsnReadQueue;
 
 /*
