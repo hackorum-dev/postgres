@@ -244,3 +244,22 @@ SELECT DISTINCT city, similarity(city, 'Warsaw'), show_limit()
 SELECT set_limit(0.5);
 SELECT DISTINCT city, similarity(city, 'Warsaw'), show_limit()
   FROM restaurants WHERE city % 'Warsaw';
+
+-- A threshold of zero is met by every row: by the rows that share no trigram
+-- with the query, and by all of them when the query has no trigrams at all.
+-- The indexes must not lose any (bug #19701).
+SELECT set_limit(0);
+SET pg_trgm.word_similarity_threshold = 0;
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM restaurants WHERE city % 'Warsaw';
+SELECT count(*) FROM restaurants WHERE city % 'Warsaw';
+SELECT count(*) FROM restaurants WHERE city % '';
+SELECT count(*) FROM restaurants WHERE 'Warsaw' <% city;
+DROP INDEX restaurants_city_idx;
+CREATE INDEX ON restaurants USING gin(city gin_trgm_ops);
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM restaurants WHERE city % 'Warsaw';
+SELECT count(*) FROM restaurants WHERE city % 'Warsaw';
+SELECT count(*) FROM restaurants WHERE city % '';
+SELECT count(*) FROM restaurants WHERE 'Warsaw' <% city;
+RESET pg_trgm.word_similarity_threshold;
