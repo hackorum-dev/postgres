@@ -1165,6 +1165,13 @@ SELECT rpad('hi', -5, 'xy');
 SELECT rpad('hello', 2);
 SELECT rpad('hi', 5, '');
 
+-- whole repetitions of the pad string, a partial final repetition, and
+-- fewer than one repetition
+SELECT lpad('hi', 8, 'abc'), rpad('hi', 8, 'abc');
+SELECT lpad('hi', 9, 'abc'), rpad('hi', 9, 'abc');
+SELECT lpad('hi', 12, 'ab'), rpad('hi', 12, 'ab');
+SELECT lpad('hi', 3, 'abc'), rpad('hi', 3, 'abc');
+
 SELECT ltrim('zzzytrim', 'xyz');
 
 SELECT translate('', '14', 'ax');

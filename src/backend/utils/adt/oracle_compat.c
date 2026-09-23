@@ -143,6 +143,74 @@ casefold(PG_FUNCTION_ARGS)
 }
 
 
+/*
+ * Write m characters of padding at dst, taken cyclically from the pad
+ * string of padlen bytes, and return the number of bytes written.
+ *
+ * The pad string is validated with pg_mblen_range() only as far as it is
+ * used, so an incomplete multibyte character at its end is an error only
+ * if the padding reaches it.
+ */
+static int
+pad_fill(char *dst, const char *pad, int padlen, int m)
+{
+	const char *padend = pad + padlen;
+	const char *p = pad;
+	int			nchars = 0;
+	int			nrep;
+	int			total;
+	int			copied;
+
+	if (m <= 0)
+		return 0;
+
+	/* count the characters of one repetition, stopping at m */
+	while (p < padend && nchars < m)
+	{
+		p += pg_mblen_range(p, padend);
+		nchars++;
+	}
+
+	/* fewer than one repetition is needed, so copy the first m characters */
+	if (p < padend)
+	{
+		memcpy(dst, pad, p - pad);
+		return p - pad;
+	}
+
+	/*
+	 * Whole repetitions are byte copies of the pad string.  Copy one, then
+	 * double the copied region until all of them are written, so the number
+	 * of memcpy() calls is logarithmic in the number of repetitions.  total
+	 * cannot overflow, since the caller sized the output for m characters.
+	 */
+	nrep = m / nchars;
+	total = nrep * padlen;
+	memcpy(dst, pad, padlen);
+	copied = padlen;
+	while (copied < total)
+	{
+		int			n = Min(copied, total - copied);
+
+		memcpy(dst + copied, dst, n);
+		copied += n;
+	}
+
+	/* partial final repetition, one character at a time */
+	m -= nrep * nchars;
+	p = pad;
+	while (m-- > 0)
+	{
+		int			mlen = pg_mblen_range(p, padend);
+
+		memcpy(dst + copied, p, mlen);
+		copied += mlen;
+		p += mlen;
+	}
+
+	return copied;
+}
+
 /********************************************************************
  *
  * lpad
@@ -167,10 +235,7 @@ lpad(PG_FUNCTION_ARGS)
 	text	   *string2 = PG_GETARG_TEXT_PP(2);
 	text	   *ret;
 	char	   *ptr1,
-			   *ptr2,
-			   *ptr2start,
 			   *ptr_ret;
-	const char *ptr2end;
 	int			m,
 				s1len,
 				s2len;
@@ -209,20 +274,9 @@ lpad(PG_FUNCTION_ARGS)
 
 	m = len - s1len;
 
-	ptr2 = ptr2start = VARDATA_ANY(string2);
-	ptr2end = ptr2 + s2len;
 	ptr_ret = VARDATA(ret);
 
-	while (m--)
-	{
-		int			mlen = pg_mblen_range(ptr2, ptr2end);
-
-		memcpy(ptr_ret, ptr2, mlen);
-		ptr_ret += mlen;
-		ptr2 += mlen;
-		if (ptr2 == ptr2end)	/* wrap around at end of s2 */
-			ptr2 = ptr2start;
-	}
+	ptr_ret += pad_fill(ptr_ret, VARDATA_ANY(string2), s2len, m);
 
 	ptr1 = VARDATA_ANY(string1);
 
@@ -265,10 +319,7 @@ rpad(PG_FUNCTION_ARGS)
 	text	   *string2 = PG_GETARG_TEXT_PP(2);
 	text	   *ret;
 	char	   *ptr1,
-			   *ptr2,
-			   *ptr2start,
 			   *ptr_ret;
-	const char *ptr2end;
 	int			m,
 				s1len,
 				s2len;
@@ -320,19 +371,7 @@ rpad(PG_FUNCTION_ARGS)
 		ptr1 += mlen;
 	}
 
-	ptr2 = ptr2start = VARDATA_ANY(string2);
-	ptr2end = ptr2 + s2len;
-
-	while (m--)
-	{
-		int			mlen = pg_mblen_range(ptr2, ptr2end);
-
-		memcpy(ptr_ret, ptr2, mlen);
-		ptr_ret += mlen;
-		ptr2 += mlen;
-		if (ptr2 == ptr2end)	/* wrap around at end of s2 */
-			ptr2 = ptr2start;
-	}
+	ptr_ret += pad_fill(ptr_ret, VARDATA_ANY(string2), s2len, m);
 
 	SET_VARSIZE(ret, ptr_ret - (char *) ret);
 
