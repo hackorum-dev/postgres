@@ -98,6 +98,15 @@ typedef LsnReadQueueNextStatus (*LsnReadQueueNextFun) (uintptr_t lrq_private,
 													   XLogRecPtr *lsn);
 
 /*
+ * One entry of the queue below.
+ */
+typedef struct LsnReadQueueEntry
+{
+	bool		io;
+	XLogRecPtr	lsn;
+} LsnReadQueueEntry;
+
+/*
  * A simple circular queue of LSNs, using to control the number of
  * (potentially) inflight IOs.  This stands in for a later more general IO
  * control mechanism, which is why it has the apparently unnecessary
@@ -113,11 +122,7 @@ typedef struct LsnReadQueue
 	uint32		head;
 	uint32		tail;
 	uint32		size;
-	struct
-	{
-		bool		io;
-		XLogRecPtr	lsn;
-	}			queue[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(size);
+	LsnReadQueueEntry queue[FLEXIBLE_ARRAY_MEMBER] pg_attribute_counted_by(size);
 } LsnReadQueue;
 
 /*
