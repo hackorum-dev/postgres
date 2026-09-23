@@ -45,6 +45,7 @@
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
 #include "storage/shmem.h"
+#include "storage/smgr.h"
 #include "tcop/tcopprot.h"
 #include "utils/injection_point.h"
 #include "utils/memdebug.h"
@@ -64,6 +65,9 @@
  * chain.
  */
 #define PGAIO_WORKER_WAKEUP_RATIO_SATURATE 4
+
+/* Number of completed IOs between SMGR cache cleanups. */
+#define PGAIO_WORKER_SMGR_CLEANUP_INTERVAL 1024
 
 /* Debugging support: show current IO and wakeups:ios statistics in ps. */
 /* #define PGAIO_WORKER_SHOW_PS_INFO */
@@ -695,6 +699,7 @@ IoWorkerMain(const void *startup_data, size_t startup_data_len)
 	char		cmd[128];
 	int			hist_ios = 0;
 	int			hist_wakeups = 0;
+	int			ios_since_smgr_cleanup = 0;
 
 	AuxiliaryProcessMainCommon();
 
@@ -954,6 +959,18 @@ IoWorkerMain(const void *startup_data, size_t startup_data_len)
 
 			RESUME_INTERRUPTS();
 			errcallback.arg = NULL;
+
+			/*
+			 * IO workers don't have transaction-end cleanup to destroy SMGR
+			 * objects. Periodically destroy them based on a local IO counter.
+			 * The IO has completed and its error context has been cleared, so
+			 * no borrowed file descriptors or SMGR references remain in use.
+			 */
+			if (++ios_since_smgr_cleanup >= PGAIO_WORKER_SMGR_CLEANUP_INTERVAL)
+			{
+				smgrdestroyall();
+				ios_since_smgr_cleanup = 0;
+			}
 		}
 		else
 		{
