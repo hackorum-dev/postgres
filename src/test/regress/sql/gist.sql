@@ -250,6 +250,7 @@ set enable_bitmapscan = off;
 select count(*) from gist_nan_tbl where b && box(point(0,0), point(5,5));
 select count(*) from gist_nan_tbl where b <@ box(point(0,0), point(5,5));
 select count(*) from gist_nan_tbl where b @> point '(1.5,1.5)';
+select count(*) from gist_nan_tbl where b ~= box '(NaN,NaN),(0,0)';
 reset enable_seqscan;
 reset enable_bitmapscan;
 drop table gist_nan_tbl;

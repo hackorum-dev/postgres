@@ -4436,8 +4436,8 @@ extern Datum box_mergeable(PG_FUNCTION_ARGS);
 Datum
 box_mergeable(PG_FUNCTION_ARGS)
 {
-	BOX	   *box1 = PG_GETARG_BOX_P(0),
-		   *box2 = PG_GETARG_BOX_P(1);
+	BOX		   *box1 = PG_GETARG_BOX_P(0),
+			   *box2 = PG_GETARG_BOX_P(1);
 
 	if (isnan(box1->high.x) || isnan(box1->high.y) ||
 		isnan(box1->low.x) || isnan(box1->low.y) ||

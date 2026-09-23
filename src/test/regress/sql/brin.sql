@@ -547,5 +547,9 @@ SELECT count(*) FROM brin_box_nan WHERE v @> point '(0.5,0.5)';
 SELECT count(*) FROM brin_box_nan WHERE v ~= box '(0,0),(1,1)';
 -- the NaN row is found too: unmergeable ranges are always scanned
 SELECT count(*) FROM brin_box_nan WHERE v ~= box '(NaN,NaN),(0,0)';
+TRUNCATE brin_box_nan;
+INSERT INTO brin_box_nan VALUES (box '(NaN,NaN),(0,0)');
+REINDEX INDEX brin_box_nan_idx;
+SELECT count(*) FROM brin_box_nan WHERE v ~= box '(NaN,NaN),(0,0)';
 RESET enable_seqscan;
 DROP TABLE brin_box_nan;

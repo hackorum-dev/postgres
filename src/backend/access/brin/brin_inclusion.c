@@ -191,8 +191,16 @@ brin_inclusion_add_value(PG_FUNCTION_ARGS)
 		PG_RETURN_BOOL(false);
 	}
 
+	/* A value may not be mergeable even with itself */
 	if (new)
+	{
+		finfo = inclusion_get_procinfo(bdesc, attno, PROCNUM_MERGEABLE, true);
+		if (finfo != NULL &&
+			!DatumGetBool(FunctionCall2Coll(finfo, colloid, newval, newval)))
+			column->bv_values[INCLUSION_UNMERGEABLE] = BoolGetDatum(true);
+
 		PG_RETURN_BOOL(true);
+	}
 
 	/* Check if the new value is already contained. */
 	finfo = inclusion_get_procinfo(bdesc, attno, PROCNUM_CONTAINS, true);

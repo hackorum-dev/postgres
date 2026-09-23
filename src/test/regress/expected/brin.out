@@ -621,5 +621,14 @@ SELECT count(*) FROM brin_box_nan WHERE v ~= box '(NaN,NaN),(0,0)';
      1
 (1 row)
 
+TRUNCATE brin_box_nan;
+INSERT INTO brin_box_nan VALUES (box '(NaN,NaN),(0,0)');
+REINDEX INDEX brin_box_nan_idx;
+SELECT count(*) FROM brin_box_nan WHERE v ~= box '(NaN,NaN),(0,0)';
+ count 
+-------
+     1
+(1 row)
+
 RESET enable_seqscan;
 DROP TABLE brin_box_nan;

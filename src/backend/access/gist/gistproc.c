@@ -186,7 +186,7 @@ gist_box_union(PG_FUNCTION_ARGS)
 	numranges = entryvec->n;
 	pageunion = palloc_object(BOX);
 	cur = DatumGetBoxP(entryvec->vector[0].key);
-	memcpy(pageunion, cur, sizeof(BOX));
+	snapBox(pageunion, cur);
 
 	for (i = 1; i < numranges; i++)
 	{
@@ -999,6 +999,15 @@ rtree_internal_consistent(BOX *key, BOX *query, StrategyNumber strategy)
 													   PointerGetDatum(query)));
 			break;
 		case RTSameStrategyNumber:
+			/* box_same() matches NaN, box_contain() never does */
+			if (isnan(query->high.x) || isnan(query->high.y) ||
+				isnan(query->low.x) || isnan(query->low.y))
+				retval = true;
+			else
+				retval = DatumGetBool(DirectFunctionCall2(box_contain,
+														  PointerGetDatum(key),
+														  PointerGetDatum(query)));
+			break;
 		case RTContainsStrategyNumber:
 			retval = DatumGetBool(DirectFunctionCall2(box_contain,
 													  PointerGetDatum(key),

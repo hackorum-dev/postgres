@@ -491,6 +491,12 @@ select count(*) from gist_nan_tbl where b @> point '(1.5,1.5)';
   1000
 (1 row)
 
+select count(*) from gist_nan_tbl where b ~= box '(NaN,NaN),(0,0)';
+ count 
+-------
+     2
+(1 row)
+
 reset enable_seqscan;
 reset enable_bitmapscan;
 drop table gist_nan_tbl;
