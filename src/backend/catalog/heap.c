@@ -2361,6 +2361,12 @@ StoreConstraints(Relation rel, List *cooked_constraints, bool is_internal)
 								  con->is_local, con->inhcount,
 								  con->is_no_inherit, is_internal);
 				numchecks++;
+
+				if (numchecks > PG_INT16_MAX)
+					ereport(ERROR,
+							errmsg("too many check constraints on relation \"%s\"",
+								   RelationGetQualifiedRelationName(rel)));
+
 				break;
 
 			default:
@@ -2629,6 +2635,11 @@ AddRelationNewConstraints(Relation rel,
 							  is_internal);
 
 			numchecks++;
+
+			if (numchecks > PG_INT16_MAX)
+				ereport(ERROR,
+						errmsg("too many check constraints on relation \"%s\"",
+							   RelationGetQualifiedRelationName(rel)));
 
 			cooked = palloc_object(CookedConstraint);
 			cooked->contype = CONSTR_CHECK;
@@ -3199,6 +3210,10 @@ SetRelationNumChecks(Relation rel, int numchecks)
 
 	if (relStruct->relchecks != numchecks)
 	{
+		if (numchecks > INT16_MAX || numchecks < 0)
+			elog(ERROR, "invalid new relchecks %d for relation %u",
+				 numchecks, RelationGetRelid(rel));
+
 		relStruct->relchecks = numchecks;
 
 		CatalogTupleUpdate(relrel, &reltup->t_self, reltup);
