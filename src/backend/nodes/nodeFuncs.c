@@ -2163,6 +2163,8 @@ expression_tree_walker_impl(Node *node,
 					return true;
 				if (WALK(expr->aggfilter))
 					return true;
+				if (WALK(expr->aggonempty))
+					return true;
 			}
 			break;
 		case T_GroupingFunc:
@@ -2181,6 +2183,8 @@ expression_tree_walker_impl(Node *node,
 				if (LIST_WALK(expr->args))
 					return true;
 				if (WALK(expr->aggfilter))
+					return true;
+				if (WALK(expr->aggonempty))
 					return true;
 				if (WALK(expr->runCondition))
 					return true;
@@ -3049,6 +3053,7 @@ expression_tree_mutator_impl(Node *node,
 				MUTATE(newnode->aggorder, aggref->aggorder, List *);
 				MUTATE(newnode->aggdistinct, aggref->aggdistinct, List *);
 				MUTATE(newnode->aggfilter, aggref->aggfilter, Expr *);
+				MUTATE(newnode->aggonempty, aggref->aggonempty, Expr *);
 				return (Node *) newnode;
 			}
 			break;
@@ -3083,6 +3088,7 @@ expression_tree_mutator_impl(Node *node,
 				FLATCOPY(newnode, wfunc, WindowFunc);
 				MUTATE(newnode->args, wfunc->args, List *);
 				MUTATE(newnode->aggfilter, wfunc->aggfilter, Expr *);
+				MUTATE(newnode->aggonempty, wfunc->aggonempty, Expr *);
 				return (Node *) newnode;
 			}
 			break;
@@ -4439,6 +4445,8 @@ raw_expression_tree_walker_impl(Node *node,
 				if (WALK(fcall->agg_order))
 					return true;
 				if (WALK(fcall->agg_filter))
+					return true;
+				if (WALK(fcall->agg_on_empty))
 					return true;
 				if (WALK(fcall->over))
 					return true;
