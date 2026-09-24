@@ -43,11 +43,14 @@
 #include "executor/instrument.h"
 #include "optimizer/paths.h"
 #include "pgstat.h"
+#include "postmaster/interrupt.h"
 #include "storage/bufmgr.h"
 #include "storage/proc.h"
 #include "tcop/tcopprot.h"
+#include "utils/injection_point.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/wait_event.h"
 
 /*
  * DSM keys for parallel vacuum.  Unlike other parallel execution code, since
@@ -59,6 +62,8 @@
 #define PARALLEL_VACUUM_KEY_BUFFER_USAGE	3
 #define PARALLEL_VACUUM_KEY_WAL_USAGE		4
 #define PARALLEL_VACUUM_KEY_INDEX_STATS		5
+
+#define PARALLEL_VACUUM_COST_UPDATE_INTERVAL_MS 100
 
 /*
  * Struct for cost-based vacuum delay related parameters to share among an
@@ -147,6 +152,9 @@ typedef struct PVShared
 
 	/* Counter for vacuuming and cleanup */
 	pg_atomic_uint32 idx;
+
+	/* Number of indexes completed in the current phase */
+	pg_atomic_uint32 completed_indexes;
 
 	/* DSA handle where the TidStore lives */
 	dsa_handle	dead_items_dsa_handle;
@@ -285,6 +293,8 @@ static int	parallel_vacuum_compute_workers(Relation *indrels, int nindexes, int 
 											bool *will_parallel_vacuum);
 static void parallel_vacuum_process_all_indexes(ParallelVacuumState *pvs, int num_index_scans,
 												bool vacuum, PVWorkerStats *wstats);
+static void parallel_vacuum_update_leader_cost_params(void);
+static void parallel_vacuum_wait_for_indexes(ParallelVacuumState *pvs);
 static void parallel_vacuum_process_safe_indexes(ParallelVacuumState *pvs);
 static void parallel_vacuum_process_unsafe_indexes(ParallelVacuumState *pvs);
 static void parallel_vacuum_process_one_index(ParallelVacuumState *pvs, Relation indrel,
@@ -453,6 +463,7 @@ parallel_vacuum_init(Relation rel, Relation *indrels, int nindexes,
 	pg_atomic_init_u32(&(shared->cost_balance), 0);
 	pg_atomic_init_u32(&(shared->active_nworkers), 0);
 	pg_atomic_init_u32(&(shared->idx), 0);
+	pg_atomic_init_u32(&(shared->completed_indexes), 0);
 
 	shared->is_autovacuum = AmAutoVacuumWorkerProcess();
 
@@ -869,6 +880,7 @@ parallel_vacuum_process_all_indexes(ParallelVacuumState *pvs, int num_index_scan
 
 	/* Reset the parallel index processing and progress counters */
 	pg_atomic_write_u32(&(pvs->shared->idx), 0);
+	pg_atomic_write_u32(&(pvs->shared->completed_indexes), 0);
 
 	/* Setup the shared cost-based vacuum delay and launch workers */
 	if (nworkers > 0)
@@ -929,6 +941,10 @@ parallel_vacuum_process_all_indexes(ParallelVacuumState *pvs, int num_index_scan
 	/* Vacuum the indexes that can be processed by only leader process */
 	parallel_vacuum_process_unsafe_indexes(pvs);
 
+	if (pvs->shared->is_autovacuum &&
+		pvs->pcxt->nworkers_launched > 0)
+		INJECTION_POINT("parallel-vacuum-leader-before-index", NULL);
+
 	/*
 	 * Join as a parallel worker.  The leader vacuums alone processes all
 	 * parallel-safe indexes in the case where no workers are launched.
@@ -941,7 +957,9 @@ parallel_vacuum_process_all_indexes(ParallelVacuumState *pvs, int num_index_scan
 	 */
 	if (nworkers > 0)
 	{
-		/* Wait for all vacuum workers to finish */
+		/* Wait for all vacuum workers to finish. */
+		if (AmAutoVacuumWorkerProcess())
+			parallel_vacuum_wait_for_indexes(pvs);
 		WaitForParallelWorkersToFinish(pvs->pcxt);
 
 		for (int i = 0; i < pvs->pcxt->nworkers_launched; i++)
@@ -971,6 +989,82 @@ parallel_vacuum_process_all_indexes(ParallelVacuumState *pvs, int num_index_scan
 		VacuumCostBalance = pg_atomic_read_u32(VacuumSharedCostBalance);
 		VacuumSharedCostBalance = NULL;
 		VacuumActiveNWorkers = NULL;
+	}
+}
+
+/*
+ * Refresh the leader's cost parameters while it waits for parallel vacuum
+ * workers, and propagate any changes to them.
+ */
+static void
+parallel_vacuum_update_leader_cost_params(void)
+{
+	Assert(AmAutoVacuumWorkerProcess());
+
+	if (ConfigReloadPending)
+	{
+		ConfigReloadPending = false;
+		ProcessConfigFile(PGC_SIGHUP);
+		VacuumUpdateCosts();
+	}
+	else
+		AutoVacuumUpdateCostLimit();
+
+	parallel_vacuum_propagate_shared_delay_params();
+	INJECTION_POINT("parallel-vacuum-leader-cost-updated", NULL);
+}
+
+/*
+ * Keep autovacuum cost parameters current while workers vacuum indexes.
+ * Worker completion is counted atomically after publishing index results;
+ * the ordinary parallel-worker wait still handles final errors and cleanup.
+ */
+static void
+parallel_vacuum_wait_for_indexes(ParallelVacuumState *pvs)
+{
+	ParallelContext *pcxt = pvs->pcxt;
+
+	while (pg_atomic_read_membarrier_u32(&(pvs->shared->completed_indexes)) <
+		   pvs->nindexes)
+	{
+		int			nfinished = 0;
+
+		CHECK_FOR_INTERRUPTS();
+		parallel_vacuum_update_leader_cost_params();
+
+		for (int i = 0; i < pcxt->nworkers_launched; i++)
+		{
+			pid_t		pid;
+			shm_mq	   *mq;
+
+			if (pcxt->worker[i].error_mqh == NULL)
+			{
+				nfinished++;
+				continue;
+			}
+
+			if (pcxt->worker[i].bgwhandle == NULL ||
+				GetBackgroundWorkerPid(pcxt->worker[i].bgwhandle, &pid) !=
+				BGWH_STOPPED)
+				continue;
+
+			mq = shm_mq_get_queue(pcxt->worker[i].error_mqh);
+			if (shm_mq_get_sender(mq) == NULL)
+				ereport(ERROR,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("parallel worker failed to initialize"),
+						 errhint("More details may be available in the server log.")));
+		}
+
+		/* Let the final index-status check report any missing index. */
+		if (nfinished == pcxt->nworkers_launched)
+			break;
+
+		(void) WaitLatch(MyLatch,
+					 WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
+					 PARALLEL_VACUUM_COST_UPDATE_INTERVAL_MS,
+					 WAIT_EVENT_PARALLEL_FINISH);
+		ResetLatch(MyLatch);
 	}
 }
 
@@ -1098,6 +1192,11 @@ parallel_vacuum_process_one_index(ParallelVacuumState *pvs, Relation indrel,
 	pvs->indname = pstrdup(RelationGetRelationName(indrel));
 	pvs->status = indstats->status;
 
+#ifdef USE_INJECTION_POINTS
+	if (IsParallelWorker())
+		INJECTION_POINT("parallel-vacuum-worker-before-index", NULL);
+#endif
+
 	switch (indstats->status)
 	{
 		case PARALLEL_INDVAC_STATUS_NEED_BULKDELETE:
@@ -1139,6 +1238,7 @@ parallel_vacuum_process_one_index(ParallelVacuumState *pvs, Relation indrel,
 	 * touches different indexes.
 	 */
 	indstats->status = PARALLEL_INDVAC_STATUS_COMPLETED;
+	pg_atomic_fetch_add_u32(&(pvs->shared->completed_indexes), 1);
 
 	/* Reset error traceback information */
 	pvs->status = PARALLEL_INDVAC_STATUS_COMPLETED;
