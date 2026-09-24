@@ -997,7 +997,11 @@ CREATE PUBLICATION testpub_fortbl FOR TABLE testpub_view;
 
 CREATE TEMPORARY TABLE testpub_temptbl(a int);
 -- fail - temporary table
+-- The temporary schema is pg_temp_N, where N varies from run to run, so
+-- show only the SQLSTATE.
+\set VERBOSITY sqlstate
 CREATE PUBLICATION testpub_fortemptbl FOR TABLE testpub_temptbl;
+\set VERBOSITY default
 DROP TABLE testpub_temptbl;
 
 CREATE UNLOGGED TABLE testpub_unloggedtbl(a int);
