@@ -554,6 +554,52 @@ select json_value('{"a": 1.234}', '$.a' returning int error on error);
 ERROR:  invalid input syntax for type integer: "1.234"
 select json_value('{"a": "1.234"}', '$.a' returning int error on error);
 ERROR:  invalid input syntax for type integer: "1.234"
+-- Test state leakage of null flags in JSON_VALUE with RETURNING json/jsonb
+-- (Checks that a NULL evaluation doesn't poison subsequent evaluations in the same statement)
+-- 1. Same statement, separate columns (JSONB)
+SELECT JSON_VALUE('null', '$' RETURNING jsonb) AS col1, 
+       JSON_VALUE('123', '$' RETURNING jsonb) AS col2;
+ col1 | col2 
+------+------
+      | 123
+(1 row)
+
+-- 2. Across multiple rows (JSONB)
+SELECT JSON_VALUE(x, '$' RETURNING jsonb) 
+FROM (VALUES ('1'::jsonb), ('null'), ('2')) v(x);
+ json_value 
+------------
+ 1
+ 
+ 2
+(3 rows)
+
+-- 3. Same statement, separate columns (JSON)
+SELECT JSON_VALUE('null', '$' RETURNING json) AS col1, 
+       JSON_VALUE('123', '$' RETURNING json) AS col2;
+ col1 | col2 
+------+------
+      | 123
+(1 row)
+
+-- 4. Across multiple rows (JSON)
+SELECT JSON_VALUE(x, '$' RETURNING json) 
+FROM (VALUES ('1'::json), ('null'), ('2')) v(x);
+ json_value 
+------------
+ 1
+ 
+ 2
+(3 rows)
+
+-- 5. Triggering NULL via EMPTY/NO MATCH (JSONB)
+SELECT JSON_VALUE('{"a": 1}', '$.b' RETURNING jsonb) AS col1,
+       JSON_VALUE('{"a": 1}', '$.a' RETURNING jsonb) AS col2;
+ col1 | col2 
+------+------
+      | 1
+(1 row)
+
 -- JSON_QUERY
 SELECT JSON_VALUE(NULL::jsonb, '$');
  json_value 
