@@ -143,6 +143,7 @@ RepackWorkerMain(Datum main_arg)
 
 	/* Announce that we're ready. */
 	SpinLockAcquire(&shared->mutex);
+	shared->toast_locator = repacked_rel_toast_locator;
 	shared->initialized = true;
 	SpinLockRelease(&shared->mutex);
 	ConditionVariableSignal(&shared->cv);

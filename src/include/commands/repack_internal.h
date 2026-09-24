@@ -102,6 +102,13 @@ typedef struct DecodingWorkerShared
 	/* Relation from which data changes to decode. */
 	Oid			relid;
 
+	/*
+	 * Locator of the TOAST relation whose changes the worker decodes, set
+	 * together with 'initialized'.  The relNumber is InvalidRelFileNumber if
+	 * the relation has no TOAST relation.
+	 */
+	RelFileLocator toast_locator;
+
 	/* CV the backend waits on */
 	ConditionVariable cv;
 

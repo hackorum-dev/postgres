@@ -221,6 +221,7 @@ static void wait_for_repack_decoding_worker(void);
 static void stop_repack_decoding_worker(void);
 static void stop_repack_decoding_worker_cb(int code, Datum arg);
 static Snapshot get_initial_snapshot(DecodingWorker *worker);
+static void check_toast_not_rewritten(Relation OldHeap);
 
 static void ProcessRepackMessage(StringInfo msg);
 static const char *RepackCommandAsString(RepackCommand cmd);
@@ -1142,6 +1143,32 @@ rebuild_relation(Relation OldHeap, Relation index, bool verbose,
 		 * REPACK CONCURRENTLY.
 		 */
 		start_repack_decoding_worker(tableOid);
+
+		/*
+		 * The worker decodes the TOAST chunks of concurrent changes by the
+		 * relfilenumber the TOAST relation had when the worker started, but
+		 * we don't hold a lock on the TOAST relation yet, so it could have
+		 * been rewritten since then (VACUUM FULL can be run on it directly).
+		 * If that happened, the TOAST chunks would not be decoded, and a
+		 * changed TOASTed value would be taken for an unchanged one when
+		 * applying the changes.
+		 *
+		 * So lock the TOAST relation now and check.  The lock is held till
+		 * the end of the transaction, so the TOAST relation cannot be
+		 * rewritten after the check.
+		 *
+		 * We can't lock the TOAST relation before starting the worker: the
+		 * worker waits for all transactions with XID to finish, and a
+		 * transaction waiting for our lock would then cause a deadlock.  Now
+		 * that the worker has finished its setup, it no longer waits for
+		 * other transactions.
+		 */
+		if (OidIsValid(OldHeap->rd_rel->reltoastrelid))
+		{
+			LockRelationOid(OldHeap->rd_rel->reltoastrelid,
+							ShareUpdateExclusiveLock);
+			check_toast_not_rewritten(OldHeap);
+		}
 
 		/*
 		 * Wait until the worker has the initial snapshot and retrieve it.
@@ -4034,6 +4061,38 @@ get_initial_snapshot(DecodingWorker *worker)
 	pfree(snap_space);
 
 	return snapshot;
+}
+
+/*
+ * Check that the TOAST relation of OldHeap still has the relfilenumber that
+ * the decoding worker saw when it started, and fail if it does not.
+ *
+ * The worker only decodes the changes of the TOAST relation stored under that
+ * relfilenumber.  The caller must hold a lock on the TOAST relation that
+ * prevents it from being rewritten.
+ */
+static void
+check_toast_not_rewritten(Relation OldHeap)
+{
+	DecodingWorkerShared *shared;
+	RelFileLocator worker_locator;
+	Relation	toastrel;
+
+	shared = (DecodingWorkerShared *) dsm_segment_address(decoding_worker->seg);
+	SpinLockAcquire(&shared->mutex);
+	Assert(shared->initialized);
+	worker_locator = shared->toast_locator;
+	SpinLockRelease(&shared->mutex);
+
+	toastrel = table_open(OldHeap->rd_rel->reltoastrelid, NoLock);
+	if (!RelFileLocatorEquals(toastrel->rd_locator, worker_locator))
+		ereport(ERROR,
+				errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
+				errmsg("could not execute %s on relation \"%s\"",
+					   "REPACK (CONCURRENTLY)", RelationGetRelationName(OldHeap)),
+				errdetail("The TOAST relation was rewritten concurrently."),
+				errhint("The transaction might succeed if retried."));
+	table_close(toastrel, NoLock);
 }
 
 /*
