@@ -1110,6 +1110,8 @@ XLogWalRcvFlush(bool dying, TimeLineID tli)
 			walrcv->flushedUpto = LogstreamResult.Flush;
 			walrcv->receivedTLI = tli;
 		}
+		if (walrcv->applyFlushedUpto < LogstreamResult.Flush)
+			walrcv->applyFlushedUpto = LogstreamResult.Flush;
 		SpinLockRelease(&walrcv->mutex);
 
 		/*
