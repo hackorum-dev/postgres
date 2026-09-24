@@ -318,11 +318,17 @@ RequestXLogStreaming(TimeLineID tli, XLogRecPtr recptr, const char *conninfo,
 
 	/*
 	 * If this is the first startup of walreceiver (on this timeline),
-	 * initialize flushedUpto and latestChunkStart to the starting point.
+	 * initialize flushedUpto, applyFlushedUpto and latestChunkStart to the
+	 * starting point.  Do not move flushedUpto backward on a same-timeline
+	 * restart: recptr has been rounded to a segment boundary, so that would
+	 * fire on ordinary reconnects and make pg_last_wal_receive_lsn() jump
+	 * backward.  Startup uses applyFlushedUpto, which can be reset separately
+	 * after a failed read of already-flushed WAL.
 	 */
 	if (!XLogRecPtrIsValid(walrcv->receiveStart) || walrcv->receivedTLI != tli)
 	{
 		walrcv->flushedUpto = recptr;
+		walrcv->applyFlushedUpto = recptr;
 		walrcv->receivedTLI = tli;
 		walrcv->latestChunkStart = recptr;
 
@@ -368,6 +374,43 @@ GetWalRcvFlushRecPtr(XLogRecPtr *latestChunkStart, TimeLineID *receiveTLI)
 	SpinLockRelease(&walrcv->mutex);
 
 	return recptr;
+}
+
+/*
+ * Returns the last+1 byte position that startup may treat as readable
+ * streamed WAL.  See applyFlushedUpto in WalRcvData.
+ */
+XLogRecPtr
+GetWalRcvApplyFlushRecPtr(XLogRecPtr *latestChunkStart, TimeLineID *receiveTLI)
+{
+	WalRcvData *walrcv = WalRcv;
+	XLogRecPtr	recptr;
+
+	SpinLockAcquire(&walrcv->mutex);
+	recptr = walrcv->applyFlushedUpto;
+	if (latestChunkStart)
+		*latestChunkStart = walrcv->latestChunkStart;
+	if (receiveTLI)
+		*receiveTLI = walrcv->receivedTLI;
+	SpinLockRelease(&walrcv->mutex);
+
+	return recptr;
+}
+
+/*
+ * Tell startup to wait for this walreceiver session to replace WAL below
+ * recptr that flushedUpto still reports as present.  Caller must have
+ * already shut down walreceiver.
+ */
+void
+ResetWalRcvApplyFlushRecPtr(XLogRecPtr recptr)
+{
+	WalRcvData *walrcv = WalRcv;
+
+	SpinLockAcquire(&walrcv->mutex);
+	walrcv->applyFlushedUpto = recptr;
+	walrcv->latestChunkStart = recptr;
+	SpinLockRelease(&walrcv->mutex);
 }
 
 /*
