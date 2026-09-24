@@ -3827,8 +3827,133 @@ SELECT COUNT(*) FROM stats_import.test_range_expr_null
     19
 (1 row)
 
+-- BUG #19715
+CREATE DOMAIN stats_import.restore_stats_mr AS int4multirange;
+CREATE TABLE stats_import.mr_domain (u integer, v stats_import.restore_stats_mr);
+CREATE TABLE stats_import.mr_domain_clone (u integer, v stats_import.restore_stats_mr);
+-- Create statistics that force an expression
+CREATE STATISTICS stats_import.mr_domain_stat
+ON u, (stats_import.restore_stats_mr(v + '{[-10,-5)}'::stats_import.restore_stats_mr))
+FROM stats_import.mr_domain;
+CREATE STATISTICS stats_import.mr_domain_stat_clone
+ON u, (stats_import.restore_stats_mr(v + '{[-10,-5)}'::stats_import.restore_stats_mr))
+FROM stats_import.mr_domain_clone;
+INSERT INTO stats_import.mr_domain VALUES
+  (1, '{[1,3)}'), (2, '{[5,9)}'), (3, '{[11,15)}');
+ANALYZE stats_import.mr_domain;
+-- Confirm both table and expression index have rows
+SELECT COUNT(*)
+FROM pg_stats
+WHERE schemaname = 'stats_import'
+AND tablename = 'mr_domain'
+AND inherited = false;
+ count 
+-------
+     2
+(1 row)
+
+SELECT COUNT(*)
+FROM pg_stats_ext_exprs AS e
+WHERE e.statistics_schemaname = 'stats_import'
+AND e.statistics_name = 'mr_domain_stat';
+ count 
+-------
+     1
+(1 row)
+
+--
+-- Copy stats from test to mr_domain to mr_domain_clone
+--
+SELECT s.schemaname, s.tablename, s.attname, s.inherited, r.*
+FROM pg_catalog.pg_stats AS s
+CROSS JOIN LATERAL
+    pg_catalog.pg_restore_attribute_stats(
+        'schemaname', 'stats_import',
+        'relname', 'mr_domain_clone',
+        'attname', s.attname::text,
+        'inherited', s.inherited,
+        'version', 150000,
+        'null_frac', s.null_frac,
+        'avg_width', s.avg_width,
+        'n_distinct', s.n_distinct,
+        'most_common_vals', s.most_common_vals::text,
+        'most_common_freqs', s.most_common_freqs,
+        'histogram_bounds', s.histogram_bounds::text,
+        'correlation', s.correlation,
+        'most_common_elems', s.most_common_elems::text,
+        'most_common_elem_freqs', s.most_common_elem_freqs,
+        'elem_count_histogram', s.elem_count_histogram,
+        'range_bounds_histogram', s.range_bounds_histogram::text,
+        'range_empty_frac', s.range_empty_frac,
+        'range_length_histogram', s.range_length_histogram::text) AS r
+WHERE s.schemaname = 'stats_import'
+AND s.tablename IN ('mr_domain')
+ORDER BY s.tablename, s.attname, s.inherited;
+  schemaname  | tablename | attname | inherited | r 
+--------------+-----------+---------+-----------+---
+ stats_import | mr_domain | u       | f         | t
+ stats_import | mr_domain | v       | f         | t
+(2 rows)
+
+SELECT relname, (stats).*
+FROM stats_import.pg_statistic_get_difference('mr_domain', 'mr_domain_clone')
+\gx
+(0 rows)
+
+-- Copy stats from mr_domain_stat to mr_domain_stat_clone
+SELECT e.statistics_name,
+  pg_catalog.pg_restore_extended_stats(
+    'schemaname', e.statistics_schemaname::text,
+    'relname', 'mr_domain_clone',
+    'statistics_schemaname', e.statistics_schemaname::text,
+    'statistics_name', 'mr_domain_stat_clone',
+    'inherited', e.inherited,
+    'n_distinct', e.n_distinct,
+    'dependencies', e.dependencies,
+    'most_common_vals', e.most_common_vals,
+    'most_common_freqs', e.most_common_freqs,
+    'most_common_base_freqs', e.most_common_base_freqs,
+    'exprs', x.exprs)
+FROM pg_stats_ext AS e
+CROSS JOIN LATERAL (
+  SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+            'null_frac', ee.null_frac::text,
+            'avg_width', ee.avg_width::text,
+            'n_distinct', ee.n_distinct::text,
+            'most_common_vals', ee.most_common_vals::text,
+            'most_common_freqs', ee.most_common_freqs::text,
+            'histogram_bounds', ee.histogram_bounds::text,
+            'correlation', ee.correlation::text,
+            'most_common_elems', ee.most_common_elems::text,
+            'most_common_elem_freqs', ee.most_common_elem_freqs::text,
+            'elem_count_histogram', ee.elem_count_histogram::text,
+            'range_length_histogram', ee.range_length_histogram::text,
+            'range_empty_frac', ee.range_empty_frac::text,
+            'range_bounds_histogram', ee.range_bounds_histogram::text)))
+    FROM pg_stats_ext_exprs AS ee
+    WHERE ee.statistics_schemaname = e.statistics_schemaname AND
+      ee.statistics_name = e.statistics_name AND
+      ee.inherited = e.inherited
+    ) AS x(exprs)
+WHERE e.statistics_schemaname = 'stats_import'
+AND e.statistics_name = 'mr_domain_stat';
+ statistics_name | pg_restore_extended_stats 
+-----------------+---------------------------
+ mr_domain_stat  | t
+(1 row)
+
+SELECT statname, (stats).*
+FROM stats_import.pg_stats_ext_get_difference('mr_domain_stat', 'mr_domain_stat_clone')
+\gx
+(0 rows)
+
+SELECT statname, (stats).*
+FROM stats_import.pg_stats_ext_exprs_get_difference('mr_domain_stat', 'mr_domain_stat_clone')
+\gx
+(0 rows)
+
 DROP SCHEMA stats_import CASCADE;
-NOTICE:  drop cascades to 19 other objects
+NOTICE:  drop cascades to 22 other objects
 DETAIL:  drop cascades to view stats_import.pg_stats_stable
 drop cascades to view stats_import.pg_statistic_flat_t
 drop cascades to function stats_import.pg_statistic_flat(text)
@@ -3848,3 +3973,6 @@ drop cascades to view stats_import.testview
 drop cascades to table stats_import.test_clone
 drop cascades to table stats_import.test_mr_clone
 drop cascades to table stats_import.test_range_expr_null
+drop cascades to type stats_import.restore_stats_mr
+drop cascades to table stats_import.mr_domain
+drop cascades to table stats_import.mr_domain_clone

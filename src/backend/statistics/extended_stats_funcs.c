@@ -1125,6 +1125,7 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 	Oid			elemeqopr = InvalidOid;
 	bool		found[NUM_ATTRIBUTE_STATS_ELEMS] = {0};
 	JsonbValue	val[NUM_ATTRIBUTE_STATS_ELEMS] = {0};
+	Oid			bounds_typid = InvalidOid;
 
 	/* Assume the worst by default. */
 	*pg_statistic_ok = false;
@@ -1253,24 +1254,45 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 
 	/*
 	 * These three fields can only be set if dealing with a range or
-	 * multi-range type.
+	 * multi-range type, or a domain of either.
 	 */
 	if (found[RANGE_LENGTH_HISTOGRAM_ELEM] ||
 		found[RANGE_EMPTY_FRAC_ELEM] ||
 		found[RANGE_BOUNDS_HISTOGRAM_ELEM])
 	{
-		if (typcache->typtype != TYPTYPE_RANGE &&
-			typcache->typtype != TYPTYPE_MULTIRANGE)
+		char		bounds_typtype = typcache->typtype;
+
+		bounds_typid = typid;
+
+		if (bounds_typtype == TYPTYPE_DOMAIN)
 		{
-			ereport(WARNING,
-					errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					errmsg("could not parse \"%s\": invalid data in expression %d",
-						   argname, exprnum),
-					errhint("\"%s\", \"%s\", and \"%s\" can only be set for a range type.",
-							extexprargname[RANGE_LENGTH_HISTOGRAM_ELEM],
-							extexprargname[RANGE_EMPTY_FRAC_ELEM],
-							extexprargname[RANGE_BOUNDS_HISTOGRAM_ELEM]));
-			goto pg_statistic_error;
+			bounds_typid = getBaseType(typid);
+			bounds_typtype = get_typtype(bounds_typid);
+		}
+
+		switch (bounds_typtype)
+		{
+			case TYPTYPE_RANGE:
+				bounds_typid = typid;
+				break;
+			case TYPTYPE_MULTIRANGE:
+
+				/*
+				 * If it's a multirange, step down to the range type, as is
+				 * done by multirange_typanalyze().
+				 */
+				bounds_typid = get_multirange_range(bounds_typid);
+				break;
+			default:
+				ereport(WARNING,
+						errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("could not parse \"%s\": invalid data in expression %d",
+							   argname, exprnum),
+						errhint("\"%s\", \"%s\", and \"%s\" can only be set for a range type.",
+								extexprargname[RANGE_LENGTH_HISTOGRAM_ELEM],
+								extexprargname[RANGE_EMPTY_FRAC_ELEM],
+								extexprargname[RANGE_BOUNDS_HISTOGRAM_ELEM]));
+				goto pg_statistic_error;
 		}
 	}
 
@@ -1476,18 +1498,10 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 		Datum		stavalues;
 		bool		val_ok = false;
 		char	   *s;
-		Oid			rtypid = typid;
-
-		/*
-		 * If it's a multirange, step down to the range type, as is done by
-		 * multirange_typanalyze().
-		 */
-		if (type_is_multirange(typid))
-			rtypid = get_multirange_range(typid);
 
 		s = jbv_string_get_cstr(&val[RANGE_BOUNDS_HISTOGRAM_ELEM]);
 
-		stavalues = array_in_safe(array_in_fn, s, rtypid, typmod, exprnum,
+		stavalues = array_in_safe(array_in_fn, s, bounds_typid, typmod, exprnum,
 								  extexprargname[RANGE_BOUNDS_HISTOGRAM_ELEM],
 								  &val_ok);
 

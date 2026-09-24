@@ -229,6 +229,8 @@ attribute_statistics_update_internal(Oid reloid,
 	Oid			elemtypid = InvalidOid;
 	Oid			elem_eq_opr = InvalidOid;
 
+	Oid			bounds_typid = InvalidOid;
+
 	FmgrInfo	array_in_fn;
 
 	bool		do_mcv = !PG_ARGISNULL(MOST_COMMON_FREQS_ARG) &&
@@ -333,18 +335,47 @@ attribute_statistics_update_internal(Oid reloid,
 	}
 
 	/* only range types can have range stats */
-	if ((do_range_length_histogram || do_bounds_histogram) &&
-		!(atttyptype == TYPTYPE_RANGE || atttyptype == TYPTYPE_MULTIRANGE))
+	if (do_range_length_histogram || do_bounds_histogram)
 	{
-		ereport(WARNING,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("column \"%s\" is not a range type", attname),
-				 errdetail("Cannot set %s or %s.",
-						   "STATISTIC_KIND_RANGE_LENGTH_HISTOGRAM", "STATISTIC_KIND_BOUNDS_HISTOGRAM")));
+		char		bounds_typtype = atttyptype;
 
-		do_bounds_histogram = false;
-		do_range_length_histogram = false;
-		result = false;
+		bounds_typid = atttypid;
+
+		/*
+		 * If attribute type is a domain, step down to the base type, which
+		 * should be the expected range or multirange type.
+		 */
+		if (bounds_typtype == TYPTYPE_DOMAIN)
+		{
+			bounds_typid = getBaseType(bounds_typid);
+			bounds_typtype = get_typtype(bounds_typid);
+		}
+
+		switch (bounds_typtype)
+		{
+			case TYPTYPE_RANGE:
+				/* Yes, it can have range stats */
+				break;
+			case TYPTYPE_MULTIRANGE:
+
+				/*
+				 * Yes, but we need to step down to the range type, as is done
+				 * by multirange_typanalyze().
+				 */
+				bounds_typid = get_multirange_range(bounds_typid);
+				break;
+			default:
+				ereport(WARNING,
+						errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("column \"%s\" is not a range type", attname),
+						errdetail("Cannot set %s or %s.",
+								  "STATISTIC_KIND_RANGE_LENGTH_HISTOGRAM",
+								  "STATISTIC_KIND_BOUNDS_HISTOGRAM"));
+
+				do_bounds_histogram = false;
+				do_range_length_histogram = false;
+				result = false;
+		}
 	}
 
 	fmgr_info(F_ARRAY_IN, &array_in_fn);
@@ -498,14 +529,6 @@ attribute_statistics_update_internal(Oid reloid,
 	{
 		bool		converted = false;
 		Datum		stavalues;
-		Oid			bounds_typid = atttypid;
-
-		/*
-		 * If it's a multirange, step down to the range type, as is done by
-		 * multirange_typanalyze().
-		 */
-		if (type_is_multirange(atttypid))
-			bounds_typid = get_multirange_range(atttypid);
 
 		stavalues = statatt_build_stavalues("range_bounds_histogram",
 											&array_in_fn,
