@@ -92,10 +92,22 @@ typedef struct
 	 * and receivedTLI is the timeline it came from.  At the first startup of
 	 * walreceiver, these are set to receiveStart and receiveStartTLI. After
 	 * that, walreceiver updates these whenever it flushes the received WAL to
-	 * disk.
+	 * disk.  flushedUpto is not moved backward on a same-timeline restart;
+	 * pg_last_wal_receive_lsn() and cascading walsenders rely on that.
 	 */
 	XLogRecPtr	flushedUpto;
 	TimeLineID	receivedTLI;
+
+	/*
+	 * applyFlushedUpto is the point up to which the startup process may treat
+	 * streamed WAL as readable.  It tracks flushedUpto except after recovery
+	 * rejects WAL that flushedUpto claimed was present.
+	 *
+	 * ResetWalRcvApplyFlushRecPtr() then moves it back so startup waits for
+	 * this walreceiver session to replace those bytes, without rewriting the
+	 * shared flush pointer.
+	 */
+	XLogRecPtr	applyFlushedUpto;
 
 	/*
 	 * latestChunkStart is the starting byte position of the current "batch"
@@ -502,6 +514,8 @@ extern void RequestXLogStreaming(TimeLineID tli, XLogRecPtr recptr,
 								 const char *conninfo, const char *slotname,
 								 bool create_temp_slot);
 extern XLogRecPtr GetWalRcvFlushRecPtr(XLogRecPtr *latestChunkStart, TimeLineID *receiveTLI);
+extern XLogRecPtr GetWalRcvApplyFlushRecPtr(XLogRecPtr *latestChunkStart, TimeLineID *receiveTLI);
+extern void ResetWalRcvApplyFlushRecPtr(XLogRecPtr recptr);
 extern XLogRecPtr GetWalRcvWriteRecPtr(void);
 extern int	GetReplicationApplyDelay(void);
 extern int	GetReplicationTransferLatency(void);

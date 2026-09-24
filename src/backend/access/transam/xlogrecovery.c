@@ -263,7 +263,7 @@ static bool pendingWalRcvRestart = false;
 static TimestampTz XLogReceiptTime = 0;
 static XLogSource XLogReceiptSource = XLOG_FROM_ANY;
 
-/* Local copy of WalRcv->flushedUpto */
+/* Local copy of WalRcv->applyFlushedUpto */
 static XLogRecPtr flushedUpto = InvalidXLogRecPtr;
 static TimeLineID receiveTLI = 0;
 
@@ -3595,6 +3595,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 	{
 		XLogSource	oldSource = currentSource;
 		bool		startWalReceiver = false;
+		bool		resetApplyFlush = false;
 
 		/*
 		 * First check if we failed to read from the current source, and
@@ -3638,10 +3639,14 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 
 					/*
 					 * Move to XLOG_FROM_STREAM state, and set to start a
-					 * walreceiver if necessary.
+					 * walreceiver if necessary.  This is a failed-read
+					 * restart, not a config-driven reconnect: if flushedUpto
+					 * still claims we have the bytes we just rejected,
+					 * startup must not treat them as readable.
 					 */
 					currentSource = XLOG_FROM_STREAM;
 					startWalReceiver = true;
+					resetApplyFlush = true;
 					break;
 
 				case XLOG_FROM_STREAM:
@@ -3879,6 +3884,33 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 											 PrimarySlotName,
 											 wal_receiver_create_temp_slot);
 						flushedUpto = InvalidXLogRecPtr;
+
+						/*
+						 * RequestXLogStreaming() rounds ptr down to a segment
+						 * boundary and leaves flushedUpto unchanged on a
+						 * same-timeline restart.  Only after a failed read of
+						 * WAL that flushedUpto still reports as present do we
+						 * rewind the apply pointer, so startup waits for
+						 * replacement bytes.  pendingWalRcvRestart (SIGHUP /
+						 * primary_conninfo change) must keep using the old
+						 * apply pointer so replay is not stalled on WAL that
+						 * is already on disk.
+						 */
+						if (resetApplyFlush)
+						{
+							XLogRecPtr	sharedFlush;
+							TimeLineID	sharedTLI;
+
+							sharedFlush = GetWalRcvFlushRecPtr(NULL, &sharedTLI);
+							if (ptr < sharedFlush && sharedTLI == tli)
+							{
+								ereport(LOG,
+										(errmsg("restarting WAL streaming from %X/%08X; ignoring previously flushed WAL up to %X/%08X",
+												LSN_FORMAT_ARGS(ptr),
+												LSN_FORMAT_ARGS(sharedFlush))));
+								ResetWalRcvApplyFlushRecPtr(ptr);
+							}
+						}
 					}
 
 					/*
@@ -3908,7 +3940,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					{
 						XLogRecPtr	latestChunkStart;
 
-						flushedUpto = GetWalRcvFlushRecPtr(&latestChunkStart, &receiveTLI);
+						flushedUpto = GetWalRcvApplyFlushRecPtr(&latestChunkStart, &receiveTLI);
 						if (RecPtr < flushedUpto && receiveTLI == curFileTLI)
 						{
 							havedata = true;
