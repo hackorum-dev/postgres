@@ -3141,6 +3141,7 @@ ri_FastPathBatchFlush(RI_FastPathEntry *fpentry, Relation fk_rel,
 		ri_populate_fastpath_metadata(riinfo, fk_rel, idx_rel);
 	}
 	Assert(riinfo->fpmeta);
+	ri_CheckFunctionPermissions(riinfo, riinfo->fpmeta);
 
 	/*
 	 * Take our own reference to the metadata for the duration of the flush.

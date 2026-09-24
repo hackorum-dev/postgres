@@ -2772,7 +2772,8 @@ DROP FUNCTION fp_auto_pk;
 -- functions it invokes on the FK values: the equality operator's function
 -- and, for a cross-type FK, the implicit cast function.  Validation of a new
 -- constraint by a role that cannot use the bulk check (RLS is enabled on the
--- referenced table) runs per-row checks through the fast path.
+-- referenced table) runs per-row checks through the fast path, and ordinary
+-- DML runs the batched fast path; both are exercised below.
 --
 -- Wrapped with BEGIN...ROLLBACK to ensure opclasses used here don't interfere
 -- with nearby tests.
@@ -2845,6 +2846,21 @@ ROLLBACK TO SAVEPOINT s;
 SAVEPOINT s;
 ALTER TABLE fktable_acl_cast
   ADD FOREIGN KEY (a) REFERENCES pktable_acl_cast_part (a);	-- fails (SPI path message)
+ROLLBACK TO SAVEPOINT s;
+-- Ordinary DML uses the batched fast path, distinct from the per-row path that
+-- validation exercises above.  Create each constraint NOT VALID so its
+-- functions are first reached when a later INSERT is checked; the EXECUTE
+-- check, made as the PK owner, then fails before the probe even though the
+-- inserted value satisfies the FK.
+SAVEPOINT s;
+ALTER TABLE fktable_acl_op
+  ADD FOREIGN KEY (a) REFERENCES pktable_acl_op (a) NOT VALID;
+INSERT INTO fktable_acl_op VALUES (1);	-- fails
+ROLLBACK TO SAVEPOINT s;
+SAVEPOINT s;
+ALTER TABLE fktable_acl_cast
+  ADD FOREIGN KEY (a) REFERENCES pktable_acl_cast (a) NOT VALID;
+INSERT INTO fktable_acl_cast VALUES ('one');	-- fails
 ROLLBACK TO SAVEPOINT s;
 RESET ROLE;
 ROLLBACK;
