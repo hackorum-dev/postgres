@@ -783,6 +783,9 @@ pg_stat_get_recovery(PG_FUNCTION_ARGS)
 
 	/* Local copies of shared state */
 	bool		promote_triggered;
+	TimestampTz redo_start_time;
+	XLogRecPtr	redo_start_lsn;
+	TimeLineID	redo_start_tli;
 	XLogRecPtr	last_replayed_read_lsn;
 	XLogRecPtr	last_replayed_end_lsn;
 	TimeLineID	last_replayed_tli;
@@ -801,6 +804,9 @@ pg_stat_get_recovery(PG_FUNCTION_ARGS)
 	/* Take a lock to ensure value consistency */
 	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
 	promote_triggered = XLogRecoveryCtl->SharedPromoteIsTriggered;
+	redo_start_time = XLogRecoveryCtl->redoStartTime;
+	redo_start_lsn = XLogRecoveryCtl->redoStartLSN;
+	redo_start_tli = XLogRecoveryCtl->redoStartTLI;
 	last_replayed_read_lsn = XLogRecoveryCtl->lastReplayedReadRecPtr;
 	last_replayed_end_lsn = XLogRecoveryCtl->lastReplayedEndRecPtr;
 	last_replayed_tli = XLogRecoveryCtl->lastReplayedTLI;
@@ -855,6 +861,21 @@ pg_stat_get_recovery(PG_FUNCTION_ARGS)
 		nulls[7] = true;
 
 	values[8] = CStringGetTextDatum(GetRecoveryPauseStateString(pause_state));
+
+	if (redo_start_time != 0)
+		values[9] = TimestampTzGetDatum(redo_start_time);
+	else
+		nulls[9] = true;
+
+	if (XLogRecPtrIsValid(redo_start_lsn))
+		values[10] = LSNGetDatum(redo_start_lsn);
+	else
+		nulls[10] = true;
+
+	if (redo_start_tli != 0)
+		values[11] = Int32GetDatum(redo_start_tli);
+	else
+		nulls[11] = true;
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc, values, nulls)));
 }

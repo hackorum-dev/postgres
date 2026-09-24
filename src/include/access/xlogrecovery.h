@@ -83,6 +83,11 @@ typedef struct XLogRecoveryCtlData
 	 */
 	bool		SharedRecoverySubtransInitialized;
 
+	/* Origin of WAL redo in the current recovery session. */
+	TimestampTz redoStartTime;
+	XLogRecPtr	redoStartLSN;
+	TimeLineID	redoStartTLI;
+
 	/*
 	 * recoveryWakeupLatch is used to wake up the startup process to continue
 	 * WAL replay, if it is waiting for WAL to arrive or promotion to be
