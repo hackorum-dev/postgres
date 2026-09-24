@@ -60,22 +60,18 @@ check_publication_add_relation(PublicationRelInfo *pri)
 	const char *relname;
 	const char *errormsg;
 
-	if (pri->except)
-	{
-		/*
-		 * The name parts must not be quoted here, because the message already
-		 * encloses the whole name in double quotes.
-		 */
-		relname = psprintf("%s.%s",
-						   get_namespace_name(RelationGetNamespace(targetrel)),
-						   RelationGetRelationName(targetrel));
+	/*
+	 * The name parts must not be quoted here, because the message already
+	 * encloses the whole name in double quotes.
+	 */
+	relname = psprintf("%s.%s",
+					   get_namespace_name(RelationGetNamespace(targetrel)),
+					   RelationGetRelationName(targetrel));
+
+	if (pri->except)		
 		errormsg = gettext_noop("cannot specify relation \"%s\" in the publication EXCEPT clause");
-	}
 	else
-	{
-		relname = RelationGetRelationName(targetrel);
 		errormsg = gettext_noop("cannot add relation \"%s\" to publication");
-	}
 
 	/* If in EXCEPT clause, must be root partitioned table */
 	if (pri->except && targetrel->rd_rel->relispartition)
