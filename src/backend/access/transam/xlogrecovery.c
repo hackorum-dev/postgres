@@ -1635,6 +1635,9 @@ PerformWalRecovery(void)
 	 * checkpoint record itself, if it's a shutdown checkpoint).
 	 */
 	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	XLogRecoveryCtl->redoStartTime = 0;
+	XLogRecoveryCtl->redoStartLSN = InvalidXLogRecPtr;
+	XLogRecoveryCtl->redoStartTLI = 0;
 	if (RedoStartLSN < CheckPointLoc)
 	{
 		XLogRecoveryCtl->lastReplayedReadRecPtr = InvalidXLogRecPtr;
@@ -1701,6 +1704,7 @@ PerformWalRecovery(void)
 
 	if (record != NULL)
 	{
+		TimestampTz redoStartTime;
 		TimestampTz xtime;
 		PGRUsage	ru0;
 
@@ -1709,6 +1713,13 @@ PerformWalRecovery(void)
 		InRedo = true;
 
 		RmgrStartup();
+
+		redoStartTime = GetCurrentTimestamp();
+		SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+		XLogRecoveryCtl->redoStartTime = redoStartTime;
+		XLogRecoveryCtl->redoStartLSN = xlogreader->ReadRecPtr;
+		XLogRecoveryCtl->redoStartTLI = replayTLI;
+		SpinLockRelease(&XLogRecoveryCtl->info_lck);
 
 		ereport(LOG,
 				errmsg("redo starts at %X/%08X",

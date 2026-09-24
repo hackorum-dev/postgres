@@ -87,6 +87,17 @@ $result = $node_standby_1->safe_psql('postgres',
 );
 is($result, qq(1), 'check recovery state on standby 1');
 
+$result = $node_standby_1->safe_psql(
+	'postgres',
+	"SELECT redo_start_time IS NOT NULL, redo_start_lsn IS NOT NULL, redo_start_tli > 0 FROM pg_stat_recovery"
+);
+is($result, qq(t|t|t), 'check recovery redo origin');
+
+$result = $node_standby_1->safe_psql('postgres',
+	"SELECT redo_start_lsn FROM pg_stat_recovery");
+ok($node_standby_1->log_contains("redo starts at $result"),
+	'redo start LSN matches the server log');
+
 # Likewise, but for a sequence
 $node_primary->safe_psql('postgres',
 	"CREATE SEQUENCE seq1; SELECT nextval('seq1')");

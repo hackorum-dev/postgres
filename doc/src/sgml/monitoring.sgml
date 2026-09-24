@@ -2147,9 +2147,9 @@ description | Waiting for a newly initialized WAL file to reach durable storage
       </para></entry>
      </row>
 
-     <row>
-      <entry role="catalog_table_entry"><para role="column_definition">
-       <structfield>last_replayed_read_lsn</structfield> <type>pg_lsn</type>
+      <row>
+       <entry role="catalog_table_entry"><para role="column_definition">
+        <structfield>last_replayed_read_lsn</structfield> <type>pg_lsn</type>
       </para>
       <para>
        Start write-ahead log location of the last successfully replayed
@@ -2249,6 +2249,41 @@ description | Waiting for a newly initialized WAL file to reach durable storage
        </itemizedlist>
       </entry>
      </row>
+
+      <row>
+       <entry role="catalog_table_entry"><para role="column_definition">
+        <structfield>redo_start_time</structfield> <type>timestamp with time zone</type>
+       </para>
+       <para>
+        Time when WAL redo began for the current recovery session.  NULL until
+        the first WAL record is selected for replay, and remains NULL if no WAL
+        record requires redo.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="catalog_table_entry"><para role="column_definition">
+        <structfield>redo_start_lsn</structfield> <type>pg_lsn</type>
+       </para>
+       <para>
+        Start write-ahead log location of the first record replayed during the
+        current recovery session.  This is the location reported by the
+        <literal>redo starts at</literal> server log message.  NULL until the
+        first WAL record is selected for replay, and remains NULL if no WAL
+        record requires redo.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="catalog_table_entry"><para role="column_definition">
+        <structfield>redo_start_tli</structfield> <type>integer</type>
+       </para>
+       <para>
+        Timeline of the first WAL record replayed during the current recovery
+        session.  NULL until the first WAL record is selected for replay, and
+        remains NULL if no WAL record requires redo.
+       </para></entry>
+      </row>
 
     </tbody>
    </tgroup>

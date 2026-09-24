@@ -1042,7 +1042,10 @@ CREATE VIEW pg_stat_recovery AS
             s.replay_end_tli,
             s.recovery_last_xact_time,
             s.current_chunk_start_time,
-            s.pause_state
+            s.pause_state,
+            s.redo_start_time,
+            s.redo_start_lsn,
+            s.redo_start_tli
     FROM pg_stat_get_recovery() s
     WHERE s.promote_triggered IS NOT NULL;
 
