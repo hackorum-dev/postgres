@@ -47,6 +47,7 @@
 #include "storage/bufmgr.h"
 #include "storage/proc.h"
 #include "tcop/tcopprot.h"
+#include "utils/injection_point.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 
@@ -733,6 +734,12 @@ parallel_vacuum_propagate_shared_delay_params(void)
 	 * know that they should re-read shared cost params.
 	 */
 	pg_atomic_fetch_add_u32(&pv_shared_cost_params->generation, 1);
+
+	elog(DEBUG2,
+		 "parallel autovacuum leader propagated cost params: cost_limit=%d, cost_delay=%g, cost_page_miss=%d, cost_page_dirty=%d, cost_page_hit=%d, track_cost_delay_timing=%s",
+		 vacuum_cost_limit, vacuum_cost_delay,
+		 VacuumCostPageMiss, VacuumCostPageDirty, VacuumCostPageHit,
+		 track_cost_delay_timing ? "yes" : "no");
 }
 
 /*
@@ -1288,6 +1295,8 @@ parallel_vacuum_main(dsm_segment *seg, shm_toc *toc)
 	Assert(MyProc->statusFlags == PROC_IN_VACUUM);
 
 	elog(DEBUG1, "starting parallel vacuum worker");
+
+	INJECTION_POINT("parallel-vacuum-worker-start", NULL);
 
 	shared = (PVShared *) shm_toc_lookup(toc, PARALLEL_VACUUM_KEY_SHARED, false);
 

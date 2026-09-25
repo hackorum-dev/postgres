@@ -253,6 +253,155 @@ $node->safe_psql('postgres',
 	"SELECT injection_points_wakeup('autovacuum-worker-cost-balanced')");
 $node->safe_psql('postgres',
 	"SELECT injection_points_detach('autovacuum-worker-cost-balanced')");
+$node->wait_for_log(
+	qr/automatic vacuum of table "postgres\.public\.test_autovac"/,
+	$log_offset);
+ok( $node->poll_query_until(
+		'postgres', q{
+		SELECT count(*) = 0 FROM pg_stat_activity
+		WHERE backend_type = 'autovacuum worker' AND datname = 'regress_db2'
+	}),
+	'second autovacuum worker finished');
+
+# Test 4:
+# Check whether a config reload is serviced while the autovacuum leader waits
+# for its parallel worker.
+
+$node->safe_psql(
+	'postgres', qq{
+	ALTER SYSTEM SET autovacuum_max_workers = 1;
+	ALTER SYSTEM SET autovacuum_vacuum_cost_limit = 700;
+	ALTER SYSTEM SET autovacuum_vacuum_cost_delay = 0;
+	SELECT pg_reload_conf();
+});
+
+prepare_for_next_test($node, 4);
+$log_offset = -s $node->logfile;
+
+# Let an autovacuum worker process test_autovac with its parallel worker held
+# before the parallel worker reads the cost-based delay parameters.  The
+# leader then processes all indexes by itself and waits for the parallel
+# worker to finish.  Change the parameters only once the leader is waiting,
+# or it would pick up the change before reaching the code path under test.
+$node->safe_psql(
+	'postgres', q{
+	SELECT injection_points_attach('parallel-vacuum-worker-start', 'wait');
+	ALTER TABLE test_autovac SET (autovacuum_enabled = true);
+});
+$node->wait_for_event('autovacuum worker', 'ParallelFinish');
+
+# Update cost-based delay parameters.
+$node->safe_psql(
+	'postgres', qq{
+	ALTER SYSTEM SET autovacuum_vacuum_cost_limit = 800;
+	ALTER SYSTEM SET autovacuum_vacuum_cost_delay = 8;
+	ALTER SYSTEM SET vacuum_cost_page_miss = 11;
+	ALTER SYSTEM SET vacuum_cost_page_dirty = 12;
+	ALTER SYSTEM SET vacuum_cost_page_hit = 13;
+	SELECT pg_reload_conf();
+});
+
+# The parallel worker reads the parameters only once, when it starts, since
+# the leader has already processed all indexes.  So the leader must have
+# propagated the new parameters before the parallel worker is released.
+$node->wait_for_log(
+	qr/parallel autovacuum leader propagated cost params: cost_limit=800,/,
+	$log_offset);
+
+# Release the parallel worker.  It reads the cost-based delay parameters the
+# leader has propagated as soon as it resumes.
+$node->safe_psql(
+	'postgres',
+	q{
+	SELECT injection_points_detach('parallel-vacuum-worker-start');
+	SELECT injection_points_wakeup('parallel-vacuum-worker-start');
+});
+$node->wait_for_log(
+	qr/parallel autovacuum worker updated cost params: cost_limit=800, cost_delay=8, cost_page_miss=11, cost_page_dirty=12, cost_page_hit=13/,
+	$log_offset);
+
+# Wait for the autovacuum on test_autovac to finish.
+$node->wait_for_log(
+	qr/automatic vacuum of table "postgres\.public\.test_autovac"/,
+	$log_offset);
+ok(1, "config reload is propagated while the leader waits for workers");
+
+# Test 5:
+# Check the same wait path for a cost limit rebalance, which is not signaled
+# by a config reload.  A second autovacuum worker joins the balance while the
+# leader waits for its parallel worker.
+$node->safe_psql(
+	'postgres', qq{
+	ALTER SYSTEM SET autovacuum_max_workers = 2;
+	ALTER SYSTEM SET autovacuum_vacuum_cost_limit = 600;
+	SELECT pg_reload_conf();
+});
+
+prepare_for_next_test($node, 5);
+$node->safe_psql('regress_db2',
+	'ALTER TABLE filler SET (autovacuum_enabled = false)');
+$node->safe_psql('regress_db2', 'UPDATE filler SET id = id + 1');
+
+$log_offset = -s $node->logfile;
+
+# As in Test 4, hold the parallel worker and wait for the leader to process
+# all indexes and wait for the parallel worker to finish.
+$node->safe_psql(
+	'postgres', q{
+	SELECT injection_points_attach('parallel-vacuum-worker-start', 'wait');
+	ALTER TABLE test_autovac SET (autovacuum_enabled = true);
+});
+$node->wait_for_event('autovacuum worker', 'ParallelFinish');
+
+# Hold the second worker, so that the number of autovacuum workers sharing
+# the cost limit stays at 2 until the parallel worker has read the
+# parameters.  Once the second worker finishes, the leader would propagate
+# the original cost limit again.
+$node->safe_psql(
+	'postgres', q{
+	SELECT injection_points_attach('autovacuum-worker-cost-balanced', 'wait');
+});
+$node->safe_psql('regress_db2',
+	'ALTER TABLE filler SET (autovacuum_enabled = true)');
+
+# Wait for the second worker to update its cost parameters.  It has
+# recalculated the number of workers sharing the cost limit, now 2, and woken
+# up the leader.
+$node->wait_for_log(
+	qr/VacuumUpdateCosts\(db=$db2oid, rel=$filleroid, dobalance=yes, cost_limit=300,/,
+	$log_offset);
+
+# Likewise, the leader must propagate the rebalanced cost limit before the
+# parallel worker is released.
+$node->wait_for_log(
+	qr/parallel autovacuum leader propagated cost params: cost_limit=300,/,
+	$log_offset);
+
+# Release the parallel worker.  It reads the cost-based delay parameters the
+# leader has propagated as soon as it resumes.
+$node->safe_psql(
+	'postgres',
+	q{
+	SELECT injection_points_detach('parallel-vacuum-worker-start');
+	SELECT injection_points_wakeup('parallel-vacuum-worker-start');
+});
+$node->wait_for_log(
+	qr/parallel autovacuum worker updated cost params: cost_limit=300,/,
+	$log_offset);
+
+# Release the second worker.
+$node->safe_psql(
+	'postgres',
+	q{
+	SELECT injection_points_detach('autovacuum-worker-cost-balanced');
+	SELECT injection_points_wakeup('autovacuum-worker-cost-balanced');
+});
+
+# Wait for the autovacuum on test_autovac to finish.
+$node->wait_for_log(
+	qr/automatic vacuum of table "postgres\.public\.test_autovac"/,
+	$log_offset);
+ok(1, "cost rebalance is propagated while the leader waits for workers");
 
 $node->stop;
 done_testing();
