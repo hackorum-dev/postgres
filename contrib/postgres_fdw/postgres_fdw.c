@@ -7720,6 +7720,13 @@ postgresGetForeignJoinPaths(PlannerInfo *root,
 		return;
 
 	/*
+	 * Grouped relations built by eager aggregation hold partially
+	 * aggregated targets, which we can't deparse, so don't push down.
+	 */
+	if (IS_GROUPED_REL(joinrel))
+		return;
+
+	/*
 	 * This code does not work for joins with lateral references, since those
 	 * must have parameterized paths, which we don't generate yet.
 	 */
