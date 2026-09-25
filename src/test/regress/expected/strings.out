@@ -1832,6 +1832,33 @@ SELECT 'be_r' NOT LIKE '__e__r' ESCAPE '_' AS "true";
  t
 (1 row)
 
+-- escape at end of pattern is an error, even if matching doesn't reach it
+SELECT '' LIKE '\' AS "error";
+ERROR:  LIKE pattern must not end with escape character
+SELECT 'x' LIKE 'x\' AS "error";
+ERROR:  LIKE pattern must not end with escape character
+SELECT 'x' NOT LIKE 'y\' AS "error";
+ERROR:  LIKE pattern must not end with escape character
+SELECT '' LIKE '#' ESCAPE '#' AS "error";
+ERROR:  LIKE pattern must not end with escape character
+SELECT '' ILIKE '\' AS "error";
+ERROR:  LIKE pattern must not end with escape character
+SELECT ''::bytea LIKE '\\'::bytea AS "error";
+ERROR:  LIKE pattern must not end with escape character
+SELECT 'x\' LIKE 'x\\\' AS "error";
+ERROR:  LIKE pattern must not end with escape character
+SELECT 'x\' LIKE 'x\\' AS "true";
+ true 
+------
+ t
+(1 row)
+
+SELECT 'x\' NOT LIKE 'x\\' AS "false";
+ false 
+-------
+ f
+(1 row)
+
 --
 -- test ILIKE (case-insensitive LIKE)
 -- Be sure to form every test as an ILIKE/NOT ILIKE pair.
