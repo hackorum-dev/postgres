@@ -367,6 +367,25 @@ $node_standby->psql(
 	stderr => \$stderr);
 ok($stderr =~ /timeout cannot be negative/, "get error for negative timeout");
 
+# Test negative sub-millisecond timeout: rint() would round these to zero
+# before the < 0 check, silently turning them into an infinite wait
+for my $neg_timeout (qw(-0.4ms -0.49ms -0.4999999ms -0.000001s -0))
+{
+	$node_standby->psql(
+		'postgres',
+		"WAIT FOR LSN '${test_lsn}' WITH (timeout '${neg_timeout}');",
+		stderr => \$stderr);
+	ok($stderr =~ /timeout cannot be negative/,
+		"get error for negative sub-millisecond timeout '${neg_timeout}'");
+
+	$node_standby->psql(
+		'postgres',
+		"WAIT FOR LSN '${test_lsn}' WITH (timeout ' ${neg_timeout} ');",
+		stderr => \$stderr);
+	ok($stderr =~ /timeout cannot be negative/,
+		"get error for negative timeout '${neg_timeout}' with leading space");
+}
+
 # Test out of range timeout
 $node_standby->psql(
 	'postgres',
