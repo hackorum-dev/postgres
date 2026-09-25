@@ -181,6 +181,7 @@ void	   *referenced_functions[] =
 	ExecEvalSysVar,
 	ExecEvalVarDetoast,
 	ExecEvalAssignVarDetoast,
+	ExecEvalParamExecDetoast,
 	ExecEvalWholeRowVar,
 	ExecEvalXmlExpr,
 	ExecEvalJsonConstructor,
