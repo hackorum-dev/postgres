@@ -43,6 +43,7 @@
 #include "executor/instrument.h"
 #include "optimizer/paths.h"
 #include "pgstat.h"
+#include "postmaster/interrupt.h"
 #include "storage/bufmgr.h"
 #include "storage/proc.h"
 #include "tcop/tcopprot.h"
@@ -723,6 +724,47 @@ parallel_vacuum_propagate_shared_delay_params(void)
 	 * know that they should re-read shared cost params.
 	 */
 	pg_atomic_fetch_add_u32(&pv_shared_cost_params->generation, 1);
+}
+
+/*
+ * Refresh the cost-based vacuum delay parameters of an autovacuum worker
+ * running a parallel vacuum (leader) and propagate them to its parallel
+ * workers.
+ *
+ * The leader normally does this at its own cost delay points, which it no
+ * longer reaches once it is only waiting for the parallel workers to finish.
+ * It calls this from that wait instead, on every wakeup, to pick up a config
+ * reload and a change in the number of autovacuum workers sharing the cost
+ * limit. Both wake the leader, the second through the latch set by
+ * autovac_recalculate_workers_for_balance() when the count is recalculated.
+ */
+void
+parallel_vacuum_refresh_cost_params(void)
+{
+	Assert(AmAutoVacuumWorkerProcess());
+
+	/*
+	 * Quick return if the leader is not sharing the delay parameters with
+	 * parallel workers.
+	 */
+	if (pv_shared_cost_params == NULL)
+		return;
+
+	if (ConfigReloadPending)
+	{
+		ConfigReloadPending = false;
+		ProcessConfigFile(PGC_SIGHUP);
+
+		/* This re-divides the cost limit too */
+		VacuumUpdateCosts();
+	}
+	else
+	{
+		/* The number of workers sharing the cost limit may have changed */
+		AutoVacuumUpdateCostLimit();
+	}
+
+	parallel_vacuum_propagate_shared_delay_params();
 }
 
 /*
