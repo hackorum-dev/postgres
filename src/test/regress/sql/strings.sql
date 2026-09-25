@@ -500,6 +500,18 @@ SELECT 'be_r' NOT LIKE 'b_e__r' ESCAPE '_' AS "false";
 SELECT 'be_r' LIKE '__e__r' ESCAPE '_' AS "false";
 SELECT 'be_r' NOT LIKE '__e__r' ESCAPE '_' AS "true";
 
+-- escape at end of pattern is an error, even if matching doesn't reach it
+SELECT '' LIKE '\' AS "error";
+SELECT 'x' LIKE 'x\' AS "error";
+SELECT 'x' NOT LIKE 'y\' AS "error";
+SELECT '' LIKE '#' ESCAPE '#' AS "error";
+SELECT '' ILIKE '\' AS "error";
+SELECT ''::bytea LIKE '\\'::bytea AS "error";
+SELECT 'x\' LIKE 'x\\\' AS "error";
+
+SELECT 'x\' LIKE 'x\\' AS "true";
+SELECT 'x\' NOT LIKE 'x\\' AS "false";
+
 
 --
 -- test ILIKE (case-insensitive LIKE)
