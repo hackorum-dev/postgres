@@ -252,6 +252,172 @@ $node->safe_psql('postgres',
 	"SELECT injection_points_wakeup('autovacuum-worker-cost-balanced')");
 $node->safe_psql('postgres',
 	"SELECT injection_points_detach('autovacuum-worker-cost-balanced')");
+$node->wait_for_log(
+	qr/automatic vacuum of table "postgres\.public\.test_autovac"/,
+	$log_offset);
+$node->poll_query_until(
+	'postgres', q{
+	SELECT count(*) = 0 FROM pg_stat_activity
+	WHERE backend_type = 'autovacuum worker' AND datname = 'regress_db2'
+}) or die "second autovacuum worker did not finish";
+
+# Test 4:
+# Check whether a config reload is serviced while the autovacuum leader waits
+# for a parallel worker to finish an index.  Hold the worker after it claims
+# an index, so the leader can process the remaining indexes and enter
+# ParallelFinish.
+my $postgresoid = $node->safe_psql('postgres',
+	"SELECT oid FROM pg_database WHERE datname = 'postgres'");
+my $testautovacid =
+  $node->safe_psql('postgres', "SELECT 'test_autovac'::regclass::oid");
+
+$node->safe_psql(
+	'postgres', qq{
+	ALTER SYSTEM SET autovacuum_max_workers = 1;
+	ALTER SYSTEM SET autovacuum_vacuum_cost_limit = 700;
+	ALTER SYSTEM SET autovacuum_vacuum_cost_delay = 0;
+	SELECT pg_reload_conf();
+});
+
+prepare_for_next_test($node, 4);
+$log_offset = -s $node->logfile;
+
+$node->safe_psql(
+	'postgres', q{
+	SELECT injection_points_attach('parallel-autovacuum-worker-before-index', 'wait');
+	SELECT injection_points_attach('parallel-autovacuum-leader-before-index', 'wait');
+});
+$node->safe_psql('postgres',
+	'ALTER TABLE test_autovac SET (autovacuum_enabled = true)');
+$node->wait_for_event('autovacuum worker',
+	'parallel-autovacuum-leader-before-index');
+$node->wait_for_event('parallel worker',
+	'parallel-autovacuum-worker-before-index');
+$node->safe_psql(
+	'postgres', q{
+	SELECT injection_points_wakeup('parallel-autovacuum-leader-before-index');
+	SELECT injection_points_detach('parallel-autovacuum-leader-before-index');
+});
+$node->poll_query_until(
+	'postgres', q{
+	SELECT count(*) > 0
+	FROM pg_stat_activity worker
+	JOIN pg_stat_activity leader ON leader.pid = worker.leader_pid
+	WHERE worker.backend_type = 'parallel worker'
+	  AND worker.wait_event = 'parallel-autovacuum-worker-before-index'
+	  AND leader.wait_event = 'ParallelFinish'
+}) or die "autovacuum leader did not enter ParallelFinish";
+
+$node->safe_psql(
+	'postgres', qq{
+	ALTER SYSTEM SET autovacuum_vacuum_cost_limit = 800;
+	ALTER SYSTEM SET autovacuum_vacuum_cost_delay = 8;
+	ALTER SYSTEM SET vacuum_cost_page_miss = 11;
+	ALTER SYSTEM SET vacuum_cost_page_dirty = 12;
+	ALTER SYSTEM SET vacuum_cost_page_hit = 13;
+	SELECT pg_reload_conf();
+});
+
+$node->wait_for_log(
+	qr/Autovacuum VacuumUpdateCosts\(db=$postgresoid, rel=$testautovacid, dobalance=yes, cost_limit=800, cost_delay=8 /,
+	$log_offset);
+
+$node->safe_psql('postgres',
+	"SELECT injection_points_wakeup('parallel-autovacuum-worker-before-index')");
+$node->safe_psql('postgres',
+	"SELECT injection_points_detach('parallel-autovacuum-worker-before-index')");
+$node->wait_for_log(
+	qr/parallel autovacuum worker updated cost params: cost_limit=800, cost_delay=8, cost_page_miss=11, cost_page_dirty=12, cost_page_hit=13/,
+	$log_offset);
+$node->wait_for_log(
+	qr/automatic vacuum of table "postgres\.public\.test_autovac"/,
+	$log_offset);
+ok(1, "config reload is propagated while the leader waits for workers");
+
+# Test 5:
+# Check the same wait path for an un-signalled cost-limit rebalance.  A second
+# autovacuum worker joins the balance while the first leader and its parallel
+# worker remain held.
+$node->safe_psql(
+	'postgres', qq{
+	ALTER SYSTEM SET autovacuum_max_workers = 2;
+	ALTER SYSTEM SET autovacuum_vacuum_cost_limit = 600;
+	SELECT pg_reload_conf();
+});
+
+prepare_for_next_test($node, 5);
+$node->safe_psql('regress_db2',
+	'ALTER TABLE filler SET (autovacuum_enabled = false)');
+$node->safe_psql('regress_db2', 'UPDATE filler SET id = id + 1');
+
+$log_offset = -s $node->logfile;
+$node->safe_psql(
+	'postgres', q{
+	SELECT injection_points_attach('parallel-autovacuum-worker-before-index', 'wait');
+	SELECT injection_points_attach('parallel-autovacuum-leader-before-index', 'wait');
+});
+$node->safe_psql('postgres',
+	'ALTER TABLE test_autovac SET (autovacuum_enabled = true)');
+$node->wait_for_event('autovacuum worker',
+	'parallel-autovacuum-leader-before-index');
+$node->wait_for_event('parallel worker',
+	'parallel-autovacuum-worker-before-index');
+$node->safe_psql(
+	'postgres', q{
+	SELECT injection_points_wakeup('parallel-autovacuum-leader-before-index');
+	SELECT injection_points_detach('parallel-autovacuum-leader-before-index');
+});
+$node->poll_query_until(
+	'postgres', q{
+	SELECT count(*) > 0
+	FROM pg_stat_activity worker
+	JOIN pg_stat_activity leader ON leader.pid = worker.leader_pid
+	WHERE worker.backend_type = 'parallel worker'
+	  AND worker.wait_event = 'parallel-autovacuum-worker-before-index'
+	  AND leader.wait_event = 'ParallelFinish'
+}) or die "autovacuum leader did not enter ParallelFinish";
+
+$node->safe_psql('postgres',
+	"SELECT injection_points_attach('autovacuum-worker-cost-balanced', 'wait')"
+);
+
+# Attach before the rebalance, as the rebalance wakeup is the only thing that
+# brings the waiting leader to this point.
+$node->safe_psql('postgres',
+	"SELECT injection_points_attach('parallel-autovacuum-leader-cost-updated', 'notice')"
+);
+$node->safe_psql('regress_db2',
+	'ALTER TABLE filler SET (autovacuum_enabled = true)');
+$node->wait_for_log(
+	qr/VacuumUpdateCosts\(db=$db2oid, rel=$filleroid, dobalance=yes, cost_limit=300,/,
+	$log_offset);
+$node->wait_for_log(
+	qr/notice triggered for injection point parallel-autovacuum-leader-cost-updated/,
+	$log_offset);
+$node->safe_psql('postgres',
+	"SELECT injection_points_detach('parallel-autovacuum-leader-cost-updated')");
+
+$node->safe_psql('postgres',
+	"SELECT injection_points_wakeup('parallel-autovacuum-worker-before-index')");
+$node->safe_psql('postgres',
+	"SELECT injection_points_detach('parallel-autovacuum-worker-before-index')");
+$node->wait_for_log(
+	qr/parallel autovacuum worker updated cost params: cost_limit=300,/,
+	$log_offset);
+
+$node->safe_psql('postgres',
+	"SELECT injection_points_wakeup('autovacuum-worker-cost-balanced')");
+$node->safe_psql('postgres',
+	"SELECT injection_points_detach('autovacuum-worker-cost-balanced')");
+$node->wait_for_log(
+	qr/automatic vacuum of table "postgres\.public\.test_autovac"/,
+	$log_offset);
+$node->poll_query_until(
+	'postgres', q{
+	SELECT count(*) = 0 FROM pg_stat_activity
+	WHERE backend_type = 'autovacuum worker' AND datname = 'regress_db2'
+}) or die "second autovacuum worker did not finish";
+ok(1, "cost rebalance is propagated while the leader waits for workers");
 
 $node->stop;
 done_testing();
