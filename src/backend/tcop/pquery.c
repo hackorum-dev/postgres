@@ -389,7 +389,8 @@ FetchStatementTargetList(Node *stmt)
 
 		Assert(!fstmt->ismove);
 		subportal = GetPortalByName(fstmt->portalname);
-		Assert(PortalIsValid(subportal));
+		if (!PortalIsValid(subportal))
+			return NIL;			/* not our business to raise error */
 		return FetchPortalTargetList(subportal);
 	}
 	if (IsA(stmt, ExecuteStmt))
