@@ -89,6 +89,28 @@ MatchText(const char *t, int tlen, const char *p, int plen, pg_locale_t locale)
 	if (plen == 1 && *p == '%')
 		return LIKE_TRUE;
 
+	/*
+	 * Reject a pattern that ends with an escape character.  The loop below
+	 * only notices that if matching gets that far, so without this check the
+	 * error would depend on the text.  A pattern ends with an escape iff it
+	 * ends with an odd number of backslashes, since each pair is an escaped
+	 * backslash.  That holds in multibyte encodings too, since a backslash
+	 * byte can't be part of a multibyte character (see below).  Usually the
+	 * last byte is not a backslash, so this is cheap enough to repeat in
+	 * recursive calls.
+	 */
+	if (plen > 0 && p[plen - 1] == '\\')
+	{
+		int			nbackslashes = 1;
+
+		while (nbackslashes < plen && p[plen - 1 - nbackslashes] == '\\')
+			nbackslashes++;
+		if (nbackslashes % 2 != 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_ESCAPE_SEQUENCE),
+					 errmsg("LIKE pattern must not end with escape character")));
+	}
+
 	/* Since this function recurses, it could be driven to stack overflow */
 	check_stack_depth();
 
