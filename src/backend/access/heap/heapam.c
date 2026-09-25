@@ -3967,7 +3967,8 @@ l2:
 		{
 			/* It's possible all-frozen was already clear */
 			if (visibilitymap_clear(relation->rd_locator, block, vmbuffer,
-									VISIBILITYMAP_ALL_FROZEN))
+									VISIBILITYMAP_ALL_FROZEN) &
+				VISIBILITYMAP_ALL_FROZEN)
 				cleared_all_frozen = true;
 		}
 
@@ -5428,7 +5429,8 @@ failed:
 	if (PageIsAllVisible(page))
 	{
 		if (visibilitymap_clear(relation->rd_locator, block, vmbuffer,
-								VISIBILITYMAP_ALL_FROZEN))
+								VISIBILITYMAP_ALL_FROZEN) &
+			VISIBILITYMAP_ALL_FROZEN)
 			cleared_all_frozen = true;
 	}
 
@@ -6221,7 +6223,8 @@ l4:
 		{
 			/* It's possible all-frozen was already clear */
 			if (visibilitymap_clear(rel->rd_locator, block, vmbuffer,
-									VISIBILITYMAP_ALL_FROZEN))
+									VISIBILITYMAP_ALL_FROZEN) &
+				VISIBILITYMAP_ALL_FROZEN)
 				cleared_all_frozen = true;
 		}
 
