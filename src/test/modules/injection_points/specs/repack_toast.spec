@@ -125,6 +125,18 @@ teardown
 
 session s2
 
+# Keep a transaction with XID open, so that the decoding worker has to wait
+# before it can build the initial snapshot.
+step s2_begin
+{
+	BEGIN;
+	SELECT pg_current_xact_id() IS NOT NULL AS has_xid;
+}
+step s2_commit
+{
+	COMMIT;
+}
+
 # Test different kinds of toast data changes.
 step s2_updates
 {
@@ -170,10 +182,49 @@ step s2_wakeup_before_lock
 	SELECT injection_points_wakeup('repack-concurrently-before-lock');
 }
 
+# Try to rewrite the TOAST relation.  The decoding worker only decodes the
+# changes of the TOAST relation stored under the relfilenumber it saw when
+# starting, so REPACK must not let the TOAST relation be rewritten after that.
+# Otherwise the TOAST chunks of the concurrent changes are not decoded, and the
+# changes are lost.
+#
+# The name of the TOAST relation is only known at run time, hence the DO
+# block, and REPACK rather than VACUUM FULL, which cannot run in one.
+#
+# Don't wait for the lock.  The rewrite gets an XID before it waits, and once
+# s2 commits, the decoding worker would wait for that XID, which is a deadlock.
+session s3
+setup { SET lock_timeout = 10; }
+step s3_rewrite_toast
+{
+	DO $$
+	BEGIN
+		EXECUTE format('REPACK %s',
+					   (SELECT reltoastrelid::regclass FROM pg_class
+						WHERE relname = 'repack_toast'));
+	END;
+	$$;
+}
+# Empty step, so that s2 cannot go on until s3_rewrite_toast is done.
+step s3_noop { }
+
 # Test if data changes introduced while one session is performing REPACK
 # CONCURRENTLY find their way into the table.
 permutation
 	s1_wait_before_lock
+	s2_updates
+	s2_check
+	s2_wakeup_before_lock
+	s1_check
+
+# Same, but try to rewrite the TOAST relation while the decoding worker waits
+# for s2 to commit.
+permutation
+	s2_begin
+	s1_wait_before_lock
+	s3_rewrite_toast(*)
+	s3_noop
+	s2_commit
 	s2_updates
 	s2_check
 	s2_wakeup_before_lock
