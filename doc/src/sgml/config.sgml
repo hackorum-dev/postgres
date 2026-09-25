@@ -8224,7 +8224,8 @@ local0.*    /var/log/postgresql
       <listitem>
        <para>
          This is a <function>printf</function>-style string that is output at the
-         beginning of each log line.
+         beginning of each log line, except when <varname>log_destination</varname>
+         is <literal>csvlog</literal> or <literal>jsonlog</literal>.
          <literal>%</literal> characters begin <quote>escape sequences</quote>
          that are replaced with status information as outlined below.
          Unrecognized escapes are ignored. Other
