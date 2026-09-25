@@ -179,6 +179,7 @@ void	   *referenced_functions[] =
 	ExecEvalHashedScalarArrayOp,
 	ExecEvalSubPlan,
 	ExecEvalSysVar,
+	ExecEvalVarDetoast,
 	ExecEvalWholeRowVar,
 	ExecEvalXmlExpr,
 	ExecEvalJsonConstructor,
