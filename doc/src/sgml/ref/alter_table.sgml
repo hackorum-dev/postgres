@@ -1498,9 +1498,10 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
    </para>
 
    <para>
-    Adding a <literal>CHECK</literal> or <literal>NOT NULL</literal>
-    constraint requires scanning the table to verify that existing rows meet the
-    constraint, but does not require a table rewrite.  If a <literal>CHECK</literal>
+    Adding a <literal>CHECK</literal>, <literal>NOT NULL</literal>, or
+    <literal>FOREIGN KEY</literal> constraint requires scanning the table to
+    verify that existing rows meet the constraint, but does not require a table
+    rewrite.  If a <literal>CHECK</literal> or <literal>FOREIGN KEY</literal>
     constraint is added as <literal>NOT ENFORCED</literal>, no verification will
     be performed.
    </para>
