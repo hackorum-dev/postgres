@@ -1387,8 +1387,8 @@ make_new_heap(Oid OIDOldHeap, Oid NewTableSpace, Oid NewAccessMethod,
 /*
  * Do the physical copying of table data.
  *
- * 'snapshot' and 'decoding_ctx': see table_relation_copy_for_cluster(). Pass
- * iff concurrent processing is required.
+ * 'snapshot': see table_relation_copy_for_cluster(). Pass iff concurrent
+ * processing is required.
  *
  * There are three output parameters:
  * *pSwapToastByContent is set true if toast tables must be swapped by content.
