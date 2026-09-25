@@ -1130,16 +1130,30 @@ rebuild_relation(Relation OldHeap, Relation index, bool verbose,
 		BecomeLockGroupLeader();
 
 		/*
+		 * Lock the TOAST relation before the worker starts.  The worker only
+		 * decodes the changes of the TOAST relation stored under the
+		 * relfilenumber it sees when it starts.  If the TOAST relation got
+		 * rewritten after that (VACUUM FULL can be run on it directly), the
+		 * TOAST chunks of concurrent changes would not be decoded, and a
+		 * changed TOASTed value would be taken for an unchanged one when
+		 * applying the changes.  copy_table_data() locks the TOAST relation
+		 * too, but that's too late for this purpose.
+		 */
+		if (OidIsValid(OldHeap->rd_rel->reltoastrelid))
+			LockRelationOid(OldHeap->rd_rel->reltoastrelid,
+							ShareUpdateExclusiveLock);
+
+		/*
 		 * Start the worker that decodes data changes applied while we're
 		 * copying the table contents.
 		 *
 		 * Note that the worker has to wait for all transactions with XID
 		 * already assigned to finish. If some of those transactions is
 		 * waiting for a lock conflicting with ShareUpdateExclusiveLock on our
-		 * table (e.g.  it runs CREATE INDEX), we can end up in a deadlock.
-		 * Not sure this risk is worth unlocking/locking the table (and its
-		 * clustering index) and checking again if it's still eligible for
-		 * REPACK CONCURRENTLY.
+		 * table or its TOAST relation (e.g.  it runs CREATE INDEX), we can
+		 * end up in a deadlock. Not sure this risk is worth unlocking/locking
+		 * the table (and its clustering index) and checking again if it's
+		 * still eligible for REPACK CONCURRENTLY.
 		 */
 		start_repack_decoding_worker(tableOid);
 
