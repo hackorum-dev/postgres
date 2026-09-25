@@ -537,6 +537,15 @@ cluster_rel(RepackCommand cmd, Relation OldHeap, Oid indexOid,
 		check_concurrent_repack_requirements(OldHeap, &ident_idx);
 
 	/*
+	 * In concurrent mode, also lock the toast table.  Otherwise it would be
+	 * possible for the toast relfilenode to change (e.g. because VACUUM FULL
+	 * is run on it), and then logical decoding would fail to detect any
+	 * concurrent changes there.
+	 */
+	if (concurrent && OidIsValid(OldHeap->rd_rel->reltoastrelid))
+		LockRelationOid(OldHeap->rd_rel->reltoastrelid, lmode);
+
+	/*
 	 * Also check the state of indexes; this can abort the command for REPACK.
 	 * Historically this hasn't affected CLUSTER or VACUUM FULL, so don't do
 	 * it for those commands.
@@ -1136,6 +1145,11 @@ rebuild_relation(Relation OldHeap, Relation index, bool verbose,
 		 */
 		BecomeLockGroupLeader();
 
+		/* If there is a toast table, it must have been locked already */
+		Assert(!OidIsValid(OldHeap->rd_rel->reltoastrelid) ||
+			   CheckRelationOidLockedByMe(OldHeap->rd_rel->reltoastrelid,
+										  lmode, false));
+
 		/*
 		 * Start the worker that decodes data changes applied while we're
 		 * copying the table contents.
@@ -1143,10 +1157,10 @@ rebuild_relation(Relation OldHeap, Relation index, bool verbose,
 		 * Note that the worker has to wait for all transactions with XID
 		 * already assigned to finish. If some of those transactions is
 		 * waiting for a lock conflicting with ShareUpdateExclusiveLock on our
-		 * table (e.g.  it runs CREATE INDEX), we can end up in a deadlock.
-		 * Not sure this risk is worth unlocking/locking the table (and its
-		 * clustering index) and checking again if it's still eligible for
-		 * REPACK CONCURRENTLY.
+		 * table or its TOAST relation (e.g.  it runs CREATE INDEX), we can
+		 * end up in a deadlock. Not sure this risk is worth unlocking/locking
+		 * the table (and its clustering index) and checking again if it's
+		 * still eligible for REPACK CONCURRENTLY.
 		 */
 		start_repack_decoding_worker(tableOid);
 
