@@ -47,6 +47,7 @@
 #include "storage/bufmgr.h"
 #include "storage/proc.h"
 #include "tcop/tcopprot.h"
+#include "utils/injection_point.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 
@@ -762,6 +763,8 @@ parallel_vacuum_refresh_cost_params(void)
 	}
 
 	parallel_vacuum_propagate_shared_delay_params();
+
+	INJECTION_POINT("parallel-autovacuum-leader-cost-updated", NULL);
 }
 
 /*
@@ -852,6 +855,7 @@ parallel_vacuum_process_all_indexes(ParallelVacuumState *pvs, int num_index_scan
 {
 	int			nworkers;
 	PVIndVacStatus new_status;
+	bool		leader_participates = true;
 
 	Assert(!IsParallelWorker());
 
@@ -965,6 +969,17 @@ parallel_vacuum_process_all_indexes(ParallelVacuumState *pvs, int num_index_scan
 							pvs->pcxt->nworkers_launched, nworkers)));
 	}
 
+#ifdef USE_INJECTION_POINTS
+
+	/*
+	 * Used by tests to leave all parallel-safe indexes to the parallel
+	 * workers, so that the leader waits for them to finish.
+	 */
+	if (nworkers > 0 && pvs->pcxt->nworkers_launched > 0 &&
+		IS_INJECTION_POINT_ATTACHED("parallel-vacuum-leader-skip-safe-indexes"))
+		leader_participates = false;
+#endif
+
 	/* Vacuum the indexes that can be processed by only leader process */
 	parallel_vacuum_process_unsafe_indexes(pvs);
 
@@ -972,7 +987,8 @@ parallel_vacuum_process_all_indexes(ParallelVacuumState *pvs, int num_index_scan
 	 * Join as a parallel worker.  The leader vacuums alone processes all
 	 * parallel-safe indexes in the case where no workers are launched.
 	 */
-	parallel_vacuum_process_safe_indexes(pvs);
+	if (leader_participates)
+		parallel_vacuum_process_safe_indexes(pvs);
 
 	/*
 	 * Next, accumulate buffer and WAL usage.  (This must wait for the workers
@@ -1048,6 +1064,11 @@ parallel_vacuum_process_safe_indexes(ParallelVacuumState *pvs)
 		 */
 		if (!indstats->parallel_workers_can_process)
 			continue;
+
+#ifdef USE_INJECTION_POINTS
+		if (IsParallelWorker())
+			INJECTION_POINT("parallel-vacuum-worker-before-index", NULL);
+#endif
 
 		/* Do vacuum or cleanup of the index */
 		parallel_vacuum_process_one_index(pvs, pvs->indrels[idx], indstats);
