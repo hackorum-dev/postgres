@@ -13,6 +13,8 @@
  */
 #include "postgres.h"
 
+#include <ctype.h>
+
 #include "access/xact.h"
 #include "access/xlog.h"
 #include "access/xlogrecovery.h"
@@ -106,6 +108,28 @@ ExecWaitStmt(ParseState *pstate, WaitStmt *stmt, bool isTopLevel,
 						errmsg("invalid timeout value: \"%s\"", timeout_str),
 						hintmsg ? errhint("%s", _(hintmsg)) : 0,
 						parser_errposition(pstate, defel->location));
+
+			/*
+			 * parse_int() rounds fractional values to integer before we
+			 * get a chance to check them, so a negative timeout smaller
+			 * than half a millisecond (e.g. '-0.4ms') would otherwise
+			 * round to zero and silently become an infinite wait.  Reject
+			 * any negative input up front: parse_int() accepts the sign
+			 * syntaxes of strtol()/strtod(), where a negative value
+			 * necessarily starts with a '-'.
+			 */
+			{
+				const char *cp = timeout_str;
+
+				while (isspace((unsigned char) *cp))
+					cp++;
+
+				if (*cp == '-')
+					ereport(ERROR,
+							errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+							errmsg("timeout cannot be negative"),
+							parser_errposition(pstate, defel->location));
+			}
 
 			if (timeout < 0)
 				ereport(ERROR,
