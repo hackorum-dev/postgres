@@ -161,6 +161,9 @@ WAIT FOR LSN '<replaceable class="parameter">lsn</replaceable>'
           less therefore rounds down to zero, which means waiting
           indefinitely.
          </para>
+         <para>
+          Negative timeout values are rejected with an error.
+         </para>
         </listitem>
        </varlistentry>
 
