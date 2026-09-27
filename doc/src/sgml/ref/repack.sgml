@@ -169,6 +169,11 @@ REPACK [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] USING
     reasonably large value (but not more than the amount of RAM you can
     dedicate to the <command>REPACK</command> operation) before repacking.
    </para>
+
+   <para>
+    See below for additional resource requirements used when the
+    <literal>CONCURRENTLY</literal> option is given.
+   </para>
   </refsect2>
 
  </refsect1>
@@ -214,7 +219,7 @@ REPACK [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] USING
      </para>
 
      <para>
-      Internally, <command>REPACK</command> copies the contents of the table
+      Without this option, <command>REPACK</command> copies the contents of the table
       (ignoring dead tuples) into a new file, sorted by the specified index,
       and also creates a new file for each index. Then it swaps the old and
       new files for the table and all the indexes, and deletes the old
@@ -224,26 +229,29 @@ REPACK [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] USING
      </para>
 
      <para>
-      With the <literal>CONCURRENTLY</literal> option, the <literal>ACCESS
-      EXCLUSIVE</literal> lock is only acquired to swap the table and index
-      files. The data changes that took place during the creation of the new
+      With the <literal>CONCURRENTLY</literal> option, the bulk of the
+      operation is run with <literal>SHARE UPDATE EXCLUSIVE</literal> lock,
+      and the <literal>ACCESS EXCLUSIVE</literal> lock is only acquired
+      during the final phase to swap the table and index files.
+      The data changes that took place during the creation of the new
       table and index files are captured using logical decoding
-      (<xref linkend="logicaldecoding"/>) and applied before
-      the <literal>ACCESS EXCLUSIVE</literal> lock is requested. Thus the lock
-      is typically held only for the time needed to swap the files, which
-      should be pretty short. However, the time might still be noticeable if
-      too many data changes have been done to the table while
-      <command>REPACK</command> was waiting for the lock: those changes must
-      be processed just before the files are swapped, while the
-      <literal>ACCESS EXCLUSIVE</literal> lock is being held.
+      (see <xref linkend="logicaldecoding"/>) and applied before
+      the <literal>ACCESS EXCLUSIVE</literal> lock is requested.
+      Thus the lock is typically held only for the time needed to swap the
+      files, which should be pretty short.
+      However, the time might still be noticeable if too many data changes
+      have been done to the table while <command>REPACK</command> was
+      waiting for the lock: those changes must be processed just before
+      the files are swapped, while the <literal>ACCESS EXCLUSIVE</literal>
+      lock is being held.
      </para>
 
      <para>
-      Note that <command>REPACK</command> with the
-      <literal>CONCURRENTLY</literal> option does not try to order the rows
+      Note that <command>REPACK (CONCURRENTLY)</command>
+      does not try to order the rows
       inserted into the table after the repacking started. Also
-      note <command>REPACK</command> might fail to complete due to DDL
-      commands executed on the table by other transactions during the
+      note <command>REPACK</command> might fail to complete if DDL
+      commands are executed on the table by other transactions during the
       repacking.
      </para>
 
@@ -251,13 +259,13 @@ REPACK [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] USING
       <para>
        In addition to the temporary space requirements explained in
        <xref linkend="sql-repack-notes-on-resources"/>,
-       the <literal>CONCURRENTLY</literal> option can add to the usage of
-       temporary space a bit more. The reason is that other transactions can
-       perform DML operations which cannot be applied to the new file until
-       <command>REPACK</command> has copied all the existing tuples from the
-       old file. Thus the tuples inserted into the old file during the copying
-       are also stored separately in a temporary file, until they can be
-       processed.
+       the <literal>CONCURRENTLY</literal> option causes the command
+       to require additional memory.
+       Each row that is updated or deleted takes a small additional amount
+       (16 bytes per row), not limited by <xref linkend="guc-maintenance-work-mem"/>,
+       and the command fails if more than about 104 million rows
+       are concurrently updated or deleted; though depending on
+       system memory pressure, the actual limit might be lower.
       </para>
      </note>
 
@@ -382,6 +390,23 @@ REPACK [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] USING
    <para>
     To repack a table, one must have the <literal>MAINTAIN</literal> privilege
     on the table.
+   </para>
+
+   <para>
+    <command>REPACK</command> is primarily meant to remove bloat and, with
+    <literal>USING INDEX</literal>, to cluster the table, in order to improve
+    performance.  Although it also advances the table's
+    <structfield>relfrozenxid</structfield> and <structfield>relminmxid</structfield>,
+    it is not a good way to prevent transaction ID or multixact ID wraparound:
+    it rewrites the whole table and all of its indexes, so it takes much longer
+    than <command>VACUUM</command>, and it can fail after most of the work
+    is done, especially with <literal>CONCURRENTLY</literal> on a busy table.
+    <command>VACUUM</command> is recommended for that instead (see
+    <xref linkend="vacuum-for-wraparound"/>).
+    When a table gets close to wraparound, <command>VACUUM</command> skips index
+    vacuuming on its own (see <xref linkend="guc-vacuum-failsafe-age"/>), and its
+    <link linkend="sql-vacuum"><literal>INDEX_CLEANUP OFF</literal></link>
+    option can do the same earlier.
    </para>
 
    <para>
