@@ -263,8 +263,9 @@ struct ParallelVacuumState
 	BufferAccessStrategy bstrategy;
 
 	/*
-	 * Error reporting state.  The error callback is set only for workers
-	 * processes during parallel index vacuum.
+	 * Error reporting state. The error callback is set for the whole life of
+	 * a worker process, and in the leader for as long as it processes indexes
+	 * itself.
 	 */
 	char	   *relnamespace;
 	char	   *relname;
@@ -349,6 +350,12 @@ parallel_vacuum_init(Relation rel, Relation *indrels, int nindexes,
 	pvs->will_parallel_vacuum = will_parallel_vacuum;
 	pvs->bstrategy = bstrategy;
 	pvs->heaprel = rel;
+	pvs->relnamespace = get_namespace_name(RelationGetNamespace(rel));
+	pvs->relname = pstrdup(RelationGetRelationName(rel));
+
+	/* These fields will be filled during index vacuum or cleanup */
+	pvs->indname = NULL;
+	pvs->status = PARALLEL_INDVAC_STATUS_INITIAL;
 
 	EnterParallelMode();
 	pcxt = CreateParallelContext("postgres", "parallel_vacuum_main",
@@ -544,6 +551,8 @@ parallel_vacuum_end(ParallelVacuumState *pvs, IndexBulkDeleteResult **istats)
 	if (AmAutoVacuumWorkerProcess())
 		pv_shared_cost_params = NULL;
 
+	pfree(pvs->relnamespace);
+	pfree(pvs->relname);
 	pfree(pvs->will_parallel_vacuum);
 	pfree(pvs);
 }
@@ -857,6 +866,7 @@ parallel_vacuum_process_all_indexes(ParallelVacuumState *pvs, int num_index_scan
 {
 	int			nworkers;
 	PVIndVacStatus new_status;
+	ErrorContextCallback errcallback;
 
 	Assert(!IsParallelWorker());
 
@@ -970,6 +980,15 @@ parallel_vacuum_process_all_indexes(ParallelVacuumState *pvs, int num_index_scan
 							pvs->pcxt->nworkers_launched, nworkers)));
 	}
 
+	/*
+	 * Setup error traceback support for ereport() for as long as the leader
+	 * processes indexes itself.
+	 */
+	errcallback.callback = parallel_vacuum_error_callback;
+	errcallback.arg = pvs;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
+
 	/* Vacuum the indexes that can be processed by only leader process */
 	parallel_vacuum_process_unsafe_indexes(pvs);
 
@@ -978,6 +997,9 @@ parallel_vacuum_process_all_indexes(ParallelVacuumState *pvs, int num_index_scan
 	 * parallel-safe indexes in the case where no workers are launched.
 	 */
 	parallel_vacuum_process_safe_indexes(pvs);
+
+	/* Pop the error context stack */
+	error_context_stack = errcallback.previous;
 
 	/*
 	 * Next, accumulate buffer and WAL usage.  (This must wait for the workers
