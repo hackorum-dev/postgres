@@ -259,6 +259,14 @@ REPACK [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] USING
        are also stored separately in a temporary file, until they can be
        processed.
       </para>
+      <para>
+       The more rows other transactions change while
+       <command>REPACK</command> runs, the more time, temporary space and
+       memory it needs to apply those changes.  Each row that is updated or
+       deleted takes a small amount of backend memory, not limited by
+       <xref linkend="guc-maintenance-work-mem"/>, and the command fails if
+       more than about 100 million rows are updated or deleted this way.
+      </para>
      </note>
 
      <para>
@@ -382,6 +390,23 @@ REPACK [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] USING
    <para>
     To repack a table, one must have the <literal>MAINTAIN</literal> privilege
     on the table.
+   </para>
+
+   <para>
+    <command>REPACK</command> is meant to remove bloat and, with
+    <literal>USING INDEX</literal>, to cluster the table, in order to improve
+    performance.  Although it also advances the table's
+    <structfield>relfrozenxid</structfield>, it is not a good way to prevent
+    transaction ID wraparound: it rewrites the whole table and all of its
+    indexes, so it takes much longer than <command>VACUUM</command>, and it
+    can fail after most of the work is done, especially with
+    <literal>CONCURRENTLY</literal> on a busy table.  Use
+    <command>VACUUM</command> for that instead (see
+    <xref linkend="vacuum-for-wraparound"/>).  When a table gets close to
+    wraparound, <command>VACUUM</command> skips index vacuuming on its own
+    (see <xref linkend="guc-vacuum-failsafe-age"/>), and its
+    <link linkend="sql-vacuum"><literal>INDEX_CLEANUP OFF</literal></link>
+    option can do the same earlier.
    </para>
 
    <para>
