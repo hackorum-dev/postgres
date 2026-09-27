@@ -71,3 +71,193 @@ SELECT * FROM VARCHAR_TBL;
 SELECT pg_input_is_valid('abcd  ', 'varchar(4)');
 SELECT pg_input_is_valid('abcde', 'varchar(4)');
 SELECT * FROM pg_input_error_info('abcde', 'varchar(4)');
+
+-- report the destination column for planning-time and runtime errors
+CREATE TEMP TABLE varchar_target (id int, username varchar(10), email varchar(10));
+INSERT INTO varchar_target (email, username) VALUES ('123456789012', 'ok');
+INSERT INTO varchar_target (username) VALUES ('ok'), ('123456789012');
+
+CREATE TEMP TABLE varchar_source (v text);
+INSERT INTO varchar_source VALUES ('123456789012');
+INSERT INTO varchar_target VALUES (1, 'ok', 'ok');
+UPDATE varchar_target SET username = (SELECT v FROM varchar_source);
+
+-- keep the destination in generic plans and use the current column name
+SET plan_cache_mode = force_generic_plan;
+PREPARE varchar_insert(text) AS
+  INSERT INTO varchar_target VALUES (2, $1, NULL);
+EXECUTE varchar_insert('123456789012');
+ALTER TABLE varchar_target RENAME COLUMN username TO "User Name";
+EXECUTE varchar_insert('123456789012');
+DEALLOCATE varchar_insert;
+RESET plan_cache_mode;
+
+-- keep the column identity in stored SQL bodies across renames
+CREATE FUNCTION pg_temp.varchar_insert_fn(text) RETURNS void
+LANGUAGE SQL BEGIN ATOMIC
+  INSERT INTO varchar_target VALUES (3, $1, NULL);
+END;
+ALTER TABLE varchar_target RENAME COLUMN "User Name" TO username;
+SELECT pg_temp.varchar_insert_fn('123456789012');
+DROP FUNCTION pg_temp.varchar_insert_fn(text);
+
+-- runtime diagnostics and callback cleanup
+DO $$
+DECLARE
+  message text;
+  context text;
+  colname text;
+  tabname text;
+  schemaname text;
+BEGIN
+  BEGIN
+    INSERT INTO varchar_target (email) SELECT v FROM varchar_source;
+  EXCEPTION WHEN string_data_right_truncation THEN
+    GET STACKED DIAGNOSTICS message = MESSAGE_TEXT,
+                            context = PG_EXCEPTION_CONTEXT,
+                            colname = COLUMN_NAME,
+                            tabname = TABLE_NAME,
+                            schemaname = SCHEMA_NAME;
+    RAISE NOTICE 'generic error: %, destination context: %, object fields empty: %',
+      message = 'value too long for type character varying(10)',
+      position('column "email" of relation "varchar_target"' in context) = 1,
+      colname = '' AND tabname = '' AND schemaname = '';
+  END;
+
+  -- Context must not leak after an error, a NULL input, or a successful call.
+  -- Source argument errors must not acquire the destination context.
+  INSERT INTO varchar_target (username) SELECT NULLIF(v, v) FROM varchar_source;
+  BEGIN
+    INSERT INTO varchar_target (username, email)
+      VALUES ((SELECT 'ok'::text FROM varchar_source),
+              pg_catalog.varchar((SELECT v FROM varchar_source), 15, false));
+    RAISE EXCEPTION 'expected a source length error';
+  EXCEPTION WHEN string_data_right_truncation THEN
+    GET STACKED DIAGNOSTICS context = PG_EXCEPTION_CONTEXT;
+    IF position('of relation "varchar_target"' in context) <> 0 THEN
+      RAISE EXCEPTION 'unexpected assignment context: %', context;
+    END IF;
+  END;
+  BEGIN
+    PERFORM pg_catalog.varchar((SELECT v FROM varchar_source), 14, false);
+    RAISE EXCEPTION 'expected a length error';
+  EXCEPTION WHEN string_data_right_truncation THEN
+    GET STACKED DIAGNOSTICS context = PG_EXCEPTION_CONTEXT;
+    IF position('of relation "varchar_target"' in context) <> 0 THEN
+      RAISE EXCEPTION 'assignment context leaked: %', context;
+    END IF;
+  END;
+END;
+$$;
+
+-- collation and array subscript assignments
+INSERT INTO varchar_target (username) VALUES ('123456789012' COLLATE "C");
+CREATE TEMP TABLE varchar_nested (a varchar(10)[]);
+INSERT INTO varchar_nested (a) VALUES (ARRAY['ok']);
+UPDATE varchar_nested SET a[1] = (SELECT v FROM varchar_source);
+
+-- composite literals and row coercions currently omit the column
+-- direct field assignments report the containing column
+CREATE TYPE varchar_composite AS (v varchar(10));
+CREATE TEMP TABLE varchar_composite_target (c varchar_composite);
+INSERT INTO varchar_composite_target VALUES ('(123456789012)');
+INSERT INTO varchar_composite_target VALUES (ROW('123456789012'));
+INSERT INTO varchar_composite_target (c.v) VALUES ('123456789012');
+DROP TABLE varchar_composite_target;
+DROP TYPE varchar_composite;
+
+-- errors in the source expression must not name the destination
+INSERT INTO varchar_target (username)
+  VALUES (pg_catalog.varchar('123456789012', 5, false));
+
+-- XMLSERIALIZE coercions belong to the source expression
+-- skip in builds without XML support
+DO $$
+DECLARE
+  context text;
+BEGIN
+  BEGIN
+    PERFORM XMLPARSE(CONTENT '<a/>');
+  EXCEPTION WHEN feature_not_supported THEN
+    RETURN;
+  END;
+  CREATE TEMP TABLE varchar_unbounded (
+    v text DEFAULT XMLSERIALIZE(CONTENT '<a>long</a>' AS varchar(3)));
+  BEGIN
+    INSERT INTO varchar_unbounded
+      VALUES (XMLSERIALIZE(CONTENT '<a>long</a>' AS varchar(3)) COLLATE "C");
+    RAISE EXCEPTION 'expected a length error';
+  EXCEPTION WHEN string_data_right_truncation THEN
+    GET STACKED DIAGNOSTICS context = PG_EXCEPTION_CONTEXT;
+    IF position('of relation "varchar_unbounded"' in context) <> 0 THEN
+      RAISE EXCEPTION 'source error attributed to column %', context;
+    END IF;
+  END;
+  BEGIN
+    INSERT INTO varchar_unbounded DEFAULT VALUES;
+    RAISE EXCEPTION 'expected a length error';
+  EXCEPTION WHEN string_data_right_truncation THEN
+    GET STACKED DIAGNOSTICS context = PG_EXCEPTION_CONTEXT;
+    IF position('of relation "varchar_unbounded"' in context) <> 0 THEN
+      RAISE EXCEPTION 'default source error attributed to column %', context;
+    END IF;
+  END;
+  DROP TABLE varchar_unbounded;
+END;
+$$;
+
+-- column defaults and stored generated columns
+CREATE TEMP TABLE varchar_default (
+  username varchar(10) DEFAULT repeat('x', 11 + (random() * 0)::int));
+INSERT INTO varchar_default DEFAULT VALUES;
+CREATE TEMP TABLE varchar_generated (
+  v text, username varchar(10) GENERATED ALWAYS AS (v) STORED);
+INSERT INTO varchar_generated (v) VALUES ('123456789012');
+
+-- domain defaults currently omit the destination column
+-- random() prevents constant folding; the default always produces 11 characters
+CREATE DOMAIN varchar_default_domain AS varchar(10)
+  DEFAULT repeat('x', 11 + (random() * 0)::int);
+CREATE TEMP TABLE varchar_domain_default (d varchar_default_domain);
+INSERT INTO varchar_domain_default DEFAULT VALUES;
+DROP TABLE varchar_domain_default;
+DROP DOMAIN varchar_default_domain;
+
+-- copied defaults must refer to the new column
+CREATE TEMP TABLE varchar_default_copy (LIKE varchar_default INCLUDING DEFAULTS);
+DROP TABLE varchar_default;
+ALTER TABLE varchar_default_copy RENAME COLUMN username TO copied_name;
+INSERT INTO varchar_default_copy DEFAULT VALUES;
+ALTER TABLE varchar_default_copy ALTER COLUMN copied_name TYPE varchar(12);
+ALTER TABLE varchar_default_copy ALTER COLUMN copied_name TYPE varchar(10);
+INSERT INTO varchar_default_copy DEFAULT VALUES;
+
+-- diagnostic metadata must not affect equality of inherited defaults
+CREATE TEMP TABLE varchar_parent1 (v varchar(10) DEFAULT 'ok');
+CREATE TEMP TABLE varchar_parent2 (v varchar(10) DEFAULT 'ok');
+CREATE TEMP TABLE varchar_child () INHERITS (varchar_parent1, varchar_parent2);
+INSERT INTO varchar_child DEFAULT VALUES;
+SELECT * FROM varchar_child;
+DROP TABLE varchar_child, varchar_parent1, varchar_parent2;
+
+-- report the destination for column type changes
+ALTER TABLE varchar_source ALTER COLUMN v TYPE varchar(10);
+
+-- SQL coercion inlining must not discard destination context
+-- roll back the cast so it is never visible to other regression sessions
+BEGIN;
+CREATE FUNCTION pg_temp.varchar_sql_coercion(integer, integer)
+RETURNS varchar LANGUAGE SQL IMMUTABLE STRICT
+RETURN ($1 / ($2 - 9))::text::varchar;
+CREATE CAST (integer AS varchar)
+WITH FUNCTION pg_temp.varchar_sql_coercion(integer, integer) AS ASSIGNMENT;
+CREATE TEMP TABLE varchar_sql_source (n integer);
+INSERT INTO varchar_sql_source VALUES (1), (NULL);
+CREATE TEMP TABLE varchar_sql_target (v varchar(5));
+-- strict coercions must skip the function for a NULL argument
+INSERT INTO varchar_sql_target SELECT n FROM varchar_sql_source WHERE n IS NULL;
+INSERT INTO varchar_sql_target SELECT n FROM varchar_sql_source WHERE n = 1;
+ROLLBACK;
+
+DROP TABLE varchar_source, varchar_target, varchar_nested,
+  varchar_default_copy, varchar_generated;

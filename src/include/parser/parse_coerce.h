@@ -45,6 +45,8 @@ extern Node *coerce_to_target_type(ParseState *pstate,
 								   int location);
 extern bool can_coerce_type(int nargs, const Oid *input_typeids, const Oid *target_typeids,
 							CoercionContext ccontext);
+extern void set_coercion_target(Node *expr, Node *source,
+								Oid relid, AttrNumber attnum);
 extern Node *coerce_type(ParseState *pstate, Node *node,
 						 Oid inputTypeId, Oid targetTypeId, int32 targetTypeMod,
 						 CoercionContext ccontext, CoercionForm cformat, int location);

@@ -131,6 +131,78 @@ coerce_to_target_type(ParseState *pstate, Node *expr, Oid exprtype,
 	return result;
 }
 
+/*
+ * Label assignment length coercions with their destination column.  Follow
+ * only the coercion and assignment nodes added above source: an error in the
+ * source expression must not be attributed to the destination.  Coercion can
+ * strip off source's CollateExpr wrappers, so recognize its unwrapped form too.
+ *
+ * This is deliberately not a general expression-tree walk.  Each additional
+ * case must distinguish assignment-added coercions from the source expression.
+ * Unsupported shapes are left unannotated.
+ *
+ * With source == NULL, only update coercions that already have a target.  This
+ * is used to retarget defaults inherited from another column or table.
+ * The caller must own the expression tree, since we modify it in place.
+ */
+void
+set_coercion_target(Node *expr, Node *source, Oid relid, AttrNumber attnum)
+{
+	if (expr == NULL || expr == source)
+		return;
+	while (source && IsA(source, CollateExpr))
+	{
+		source = (Node *) ((CollateExpr *) source)->arg;
+		if (expr == source)
+			return;
+	}
+
+	switch (nodeTag(expr))
+	{
+		case T_FuncExpr:
+			{
+				FuncExpr   *fexpr = (FuncExpr *) expr;
+
+				if (fexpr->funcformat == COERCE_IMPLICIT_CAST &&
+					exprIsLengthCoercion(expr, NULL) &&
+					(source != NULL || OidIsValid(fexpr->functargetrelid)))
+				{
+					fexpr->functargetrelid = relid;
+					fexpr->functargetattnum = attnum;
+				}
+				break;
+			}
+		case T_CollateExpr:
+			set_coercion_target((Node *) ((CollateExpr *) expr)->arg,
+								source, relid, attnum);
+			break;
+		case T_RelabelType:
+			if (((RelabelType *) expr)->relabelformat == COERCE_IMPLICIT_CAST)
+				set_coercion_target((Node *) ((RelabelType *) expr)->arg,
+									source, relid, attnum);
+			break;
+		case T_CoerceToDomain:
+			if (((CoerceToDomain *) expr)->coercionformat == COERCE_IMPLICIT_CAST)
+				set_coercion_target((Node *) ((CoerceToDomain *) expr)->arg,
+									source, relid, attnum);
+			break;
+		case T_ArrayCoerceExpr:
+			if (((ArrayCoerceExpr *) expr)->coerceformat == COERCE_IMPLICIT_CAST)
+				set_coercion_target((Node *) ((ArrayCoerceExpr *) expr)->elemexpr,
+									source, relid, attnum);
+			break;
+		case T_FieldStore:
+			foreach_ptr(Node, value, ((FieldStore *) expr)->newvals)
+				set_coercion_target(value, source, relid, attnum);
+			break;
+		case T_SubscriptingRef:
+			set_coercion_target((Node *) ((SubscriptingRef *) expr)->refassgnexpr,
+								source, relid, attnum);
+			break;
+		default:
+			break;
+	}
+}
 
 /*
  * coerce_type()

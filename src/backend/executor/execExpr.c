@@ -1196,6 +1196,8 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				ExecInitFunc(&scratch, node,
 							 func->args, func->funcid, func->inputcollid,
 							 state);
+				if (OidIsValid(func->functargetrelid))
+					scratch.opcode = EEOP_FUNCEXPR_COERCION;
 				ExprEvalPushStep(state, &scratch);
 				break;
 			}

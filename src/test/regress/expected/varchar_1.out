@@ -17,6 +17,7 @@ INSERT INTO VARCHAR_TBL (f1) VALUES ('');
 -- try varchar's of greater than 1 length
 INSERT INTO VARCHAR_TBL (f1) VALUES ('cd');
 ERROR:  value too long for type character varying(1)
+CONTEXT:  column "f1" of relation "varchar_tbl"
 INSERT INTO VARCHAR_TBL (f1) VALUES ('c     ');
 SELECT * FROM VARCHAR_TBL;
  f1 
@@ -102,6 +103,7 @@ DROP TABLE VARCHAR_TBL;
 --
 INSERT INTO VARCHAR_TBL (f1) VALUES ('abcde');
 ERROR:  value too long for type character varying(4)
+CONTEXT:  column "f1" of relation "varchar_tbl"
 SELECT * FROM VARCHAR_TBL;
   f1  
 ------
@@ -130,3 +132,222 @@ SELECT * FROM pg_input_error_info('abcde', 'varchar(4)');
  value too long for type character varying(4) |        |      | 22001
 (1 row)
 
+-- report the destination column for planning-time and runtime errors
+CREATE TEMP TABLE varchar_target (id int, username varchar(10), email varchar(10));
+INSERT INTO varchar_target (email, username) VALUES ('123456789012', 'ok');
+ERROR:  value too long for type character varying(10)
+CONTEXT:  column "email" of relation "varchar_target"
+INSERT INTO varchar_target (username) VALUES ('ok'), ('123456789012');
+ERROR:  value too long for type character varying(10)
+CONTEXT:  column "username" of relation "varchar_target"
+CREATE TEMP TABLE varchar_source (v text);
+INSERT INTO varchar_source VALUES ('123456789012');
+INSERT INTO varchar_target VALUES (1, 'ok', 'ok');
+UPDATE varchar_target SET username = (SELECT v FROM varchar_source);
+ERROR:  value too long for type character varying(10)
+CONTEXT:  column "username" of relation "varchar_target"
+-- keep the destination in generic plans and use the current column name
+SET plan_cache_mode = force_generic_plan;
+PREPARE varchar_insert(text) AS
+  INSERT INTO varchar_target VALUES (2, $1, NULL);
+EXECUTE varchar_insert('123456789012');
+ERROR:  value too long for type character varying(10)
+CONTEXT:  column "username" of relation "varchar_target"
+ALTER TABLE varchar_target RENAME COLUMN username TO "User Name";
+EXECUTE varchar_insert('123456789012');
+ERROR:  value too long for type character varying(10)
+CONTEXT:  column "User Name" of relation "varchar_target"
+DEALLOCATE varchar_insert;
+RESET plan_cache_mode;
+-- keep the column identity in stored SQL bodies across renames
+CREATE FUNCTION pg_temp.varchar_insert_fn(text) RETURNS void
+LANGUAGE SQL BEGIN ATOMIC
+  INSERT INTO varchar_target VALUES (3, $1, NULL);
+END;
+ALTER TABLE varchar_target RENAME COLUMN "User Name" TO username;
+SELECT pg_temp.varchar_insert_fn('123456789012');
+ERROR:  value too long for type character varying(10)
+CONTEXT:  column "username" of relation "varchar_target"
+SQL function "varchar_insert_fn" statement 1
+DROP FUNCTION pg_temp.varchar_insert_fn(text);
+-- runtime diagnostics and callback cleanup
+DO $$
+DECLARE
+  message text;
+  context text;
+  colname text;
+  tabname text;
+  schemaname text;
+BEGIN
+  BEGIN
+    INSERT INTO varchar_target (email) SELECT v FROM varchar_source;
+  EXCEPTION WHEN string_data_right_truncation THEN
+    GET STACKED DIAGNOSTICS message = MESSAGE_TEXT,
+                            context = PG_EXCEPTION_CONTEXT,
+                            colname = COLUMN_NAME,
+                            tabname = TABLE_NAME,
+                            schemaname = SCHEMA_NAME;
+    RAISE NOTICE 'generic error: %, destination context: %, object fields empty: %',
+      message = 'value too long for type character varying(10)',
+      position('column "email" of relation "varchar_target"' in context) = 1,
+      colname = '' AND tabname = '' AND schemaname = '';
+  END;
+
+  -- Context must not leak after an error, a NULL input, or a successful call.
+  -- Source argument errors must not acquire the destination context.
+  INSERT INTO varchar_target (username) SELECT NULLIF(v, v) FROM varchar_source;
+  BEGIN
+    INSERT INTO varchar_target (username, email)
+      VALUES ((SELECT 'ok'::text FROM varchar_source),
+              pg_catalog.varchar((SELECT v FROM varchar_source), 15, false));
+    RAISE EXCEPTION 'expected a source length error';
+  EXCEPTION WHEN string_data_right_truncation THEN
+    GET STACKED DIAGNOSTICS context = PG_EXCEPTION_CONTEXT;
+    IF position('of relation "varchar_target"' in context) <> 0 THEN
+      RAISE EXCEPTION 'unexpected assignment context: %', context;
+    END IF;
+  END;
+  BEGIN
+    PERFORM pg_catalog.varchar((SELECT v FROM varchar_source), 14, false);
+    RAISE EXCEPTION 'expected a length error';
+  EXCEPTION WHEN string_data_right_truncation THEN
+    GET STACKED DIAGNOSTICS context = PG_EXCEPTION_CONTEXT;
+    IF position('of relation "varchar_target"' in context) <> 0 THEN
+      RAISE EXCEPTION 'assignment context leaked: %', context;
+    END IF;
+  END;
+END;
+$$;
+NOTICE:  generic error: t, destination context: t, object fields empty: t
+-- collation and array subscript assignments
+INSERT INTO varchar_target (username) VALUES ('123456789012' COLLATE "C");
+ERROR:  value too long for type character varying(10)
+CONTEXT:  column "username" of relation "varchar_target"
+CREATE TEMP TABLE varchar_nested (a varchar(10)[]);
+INSERT INTO varchar_nested (a) VALUES (ARRAY['ok']);
+UPDATE varchar_nested SET a[1] = (SELECT v FROM varchar_source);
+ERROR:  value too long for type character varying(10)
+CONTEXT:  column "a" of relation "varchar_nested"
+-- composite literals and row coercions currently omit the column
+-- direct field assignments report the containing column
+CREATE TYPE varchar_composite AS (v varchar(10));
+CREATE TEMP TABLE varchar_composite_target (c varchar_composite);
+INSERT INTO varchar_composite_target VALUES ('(123456789012)');
+ERROR:  value too long for type character varying(10)
+LINE 1: INSERT INTO varchar_composite_target VALUES ('(123456789012)...
+                                                     ^
+INSERT INTO varchar_composite_target VALUES (ROW('123456789012'));
+ERROR:  value too long for type character varying(10)
+INSERT INTO varchar_composite_target (c.v) VALUES ('123456789012');
+ERROR:  value too long for type character varying(10)
+CONTEXT:  column "c" of relation "varchar_composite_target"
+DROP TABLE varchar_composite_target;
+DROP TYPE varchar_composite;
+-- errors in the source expression must not name the destination
+INSERT INTO varchar_target (username)
+  VALUES (pg_catalog.varchar('123456789012', 5, false));
+ERROR:  value too long for type character varying(1)
+-- XMLSERIALIZE coercions belong to the source expression
+-- skip in builds without XML support
+DO $$
+DECLARE
+  context text;
+BEGIN
+  BEGIN
+    PERFORM XMLPARSE(CONTENT '<a/>');
+  EXCEPTION WHEN feature_not_supported THEN
+    RETURN;
+  END;
+  CREATE TEMP TABLE varchar_unbounded (
+    v text DEFAULT XMLSERIALIZE(CONTENT '<a>long</a>' AS varchar(3)));
+  BEGIN
+    INSERT INTO varchar_unbounded
+      VALUES (XMLSERIALIZE(CONTENT '<a>long</a>' AS varchar(3)) COLLATE "C");
+    RAISE EXCEPTION 'expected a length error';
+  EXCEPTION WHEN string_data_right_truncation THEN
+    GET STACKED DIAGNOSTICS context = PG_EXCEPTION_CONTEXT;
+    IF position('of relation "varchar_unbounded"' in context) <> 0 THEN
+      RAISE EXCEPTION 'source error attributed to column %', context;
+    END IF;
+  END;
+  BEGIN
+    INSERT INTO varchar_unbounded DEFAULT VALUES;
+    RAISE EXCEPTION 'expected a length error';
+  EXCEPTION WHEN string_data_right_truncation THEN
+    GET STACKED DIAGNOSTICS context = PG_EXCEPTION_CONTEXT;
+    IF position('of relation "varchar_unbounded"' in context) <> 0 THEN
+      RAISE EXCEPTION 'default source error attributed to column %', context;
+    END IF;
+  END;
+  DROP TABLE varchar_unbounded;
+END;
+$$;
+-- column defaults and stored generated columns
+CREATE TEMP TABLE varchar_default (
+  username varchar(10) DEFAULT repeat('x', 11 + (random() * 0)::int));
+INSERT INTO varchar_default DEFAULT VALUES;
+ERROR:  value too long for type character varying(10)
+CONTEXT:  column "username" of relation "varchar_default"
+CREATE TEMP TABLE varchar_generated (
+  v text, username varchar(10) GENERATED ALWAYS AS (v) STORED);
+INSERT INTO varchar_generated (v) VALUES ('123456789012');
+ERROR:  value too long for type character varying(10)
+CONTEXT:  column "username" of relation "varchar_generated"
+-- domain defaults currently omit the destination column
+-- random() prevents constant folding; the default always produces 11 characters
+CREATE DOMAIN varchar_default_domain AS varchar(10)
+  DEFAULT repeat('x', 11 + (random() * 0)::int);
+CREATE TEMP TABLE varchar_domain_default (d varchar_default_domain);
+INSERT INTO varchar_domain_default DEFAULT VALUES;
+ERROR:  value too long for type character varying(10)
+DROP TABLE varchar_domain_default;
+DROP DOMAIN varchar_default_domain;
+-- copied defaults must refer to the new column
+CREATE TEMP TABLE varchar_default_copy (LIKE varchar_default INCLUDING DEFAULTS);
+DROP TABLE varchar_default;
+ALTER TABLE varchar_default_copy RENAME COLUMN username TO copied_name;
+INSERT INTO varchar_default_copy DEFAULT VALUES;
+ERROR:  value too long for type character varying(10)
+CONTEXT:  column "copied_name" of relation "varchar_default_copy"
+ALTER TABLE varchar_default_copy ALTER COLUMN copied_name TYPE varchar(12);
+ALTER TABLE varchar_default_copy ALTER COLUMN copied_name TYPE varchar(10);
+INSERT INTO varchar_default_copy DEFAULT VALUES;
+ERROR:  value too long for type character varying(10)
+CONTEXT:  column "copied_name" of relation "varchar_default_copy"
+-- diagnostic metadata must not affect equality of inherited defaults
+CREATE TEMP TABLE varchar_parent1 (v varchar(10) DEFAULT 'ok');
+CREATE TEMP TABLE varchar_parent2 (v varchar(10) DEFAULT 'ok');
+CREATE TEMP TABLE varchar_child () INHERITS (varchar_parent1, varchar_parent2);
+NOTICE:  merging multiple inherited definitions of column "v"
+INSERT INTO varchar_child DEFAULT VALUES;
+SELECT * FROM varchar_child;
+ v  
+----
+ ok
+(1 row)
+
+DROP TABLE varchar_child, varchar_parent1, varchar_parent2;
+-- report the destination for column type changes
+ALTER TABLE varchar_source ALTER COLUMN v TYPE varchar(10);
+ERROR:  value too long for type character varying(10)
+CONTEXT:  column "v" of relation "varchar_source"
+-- SQL coercion inlining must not discard destination context
+-- roll back the cast so it is never visible to other regression sessions
+BEGIN;
+CREATE FUNCTION pg_temp.varchar_sql_coercion(integer, integer)
+RETURNS varchar LANGUAGE SQL IMMUTABLE STRICT
+RETURN ($1 / ($2 - 9))::text::varchar;
+CREATE CAST (integer AS varchar)
+WITH FUNCTION pg_temp.varchar_sql_coercion(integer, integer) AS ASSIGNMENT;
+CREATE TEMP TABLE varchar_sql_source (n integer);
+INSERT INTO varchar_sql_source VALUES (1), (NULL);
+CREATE TEMP TABLE varchar_sql_target (v varchar(5));
+-- strict coercions must skip the function for a NULL argument
+INSERT INTO varchar_sql_target SELECT n FROM varchar_sql_source WHERE n IS NULL;
+INSERT INTO varchar_sql_target SELECT n FROM varchar_sql_source WHERE n = 1;
+ERROR:  division by zero
+CONTEXT:  SQL function "varchar_sql_coercion" statement 1
+column "v" of relation "varchar_sql_target"
+ROLLBACK;
+DROP TABLE varchar_source, varchar_target, varchar_nested,
+  varchar_default_copy, varchar_generated;

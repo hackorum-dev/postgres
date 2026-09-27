@@ -1127,20 +1127,24 @@ INSERT INTO fract_only VALUES (2, '0.1');
 INSERT INTO fract_only VALUES (3, '1.0');	-- should fail
 ERROR:  numeric field overflow
 DETAIL:  A field with precision 4, scale 4 must round to an absolute value less than 1.
+CONTEXT:  column "val" of relation "fract_only"
 INSERT INTO fract_only VALUES (4, '-0.9999');
 INSERT INTO fract_only VALUES (5, '0.99994');
 INSERT INTO fract_only VALUES (6, '0.99995');  -- should fail
 ERROR:  numeric field overflow
 DETAIL:  A field with precision 4, scale 4 must round to an absolute value less than 1.
+CONTEXT:  column "val" of relation "fract_only"
 INSERT INTO fract_only VALUES (7, '0.00001');
 INSERT INTO fract_only VALUES (8, '0.00017');
 INSERT INTO fract_only VALUES (9, 'NaN');
 INSERT INTO fract_only VALUES (10, 'Inf');	-- should fail
 ERROR:  numeric field overflow
 DETAIL:  A field with precision 4, scale 4 cannot hold an infinite value.
+CONTEXT:  column "val" of relation "fract_only"
 INSERT INTO fract_only VALUES (11, '-Inf');	-- should fail
 ERROR:  numeric field overflow
 DETAIL:  A field with precision 4, scale 4 cannot hold an infinite value.
+CONTEXT:  column "val" of relation "fract_only"
 SELECT * FROM fract_only;
  id |   val   
 ----+---------
@@ -2739,21 +2743,27 @@ SELECT scale(millions), * FROM num_typemod_test ORDER BY millions;
 INSERT INTO num_typemod_test (millions) VALUES ('inf');
 ERROR:  numeric field overflow
 DETAIL:  A field with precision 3, scale -6 cannot hold an infinite value.
+CONTEXT:  column "millions" of relation "num_typemod_test"
 INSERT INTO num_typemod_test (millions) VALUES (999500000);
 ERROR:  numeric field overflow
 DETAIL:  A field with precision 3, scale -6 must round to an absolute value less than 10^9.
+CONTEXT:  column "millions" of relation "num_typemod_test"
 INSERT INTO num_typemod_test (thousands) VALUES (999500);
 ERROR:  numeric field overflow
 DETAIL:  A field with precision 3, scale -3 must round to an absolute value less than 10^6.
+CONTEXT:  column "thousands" of relation "num_typemod_test"
 INSERT INTO num_typemod_test (units) VALUES (999.5);
 ERROR:  numeric field overflow
 DETAIL:  A field with precision 3, scale 0 must round to an absolute value less than 10^3.
+CONTEXT:  column "units" of relation "num_typemod_test"
 INSERT INTO num_typemod_test (thousandths) VALUES (0.9995);
 ERROR:  numeric field overflow
 DETAIL:  A field with precision 3, scale 3 must round to an absolute value less than 1.
+CONTEXT:  column "thousandths" of relation "num_typemod_test"
 INSERT INTO num_typemod_test (millionths) VALUES (0.0009995);
 ERROR:  numeric field overflow
 DETAIL:  A field with precision 3, scale 6 must round to an absolute value less than 10^-3.
+CONTEXT:  column "millionths" of relation "num_typemod_test"
 --
 -- Test some corner cases for multiplication
 --

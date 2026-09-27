@@ -790,6 +790,11 @@ typedef struct FuncExpr
 	Oid			inputcollid pg_node_attr(query_jumble_ignore);
 	/* arguments to the function */
 	List	   *args;
+
+	/* destination column of an assignment coercion */
+	Oid			functargetrelid pg_node_attr(equal_ignore, query_jumble_ignore);
+	AttrNumber	functargetattnum pg_node_attr(equal_ignore, query_jumble_ignore);
+
 	/* token location, or -1 if unknown */
 	ParseLoc	location;
 } FuncExpr;

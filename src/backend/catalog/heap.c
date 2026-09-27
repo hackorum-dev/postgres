@@ -2465,7 +2465,8 @@ AddRelationNewConstraints(Relation rel,
 		expr = cookDefault(pstate, colDef->raw_default,
 						   atp->atttypid, atp->atttypmod,
 						   NameStr(atp->attname),
-						   atp->attgenerated);
+						   atp->attgenerated,
+						   RelationGetRelid(rel), colDef->attnum);
 
 		/*
 		 * If the expression is just a NULL constant, we do not bother to make
@@ -3373,6 +3374,7 @@ check_virtual_generated_security(ParseState *pstate, Node *node)
  * If atttypid is not InvalidOid, coerce the expression to the specified
  * type (and typmod atttypmod).   attname is only needed in this case:
  * it is used in the error message, if any.
+ * relid and attnum identify the destination column for coercion errors.
  */
 Node *
 cookDefault(ParseState *pstate,
@@ -3380,7 +3382,8 @@ cookDefault(ParseState *pstate,
 			Oid atttypid,
 			int32 atttypmod,
 			const char *attname,
-			char attgenerated)
+			char attgenerated,
+			Oid relid, AttrNumber attnum)
 {
 	Node	   *expr;
 
@@ -3423,6 +3426,7 @@ cookDefault(ParseState *pstate,
 	if (OidIsValid(atttypid))
 	{
 		Oid			type_id = exprType(expr);
+		Node	   *orig_expr = expr;
 
 		expr = coerce_to_target_type(pstate, expr, type_id,
 									 atttypid, atttypmod,
@@ -3438,6 +3442,9 @@ cookDefault(ParseState *pstate,
 							format_type_be(atttypid),
 							format_type_be(type_id)),
 					 errhint("You will need to rewrite or cast the expression.")));
+
+		if (OidIsValid(relid))
+			set_coercion_target(expr, orig_expr, relid, attnum);
 	}
 
 	/*

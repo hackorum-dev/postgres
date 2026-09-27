@@ -901,7 +901,7 @@ DefineDomain(ParseState *pstate, CreateDomainStmt *stmt)
 											  basetypeoid,
 											  basetypeMod,
 											  domainName,
-											  0);
+											  0, InvalidOid, InvalidAttrNumber);
 
 					/*
 					 * If the expression is just a NULL constant, we treat it
@@ -2701,7 +2701,7 @@ AlterDomainDefault(List *names, Node *defaultRaw)
 								  typTup->typbasetype,
 								  typTup->typtypmod,
 								  NameStr(typTup->typname),
-								  0);
+								  0, InvalidOid, InvalidAttrNumber);
 
 		/*
 		 * If the expression is just a NULL constant, we treat the command

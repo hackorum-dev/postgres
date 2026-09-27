@@ -22,6 +22,7 @@
 #include "catalog/indexing.h"
 #include "catalog/objectaccess.h"
 #include "catalog/pg_attrdef.h"
+#include "parser/parse_coerce.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
@@ -57,6 +58,9 @@ StoreAttrDefault(Relation rel, AttrNumber attnum,
 				defobject;
 
 	adrel = table_open(AttrDefaultRelationId, RowExclusiveLock);
+
+	/* An inherited or copied default now belongs to this column. */
+	set_coercion_target(expr, NULL, RelationGetRelid(rel), attnum);
 
 	/*
 	 * Flatten expression to string form for storage.

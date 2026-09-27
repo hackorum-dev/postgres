@@ -153,6 +153,7 @@ static Expr *simplify_function(Oid funcid,
 							   Oid result_type, int32 result_typmod,
 							   Oid result_collid, Oid input_collid, List **args_p,
 							   bool funcvariadic, bool process_args, bool allow_non_const,
+							   FuncExpr *original,
 							   eval_const_expressions_context *context);
 static Node *simplify_aggref(Aggref *aggref,
 							 eval_const_expressions_context *context);
@@ -168,6 +169,7 @@ static Expr *evaluate_function(Oid funcid, Oid result_type, int32 result_typmod,
 							   Oid result_collid, Oid input_collid, List *args,
 							   bool funcvariadic,
 							   HeapTuple func_tuple,
+							   FuncExpr *original,
 							   eval_const_expressions_context *context);
 static Expr *inline_function(Oid funcid, Oid result_type, Oid result_collid,
 							 Oid input_collid, List *args,
@@ -2985,6 +2987,7 @@ eval_const_expressions_mutator(Node *node,
 										   expr->funcvariadic,
 										   true,
 										   true,
+										   expr,
 										   context);
 				if (simple)		/* successfully simplified it */
 					return (Node *) simple;
@@ -3004,6 +3007,8 @@ eval_const_expressions_mutator(Node *node,
 				newexpr->funccollid = expr->funccollid;
 				newexpr->inputcollid = expr->inputcollid;
 				newexpr->args = args;
+				newexpr->functargetrelid = expr->functargetrelid;
+				newexpr->functargetattnum = expr->functargetattnum;
 				newexpr->location = expr->location;
 				return (Node *) newexpr;
 			}
@@ -3037,6 +3042,7 @@ eval_const_expressions_mutator(Node *node,
 										   false,
 										   true,
 										   true,
+										   NULL,
 										   context);
 				if (simple)		/* successfully simplified it */
 					return (Node *) simple;
@@ -3156,6 +3162,7 @@ eval_const_expressions_mutator(Node *node,
 											   false,
 											   false,
 											   false,
+											   NULL,
 											   context);
 					if (simple) /* successfully simplified it */
 					{
@@ -3515,6 +3522,7 @@ eval_const_expressions_mutator(Node *node,
 										   false,
 										   true,
 										   true,
+										   NULL,
 										   context);
 				if (simple)		/* successfully simplified output fn */
 				{
@@ -3547,6 +3555,7 @@ eval_const_expressions_mutator(Node *node,
 											   false,
 											   false,
 											   true,
+											   NULL,
 											   context);
 					if (simple) /* successfully simplified input fn */
 						return (Node *) simple;
@@ -4668,7 +4677,8 @@ simplify_boolean_equality(Oid opno, List *args)
  * polymorphic functions), result typmod, result collation, the input
  * collation to use for the function, the original argument list (not
  * const-simplified yet, unless process_args is false), and some flags;
- * also the context data for eval_const_expressions.
+ * also the original FuncExpr (if any), for preserving the coercion target,
+ * and the context data for eval_const_expressions.
  *
  * Returns a simplified expression if successful, or NULL if cannot
  * simplify the function call.
@@ -4685,6 +4695,7 @@ static Expr *
 simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
 				  Oid result_collid, Oid input_collid, List **args_p,
 				  bool funcvariadic, bool process_args, bool allow_non_const,
+				  FuncExpr *original,
 				  eval_const_expressions_context *context)
 {
 	List	   *args = *args_p;
@@ -4730,7 +4741,7 @@ simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
 	newexpr = evaluate_function(funcid, result_type, result_typmod,
 								result_collid, input_collid,
 								args, funcvariadic,
-								func_tuple, context);
+								func_tuple, original, context);
 
 	if (!newexpr && allow_non_const && OidIsValid(func_form->prosupport))
 	{
@@ -4753,6 +4764,8 @@ simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
 		fexpr.funccollid = result_collid;
 		fexpr.inputcollid = input_collid;
 		fexpr.args = args;
+		fexpr.functargetrelid = original ? original->functargetrelid : InvalidOid;
+		fexpr.functargetattnum = original ? original->functargetattnum : InvalidAttrNumber;
 		fexpr.location = -1;
 
 		req.type = T_SupportRequestSimplify;
@@ -4767,7 +4780,9 @@ simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
 		Assert(newexpr != (Expr *) &fexpr);
 	}
 
-	if (!newexpr && allow_non_const)
+	/* Inlining would discard the assignment coercion's error context. */
+	if (!newexpr && allow_non_const &&
+		!(original && OidIsValid(original->functargetrelid)))
 		newexpr = inline_function(funcid, result_type, result_collid,
 								  input_collid, args, funcvariadic,
 								  func_tuple, context);
@@ -5370,6 +5385,7 @@ evaluate_function(Oid funcid, Oid result_type, int32 result_typmod,
 				  Oid result_collid, Oid input_collid, List *args,
 				  bool funcvariadic,
 				  HeapTuple func_tuple,
+				  FuncExpr *original,
 				  eval_const_expressions_context *context)
 {
 	Form_pg_proc funcform = (Form_pg_proc) GETSTRUCT(func_tuple);
@@ -5454,6 +5470,11 @@ evaluate_function(Oid funcid, Oid result_type, int32 result_typmod,
 	newexpr->funccollid = result_collid;	/* doesn't matter */
 	newexpr->inputcollid = input_collid;
 	newexpr->args = args;
+	if (original)
+	{
+		newexpr->functargetrelid = original->functargetrelid;
+		newexpr->functargetattnum = original->functargetattnum;
+	}
 	newexpr->location = -1;
 
 	return evaluate_expr((Expr *) newexpr, result_type, result_typmod,

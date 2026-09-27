@@ -761,6 +761,12 @@ llvm_compile_expr(ExprState *state)
 				LLVMBuildBr(b, opblocks[opno + 1]);
 				break;
 
+			case EEOP_FUNCEXPR_COERCION:
+				build_EvalXFunc(b, mod, "ExecEvalFuncExprCoercion",
+								v_state, op, v_econtext);
+				LLVMBuildBr(b, opblocks[opno + 1]);
+				break;
+
 				/*
 				 * Treat them the same for now, optimizer can remove
 				 * redundancy. Could be worthwhile to optimize during emission

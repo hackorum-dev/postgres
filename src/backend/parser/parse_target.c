@@ -466,6 +466,7 @@ transformAssignedExpr(ParseState *pstate,
 	int32		attrtypmod;
 	Oid			attrcollation;	/* collation of target column */
 	ParseExprKind sv_expr_kind;
+	Node	   *orig_expr = (Node *) expr;
 
 	/*
 	 * Save and restore identity of expression type we're parsing.  We must
@@ -576,8 +577,6 @@ transformAssignedExpr(ParseState *pstate,
 		 * For normal non-qualified target column, do type checking and
 		 * coercion.
 		 */
-		Node	   *orig_expr = (Node *) expr;
-
 		expr = (Expr *)
 			coerce_to_target_type(pstate,
 								  orig_expr, type_id,
@@ -596,6 +595,9 @@ transformAssignedExpr(ParseState *pstate,
 					 errhint("You will need to rewrite or cast the expression."),
 					 parser_errposition(pstate, exprLocation(orig_expr))));
 	}
+
+	set_coercion_target((Node *) expr, orig_expr,
+						RelationGetRelid(rd), attrno);
 
 	pstate->p_expr_kind = sv_expr_kind;
 

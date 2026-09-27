@@ -151,6 +151,7 @@ void	   *referenced_functions[] =
 	ExecEvalFieldSelect,
 	ExecEvalFieldStoreDeForm,
 	ExecEvalFieldStoreForm,
+	ExecEvalFuncExprCoercion,
 	ExecEvalFuncExprFusage,
 	ExecEvalFuncExprStrictFusage,
 	ExecEvalGroupingFunc,

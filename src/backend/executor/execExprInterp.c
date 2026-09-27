@@ -514,6 +514,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		&&CASE_EEOP_FUNCEXPR_STRICT_2,
 		&&CASE_EEOP_FUNCEXPR_FUSAGE,
 		&&CASE_EEOP_FUNCEXPR_STRICT_FUSAGE,
+		&&CASE_EEOP_FUNCEXPR_COERCION,
 		&&CASE_EEOP_BOOL_AND_STEP_FIRST,
 		&&CASE_EEOP_BOOL_AND_STEP,
 		&&CASE_EEOP_BOOL_AND_STEP_LAST,
@@ -1028,6 +1029,13 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		{
 			/* not common enough to inline */
 			ExecEvalFuncExprStrictFusage(state, op, econtext);
+
+			EEO_NEXT();
+		}
+
+		EEO_CASE(EEOP_FUNCEXPR_COERCION)
+		{
+			ExecEvalFuncExprCoercion(state, op, econtext);
 
 			EEO_NEXT();
 		}
@@ -3046,6 +3054,58 @@ ExecEvalFuncExprStrictFusage(ExprState *state, ExprEvalStep *op,
 	*op->resnull = fcinfo->isnull;
 
 	pgstat_end_function_usage(&fcusage, true);
+}
+
+/*
+ * Add destination context for an assignment coercion.  Resolve names only
+ * when reporting an error, so stored expressions continue to reflect renames.
+ * Leave the datatype's primary message and object diagnostics untouched.
+ */
+static void
+coercion_error_callback(void *arg)
+{
+	FuncExpr   *expr = (FuncExpr *) arg;
+	char	   *colname;
+	char	   *relname;
+
+	Assert(IsA(expr, FuncExpr));
+	Assert(OidIsValid(expr->functargetrelid));
+
+	colname = get_attname(expr->functargetrelid, expr->functargetattnum, true);
+	if (colname == NULL)
+		return;
+	relname = get_rel_name(expr->functargetrelid);
+	if (relname == NULL)
+		return;
+
+	errcontext("column \"%s\" of relation \"%s\"", colname, relname);
+}
+
+/*
+ * Evaluate EEOP_FUNCEXPR_COERCION with destination-column error context.
+ * Arguments have already been evaluated, so errors in the source expression
+ * are not attributed to the destination.
+ */
+void
+ExecEvalFuncExprCoercion(ExprState *state, ExprEvalStep *op,
+						 ExprContext *econtext)
+{
+	FunctionCallInfo fcinfo = op->d.func.fcinfo_data;
+	ErrorContextCallback errcallback;
+
+	errcallback.callback = coercion_error_callback;
+	errcallback.arg = fcinfo->flinfo->fn_expr;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
+
+	/* These helpers also handle disabled function statistics collection. */
+	if (fcinfo->flinfo->fn_strict)
+		ExecEvalFuncExprStrictFusage(state, op, econtext);
+	else
+		ExecEvalFuncExprFusage(state, op, econtext);
+
+	/* On ERROR, the surrounding error handler restores the callback stack. */
+	error_context_stack = errcallback.previous;
 }
 
 /*

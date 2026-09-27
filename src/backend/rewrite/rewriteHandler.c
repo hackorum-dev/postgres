@@ -1282,6 +1282,7 @@ build_column_default(Relation rel, int attrno)
 	int32		atttypmod = att_tup->atttypmod;
 	Node	   *expr = NULL;
 	Oid			exprtype;
+	Node	   *orig_expr;
 
 	if (att_tup->attidentity)
 	{
@@ -1321,6 +1322,7 @@ build_column_default(Relation rel, int attrno)
 	 * the parser's processing of non-defaulted expressions --- see
 	 * transformAssignedExpr().
 	 */
+	orig_expr = expr;
 	exprtype = exprType(expr);
 
 	expr = coerce_to_target_type(NULL,	/* no UNKNOWN params here */
@@ -1338,6 +1340,8 @@ build_column_default(Relation rel, int attrno)
 						format_type_be(atttype),
 						format_type_be(exprtype)),
 				 errhint("You will need to rewrite or cast the expression.")));
+
+	set_coercion_target(expr, orig_expr, RelationGetRelid(rel), attrno);
 
 	return expr;
 }

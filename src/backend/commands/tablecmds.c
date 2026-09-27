@@ -14948,6 +14948,8 @@ ATPrepAlterColumnType(List **wqueue,
 	else if (tab->relkind == RELKIND_RELATION ||
 			 tab->relkind == RELKIND_PARTITIONED_TABLE)
 	{
+		Node	   *orig_transform;
+
 		/*
 		 * Set up an expression to transform the old data value to the new
 		 * type. If a USING option was given, use the expression as
@@ -14965,6 +14967,7 @@ ATPrepAlterColumnType(List **wqueue,
 										 0);
 		}
 
+		orig_transform = transform;
 		transform = coerce_to_target_type(pstate,
 										  transform, exprType(transform),
 										  targettype, targettypmod,
@@ -14993,6 +14996,8 @@ ATPrepAlterColumnType(List **wqueue,
 								 format_type_with_typemod(targettype,
 														  targettypmod)) : 0));
 		}
+
+		set_coercion_target(transform, orig_transform, RelationGetRelid(rel), attnum);
 
 		/* Fix collations after all else */
 		assign_expr_collations(pstate, transform);
@@ -15280,9 +15285,12 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 	 */
 	if (attTup->atthasdef)
 	{
+		Node	   *orig_default;
+
 		defaultexpr = build_column_default(rel, attnum);
 		Assert(defaultexpr);
 		defaultexpr = strip_implicit_coercions(defaultexpr);
+		orig_default = defaultexpr;
 		defaultexpr = coerce_to_target_type(NULL,	/* no UNKNOWN params */
 											defaultexpr, exprType(defaultexpr),
 											targettype, targettypmod,
@@ -15302,6 +15310,8 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 						 errmsg("default for column \"%s\" cannot be cast automatically to type %s",
 								colName, format_type_be(targettype))));
 		}
+		set_coercion_target(defaultexpr, orig_default,
+							RelationGetRelid(rel), attnum);
 	}
 	else
 		defaultexpr = NULL;
