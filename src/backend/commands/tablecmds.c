@@ -16141,10 +16141,12 @@ ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab, LOCKMODE lockmode)
 			relid = con->conrelid;
 		else
 		{
-			/* must be a domain constraint */
-			relid = get_typ_typrelid(getBaseType(con->contypid));
-			if (!OidIsValid(relid))
-				elog(ERROR, "could not identify relation associated with constraint %u", oldId);
+			/*
+			 * Must be a domain constraint.  Domains don't have their own
+			 * relations, so attach the rebuild step to the table being
+			 * altered.
+			 */
+			relid = tab->relid;
 		}
 		confrelid = con->confrelid;
 		conislocal = con->conislocal;
