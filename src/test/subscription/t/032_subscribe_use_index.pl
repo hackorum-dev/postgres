@@ -733,6 +733,60 @@ SKIP:
 # demoted from replica identity
 # =============================================================================
 
+# =============================================================================
+# Testcase start: Subscription does not use a deferrable primary key
+#
+# A deferrable primary key cannot serve as a replica identity, because its
+# uniqueness may be transiently violated.  When it is the subscriber table's
+# only key and the published table does not have REPLICA IDENTITY FULL, the
+# apply worker must refuse the relation for UPDATE rather than proceed
+# without an index to look up the tuple.
+#
+
+# create tables pub and sub
+$node_publisher->safe_psql('postgres',
+	"CREATE TABLE test_deferrable_pk (a int PRIMARY KEY, b text)");
+$node_subscriber->safe_psql('postgres',
+	"CREATE TABLE test_deferrable_pk (a int, b text, PRIMARY KEY (a) DEFERRABLE)"
+);
+
+# insert some initial data
+$node_publisher->safe_psql('postgres',
+	"INSERT INTO test_deferrable_pk VALUES (1, 'one')");
+
+# create pub/sub
+$node_publisher->safe_psql('postgres',
+	"CREATE PUBLICATION tap_pub_deferrable_pk FOR TABLE test_deferrable_pk");
+$node_subscriber->safe_psql('postgres',
+	"CREATE SUBSCRIPTION tap_sub_deferrable_pk CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION tap_pub_deferrable_pk"
+);
+
+# wait for initial table synchronization to finish
+$node_subscriber->wait_for_subscription_sync($node_publisher, $appname);
+
+# the update must be refused, since the deferrable PK is not usable
+my $log_offset = -s $node_subscriber->logfile;
+$node_publisher->safe_psql('postgres',
+	"UPDATE test_deferrable_pk SET b = 'two' WHERE a = 1");
+$node_subscriber->wait_for_log(
+	qr/ERROR: ( [A-Z0-9]+:)? logical replication target relation "public.test_deferrable_pk" has neither REPLICA IDENTITY index nor PRIMARY KEY and published relation does not have REPLICA IDENTITY FULL/,
+	$log_offset);
+
+$result = $node_subscriber->safe_psql('postgres',
+	"SELECT b FROM test_deferrable_pk WHERE a = 1");
+is($result, qq(one), 'update is not applied on subscriber');
+
+# cleanup pub
+$node_publisher->safe_psql('postgres', "DROP PUBLICATION tap_pub_deferrable_pk");
+$node_publisher->safe_psql('postgres', "DROP TABLE test_deferrable_pk");
+# cleanup sub
+$node_subscriber->safe_psql('postgres',
+	"DROP SUBSCRIPTION tap_sub_deferrable_pk");
+$node_subscriber->safe_psql('postgres', "DROP TABLE test_deferrable_pk");
+
+# Testcase end: Subscription does not use a deferrable primary key
+# =============================================================================
+
 $node_subscriber->stop('fast');
 $node_publisher->stop('fast');
 
