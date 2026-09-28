@@ -219,6 +219,39 @@ select conname, obj_description(oid, 'pg_constraint') from pg_constraint
 
 drop type comptype cascade;
 
+-- regression tests for bug #19724
+
+-- test scenario from bug report, plus failure when changing int to text
+create type rt as (i int);
+create domain dt as int check ((row(value)::rt).i > 0);
+alter type rt alter attribute i type text;  -- fail
+alter type rt alter attribute i type bigint;
+select 1::dt;
+select (-1)::dt;  -- fail
+drop domain dt;
+drop type rt cascade;
+
+-- test silly example from Tom Lane's 2017 email (domain over float8)
+create type comptype as (r float8, i float8);
+create domain silly as float8 check ((row(value, 0)::comptype).r > 0);
+alter type comptype alter attribute r type bigint;
+select 1.0::silly;
+select (-1.0)::silly;  -- fail
+drop domain silly;
+drop type comptype cascade;
+
+-- test domain constraint referencing multiple composite types
+create type r1 as (a int);
+create type r2 as (b int);
+create domain dt_multi as int check ((row(value)::r1).a > 0 and (row(value)::r2).b > 0);
+alter type r1 alter attribute a type bigint;
+alter type r2 alter attribute b type bigint;
+select 1::dt_multi;
+select (-1)::dt_multi;  -- fail
+drop domain dt_multi;
+drop type r1 cascade;
+drop type r2 cascade;
+
 
 -- Test domains over arrays of composite
 
