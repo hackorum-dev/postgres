@@ -1453,11 +1453,14 @@ DefineIndex(ParseState *pstate,
 					Relation	cldidx;
 					IndexInfo  *cldIdxInfo;
 
+					cldidx = index_open(cldidxid, lockmode);
 					/* this index is already partition of another one */
 					if (has_superclass(cldidxid))
+					{
+						index_close(cldidx, lockmode);
 						continue;
+					}
 
-					cldidx = index_open(cldidxid, lockmode);
 					cldIdxInfo = BuildIndexInfo(cldidx);
 					if (CompareIndexInfo(cldIdxInfo, indexInfo,
 										 cldidx->rd_indcollation,
