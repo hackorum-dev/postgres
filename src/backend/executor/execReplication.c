@@ -593,8 +593,11 @@ RelationFindDeletedTupleInfoSeq(Relation rel, TupleTableSlot *searchslot,
 	indexbitmap = RelationGetIndexAttrBitmap(rel,
 											 INDEX_ATTR_BITMAP_IDENTITY_KEY);
 
-	/* fallback to PK if no replica identity */
-	if (!indexbitmap)
+	/*
+	 * fallback to PK if no replica identity, but only if the PK is not
+	 * deferrable.
+	 */
+	if (!indexbitmap && OidIsValid(RelationGetPrimaryKeyIndex(rel, false)))
 		indexbitmap = RelationGetIndexAttrBitmap(rel,
 												 INDEX_ATTR_BITMAP_PRIMARY_KEY);
 

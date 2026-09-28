@@ -315,15 +315,23 @@ logicalrep_rel_mark_updatable(LogicalRepRelMapEntry *entry)
 
 	idkey = RelationGetIndexAttrBitmap(entry->localrel,
 									   INDEX_ATTR_BITMAP_IDENTITY_KEY);
-	/* fallback to PK if no replica identity */
+
+	/*
+	 * Fall back to the PK if no replica identity, but only if the PK is not
+	 * deferrable.  INDEX_ATTR_BITMAP_PRIMARY_KEY includes the columns of a
+	 * deferrable PK, but such a PK cannot serve as a replica identity (its
+	 * uniqueness may be transiently violated), and FindLogicalRepLocalIndex()
+	 * will not use it to look up tuples.
+	 */
 	if (idkey == NULL)
 	{
-		idkey = RelationGetIndexAttrBitmap(entry->localrel,
-										   INDEX_ATTR_BITMAP_PRIMARY_KEY);
+		if (OidIsValid(RelationGetPrimaryKeyIndex(entry->localrel, false)))
+			idkey = RelationGetIndexAttrBitmap(entry->localrel,
+											   INDEX_ATTR_BITMAP_PRIMARY_KEY);
 
 		/*
-		 * If no replica identity index and no PK, the published table must
-		 * have replica identity FULL.
+		 * If no replica identity index and no usable PK, the published table
+		 * must have replica identity FULL.
 		 */
 		if (idkey == NULL && remoterel->replident != REPLICA_IDENTITY_FULL)
 			entry->updatable = false;
