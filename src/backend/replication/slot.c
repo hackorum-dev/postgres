@@ -1365,6 +1365,8 @@ ReplicationSlotsComputeRequiredLSN(void)
 	}
 	LWLockRelease(ReplicationSlotControlLock);
 
+	elog(LOG, "EVAN computed replication slot minimum LSN %X/%08X",
+		 LSN_FORMAT_ARGS(min_required));
 	XLogSetReplicationSlotMinimumLSN(min_required);
 }
 
@@ -2445,6 +2447,8 @@ StartupReplicationSlots(void)
 		}
 
 		/* looks like a slot in a normal state, restore */
+		elog(LOG, "EVAN restoring replication slot \"%s\" from disk",
+			 replication_de->d_name);
 		RestoreSlotFromDisk(replication_de->d_name);
 	}
 	FreeDir(replication_dir);
