@@ -3711,6 +3711,8 @@ InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 	}
 
 	Assert(access(path, F_OK) != 0 && errno == ENOENT);
+	elog(LOG, "EVAN InstallXLogFileSegment: renaming %s to %s as segment " UINT64_FORMAT,
+		 tmppath, path, (uint64) *segno);
 	if (durable_rename(tmppath, path, LOG) != 0)
 	{
 		LWLockRelease(ControlFileLock);
@@ -3993,6 +3995,9 @@ RemoveOldXlogFiles(XLogSegNo segno, XLogRecPtr lastredoptr, XLogRecPtr endptr,
 	 * InsertTimeLineID isn't set, so we can't use that.)
 	 */
 	XLogFileName(lastoff, 0, segno, wal_segment_size);
+	elog(LOG, "EVAN RemoveOldXlogFiles: remove through segment " UINT64_FORMAT ", boundary %s, end segment " UINT64_FORMAT ", recycle through segment " UINT64_FORMAT,
+		 (uint64) segno, lastoff, (uint64) endlogSegNo,
+		 (uint64) recycleSegNo);
 
 	elog(DEBUG2, "attempting to remove WAL segments older than log file %s",
 		 lastoff);
@@ -4019,8 +4024,11 @@ RemoveOldXlogFiles(XLogSegNo segno, XLogRecPtr lastredoptr, XLogRecPtr endptr,
 		 */
 		if (strcmp(xlde->d_name + 8, lastoff + 8) <= 0)
 		{
+			elog(LOG, "EVAN RemoveOldXlogFiles: candidate %s, next segment " UINT64_FORMAT ", recycle through segment " UINT64_FORMAT,
+				 xlde->d_name, (uint64) endlogSegNo, (uint64) recycleSegNo);
 			if (XLogArchiveCheckDone(xlde->d_name))
 			{
+				elog(LOG, "EVAN RemoveOldXlogFiles: removing WAL segment %s", xlde->d_name);
 				/* Update the last removed location in shared memory first */
 				UpdateLastRemovedPtr(xlde->d_name);
 
@@ -4129,6 +4137,8 @@ RemoveXlogFile(const struct dirent *segment_de,
 	const char *segname = segment_de->d_name;
 
 	snprintf(path, MAXPGPATH, XLOGDIR "/%s", segname);
+	elog(LOG, "EVAN RemoveXlogFile: candidate %s, next segment " UINT64_FORMAT ", recycle through segment " UINT64_FORMAT,
+		 segname, (uint64) *endlogSegNo, (uint64) recycleSegNo);
 
 	/*
 	 * Before deleting the file, see if it can be recycled as a future log
@@ -8192,7 +8202,12 @@ CreateCheckPoint(int flags)
 	 * prevent the disk holding the xlog from growing full.
 	 */
 	XLByteToSeg(RedoRecPtr, _logSegNo, wal_segment_size);
+	elog(LOG, "EVAN checkpoint cleanup before KeepLogSeg: redo %X/%08X, end %X/%08X, segment " UINT64_FORMAT,
+		 LSN_FORMAT_ARGS(RedoRecPtr), LSN_FORMAT_ARGS(recptr),
+		 (uint64) _logSegNo);
 	KeepLogSeg(recptr, &_logSegNo);
+	elog(LOG, "EVAN checkpoint cleanup after KeepLogSeg: segment " UINT64_FORMAT,
+		 (uint64) _logSegNo);
 	if (InvalidateObsoleteReplicationSlots(RS_INVAL_WAL_REMOVED | RS_INVAL_IDLE_TIMEOUT,
 										   _logSegNo, InvalidOid,
 										   InvalidTransactionId))
@@ -8204,7 +8219,11 @@ CreateCheckPoint(int flags)
 		XLByteToSeg(RedoRecPtr, _logSegNo, wal_segment_size);
 		KeepLogSeg(recptr, &_logSegNo);
 	}
+	elog(LOG, "EVAN checkpoint cleanup before decrement: segment " UINT64_FORMAT,
+		 (uint64) _logSegNo);
 	_logSegNo--;
+	elog(LOG, "EVAN checkpoint cleanup after decrement: segment " UINT64_FORMAT,
+		 (uint64) _logSegNo);
 	RemoveOldXlogFiles(_logSegNo, RedoRecPtr, recptr,
 					   checkPoint.ThisTimeLineID);
 
@@ -8929,9 +8948,14 @@ KeepLogSeg(XLogRecPtr recptr, XLogSegNo *logSegNo)
 
 	/* Calculate how many segments are kept by slots. */
 	keep = XLogGetReplicationSlotMinimumLSN();
+	elog(LOG, "EVAN KeepLogSeg entry: end %X/%08X, slot minimum %X/%08X, current segment " UINT64_FORMAT ", input segment " UINT64_FORMAT,
+		 LSN_FORMAT_ARGS(recptr), LSN_FORMAT_ARGS(keep),
+		 (uint64) currSegNo, (uint64) *logSegNo);
 	if (XLogRecPtrIsValid(keep) && keep < recptr)
 	{
 		XLByteToSeg(keep, segno, wal_segment_size);
+		elog(LOG, "EVAN KeepLogSeg mapped slot minimum to segment " UINT64_FORMAT,
+			 (uint64) segno);
 
 		/*
 		 * Account for max_slot_wal_keep_size to avoid keeping more than
@@ -8984,6 +9008,9 @@ KeepLogSeg(XLogRecPtr recptr, XLogSegNo *logSegNo)
 	/* don't delete WAL segments newer than the calculated segment */
 	if (segno < *logSegNo)
 		*logSegNo = segno;
+
+	elog(LOG, "EVAN KeepLogSeg exit: candidate segment " UINT64_FORMAT ", output segment " UINT64_FORMAT,
+		 (uint64) segno, (uint64) *logSegNo);
 }
 
 /*
