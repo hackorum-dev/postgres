@@ -399,6 +399,14 @@ PostgreSQL documentation
       re-<command>initdb</command>.
      </para>
 
+     <para>
+      Before changing the WAL segment size, drop all replication slots.
+      Existing standby servers cannot continue replication after the reset
+      because the previous WAL history has been discarded.  After the reset,
+      recreate the replication slots and rebuild the standby servers from new
+      base backups.
+     </para>
+
      <note>
       <para>
        While <command>pg_resetwal</command> will set the WAL starting address
