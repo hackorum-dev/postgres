@@ -940,6 +940,14 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 
 	if (stmt->for_all_tables)
 	{
+		/*
+		 * Block concurrent data-modifying statements that may rely on this
+		 * table not being covered by a FOR ALL TABLES publication requiring a
+		 * replica identity. This conflicts with the RowExclusiveLock taken by
+		 * CheckCmdReplicaIdentity() on the same object.
+ 		 */
+		LockRelationOid(PublicationRelationId, ShareRowExclusiveLock);
+
 		/* Process EXCEPT table list */
 		if (exceptrelations != NIL)
 		{
@@ -1610,6 +1618,15 @@ AlterPublicationAllFlags(AlterPublicationStmt *stmt, Relation rel,
 	/* Update FOR ALL TABLES flag if changed */
 	if (stmt->for_all_tables != pubform->puballtables)
 	{
+		/*
+		 * Block concurrent data-modifying statements when setting FOR ALL
+		 * TABLES publication requiring a replica identity. This conflicts with
+		 * the RowExclusiveLock taken by CheckCmdReplicaIdentity() on the same
+		 * object.
+		 */
+		if (stmt->for_all_tables)
+			LockRelationOid(PublicationRelationId, ShareRowExclusiveLock);
+
 		values[Anum_pg_publication_puballtables - 1] =
 			BoolGetDatum(stmt->for_all_tables);
 		replaces[Anum_pg_publication_puballtables - 1] = true;
@@ -2005,8 +2022,9 @@ CloseTableList(List *rels)
 }
 
 /*
- * Lock the schemas specified in the schema list in AccessShareLock mode in
- * order to prevent concurrent schema deletion.
+ * Lock the schemas in ShareRowExclusiveLock mode to prevent concurrent
+ * schema deletion and data-modifying statements from racing with the
+ * publication change.
  */
 static void
 LockSchemaList(List *schemalist)
@@ -2019,7 +2037,7 @@ LockSchemaList(List *schemalist)
 
 		/* Allow query cancel in case this takes a long time */
 		CHECK_FOR_INTERRUPTS();
-		LockDatabaseObject(NamespaceRelationId, schemaid, 0, AccessShareLock);
+		LockDatabaseObject(NamespaceRelationId, schemaid, 0, ShareRowExclusiveLock);
 
 		/*
 		 * It is possible that by the time we acquire the lock on schema,
