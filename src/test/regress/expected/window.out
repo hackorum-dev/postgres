@@ -1037,6 +1037,31 @@ FROM tenk1 WHERE unique1 < 10;
           7 |       7 |    3
 (10 rows)
 
+-- ROWS frame that does not contain the current row, but whose edge falls on
+-- a peer.  EXCLUDE TIES must still return remaining in-frame rows.
+SELECT k, first_value(k) OVER w, nth_value(k, 1) OVER w AS nth_1,
+	nth_value(k, 2) OVER w AS nth_2, array_agg(k) OVER w
+FROM (VALUES (0), (0), (1)) t(k)
+WINDOW w AS (ORDER BY k ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING
+	EXCLUDE TIES);
+ k | first_value | nth_1 | nth_2 | array_agg 
+---+-------------+-------+-------+-----------
+ 0 |           1 |     1 |       | {1}
+ 0 |           1 |     1 |       | {1}
+ 1 |             |       |       | 
+(3 rows)
+
+SELECT k, last_value(k) OVER w, array_agg(k) OVER w
+FROM (VALUES (0), (1), (1)) t(k)
+WINDOW w AS (ORDER BY k ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+	EXCLUDE TIES);
+ k | last_value | array_agg 
+---+------------+-----------
+ 0 |            | 
+ 1 |          0 | {0}
+ 1 |          0 | {0}
+(3 rows)
+
 SELECT sum(unique1) over (rows between 2 preceding and 1 preceding),
 	unique1, four
 FROM tenk1 WHERE unique1 < 10;
