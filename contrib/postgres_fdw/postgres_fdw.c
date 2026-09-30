@@ -4059,6 +4059,13 @@ create_cursor(ForeignScanState *node)
 		process_pending_request(fsstate->conn_state->pendingAreq);
 
 	/*
+	 * Ensure the local and remote (sub)transactions are synchronized.  Note
+	 * that we need to do this because this function can be called from open
+	 * cursors, bypassing begin_remote_xact().
+	 */
+	pgfdw_begin_remote_xact(fsstate->conn_state->entry);
+
+	/*
 	 * Construct array of query parameter values in text format.  We do the
 	 * conversions in the short-lived per-tuple context, so as not to cause a
 	 * memory leak over repeated scans.
@@ -4147,7 +4154,7 @@ fetch_more_data(ForeignScanState *node)
 		if (PQresultStatus(res) != PGRES_TUPLES_OK)
 			pgfdw_report_error(res, conn, fsstate->query);
 
-		/* Reset per-connection state */
+		/* Reset the pending asynchronous request */
 		fsstate->conn_state->pendingAreq = NULL;
 	}
 	else
@@ -8839,6 +8846,13 @@ fetch_more_data_begin(AsyncRequest *areq)
 	char		sql[64];
 
 	Assert(!fsstate->conn_state->pendingAreq);
+
+	/*
+	 * Ensure the local and remote (sub)transactions are synchronized.  Note
+	 * that we need to do this because this function can be called from open
+	 * cursors, bypassing begin_remote_xact().
+	 */
+	pgfdw_begin_remote_xact(fsstate->conn_state->entry);
 
 	/* Create the cursor synchronously. */
 	if (!fsstate->cursor_exists)

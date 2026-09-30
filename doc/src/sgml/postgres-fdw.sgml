@@ -1162,6 +1162,7 @@ CREATE SUBSCRIPTION my_subscription SERVER subscription_server PUBLICATION testp
    local transaction: if the local transaction is <literal>DEFERRABLE</literal>,
    the remote transaction is opened in <literal>DEFERRABLE</literal> mode,
    otherwise it is opened in <literal>NOT DEFERRABLE</literal> mode.
+   (This rule is only applied to remote servers 9.1 and newer.)
   </para>
 
   <para>
