@@ -377,6 +377,172 @@ like(
 	'update target row was deleted in tab');
 
 ###############################################################################
+# Ensure that a deferrable primary key is not used to match deleted tuples in
+# a sequential table scan.  Such a key cannot serve as a replica identity, so
+# the whole tuple must be compared, and a deleted row that only shares the key
+# value must not be reported as update_deleted.
+###############################################################################
+
+# Create the table and publish it from node B only, so that local changes on
+# node A are not sent back.  Skip the initial copy, so that node A never has
+# the row from node B.
+$node_B->safe_psql(
+	'postgres', "
+	CREATE TABLE tab_defer (a int, b int);
+	ALTER TABLE tab_defer REPLICA IDENTITY FULL;
+	INSERT INTO tab_defer VALUES (1, 1);");
+$node_A->safe_psql('postgres', "CREATE TABLE tab_defer (a int, b int)");
+$node_B->safe_psql('postgres',
+	"ALTER PUBLICATION tap_pub_B ADD TABLE tab_defer");
+$node_A->safe_psql('postgres',
+	"ALTER SUBSCRIPTION $subname_AB REFRESH PUBLICATION WITH (copy_data = false)"
+);
+$node_A->wait_for_subscription_sync($node_B, $subname_AB);
+
+# Disable the logical replication from node B to node A
+$node_A->safe_psql('postgres', "ALTER SUBSCRIPTION $subname_AB DISABLE");
+
+# Wait for the apply worker to stop
+$node_A->poll_query_until('postgres',
+	"SELECT count(*) = 0 FROM pg_stat_activity WHERE backend_type = 'logical replication apply worker'"
+);
+
+# The primary key is created after the conflict detection slot's xmin, so it
+# cannot be used to find deleted tuples and a sequential scan is used instead.
+# Then delete a local row that has the same key but a different value.
+$node_A->safe_psql(
+	'postgres', "
+	ALTER TABLE tab_defer ADD PRIMARY KEY (a) DEFERRABLE;
+	INSERT INTO tab_defer VALUES (1, 10);
+	DELETE FROM tab_defer WHERE a = 1;");
+
+$node_B->safe_psql('postgres', "UPDATE tab_defer SET b = 2 WHERE a = 1;");
+
+$log_location = -s $node_A->logfile;
+
+$node_A->safe_psql('postgres', "ALTER SUBSCRIPTION $subname_AB ENABLE;");
+$node_B->wait_for_catchup($subname_AB);
+
+$logfile = slurp_file($node_A->logfile(), $log_location);
+like(
+	$logfile,
+	qr/conflict detected on relation "public.tab_defer": conflict=update_missing.*
+.*DETAIL:.* Could not find the row to be updated: remote row \(1, 2\), replica identity full \(1, 1\)/,
+	'deleted row matching only the deferrable primary key is not reported as update_deleted'
+);
+
+# Clean up
+$node_B->safe_psql('postgres',
+	"ALTER PUBLICATION tap_pub_B DROP TABLE tab_defer");
+$node_A->safe_psql('postgres',
+	"ALTER SUBSCRIPTION $subname_AB REFRESH PUBLICATION");
+$node_A->safe_psql('postgres', "DROP TABLE tab_defer");
+$node_B->safe_psql('postgres', "DROP TABLE tab_defer");
+
+###############################################################################
+# Ensure that a sequential scan for finding deleted tuples keeps using the
+# replica identity selected by the relation map when concurrent DROP INDEX
+# drops that index.
+###############################################################################
+
+SKIP:
+{
+	skip 'Injection points not supported by this build', 1
+	  unless $ENV{enable_injection_points} eq 'yes';
+	skip 'Extension injection_points not installed', 1
+	  unless $node_A->check_extension('injection_points');
+
+	$node_A->safe_psql('postgres', 'CREATE EXTENSION injection_points');
+
+	# Start a transaction before creating an index to make the index not
+	# suitable for the index search. See IsIndexUsableForFindingDeletedTuple().
+	my $old_xact = $node_A->background_psql('postgres');
+	$old_xact->query_safe(
+		q[
+		BEGIN;
+		SELECT txid_current();
+	]);
+
+	$node_B->safe_psql(
+		'postgres', q[
+		CREATE TABLE tab_drop_deleted (a int PRIMARY KEY, b int);
+		INSERT INTO tab_drop_deleted VALUES (1, 1);
+		CREATE PUBLICATION pub_drop_deleted FOR TABLE tab_drop_deleted;
+	]);
+	$node_A->safe_psql(
+		'postgres', q[
+		CREATE TABLE tab_drop_deleted (a int NOT NULL, b int);
+		CREATE UNIQUE INDEX tab_drop_deleted_ri ON tab_drop_deleted (a);
+		ALTER TABLE tab_drop_deleted REPLICA IDENTITY
+			USING INDEX tab_drop_deleted_ri;
+	]);
+	$node_A->safe_psql(
+		'postgres',
+		"CREATE SUBSCRIPTION sub_drop_deleted
+		 CONNECTION '$node_B_connstr application_name=drop_deleted'
+		 PUBLICATION pub_drop_deleted
+		 WITH (retain_dead_tuples = true)"
+	);
+	$node_A->wait_for_subscription_sync($node_B, 'drop_deleted');
+
+	# Make the deleted row differ outside the replica identity.  A sequential
+	# scan can find it only if it compares the cached index's key columns.
+	$node_A->safe_psql(
+		'postgres', q[
+		UPDATE tab_drop_deleted SET b = 10 WHERE a = 1;
+		DELETE FROM tab_drop_deleted WHERE a = 1;
+	]);
+	$node_A->safe_psql('postgres',
+		"SELECT injection_points_attach('apply-update-before-open-indices', 'wait')"
+	);
+	$node_B->safe_psql('postgres',
+		'UPDATE tab_drop_deleted SET b = 2 WHERE a = 1');
+	$node_A->wait_for_event(
+		'logical replication apply worker',
+		'apply-update-before-open-indices');
+
+	$log_location = -s $node_A->logfile;
+
+	# Drop the replica identity index concurrently
+	my $drop = $node_A->background_psql('postgres');
+	$drop->query_until(
+		qr/starting_drop/, q[
+		\echo starting_drop
+		DROP INDEX CONCURRENTLY tab_drop_deleted_ri;
+	]);
+	$node_A->poll_query_until('postgres',
+			"SELECT count(*) = 0 FROM pg_index"
+		  . " WHERE indrelid = 'tab_drop_deleted'::regclass"
+		  . " AND indisreplident")
+	  or die "timed out waiting for the identity index to be invalidated";
+
+	$node_A->safe_psql(
+		'postgres',
+		"SELECT injection_points_detach('apply-update-before-open-indices');
+		 SELECT injection_points_wakeup('apply-update-before-open-indices');"
+	);
+
+	# Ensure update_deleted is detected. Without the cached index key columns,
+	# the sequential scan would compare the whole row and report
+	# update_missing.
+	$node_B->wait_for_catchup('drop_deleted');
+	$logfile = slurp_file($node_A->logfile(), $log_location);
+	like(
+		$logfile,
+		qr/conflict detected on relation "public.tab_drop_deleted": conflict=update_deleted/,
+		'sequential scan uses cached identity columns after concurrent drop');
+
+	# Clean up
+	$drop->quit;
+	$old_xact->quit;
+	$node_A->safe_psql('postgres', 'DROP SUBSCRIPTION sub_drop_deleted');
+	$node_A->safe_psql('postgres', 'DROP TABLE tab_drop_deleted');
+	$node_A->safe_psql('postgres', 'DROP EXTENSION injection_points');
+	$node_B->safe_psql('postgres', 'DROP PUBLICATION pub_drop_deleted');
+	$node_B->safe_psql('postgres', 'DROP TABLE tab_drop_deleted');
+}
+
+###############################################################################
 # Check that the xmin value of the conflict detection slot can be advanced when
 # the subscription has no tables.
 ###############################################################################
