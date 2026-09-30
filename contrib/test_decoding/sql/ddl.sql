@@ -231,6 +231,7 @@ ROLLBACK TO SAVEPOINT b;
 INSERT INTO tr_sub(path) VALUES ('3-top-2-#2');
 COMMIT;
 
+SELECT pg_log_standby_snapshot() IS NOT NULL;
 SELECT data FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL, 'include-xids', '0', 'skip-empty-xacts', '1');
 
 -- test whether a known, but not yet logged toplevel xact, followed by a
@@ -250,6 +251,7 @@ INSERT INTO tr_sub(path) VALUES ('5-top-1-#1');
 COMMIT;
 
 
+SELECT pg_log_standby_snapshot() IS NOT NULL;
 SELECT data FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL, 'include-xids', '0', 'skip-empty-xacts', '1');
 
 -- check that DDL in aborted subtransactions handled correctly
