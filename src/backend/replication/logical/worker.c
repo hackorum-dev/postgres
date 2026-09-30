@@ -3409,9 +3409,20 @@ FindDeletedTupleInLocalRel(Relation localrel,
 												   delete_xid, delete_origin,
 												   delete_time);
 	else
-		return RelationFindDeletedTupleInfoSeq(localrel, remoteslot,
-											   oldestxmin, delete_xid,
-											   delete_origin, delete_time);
+	{
+		/*
+		 * Pass the index only if it is the replica identity or primary key,
+		 * so that its key columns are compared.  Use the relation map's
+		 * choice rather than looking it up again, since concurrent DDL may
+		 * have changed the relation's replica identity.
+		 */
+		return RelationFindDeletedTupleInfoSeq(localrel,
+											   relmapentry->idxisreplident ?
+											   localidxoid : InvalidOid,
+											   remoteslot, oldestxmin,
+											   delete_xid, delete_origin,
+											   delete_time);
+	}
 }
 
 /*
