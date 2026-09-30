@@ -253,5 +253,69 @@ $node->safe_psql('postgres',
 $node->safe_psql('postgres',
 	"SELECT injection_points_detach('autovacuum-worker-cost-balanced')");
 
+# Test 4:
+# DROP DATABASE FORCE can terminate an autovacuum worker, so it must also be
+# able to terminate the parallel workers that worker launched, since both run
+# as the bootstrap superuser.
+
+# Leave the parallel worker slot to the autovacuum below.
+$node->safe_psql('postgres',
+	'ALTER TABLE test_autovac SET (autovacuum_enabled = false)');
+$node->safe_psql('regress_db2',
+	'ALTER TABLE filler SET (autovacuum_enabled = false)');
+
+# Hand the second database to a non-superuser that may terminate other
+# backends.
+$node->safe_psql(
+	'postgres', qq{
+	CREATE ROLE regress_dbowner LOGIN;
+	GRANT pg_signal_backend TO regress_dbowner;
+	ALTER DATABASE regress_db2 OWNER TO regress_dbowner;
+});
+
+# Hold the parallel worker while it is attached to its leader.
+$node->safe_psql('postgres',
+	"SELECT injection_points_attach('parallel-vacuum-worker-start', 'wait')");
+
+# A table with two indexes, so that its autovacuum vacuums one of them with a
+# single parallel worker.
+$node->safe_psql(
+	'regress_db2', qq{
+	CREATE TABLE dropdb_force (a int, b int)
+	  WITH (autovacuum_parallel_workers = 1,
+			autovacuum_vacuum_threshold = 1,
+			autovacuum_vacuum_scale_factor = 0);
+	INSERT INTO dropdb_force SELECT g, g FROM generate_series(1, 100) g;
+	CREATE INDEX ON dropdb_force (a);
+	CREATE INDEX ON dropdb_force (b);
+	DELETE FROM dropdb_force;
+});
+
+# Wait until the parallel worker is held at the injection point.
+$node->wait_for_event('parallel worker', 'parallel-vacuum-worker-start');
+
+$log_offset = -s $node->logfile;
+
+my ($psql_out, $psql_err) = ('', '');
+$node->psql(
+	'postgres',
+	'DROP DATABASE regress_db2 WITH (FORCE)',
+	connstr => $node->connstr('postgres') . ' user=regress_dbowner',
+	stdout => \$psql_out,
+	stderr => \$psql_err);
+
+is($psql_err, '', 'no error from DROP DATABASE FORCE');
+
+# Check that the server logs a FATAL indicating that the parallel worker is
+# terminated.
+ok( $node->log_contains(
+		qr/FATAL: .*terminating background worker "parallel worker" due to administrator command/,
+		$log_offset),
+	'DROP DATABASE FORCE terminates parallel autovacuum workers');
+
+# The command terminated the held worker, so there is nothing left to wake up.
+$node->safe_psql('postgres',
+	"SELECT injection_points_detach('parallel-vacuum-worker-start')");
+
 $node->stop;
 done_testing();
