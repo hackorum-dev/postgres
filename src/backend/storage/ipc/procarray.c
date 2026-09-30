@@ -3900,14 +3900,35 @@ TerminateOtherDBBackends(Oid databaseId)
 
 			if (proc != NULL)
 			{
-				if (superuser_arg(proc->roleId) && !superuser())
+				PGPROC	   *leader = proc->lockGroupLeader;
+				Oid			roleId = proc->roleId;
+
+				/*
+				 * An autovacuum worker and a background worker with no user
+				 * name advertise no role, while the parallel workers they
+				 * launch advertise the bootstrap superuser they run as. The
+				 * checks below accept such a leader but would refuse its
+				 * workers, so check a parallel worker with the role of its
+				 * leader.
+				 */
+				if (leader != NULL && leader != proc)
+				{
+					LWLock	   *leader_lwlock = LockHashPartitionLockByProc(leader);
+
+					LWLockAcquire(leader_lwlock, LW_SHARED);
+					if (proc->lockGroupLeader == leader)
+						roleId = leader->roleId;
+					LWLockRelease(leader_lwlock);
+				}
+
+				if (superuser_arg(roleId) && !superuser())
 					ereport(ERROR,
 							(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 							 errmsg("permission denied to terminate process"),
 							 errdetail("Only roles with the %s attribute may terminate processes of roles with the %s attribute.",
 									   "SUPERUSER", "SUPERUSER")));
 
-				if (!has_privs_of_role(GetUserId(), proc->roleId) &&
+				if (!has_privs_of_role(GetUserId(), roleId) &&
 					!has_privs_of_role(GetUserId(), ROLE_PG_SIGNAL_BACKEND))
 					ereport(ERROR,
 							(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
