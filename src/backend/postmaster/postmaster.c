@@ -3041,9 +3041,14 @@ PostmasterStateMachine(void)
 			 */
 			ForgetUnstartedBackgroundWorkers();
 
-			SignalChildren(SIGTERM, targetMask);
+			if (FatalError)
+				HandleFatalError(PMQUIT_FOR_STOP, false);
+			else
+			{
+				SignalChildren(SIGTERM, targetMask);
 
-			UpdatePMState(PM_WAIT_BACKENDS);
+				UpdatePMState(PM_WAIT_BACKENDS);
+			}
 		}
 
 		/* Are any of the target processes still running? */
