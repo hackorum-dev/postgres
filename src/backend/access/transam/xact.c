@@ -2553,6 +2553,7 @@ CommitTransaction(void)
 	 * done with commit processing, set current transaction state back to
 	 * default
 	 */
+
 	s->state = TRANS_DEFAULT;
 
 	RESUME_INTERRUPTS();
@@ -3054,7 +3055,6 @@ AbortTransaction(void)
 		AtEOXact_PgStat(false, is_parallel_worker);
 		AtEOXact_ApplyLauncher(false);
 		AtEOXact_LogicalRepWorkers(false);
-		AtEOXact_LogicalCtl();
 		pgstat_report_xact_timestamp(0);
 	}
 
@@ -3106,6 +3106,8 @@ CleanupTransaction(void)
 
 	XactTopFullTransactionId = InvalidFullTransactionId;
 	nParallelCurrentXids = 0;
+
+	AtEOXact_LogicalCtl();
 
 	/*
 	 * done with abort processing, set current transaction state back to
