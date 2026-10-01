@@ -90,6 +90,7 @@ _null_			{ return NULLVAL; }
 
 ","				{ return COMMA; }
 "="				{ return EQUALS; }
+"<>"			{ return NEQ; }
 "("				{ return LPAREN; }
 ")"				{ return RPAREN; }
 
@@ -109,6 +110,7 @@ toast			{ yylval->kw = "toast"; return XTOAST; }
 FORCE			{ yylval->kw = "FORCE"; return XFORCE; }
 NOT				{ yylval->kw = "NOT"; return XNOT; }
 NULL			{ yylval->kw = "NULL"; return XNULL; }
+WHERE			{ yylval->kw = "WHERE"; return WHERE; }
 
 {id}			{
 					yylval->str = pstrdup(yytext);

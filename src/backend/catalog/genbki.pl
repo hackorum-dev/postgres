@@ -149,7 +149,10 @@ foreach my $header (@ARGV)
 		  $index->{index_decl};
 		$oidcounts{ $index->{index_oid} }++;
 
-		if ($index->{is_unique})
+		# A unique index carrying a partial predicate still enforces uniqueness
+		# over the matching rows, but it cannot back a UNIQUE or PRIMARY KEY
+		# constraint, so don't generate one for it.
+		if ($index->{is_unique} && $index->{index_decl} !~ /\bWHERE\b/i)
 		{
 			push @system_constraints,
 			  sprintf "ALTER TABLE %s ADD %s USING INDEX %s;",

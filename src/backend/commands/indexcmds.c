@@ -943,6 +943,15 @@ DefineIndex(ParseState *pstate,
 							  amissummarizing,
 							  stmt->iswithoutoverlaps);
 
+	/*
+	 * Partial indexes on system catalogs may only use predicate shapes that
+	 * catalog maintenance can evaluate without an executor (see
+	 * CatalogIndexPredSatisfied).  Reject anything else up front, so a catalog
+	 * index can never carry a predicate we would be unable to maintain.
+	 */
+	if (indexInfo->ii_Predicate != NIL && IsCatalogRelationOid(tableId))
+		CheckCatalogIndexPredicate(indexInfo->ii_Predicate);
+
 	typeIds = palloc_array(Oid, numberOfAttributes);
 	collationIds = palloc_array(Oid, numberOfAttributes);
 	opclassIds = palloc_array(Oid, numberOfAttributes);
