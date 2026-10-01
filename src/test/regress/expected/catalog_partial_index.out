@@ -1,0 +1,38 @@
+--
+-- Partial indexes on system catalogs
+--
+-- A partial index on a catalog is maintained by CatalogIndexInsert() without
+-- building an executor, so only a small whitelist of predicate shapes is
+-- allowed: an OID inequality "oidcol <> 0" and "col IS NOT NULL".
+--
+-- A predicate outside the whitelist is rejected when the index is created.
+SET allow_system_table_mods = on;
+CREATE INDEX cpi_bad ON pg_constraint (conrelid) WHERE conname <> 'x';
+ERROR:  unsupported predicate for a partial index on a system catalog
+DETAIL:  Only "oidcolumn <> 0" and "column IS NOT NULL" predicates are supported.
+-- OID inequality and IS NOT NULL are accepted.
+CREATE INDEX cpi_relid ON pg_constraint (conrelid, conname) WHERE conrelid <> 0;
+CREATE INDEX cpi_typid ON pg_constraint (contypid, conname)
+	WHERE contypid IS NOT NULL;
+RESET allow_system_table_mods;
+-- The partial index is maintained: a foreign key (conrelid <> 0) is indexed,
+-- and the row is reachable through the partial index with seqscans disabled.
+CREATE TABLE cpi_p (id int PRIMARY KEY);
+CREATE TABLE cpi_c (a int REFERENCES cpi_p(id));
+SET enable_seqscan = off;
+SET enable_bitmapscan = off;
+SELECT conname FROM pg_constraint
+	WHERE conrelid = 'cpi_c'::regclass AND conrelid <> 0
+	ORDER BY conname;
+   conname    
+--------------
+ cpi_c_a_fkey
+(1 row)
+
+RESET enable_seqscan;
+RESET enable_bitmapscan;
+-- Cleanup.
+DROP TABLE cpi_c, cpi_p;
+SET allow_system_table_mods = on;
+DROP INDEX cpi_relid, cpi_typid;
+RESET allow_system_table_mods;
