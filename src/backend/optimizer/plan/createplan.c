@@ -3033,6 +3033,10 @@ create_indexscan_plan(PlannerInfo *root,
 											indexorderbyops,
 											best_path->indexscandir);
 
+	if (!indexonly && indexorderbys != NIL)
+		((IndexScan *) scan_plan)->indexorderbyexact =
+			indexinfo->amorderbyvalsexact;
+
 	copy_generic_path_info(&scan_plan->plan, &best_path->path);
 
 	return scan_plan;
