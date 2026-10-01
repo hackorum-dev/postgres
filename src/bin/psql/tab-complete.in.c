@@ -2186,7 +2186,14 @@ match_previous_words(int pattern_id,
 
 /* CREATE */
 	/* complete with something you can create */
-	else if (TailMatches("CREATE"))
+	else if (TailMatches("CREATE") &&
+
+		/*
+		 * exclude cases of GRANT/REVOKE CREATE and REVOKE GRANT OPTION FOR
+		 * CREATE
+		 */
+			 !TailMatches("GRANT|REVOKE", "CREATE") &&
+			 !TailMatches("REVOKE", "GRANT", "OPTION", "FOR", "CREATE"))
 	{
 		/* only some object types can be created as part of CREATE SCHEMA */
 		if (HeadMatches("CREATE", "SCHEMA"))
