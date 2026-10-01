@@ -1474,6 +1474,31 @@ step c1: COMMIT;
 step s2pp4: <... completed>
 step c2: COMMIT;
 
+starting permutation: s1epqprune s2epqprune c1 c2
+step s1epqprune: UPDATE epq_lock SET n = n + 1 WHERE id = 1;
+step s2epqprune: 
+	SET LOCAL enable_hashjoin = off;
+	SET LOCAL enable_mergejoin = off;
+	SET LOCAL enable_seqscan = off;
+	WITH locked AS (
+	  SELECT * FROM epq_lock WHERE id = 1 FOR UPDATE
+	), upd AS (
+	  UPDATE part_epq SET n = n + 1 + (SELECT count(*) FROM locked)
+	  FROM (VALUES (1), (2)) v(id)
+	  WHERE part_epq.id = v.id
+	  RETURNING part_epq.id
+	)
+	SELECT count(*) FROM upd;
+ <waiting ...>
+step c1: COMMIT;
+step s2epqprune: <... completed>
+count
+-----
+    2
+(1 row)
+
+step c2: COMMIT;
+
 starting permutation: updateformergevalues mergevalues c1 c2 read
 step updateformergevalues: UPDATE accounts SET balance = balance + 100;
 step mergevalues: 
