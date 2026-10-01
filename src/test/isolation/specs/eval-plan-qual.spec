@@ -47,6 +47,13 @@ setup
  CREATE TABLE another_parttbl2 PARTITION OF another_parttbl FOR VALUES IN (2);
  INSERT INTO another_parttbl VALUES (1, 1, 1);
 
+ CREATE TABLE part_epq (id int PRIMARY KEY, n int) PARTITION BY LIST (id);
+ CREATE TABLE part_epq1 PARTITION OF part_epq FOR VALUES IN (1);
+ CREATE TABLE part_epq2 PARTITION OF part_epq FOR VALUES IN (2);
+ INSERT INTO part_epq VALUES (1, 0), (2, 0);
+ CREATE TABLE epq_lock (id int PRIMARY KEY, n int);
+ INSERT INTO epq_lock VALUES (1, 0);
+
  CREATE FUNCTION noisy_oper(p_comment text, p_a anynonarray, p_op text, p_b anynonarray)
  RETURNS bool LANGUAGE plpgsql AS $$
  DECLARE
@@ -67,6 +74,8 @@ teardown
  DROP TABLE table_a, table_b, jointest;
  DROP TABLE parttbl;
  DROP TABLE another_parttbl;
+ DROP TABLE part_epq;
+ DROP TABLE epq_lock;
  DROP FUNCTION noisy_oper(text, anynonarray, text, anynonarray)
 }
 
@@ -205,6 +214,7 @@ step sys1	{
 }
 
 step s1pp1 { UPDATE another_parttbl SET b = b + 1 WHERE a = 1; }
+step s1epqprune { UPDATE epq_lock SET n = n + 1 WHERE id = 1; }
 
 step updateformergevalues { UPDATE accounts SET balance = balance + 100; }
 
@@ -319,6 +329,27 @@ step s2pp1 { SET plan_cache_mode TO force_generic_plan; }
 step s2pp2 { PREPARE epd AS DELETE FROM another_parttbl WHERE a = $1; }
 step s2pp3 { EXECUTE epd(1); }
 step s2pp4 { DELETE FROM another_parttbl WHERE a = (SELECT 1); }
+
+# Session 1 updates epq_lock, so the FOR UPDATE CTE does EvalPlanQual.
+# EvalPlanQualStart() initializes every planned subplan, not only the
+# EPQ target.  The sibling writable CTE UPDATEs part_epq through Nested
+# Loop plus Append with run-time pruning, and shares PartitionPruneState
+# with the parent.  EPQ must not rebuild those exec prune ExprStates.
+# Nested Loop still uses them after EvalPlanQualEnd().
+step s2epqprune {
+	SET LOCAL enable_hashjoin = off;
+	SET LOCAL enable_mergejoin = off;
+	SET LOCAL enable_seqscan = off;
+	WITH locked AS (
+	  SELECT * FROM epq_lock WHERE id = 1 FOR UPDATE
+	), upd AS (
+	  UPDATE part_epq SET n = n + 1 + (SELECT count(*) FROM locked)
+	  FROM (VALUES (1), (2)) v(id)
+	  WHERE part_epq.id = v.id
+	  RETURNING part_epq.id
+	)
+	SELECT count(*) FROM upd;
+}
 
 step mergevalues {
 	MERGE INTO accounts
@@ -435,6 +466,9 @@ permutation sys1 sysmerge2 c1 c2
 # Exercise run-time partition pruning code in an EPQ recheck
 permutation s1pp1 s2pp1 s2pp2 s2pp3 c1 c2
 permutation s1pp1 s2pp4 c1 c2
+
+# EPQ of a FOR UPDATE CTE must not rebuild exec prune state of a sibling Append
+permutation s1epqprune s2epqprune c1 c2
 
 # test EPQ recheck in MERGE from VALUES_RTE, cf bug #19355
 permutation updateformergevalues mergevalues c1 c2 read

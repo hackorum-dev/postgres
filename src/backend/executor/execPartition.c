@@ -2038,8 +2038,12 @@ ExecInitPartitionExecPruning(PlanState *planstate,
 	 * leave the maps to be in an invalid state, but that's ok since that data
 	 * won't be consulted again (cf initial Assert in
 	 * ExecFindMatchingSubPlans).
+	 *
+	 * EvalPlanQualStart() shares this state with the parent.  Exec prune
+	 * ExprStates must remain in the parent's context.  EvalPlanQualEnd()
+	 * destroys the EPQ estate.
 	 */
-	if (prunestate->do_exec_prune)
+	if (prunestate->do_exec_prune && estate->es_epq_active == NULL)
 		InitExecPartitionPruneContexts(prunestate, planstate,
 									   *initially_valid_subplans,
 									   n_total_subplans);
