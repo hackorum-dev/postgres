@@ -26,11 +26,17 @@
 #include "catalog/pg_class.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_tablespace.h"
+#include "catalog/pg_type.h"
 #include "catalog/toasting.h"
 #include "commands/defrem.h"
+#include "access/htup_details.h"
+#include "access/table.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "nodes/value.h"
+#include "utils/fmgroids.h"
 #include "utils/memutils.h"
+#include "utils/rel.h"
 
 #include "bootparse.h"
 
@@ -75,6 +81,62 @@ do_end(void)
 
 static int num_columns_read = 0;
 
+/*
+ * Build a restricted predicate node for a partial index on a system catalog,
+ * declared in bootstrap as "WHERE <oidcolumn> <> <oidvalue>".  The bootstrap
+ * parser has no expression analyzer, so we hand-build the already-transformed
+ * OpExpr.  Only OID columns are accepted here; CatalogIndexPredSatisfied in
+ * indexing.c is the matching evaluator used to maintain the index.
+ */
+static Node *
+makeBootCatalogPredicate(Oid relid, char *colname, char *valstr)
+{
+	Relation	rel;
+	TupleDesc	tupdesc;
+	AttrNumber	attno = 0;
+	Oid			atttype = InvalidOid;
+	Var		   *var;
+	Const	   *con;
+	OpExpr	   *op;
+
+	rel = table_open(relid, NoLock);
+	tupdesc = RelationGetDescr(rel);
+	for (int i = 0; i < tupdesc->natts; i++)
+	{
+		Form_pg_attribute att = TupleDescAttr(tupdesc, i);
+
+		if (strcmp(NameStr(att->attname), colname) == 0)
+		{
+			attno = att->attnum;
+			atttype = att->atttypid;
+			break;
+		}
+	}
+	table_close(rel, NoLock);
+
+	if (attno == 0)
+		elog(ERROR, "partial index predicate references unknown column \"%s\"",
+			 colname);
+	if (atttype != OIDOID)
+		elog(ERROR, "bootstrap partial index predicate supports only oid columns");
+
+	var = makeVar(1, attno, atttype, -1, InvalidOid, 0);
+	con = makeConst(OIDOID, -1, InvalidOid, sizeof(Oid),
+					ObjectIdGetDatum(atooid(valstr)), false, true);
+
+	op = makeNode(OpExpr);
+	op->opno = 608;				/* <>(oid,oid) */
+	op->opfuncid = F_OIDNE;
+	op->opresulttype = BOOLOID;
+	op->opretset = false;
+	op->opcollid = InvalidOid;
+	op->inputcollid = InvalidOid;
+	op->args = list_make2(var, con);
+	op->location = -1;
+
+	return (Node *) op;
+}
+
 %}
 
 %parse-param {yyscan_t yyscanner}
@@ -93,7 +155,7 @@ static int num_columns_read = 0;
 	Oid			oidval;
 }
 
-%type <list>  boot_index_params
+%type <list>  boot_index_params opt_where_clause
 %type <ielem> boot_index_param
 %type <str>   boot_ident
 %type <ival>  optbootstrap optsharedrelation boot_column_nullness
@@ -108,6 +170,8 @@ static int num_columns_read = 0;
 %token <kw> XDECLARE INDEX ON USING XBUILD INDICES UNIQUE XTOAST
 %token <kw> OBJ_ID XBOOTSTRAP XSHARED_RELATION XROWTYPE_OID
 %token <kw> XFORCE XNOT XNULL
+%token <kw> WHERE
+%token NEQ
 
 %start TopLevel
 
@@ -271,7 +335,7 @@ Boot_InsertStmt:
 		;
 
 Boot_DeclareIndexStmt:
-		  XDECLARE INDEX boot_ident oidspec ON boot_ident USING boot_ident LPAREN boot_index_params RPAREN
+		  XDECLARE INDEX boot_ident oidspec ON boot_ident USING boot_ident LPAREN boot_index_params RPAREN opt_where_clause
 				{
 					IndexStmt  *stmt = makeNode(IndexStmt);
 					Oid			relationId;
@@ -308,6 +372,15 @@ Boot_DeclareIndexStmt:
 					relationId = RangeVarGetRelid(stmt->relation, NoLock,
 												  false);
 
+					if ($12 != NIL)
+					{
+						stmt->whereClause =
+							makeBootCatalogPredicate(relationId,
+													 strVal(linitial($12)),
+													 strVal(lsecond($12)));
+						stmt->transformed = true;
+					}
+
 					DefineIndex(NULL,
 								relationId,
 								stmt,
@@ -325,7 +398,7 @@ Boot_DeclareIndexStmt:
 		;
 
 Boot_DeclareUniqueIndexStmt:
-		  XDECLARE UNIQUE INDEX boot_ident oidspec ON boot_ident USING boot_ident LPAREN boot_index_params RPAREN
+		  XDECLARE UNIQUE INDEX boot_ident oidspec ON boot_ident USING boot_ident LPAREN boot_index_params RPAREN opt_where_clause
 				{
 					IndexStmt  *stmt = makeNode(IndexStmt);
 					Oid			relationId;
@@ -361,6 +434,15 @@ Boot_DeclareUniqueIndexStmt:
 					/* locks and races need not concern us in bootstrap mode */
 					relationId = RangeVarGetRelid(stmt->relation, NoLock,
 												  false);
+
+					if ($13 != NIL)
+					{
+						stmt->whereClause =
+							makeBootCatalogPredicate(relationId,
+													 strVal(linitial($13)),
+													 strVal(lsecond($13)));
+						stmt->transformed = true;
+					}
 
 					DefineIndex(NULL,
 								relationId,
@@ -403,6 +485,12 @@ Boot_BuildIndsStmt:
 boot_index_params:
 		boot_index_params COMMA boot_index_param	{ $$ = lappend($1, $3); }
 		| boot_index_param							{ $$ = list_make1($1); }
+		;
+
+opt_where_clause:
+		WHERE boot_ident NEQ boot_ident
+				{ $$ = list_make2(makeString($2), makeString($4)); }
+		| /* EMPTY */								{ $$ = NIL; }
 		;
 
 boot_index_param:

@@ -51,4 +51,6 @@ extern void CatalogTupleUpdateWithInfo(Relation heapRel,
 									   CatalogIndexState indstate);
 extern void CatalogTupleDelete(Relation heapRel, const ItemPointerData *tid);
 
+extern void CheckCatalogIndexPredicate(List *predicate);
+
 #endif							/* INDEXING_H */

@@ -22,6 +22,8 @@
 #include "catalog/index.h"
 #include "catalog/indexing.h"
 #include "executor/executor.h"
+#include "nodes/nodeFuncs.h"
+#include "utils/fmgroids.h"
 #include "utils/rel.h"
 
 
@@ -62,6 +64,108 @@ CatalogCloseIndexes(CatalogIndexState indstate)
 {
 	ExecCloseIndices(indstate);
 	pfree(indstate);
+}
+
+/*
+ * catalog_pred_clause_supported - is this predicate clause one we can maintain?
+ *
+ * Only a tiny whitelist of clause shapes can be evaluated during catalog
+ * maintenance without building an EState: an OID inequality "oidcol <> k" and
+ * "col IS NOT NULL".  Shared by the creation-time check and the maintenance
+ * evaluator so the two can never drift apart.
+ */
+static bool
+catalog_pred_clause_supported(Node *clause)
+{
+	if (IsA(clause, OpExpr))
+	{
+		OpExpr	   *op = (OpExpr *) clause;
+
+		if (op->opfuncid != F_OIDNE || list_length(op->args) != 2)
+			return false;
+		/* literals arrive wrapped in an implicit int4->oid cast */
+		return (IsA(strip_implicit_coercions((Node *) linitial(op->args)), Var) &&
+				IsA(strip_implicit_coercions((Node *) lsecond(op->args)), Const));
+	}
+	if (IsA(clause, NullTest))
+	{
+		NullTest   *nt = (NullTest *) clause;
+
+		return (nt->nulltesttype == IS_NOT_NULL && IsA(nt->arg, Var));
+	}
+	return false;
+}
+
+/*
+ * CheckCatalogIndexPredicate - reject predicates we could not maintain
+ *
+ * Called at index creation time for any partial index on a system catalog, so
+ * that such an index can never be built carrying a predicate that
+ * CatalogIndexInsert would be unable to evaluate later.
+ */
+void
+CheckCatalogIndexPredicate(List *predicate)
+{
+	ListCell   *lc;
+
+	foreach(lc, predicate)
+	{
+		if (!catalog_pred_clause_supported((Node *) lfirst(lc)))
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("unsupported predicate for a partial index on a system catalog"),
+					 errdetail("Only \"oidcolumn <> 0\" and \"column IS NOT NULL\" predicates are supported.")));
+	}
+}
+
+/*
+ * CatalogIndexPredSatisfied - evaluate a restricted partial-index predicate
+ *
+ * Evaluates the predicate against the tuple in "slot" without building an
+ * EState.  Only the shapes accepted by catalog_pred_clause_supported() can
+ * occur here (enforced at creation by CheckCatalogIndexPredicate); anything
+ * else is a should-not-happen, so we fail loudly rather than guess.
+ *
+ * The predicate is an implicit-AND list of clauses.
+ */
+static bool
+CatalogIndexPredSatisfied(List *predicate, TupleTableSlot *slot)
+{
+	ListCell   *lc;
+
+	foreach(lc, predicate)
+	{
+		Node	   *clause = (Node *) lfirst(lc);
+		Var		   *var;
+		Datum		val;
+		bool		isnull;
+
+		if (!catalog_pred_clause_supported(clause))
+			elog(ERROR, "unsupported predicate on system catalog index");
+
+		if (IsA(clause, OpExpr))
+		{
+			OpExpr	   *op = (OpExpr *) clause;
+			Const	   *con;
+
+			var = (Var *) strip_implicit_coercions((Node *) linitial(op->args));
+			con = (Const *) strip_implicit_coercions((Node *) lsecond(op->args));
+			val = slot_getattr(slot, var->varattno, &isnull);
+			if (isnull || con->constisnull)
+				return false;
+			if (DatumGetObjectId(val) == DatumGetObjectId(con->constvalue))
+				return false;	/* "<>" fails when the values are equal */
+		}
+		else					/* NullTest IS NOT NULL */
+		{
+			var = (Var *) ((NullTest *) clause)->arg;
+			(void) slot_getattr(slot, var->varattno, &isnull);
+			if (isnull)
+				return false;
+		}
+	}
+
+	return true;
 }
 
 /*
@@ -129,11 +233,12 @@ CatalogIndexInsert(CatalogIndexState indstate, HeapTuple heapTuple,
 			continue;
 
 		/*
-		 * Expressional and partial indexes on system catalogs are not
-		 * supported, nor exclusion constraints, nor deferred uniqueness
+		 * Expressional indexes on system catalogs are not supported, nor
+		 * exclusion constraints, nor deferred uniqueness.  Partial indexes
+		 * are supported for a restricted set of predicates, evaluated below
+		 * by CatalogIndexPredSatisfied without building an EState.
 		 */
 		Assert(indexInfo->ii_Expressions == NIL);
-		Assert(indexInfo->ii_Predicate == NIL);
 		Assert(indexInfo->ii_ExclusionOps == NULL);
 		Assert(index->rd_index->indimmediate);
 		Assert(indexInfo->ii_NumIndexKeyAttrs != 0);
@@ -152,6 +257,15 @@ CatalogIndexInsert(CatalogIndexState indstate, HeapTuple heapTuple,
 		 * update summarizing indexes.
 		 */
 		if (onlySummarized && !indexInfo->ii_Summarizing)
+			continue;
+
+		/*
+		 * For a partial index, skip tuples that don't satisfy the predicate.
+		 * We evaluate it without an executor; only a whitelisted set of
+		 * predicate shapes is allowed (see CatalogIndexPredSatisfied).
+		 */
+		if (indexInfo->ii_Predicate != NIL &&
+			!CatalogIndexPredSatisfied(indexInfo->ii_Predicate, slot))
 			continue;
 
 		/*
