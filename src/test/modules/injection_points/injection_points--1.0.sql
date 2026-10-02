@@ -48,6 +48,12 @@ RETURNS void
 AS 'MODULE_PATHNAME', 'injection_points_run'
 LANGUAGE C PARALLEL UNSAFE;
 
+-- Raise an ERROR in a critical section, intercepting abort().
+CREATE FUNCTION injection_points_panic(IN disk_full boolean)
+RETURNS void
+AS 'MODULE_PATHNAME', 'injection_points_panic'
+LANGUAGE C STRICT PARALLEL UNSAFE;
+
 --
 -- injection_points_cached()
 --
