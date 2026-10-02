@@ -3389,9 +3389,7 @@ leader_takeover_tapes(Tuplesortstate *state)
 	Assert(LEADER(state));
 	Assert(nParticipants >= 1);
 
-	SpinLockAcquire(&shared->mutex);
-	workersFinished = shared->workersFinished;
-	SpinLockRelease(&shared->mutex);
+	workersFinished = slock_read_u32(&shared->mutex, &shared->workersFinished);
 
 	if (nParticipants != workersFinished)
 		elog(ERROR, "cannot take over tapes before all workers finish");

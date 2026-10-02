@@ -3062,9 +3062,7 @@ GetRecoveryPauseState(void)
 {
 	RecoveryPauseState state;
 
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
-	state = XLogRecoveryCtl->recoveryPauseState;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	state = slock_read_u32(&XLogRecoveryCtl->info_lck, &XLogRecoveryCtl->recoveryPauseState);
 
 	return state;
 }
@@ -4426,9 +4424,7 @@ PromoteIsTriggered(void)
 	if (LocalPromoteIsTriggered)
 		return true;
 
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
-	LocalPromoteIsTriggered = XLogRecoveryCtl->SharedPromoteIsTriggered;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	LocalPromoteIsTriggered = slock_read_u8(&XLogRecoveryCtl->info_lck, &XLogRecoveryCtl->SharedPromoteIsTriggered);
 
 	return LocalPromoteIsTriggered;
 }
@@ -4503,9 +4499,7 @@ RecoverySubtransInitialized(void)
 {
 	bool		result;
 
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
-	result = XLogRecoveryCtl->SharedRecoverySubtransInitialized;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	result = slock_read_u8(&XLogRecoveryCtl->info_lck, &XLogRecoveryCtl->SharedRecoverySubtransInitialized);
 
 	return result;
 }
@@ -4562,9 +4556,7 @@ HotStandbyActive(void)
 	else
 	{
 		/* spinlock is essential on machines with weak memory ordering! */
-		SpinLockAcquire(&XLogRecoveryCtl->info_lck);
-		LocalHotStandbyActive = XLogRecoveryCtl->SharedHotStandbyActive;
-		SpinLockRelease(&XLogRecoveryCtl->info_lck);
+		LocalHotStandbyActive = slock_read_u8(&XLogRecoveryCtl->info_lck, &XLogRecoveryCtl->SharedHotStandbyActive);
 
 		return LocalHotStandbyActive;
 	}
@@ -4635,9 +4627,7 @@ GetCurrentReplayRecPtr(TimeLineID *replayEndTLI)
 static void
 SetLatestXTime(TimestampTz xtime)
 {
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
-	XLogRecoveryCtl->recoveryLastXTime = xtime;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	slock_write_u64(&XLogRecoveryCtl->info_lck, &XLogRecoveryCtl->recoveryLastXTime, xtime);
 }
 
 /*
@@ -4648,9 +4638,7 @@ GetLatestXTime(void)
 {
 	TimestampTz xtime;
 
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
-	xtime = XLogRecoveryCtl->recoveryLastXTime;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	xtime = slock_read_u64(&XLogRecoveryCtl->info_lck, &XLogRecoveryCtl->recoveryLastXTime);
 
 	return xtime;
 }
@@ -4664,9 +4652,7 @@ GetLatestXTime(void)
 static void
 SetCurrentChunkStartTime(TimestampTz xtime)
 {
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
-	XLogRecoveryCtl->currentChunkStartTime = xtime;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	slock_write_u64(&XLogRecoveryCtl->info_lck, &XLogRecoveryCtl->currentChunkStartTime, xtime);
 }
 
 /*
@@ -4678,9 +4664,7 @@ GetCurrentChunkReplayStartTime(void)
 {
 	TimestampTz xtime;
 
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
-	xtime = XLogRecoveryCtl->currentChunkStartTime;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	xtime = slock_read_u64(&XLogRecoveryCtl->info_lck, &XLogRecoveryCtl->currentChunkStartTime);
 
 	return xtime;
 }

@@ -421,9 +421,7 @@ SIInsertDataEntries(const SharedInvalidationMessage *data, int n)
 		}
 
 		/* Update current value of maxMsgNum using spinlock */
-		SpinLockAcquire(&segP->msgnumLock);
-		segP->maxMsgNum = max;
-		SpinLockRelease(&segP->msgnumLock);
+		slock_write_u32(&segP->msgnumLock, &segP->maxMsgNum, max);
 
 		/*
 		 * Now that the maxMsgNum change is globally visible, we give everyone
@@ -510,9 +508,7 @@ SIGetDataEntries(SharedInvalidationMessage *data, int datasize)
 	stateP->hasMessages = false;
 
 	/* Fetch current value of maxMsgNum using spinlock */
-	SpinLockAcquire(&segP->msgnumLock);
-	max = segP->maxMsgNum;
-	SpinLockRelease(&segP->msgnumLock);
+	max = slock_read_u32(&segP->msgnumLock, &segP->maxMsgNum);
 
 	if (stateP->resetState)
 	{

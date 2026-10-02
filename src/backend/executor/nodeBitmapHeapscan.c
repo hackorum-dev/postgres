@@ -228,9 +228,7 @@ BitmapHeapNext(BitmapHeapScanState *node)
 static inline void
 BitmapDoneInitializingSharedState(ParallelBitmapHeapState *pstate)
 {
-	SpinLockAcquire(&pstate->mutex);
-	pstate->state = BM_FINISHED;
-	SpinLockRelease(&pstate->mutex);
+	slock_write_u32(&pstate->mutex, &pstate->state, BM_FINISHED);
 	ConditionVariableBroadcast(&pstate->cv);
 }
 

@@ -3366,9 +3366,7 @@ FindDeletedTupleInLocalRel(Relation localrel, Oid localidxoid,
 					 errmsg("could not detect conflict as the leader apply worker has exited")));
 		}
 
-		SpinLockAcquire(&leader->relmutex);
-		oldestxmin = leader->oldest_nonremovable_xid;
-		SpinLockRelease(&leader->relmutex);
+		oldestxmin = slock_read_u32(&leader->relmutex, &leader->oldest_nonremovable_xid);
 		LWLockRelease(LogicalRepWorkerLock);
 	}
 
@@ -4862,9 +4860,7 @@ stop_conflict_info_retention(RetainDeadTuplesData *rdt_data)
 		if (!update_retention_status(false))
 			return;
 
-		SpinLockAcquire(&MyLogicalRepWorker->relmutex);
-		MyLogicalRepWorker->oldest_nonremovable_xid = InvalidTransactionId;
-		SpinLockRelease(&MyLogicalRepWorker->relmutex);
+		slock_write_u32(&MyLogicalRepWorker->relmutex, &MyLogicalRepWorker->oldest_nonremovable_xid, InvalidTransactionId);
 
 		ereport(LOG,
 				errmsg("logical replication worker for subscription \"%s\" has stopped retaining the information for detecting conflicts",

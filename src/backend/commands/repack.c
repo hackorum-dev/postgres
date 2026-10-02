@@ -3125,9 +3125,7 @@ process_concurrent_changes(XLogRecPtr end_of_wal, ChangeContext *chgcxt, bool do
 	{
 		int			last_exported;
 
-		SpinLockAcquire(&shared->mutex);
-		last_exported = shared->last_exported;
-		SpinLockRelease(&shared->mutex);
+		last_exported = slock_read_u32(&shared->mutex, &shared->last_exported);
 
 		/*
 		 * Has the worker exported the file we are waiting for?
@@ -3826,9 +3824,7 @@ start_repack_decoding_worker(Oid relid)
 	{
 		bool		initialized;
 
-		SpinLockAcquire(&shared->mutex);
-		initialized = shared->initialized;
-		SpinLockRelease(&shared->mutex);
+		initialized = slock_read_u8(&shared->mutex, &shared->initialized);
 
 		if (initialized)
 			break;
@@ -4007,9 +4003,7 @@ get_initial_snapshot(DecodingWorker *worker)
 	{
 		int			last_exported;
 
-		SpinLockAcquire(&shared->mutex);
-		last_exported = shared->last_exported;
-		SpinLockRelease(&shared->mutex);
+		last_exported = slock_read_u32(&shared->mutex, &shared->last_exported);
 
 		/*
 		 * Has the worker exported the file we are waiting for?
