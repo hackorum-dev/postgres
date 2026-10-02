@@ -2204,6 +2204,42 @@ my %tests = (
 		like => { %full_runs, section_pre_data => 1, },
 	},
 
+	'CREATE CAST to public target type sharing a typname' => {
+		create_order => 51,
+		create_sql => '
+			CREATE SCHEMA dump_cast_schema;
+			CREATE TYPE public.dump_cast_src_for_target_test AS ENUM (\'a\');
+			CREATE TYPE public.dump_cast_tgt AS ENUM (\'a\');
+			CREATE TYPE dump_cast_schema.dump_cast_tgt AS ENUM (\'a\');
+			CREATE TYPE public.dump_cast_src_for_source_test AS ENUM (\'a\');
+			CREATE TYPE dump_cast_schema.dump_cast_src_for_source_test AS ENUM (\'a\');
+			CREATE CAST (public.dump_cast_src_for_target_test AS public.dump_cast_tgt) WITH INOUT;
+			CREATE CAST (public.dump_cast_src_for_target_test AS dump_cast_schema.dump_cast_tgt) WITH INOUT;
+			CREATE CAST (public.dump_cast_src_for_source_test AS public.dump_cast_tgt) WITH INOUT;
+			CREATE CAST (dump_cast_schema.dump_cast_src_for_source_test AS public.dump_cast_tgt) WITH INOUT;',
+		regexp =>
+		  qr/CREATE CAST \(public\.dump_cast_src_for_target_test AS public\.dump_cast_tgt\) WITH INOUT;/m,
+		like => { %full_runs, section_pre_data => 1, },
+	},
+
+	'CREATE CAST to schema-qualified target type sharing a typname' => {
+		regexp =>
+		  qr/CREATE CAST \(public\.dump_cast_src_for_target_test AS dump_cast_schema\.dump_cast_tgt\) WITH INOUT;/m,
+		like => { %full_runs, section_pre_data => 1, },
+	},
+
+	'CREATE CAST from public source type sharing a typname' => {
+		regexp =>
+		  qr/CREATE CAST \(public\.dump_cast_src_for_source_test AS public\.dump_cast_tgt\) WITH INOUT;/m,
+		like => { %full_runs, section_pre_data => 1, },
+	},
+
+	'CREATE CAST from schema-qualified source type sharing a typname' => {
+		regexp =>
+		  qr/CREATE CAST \(dump_cast_schema\.dump_cast_src_for_source_test AS public\.dump_cast_tgt\) WITH INOUT;/m,
+		like => { %full_runs, section_pre_data => 1, },
+	},
+
 	'CREATE DATABASE postgres' => {
 		regexp => qr/^
 			\QCREATE DATABASE postgres WITH TEMPLATE = template0 \E
@@ -2927,6 +2963,25 @@ my %tests = (
 		like => { %full_runs, section_pre_data => 1, },
 	},
 
+	'CREATE TRANSFORM with typname shared across schemas' => {
+		create_order => 34,
+		create_sql => '
+			CREATE SCHEMA dump_trf_schema;
+			CREATE TYPE public.dump_trf_type AS ENUM (\'a\');
+			CREATE TYPE dump_trf_schema.dump_trf_type AS ENUM (\'a\');
+			CREATE TRANSFORM FOR public.dump_trf_type LANGUAGE sql (FROM SQL WITH FUNCTION prsd_lextype(internal));
+			CREATE TRANSFORM FOR dump_trf_schema.dump_trf_type LANGUAGE sql (FROM SQL WITH FUNCTION prsd_lextype(internal));',
+		regexp =>
+		  qr/CREATE TRANSFORM FOR public\.dump_trf_type LANGUAGE sql \(FROM SQL WITH FUNCTION pg_catalog\.prsd_lextype\(internal\)\);/m,
+		like => { %full_runs, section_pre_data => 1, },
+	},
+
+	'CREATE TRANSFORM for schema-qualified type sharing a typname' => {
+		regexp =>
+		  qr/CREATE TRANSFORM FOR dump_trf_schema\.dump_trf_type LANGUAGE sql \(FROM SQL WITH FUNCTION pg_catalog\.prsd_lextype\(internal\)\);/m,
+		like => { %full_runs, section_pre_data => 1, },
+	},
+
 	'CREATE LANGUAGE pltestlang' => {
 		create_order => 18,
 		create_sql => 'CREATE LANGUAGE pltestlang
@@ -3157,6 +3212,32 @@ my %tests = (
 			\QCREATE POLICY p6 ON dump_test.test_table AS RESTRICTIVE \E
 			\QUSING (false);\E
 			/xm,
+		like => {
+			%full_runs,
+			%dump_test_schema_runs,
+			only_dump_test_table => 1,
+			section_post_data => 1,
+		},
+		unlike => {
+			exclude_dump_test_schema => 1,
+			exclude_test_table => 1,
+			no_policies => 1,
+			no_policies_restore => 1,
+			only_dump_measurement => 1,
+		},
+	},
+
+	# The "RLS is enabled" pseudo-object borrows its table's relname, so it
+	# ties in the sort with a policy of that same name on that same table.
+	# Check that the marker still dumps ahead of the policy.
+	'CREATE POLICY test_table ON test_table' => {
+		create_order => 28,
+		create_sql => 'CREATE POLICY test_table ON dump_test.test_table
+						   USING (true);',
+		regexp => qr/^
+			\QALTER TABLE dump_test.test_table ENABLE ROW LEVEL SECURITY;\E\n.+
+			\QCREATE POLICY test_table ON dump_test.test_table USING (true);\E
+			/xms,
 		like => {
 			%full_runs,
 			%dump_test_schema_runs,
