@@ -1,0 +1,65 @@
+Parsed test spec with 7 sessions
+
+starting permutation: s1_begin s1_update s2_add_table s1_commit s2_get_binary_changes
+step s1_begin: BEGIN;
+step s1_update: UPDATE tab1 SET val = 2 WHERE id = 1;
+step s2_add_table: ALTER PUBLICATION pub ADD TABLE tab1 WHERE (val = 2 OR val = 1); <waiting ...>
+step s1_commit: COMMIT;
+step s2_add_table: <... completed>
+s2: WARNING:  skipped loading publication "pub"
+DETAIL:  The publication does not exist at this point in the WAL.
+HINT:  Create the publication if it does not exist.
+step s2_get_binary_changes: SELECT count(data) FROM pg_logical_slot_get_binary_changes('isolation_slot', NULL, NULL, 'proto_version', '4', 'publication_names', 'pub') WHERE get_byte(data, 0) = 85;
+count
+-----
+    0
+(1 row)
+
+?column?
+--------
+stop    
+(1 row)
+
+
+starting permutation: s3_begin s3_update s4_set_publish s3_commit s4_check
+step s3_begin: BEGIN;
+step s3_update: UPDATE tab2 SET val = 2 WHERE id = 1;
+step s4_set_publish: ALTER PUBLICATION pub_ins SET (publish = 'insert, update'); <waiting ...>
+step s3_commit: COMMIT;
+step s4_set_publish: <... completed>
+step s4_check: UPDATE tab2 SET val = 3 WHERE id = 1;
+ERROR:  cannot update table "tab2" because it does not have a replica identity and publishes updates
+?column?
+--------
+stop    
+(1 row)
+
+
+starting permutation: s5_begin s5_update_leaf s7_add_parent s5_commit s5_check_leaf
+step s5_begin: BEGIN;
+step s5_update_leaf: UPDATE part1_1 SET val = 2 WHERE id = 1;
+step s7_add_parent: ALTER PUBLICATION pub ADD TABLE part1; <waiting ...>
+step s5_commit: COMMIT;
+step s7_add_parent: <... completed>
+step s5_check_leaf: UPDATE part1_1 SET val = 3 WHERE id = 1;
+ERROR:  cannot update table "part1_1" because it does not have a replica identity and publishes updates
+?column?
+--------
+stop    
+(1 row)
+
+
+starting permutation: s7_create_exc s6_begin s6_update_exc s7_unexcept s6_commit s6_check_exc
+step s7_create_exc: CREATE PUBLICATION pub_exc FOR ALL TABLES EXCEPT (TABLE part_exc);
+step s6_begin: BEGIN;
+step s6_update_exc: UPDATE part_exc1 SET val = 2 WHERE id = 1;
+step s7_unexcept: ALTER PUBLICATION pub_exc SET ALL TABLES EXCEPT (TABLE t_other); <waiting ...>
+step s6_commit: COMMIT;
+step s7_unexcept: <... completed>
+step s6_check_exc: UPDATE part_exc1 SET val = 3 WHERE id = 1;
+ERROR:  cannot update table "part_exc1" because it does not have a replica identity and publishes updates
+?column?
+--------
+stop    
+(1 row)
+

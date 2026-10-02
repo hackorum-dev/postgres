@@ -1191,6 +1191,16 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 														lfirst_oid(lc));
 		}
 
+		/*
+		 * Changing the actions being published can change the replica identity
+		 * requirements for member tables, and make statements checked against
+		 * the old definition produce changes the subscriber cannot apply. Lock
+		 * the explicitly listed member tables against concurrent writers, like
+		 * OpenTableList() does for membership changes.
+		 */
+		foreach_oid(relid, relids)
+			LockRelationOid(relid, ShareRowExclusiveLock);
+
 		schemarelids = GetAllSchemaPublicationRelations(pubform->oid,
 														PUBLICATION_PART_ALL);
 		relids = list_concat_unique_oid(relids, schemarelids);
@@ -1389,7 +1399,9 @@ AlterPublicationTables(AlterPublicationStmt *stmt, HeapTuple tup,
 				oldrel->columns = NIL;
 				oldrel->except = false;
 				oldrel->relation = table_open(oldrelid,
-											  ShareUpdateExclusiveLock);
+											  ShareRowExclusiveLock);
+				(void) find_all_inheritors(oldrelid, ShareRowExclusiveLock,
+										   NULL);
 				delrels = lappend(delrels, oldrel);
 			}
 		}
@@ -1836,8 +1848,22 @@ RemovePublicationSchemaById(Oid psoid)
 
 /*
  * Open relations specified by a PublicationTable list.
- * The returned tables are locked in ShareUpdateExclusiveLock mode in order to
- * add them to a publication.
+ *
+ * The returned tables are locked in ShareRowExclusiveLock mode in order to
+ * add them to a publication.  The lock must conflict with the
+ * RowExclusiveLock held by data-modifying statements.  Adding a table to a
+ * publication, or changing its row filter or column list, can change both
+ * whether an UPDATE or DELETE on the table is allowed and what tuple data
+ * the statement writes to WAL.  Those decisions are made from the
+ * publication definition visible when the statement performs its replica
+ * identity checks and cannot be revisited afterwards, whereas logical
+ * decoding uses the publication definition visible at commit time.  If this
+ * DDL were allowed to commit while a modification is in progress, WAL
+ * logging and logical decoding could use different publication definitions,
+ * resulting in a change that the subscriber cannot apply.  Conflicting with
+ * RowExclusiveLock ensures that writers are blocked while the DDL runs and
+ * that a writer starting afterwards sees the new publication definition,
+ * while readers remain unaffected.
  */
 static List *
 OpenTableList(List *tables)
@@ -1862,7 +1888,7 @@ OpenTableList(List *tables)
 		/* Allow query cancel in case this takes a long time */
 		CHECK_FOR_INTERRUPTS();
 
-		rel = table_openrv(t->relation, ShareUpdateExclusiveLock);
+		rel = table_openrv(t->relation, ShareRowExclusiveLock);
 		myrelid = RelationGetRelid(rel);
 
 		/*
@@ -1888,7 +1914,7 @@ OpenTableList(List *tables)
 						 errmsg("conflicting or redundant column lists for table \"%s\"",
 								RelationGetRelationName(rel))));
 
-			table_close(rel, ShareUpdateExclusiveLock);
+			table_close(rel, ShareRowExclusiveLock);
 			continue;
 		}
 
@@ -1917,7 +1943,7 @@ OpenTableList(List *tables)
 			List	   *children;
 			ListCell   *child;
 
-			children = find_all_inheritors(myrelid, ShareUpdateExclusiveLock,
+			children = find_all_inheritors(myrelid, ShareRowExclusiveLock,
 										   NULL);
 
 			foreach(child, children)
@@ -1980,6 +2006,13 @@ OpenTableList(List *tables)
 					relids_with_collist = lappend_oid(relids_with_collist, childrelid);
 			}
 		}
+
+		/*
+		 * A partitioned table's partitions are implicitly published with it,
+		 * so lock them against concurrent writers, like for the table itself.
+		 */
+		else if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+			(void) find_all_inheritors(myrelid, ShareRowExclusiveLock, NULL);
 	}
 
 	return rels;
@@ -2032,6 +2065,7 @@ LockSchemaList(List *schemalist)
 					errmsg("schema with OID %u does not exist", schemaid));
 	}
 }
+
 
 /*
  * Add listed tables to the publication.

@@ -65,6 +65,7 @@ tests += {
       'slot_creation_error',
       'skip_snapshot_restore',
       'invalidation_distribution',
+      'publication-ddl-update',
       'parallel_session_origin',
     ],
     'regress_args': [
