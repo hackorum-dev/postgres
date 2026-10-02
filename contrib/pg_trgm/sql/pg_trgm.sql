@@ -244,3 +244,15 @@ SELECT DISTINCT city, similarity(city, 'Warsaw'), show_limit()
 SELECT set_limit(0.5);
 SELECT DISTINCT city, similarity(city, 'Warsaw'), show_limit()
   FROM restaurants WHERE city % 'Warsaw';
+
+-- SET STORAGE must not copy heap attstorage onto gtrgm.
+CREATE TABLE gst (s text);
+CREATE INDEX gst_gist ON gst USING gist (s gist_trgm_ops);
+CREATE INDEX gst_btree ON gst (s);
+SELECT attstorage FROM pg_attribute WHERE attrelid = 'gst_gist'::regclass AND attnum = 1;
+SELECT attstorage FROM pg_attribute WHERE attrelid = 'gst_btree'::regclass AND attnum = 1;
+ALTER TABLE gst ALTER COLUMN s SET STORAGE EXTERNAL;
+SELECT attstorage FROM pg_attribute WHERE attrelid = 'gst_gist'::regclass AND attnum = 1;
+SELECT attstorage FROM pg_attribute WHERE attrelid = 'gst_btree'::regclass AND attnum = 1;
+INSERT INTO gst SELECT 'item ' || g FROM generate_series(1, 2000) g;
+DROP TABLE gst;
