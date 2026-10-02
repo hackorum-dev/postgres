@@ -61,3 +61,10 @@ check:
 endif
 
 endif
+
+# wait_cleanup is unstable on Windows, where the FATAL message of a
+# terminated backend can get lost.  See
+# https://postgr.es/m/088AB35D-0860-494A-A9CF-8B301543AA51@yandex-team.ru
+ifeq ($(PORTNAME), win32)
+ISOLATION := $(filter-out wait_cleanup,$(ISOLATION))
+endif

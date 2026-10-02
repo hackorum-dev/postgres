@@ -31,6 +31,13 @@ include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
 
+# slot_creation_error is unstable on Windows, where the FATAL message of a
+# terminated backend can get lost.  See
+# https://postgr.es/m/088AB35D-0860-494A-A9CF-8B301543AA51@yandex-team.ru
+ifeq ($(PORTNAME), win32)
+ISOLATION := $(filter-out slot_creation_error,$(ISOLATION))
+endif
+
 # But it can nonetheless be very helpful to run tests on preexisting
 # installation, allow to do so, but only if requested explicitly.
 installcheck-force:

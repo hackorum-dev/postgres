@@ -26,6 +26,14 @@ test_install_data += files(
   'injection_points--1.0.sql',
 )
 
+# wait_cleanup is unstable on Windows, where the FATAL message of a
+# terminated backend can get lost.  See
+# https://postgr.es/m/088AB35D-0860-494A-A9CF-8B301543AA51@yandex-team.ru
+injection_points_extra_specs = []
+if host_system != 'windows'
+  injection_points_extra_specs += 'wait_cleanup'
+endif
+
 tests += {
   'name': 'injection_points',
   'sd': meson.current_source_dir(),
@@ -56,10 +64,9 @@ tests += {
       'ri_fastpath_reindex',
       'ri_fastpath_snapshot',
       'syscache-update-pruned',
-      'wait_cleanup',
       'heap_lock_update',
       'on_conflict_probe_window',
-    ],
+    ] + injection_points_extra_specs,
     'runningcheck': false, # see syscache-update-pruned
     # Some tests wait for all snapshots, so avoid parallel execution
     'runningcheck-parallel': false,

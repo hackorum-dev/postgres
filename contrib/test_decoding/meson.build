@@ -16,6 +16,14 @@ test_decoding = shared_module('test_decoding',
 )
 contrib_targets += test_decoding
 
+# slot_creation_error is unstable on Windows, where the FATAL message of a
+# terminated backend can get lost.  See
+# https://postgr.es/m/088AB35D-0860-494A-A9CF-8B301543AA51@yandex-team.ru
+test_decoding_extra_specs = []
+if host_system != 'windows'
+  test_decoding_extra_specs += 'slot_creation_error'
+endif
+
 tests += {
   'name': 'test_decoding',
   'sd': meson.current_source_dir(),
@@ -62,11 +70,10 @@ tests += {
       'subxact_without_top',
       'concurrent_stream',
       'twophase_snapshot',
-      'slot_creation_error',
       'skip_snapshot_restore',
       'invalidation_distribution',
       'parallel_session_origin',
-    ],
+    ] + test_decoding_extra_specs,
     'regress_args': [
       '--temp-config', files('logical.conf'),
     ],
