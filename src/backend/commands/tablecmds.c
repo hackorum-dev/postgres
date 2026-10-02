@@ -9235,18 +9235,31 @@ SetIndexStorageProperties(Relation rel, Relation attrelation,
 		if (HeapTupleIsValid(tuple))
 		{
 			Form_pg_attribute attrtuple = (Form_pg_attribute) GETSTRUCT(tuple);
+			const FormData_pg_attribute *heapatt;
 
-			if (setstorage)
-				attrtuple->attstorage = newstorage;
+			heapatt = TupleDescAttr(RelationGetDescr(rel),
+									attnum - 1);
 
-			if (setcompression)
-				attrtuple->attcompression = newcompression;
+			/*
+			 * ConstructTupleDescriptor() copies heap attstorage only when the
+			 * index column has the same type as the heap column.  An opclass
+			 * STORAGE type keeps its own typstorage.  Do not overwrite that
+			 * with the heap setting.
+			 */
+			if (attrtuple->atttypid == heapatt->atttypid)
+			{
+				if (setstorage)
+					attrtuple->attstorage = newstorage;
 
-			CatalogTupleUpdate(attrelation, &tuple->t_self, tuple);
+				if (setcompression)
+					attrtuple->attcompression = newcompression;
 
-			InvokeObjectPostAlterHook(RelationRelationId,
-									  RelationGetRelid(rel),
-									  attrtuple->attnum);
+				CatalogTupleUpdate(attrelation, &tuple->t_self, tuple);
+
+				InvokeObjectPostAlterHook(RelationRelationId,
+										  RelationGetRelid(rel),
+										  attrtuple->attnum);
+			}
 
 			heap_freetuple(tuple);
 		}
