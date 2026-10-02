@@ -3429,6 +3429,7 @@ retry:
 			errno = save_errno;
 			ereport(emode_for_corrupt_record(emode, targetPagePtr + reqLen),
 					(errcode_for_file_access(),
+					 errnocoredump_on_errno(ENOSPC),
 					 errmsg("could not read from WAL segment %s, LSN %X/%08X, offset %u: %m",
 							fname, LSN_FORMAT_ARGS(targetPagePtr),
 							readOff)));
@@ -4301,6 +4302,7 @@ XLogFileRead(XLogSegNo segno, TimeLineID tli,
 	if (errno != ENOENT || !notfoundOk) /* unexpected failure? */
 		ereport(PANIC,
 				(errcode_for_file_access(),
+				 errnocoredump_on_errno(ENOSPC),
 				 errmsg("could not open file \"%s\": %m", path)));
 	return -1;
 }
