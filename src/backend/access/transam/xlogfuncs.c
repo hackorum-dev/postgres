@@ -296,6 +296,24 @@ pg_upgrade_boundary_lsn(PG_FUNCTION_ARGS)
 }
 
 /*
+ * Entry point of an in-place upgrade.
+ *
+ * The server of the next major version starts on this version's catalogs
+ * and has to find this function there, so it is declared here.  It drives
+ * an upgrade to the version of the server that runs it, which this version
+ * cannot do.
+ */
+Datum
+pg_inplace_upgrade_golive(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("in-place upgrade to this server version is not supported")));
+
+	PG_RETURN_NULL();			/* keep compiler quiet */
+}
+
+/*
  * pg_log_standby_snapshot: call LogStandbySnapshot()
  *
  * Permission checking for this function is managed through the normal
