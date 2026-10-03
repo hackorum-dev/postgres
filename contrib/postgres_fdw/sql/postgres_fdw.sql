@@ -1635,6 +1635,8 @@ ALTER FOREIGN TABLE ft1 ALTER COLUMN c8 TYPE user_enum;
 -- ===================================================================
 -- subtransaction
 --  + local/remote error doesn't break cursor
+--  + cursors opened before a savepoint are disallowed to be first
+--    fetched within it
 -- ===================================================================
 BEGIN;
 DECLARE c CURSOR FOR SELECT * FROM ft1 ORDER BY c1;
@@ -1649,6 +1651,12 @@ ROLLBACK TO s;
 FETCH c;
 SELECT * FROM ft1 ORDER BY c1 LIMIT 1;
 COMMIT;
+
+BEGIN;
+DECLARE c CURSOR FOR SELECT * FROM ft1 ORDER BY c1;
+SAVEPOINT s;
+FETCH c;
+ABORT;
 
 -- ===================================================================
 -- test handling of collations

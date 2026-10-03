@@ -17,6 +17,7 @@
 #include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "access/table.h"
+#include "access/xact.h"
 #include "catalog/pg_opfamily.h"
 #include "commands/defrem.h"
 #include "commands/explain_format.h"
@@ -189,6 +190,7 @@ typedef struct PgFdwScanState
 	FmgrInfo   *param_flinfo;	/* output conversion functions for them */
 	List	   *param_exprs;	/* executable expressions for param values */
 	const char **param_values;	/* textual values of query parameters */
+	int			created_at;		/* xact depth at which the scan was created */
 
 	/* for storing result tuples */
 	HeapTuple  *tuples;			/* array of currently-retrieved tuples */
@@ -1762,6 +1764,9 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	/* Assign a unique ID for my cursor */
 	fsstate->cursor_number = GetCursorNumber(fsstate->conn);
 	fsstate->cursor_exists = false;
+
+	/* Get the current local transaction's nesting depth */
+	fsstate->created_at = GetCurrentTransactionNestLevel();
 
 	/* Get private info created by planner functions. */
 	fsstate->query = strVal(list_nth(fsplan->fdw_private,
@@ -4054,9 +4059,20 @@ create_cursor(ForeignScanState *node)
 	StringInfoData buf;
 	PGresult   *res;
 
+	if (fsstate->created_at < GetCurrentTransactionNestLevel())
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot perform the first fetch of a cursor within a deeper subtransaction than it was created in")));
+
 	/* First, process a pending asynchronous request, if any. */
 	if (fsstate->conn_state->pendingAreq)
 		process_pending_request(fsstate->conn_state->pendingAreq);
+
+	/*
+	 * Second, synchronize the local/remote transactions.  Note that we need
+	 * to do this because this function can be called from open cursors.
+	 */
+	pgfdw_begin_remote_xact(fsstate->conn_state->entry);
 
 	/*
 	 * Construct array of query parameter values in text format.  We do the
@@ -4147,7 +4163,7 @@ fetch_more_data(ForeignScanState *node)
 		if (PQresultStatus(res) != PGRES_TUPLES_OK)
 			pgfdw_report_error(res, conn, fsstate->query);
 
-		/* Reset per-connection state */
+		/* Reset the pending asynchronous request */
 		fsstate->conn_state->pendingAreq = NULL;
 	}
 	else
@@ -4394,6 +4410,9 @@ create_foreign_modify(EState *estate,
  *		result if any.  (This is the shared guts of postgresExecForeignInsert,
  *		postgresExecForeignBatchInsert, postgresExecForeignUpdate, and
  *		postgresExecForeignDelete.)
+ *
+ * Note: this function is never called from open cursors, thus no need to
+ * synchronize the local/remote transactions.
  */
 static TupleTableSlot **
 execute_foreign_modify(EState *estate,
@@ -4832,6 +4851,9 @@ rebuild_fdw_scan_tlist(ForeignScan *fscan, List *tlist)
 
 /*
  * Execute a direct UPDATE/DELETE statement.
+ *
+ * Note: this function is never called from open cursors, thus no need to
+ * synchronize the local/remote transactions.
  */
 static void
 execute_dml_stmt(ForeignScanState *node)
@@ -8840,9 +8862,14 @@ fetch_more_data_begin(AsyncRequest *areq)
 
 	Assert(!fsstate->conn_state->pendingAreq);
 
-	/* Create the cursor synchronously. */
+	/*
+	 * Create the cursor synchronously if not already done.  Otherwise,
+	 * synchronize the local/remote transactions before the data fetch.
+	 */
 	if (!fsstate->cursor_exists)
 		create_cursor(node);
+	else
+		pgfdw_begin_remote_xact(fsstate->conn_state->entry);
 
 	/* We will send this query, but not wait for the response. */
 	snprintf(sql, sizeof(sql), "FETCH %d FROM c%u",

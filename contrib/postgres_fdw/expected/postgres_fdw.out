@@ -5332,6 +5332,8 @@ ALTER FOREIGN TABLE ft1 ALTER COLUMN c8 TYPE user_enum;
 -- ===================================================================
 -- subtransaction
 --  + local/remote error doesn't break cursor
+--  + cursors opened before a savepoint are disallowed to be first
+--    fetched within it
 -- ===================================================================
 BEGIN;
 DECLARE c CURSOR FOR SELECT * FROM ft1 ORDER BY c1;
@@ -5371,6 +5373,12 @@ SELECT * FROM ft1 ORDER BY c1 LIMIT 1;
 (1 row)
 
 COMMIT;
+BEGIN;
+DECLARE c CURSOR FOR SELECT * FROM ft1 ORDER BY c1;
+SAVEPOINT s;
+FETCH c;
+ERROR:  cannot perform the first fetch of a cursor within a deeper subtransaction than it was created in
+ABORT;
 -- ===================================================================
 -- test handling of collations
 -- ===================================================================
