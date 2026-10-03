@@ -2940,7 +2940,8 @@ cost_agg(Path *path, PlannerInfo *root,
 		hashentrysize = hash_agg_entry_size(list_length(root->aggtransinfos),
 											input_width,
 											aggcosts->transitionSpace);
-		hash_agg_set_limits(hashentrysize, numGroups, 0, &mem_limit,
+		hash_agg_set_limits(hashentrysize, numGroups, 0,
+							get_hash_memory_limit(), &mem_limit,
 							&ngroups_limit, &num_partitions);
 
 		nbatches = Max((numGroups * hashentrysize) / mem_limit,
@@ -4399,6 +4400,7 @@ initial_cost_hashjoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 							true,	/* useskew */
 							parallel_hash,	/* try_combined_hash_mem */
 							outer_path->parallel_workers,
+							get_hash_memory_limit(),
 							&space_allowed,
 							&numbuckets,
 							&numbatches,
