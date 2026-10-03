@@ -190,7 +190,8 @@ typedef struct PgFdwScanState
 	FmgrInfo   *param_flinfo;	/* output conversion functions for them */
 	List	   *param_exprs;	/* executable expressions for param values */
 	const char **param_values;	/* textual values of query parameters */
-	int			created_at;		/* xact depth at which the scan was created */
+	SubTransactionId created_subid; /* subxact in which the scan was created */
+	int			created_level;	/* its nesting depth at that time */
 
 	/* for storing result tuples */
 	HeapTuple  *tuples;			/* array of currently-retrieved tuples */
@@ -1765,8 +1766,9 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	fsstate->cursor_number = GetCursorNumber(fsstate->conn);
 	fsstate->cursor_exists = false;
 
-	/* Get the current local transaction's nesting depth */
-	fsstate->created_at = GetCurrentTransactionNestLevel();
+	/* Remember the local (sub)transaction that the scan is created in */
+	fsstate->created_subid = GetCurrentSubTransactionId();
+	fsstate->created_level = GetCurrentTransactionNestLevel();
 
 	/* Get private info created by planner functions. */
 	fsstate->query = strVal(list_nth(fsplan->fdw_private,
@@ -4059,20 +4061,32 @@ create_cursor(ForeignScanState *node)
 	StringInfoData buf;
 	PGresult   *res;
 
-	if (fsstate->created_at < GetCurrentTransactionNestLevel())
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("cannot perform the first fetch of a cursor within a deeper subtransaction than it was created in")));
+	/*
+	 * The remote cursor is declared at the current remote (sub)transaction
+	 * depth, and rolling back a remote savepoint at or below that depth
+	 * destroys it.  That is only safe if every local savepoint whose rollback
+	 * keeps the local cursor alive is deeper than that.  The local cursor
+	 * lives at the depth of the (sub)transaction that created it, if that is
+	 * still open; if it has been released, the cursor has been handed to some
+	 * enclosing level, which we conservatively assume is the top level.
+	 */
+	{
+		int			cursor_level;
+
+		if (SubTransactionIsActive(fsstate->created_subid))
+			cursor_level = fsstate->created_level;
+		else
+			cursor_level = 1;
+
+		if (pgfdw_remote_xact_depth(fsstate->conn_state->entry) > cursor_level)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("cannot perform the first fetch of a cursor within a deeper subtransaction than it was created in")));
+	}
 
 	/* First, process a pending asynchronous request, if any. */
 	if (fsstate->conn_state->pendingAreq)
 		process_pending_request(fsstate->conn_state->pendingAreq);
-
-	/*
-	 * Second, synchronize the local/remote transactions.  Note that we need
-	 * to do this because this function can be called from open cursors.
-	 */
-	pgfdw_begin_remote_xact(fsstate->conn_state->entry);
 
 	/*
 	 * Construct array of query parameter values in text format.  We do the
@@ -4116,6 +4130,15 @@ create_cursor(ForeignScanState *node)
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
 		pgfdw_report_error(res, conn, fsstate->query);
 	PQclear(res);
+
+	/*
+	 * Now synchronize the local/remote transactions.  We do this after
+	 * declaring the cursor, not before, so that the remote cursor is not
+	 * created inside a remote savepoint that the local cursor doesn't
+	 * belong to.  (We need to synchronize here because this function can be
+	 * called from open cursors.)
+	 */
+	pgfdw_begin_remote_xact(fsstate->conn_state->entry);
 
 	/* Mark the cursor as created, and show no tuples have been retrieved */
 	fsstate->cursor_exists = true;

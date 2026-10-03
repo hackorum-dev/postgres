@@ -1091,6 +1091,16 @@ pgfdw_begin_remote_xact(ConnCacheEntry *entry)
 }
 
 /*
+ * Return the nesting depth of the remote (sub)transaction currently open on
+ * the connection (0 if none).
+ */
+int
+pgfdw_remote_xact_depth(ConnCacheEntry *entry)
+{
+	return entry->xact_depth;
+}
+
+/*
  * Submit a query and wait for the result.
  *
  * Since we don't use non-blocking mode, this can't process interrupts while
