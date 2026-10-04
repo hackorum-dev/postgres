@@ -863,6 +863,12 @@ generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
 										NIL, NULL, 0, false, -1);
 
 	/*
+	 * A single-child Append inherits its child's pathkeys, but those might
+	 * not match this setop's targetlist.
+	 */
+	apath->pathkeys = NIL;
+
+	/*
 	 * Initialize the result row estimate to the total input size.  This is
 	 * correct for UNION ALL; for the UNION case it is overwritten below with
 	 * the estimated number of distinct groups.
@@ -1224,6 +1230,9 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 				apath = (Path *) create_append_path(root, result_rel,
 													append, NIL, NULL, 0,
 													false, -1);
+
+				/* as in generate_union_paths, don't trust child pathkeys */
+				apath->pathkeys = NIL;
 
 				add_path(result_rel, apath);
 
