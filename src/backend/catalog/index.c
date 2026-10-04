@@ -3726,6 +3726,75 @@ IndexGetRelation(Oid indexId, bool missing_ok)
 }
 
 /*
+ * index_reset_storage_properties --- reset attstorage/attcompression on
+ * index columns whose type differs from the heap column (i.e. columns
+ * derived from the opclass STORAGE type), healing catalogs poisoned by
+ * the old SET STORAGE / SET COMPRESSION propagation.  Returns true if
+ * any pg_attribute row was updated; caller must make the change visible
+ * before relying on the index's tuple descriptor.
+ */
+static bool
+index_reset_storage_properties(Relation heapRelation, Relation indexRelation)
+{
+	TupleDesc	heapTupDesc = RelationGetDescr(heapRelation);
+	Relation	pg_attribute_rel;
+	bool		changed = false;
+
+	pg_attribute_rel = table_open(AttributeRelationId, RowExclusiveLock);
+
+	for (int i = 0; i < indexRelation->rd_index->indnatts; i++)
+	{
+		AttrNumber	attnum = indexRelation->rd_index->indkey.values[i];
+		Form_pg_attribute att = TupleDescAttr(indexRelation->rd_att, i);
+		Form_pg_attribute heapAtt;
+		HeapTuple	typeTup;
+		Form_pg_type typeForm;
+		HeapTuple	attTup;
+
+		/* expression columns have nothing to reset */
+		if (attnum == 0)
+			continue;
+
+		if (attnum < 0 || attnum > heapTupDesc->natts)
+			elog(ERROR, "invalid column number %d", attnum);
+		heapAtt = TupleDescAttr(heapTupDesc, AttrNumberGetAttrOffset(attnum));
+
+		/* same-type columns legitimately follow the heap column */
+		if (heapAtt->atttypid == att->atttypid)
+			continue;
+
+		typeTup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(att->atttypid));
+		if (!HeapTupleIsValid(typeTup))
+			elog(ERROR, "cache lookup failed for type %u", att->atttypid);
+		typeForm = (Form_pg_type) GETSTRUCT(typeTup);
+
+		if (att->attstorage == typeForm->typstorage &&
+			att->attcompression == InvalidCompressionMethod)
+		{
+			ReleaseSysCache(typeTup);
+			continue;
+		}
+
+		attTup = SearchSysCacheCopyAttNum(indexRelation->rd_id, i + 1);
+		if (!HeapTupleIsValid(attTup))
+			elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+				 i + 1, indexRelation->rd_id);
+		((Form_pg_attribute) GETSTRUCT(attTup))->attstorage =
+			typeForm->typstorage;
+		((Form_pg_attribute) GETSTRUCT(attTup))->attcompression =
+			InvalidCompressionMethod;
+		CatalogTupleUpdate(pg_attribute_rel, &attTup->t_self, attTup);
+		heap_freetuple(attTup);
+		ReleaseSysCache(typeTup);
+		changed = true;
+	}
+
+	table_close(pg_attribute_rel, RowExclusiveLock);
+
+	return changed;
+}
+
+/*
  * reindex_index - This routine is used to recreate a single index
  */
 void
@@ -3879,6 +3948,17 @@ reindex_index(const ReindexStmt *stmt, Oid indexId,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot move system relation \"%s\"",
 						RelationGetRelationName(iRel))));
+
+	/*
+	 * heal any bogus storage properties left by old ALTERs, and reopen
+	 * so the corrected attributes are in use
+	 */
+	if (index_reset_storage_properties(heapRelation, iRel))
+	{
+		index_close(iRel, NoLock);
+		CommandCounterIncrement();
+		iRel = index_open(indexId, AccessExclusiveLock);
+	}
 
 	/* Check if the tablespace of this index needs to be changed */
 	if (OidIsValid(params->tablespaceOid) &&
