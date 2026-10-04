@@ -827,6 +827,18 @@ EXPLAIN (COSTS OFF)
    Note that scan advice is not affected by this limitation because it does
    not constrain the join order.
   </para>
+
+  <para>
+   Plan advice is consulted only when a query is planned. A change to
+   <varname>pg_plan_advice.advice</varname>, or to the advice supplied by
+   another module such as <xref linkend="pgstashadvice"/>, therefore does not
+   affect a plan that has already been cached, such as the generic plan of a
+   prepared statement. The new advice is used the next time the statement is
+   planned. In the current session, this can be forced with
+   <link linkend="sql-discard"><command>DISCARD PLANS</command></link>.
+   Plans cached by other sessions are re-planned only when something else
+   invalidates them; see <xref linkend="sql-prepare"/>.
+  </para>
  </sect2>
 
  <sect2 id="pgplanadvice-author">
