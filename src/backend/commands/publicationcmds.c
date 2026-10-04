@@ -15,7 +15,9 @@
 #include "postgres.h"
 
 #include "access/htup_details.h"
+#include "access/relation.h"
 #include "access/table.h"
+#include "access/twophase.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
 #include "catalog/indexing.h"
@@ -39,6 +41,7 @@
 #include "parser/parse_relation.h"
 #include "rewrite/rewriteHandler.h"
 #include "storage/lmgr.h"
+#include "storage/lock.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/inval.h"
@@ -64,6 +67,8 @@ typedef struct rf_context
 static List *OpenTableList(List *tables);
 static void CloseTableList(List *rels);
 static void LockSchemaList(List *schemalist);
+static void LockTablesWithoutReplicaIdentity(Form_pg_publication pubform,
+											 List *schemas);
 static void PublicationAddTables(Oid pubid, List *rels, bool if_not_exists,
 								 AlterPublicationStmt *stmt);
 static void PublicationDropTables(Oid pubid, List *rels, bool missing_ok);
@@ -925,7 +930,6 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 
 	/* Insert tuple into catalog. */
 	CatalogTupleInsert(rel, tup);
-	heap_freetuple(tup);
 
 	recordDependencyOnOwner(PublicationRelationId, puboid, GetUserId());
 
@@ -937,6 +941,14 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 	/* Associate objects with the publication. */
 	ObjectsInPublicationToOids(stmt->pubobjects, pstate, &relations,
 							   &exceptrelations, &schemaidlist);
+
+	/*
+	 * Prevent concurrent writers on tables that have no usable replica
+	 * identity from racing with this DDL; see
+	 * LockTablesWithoutReplicaIdentity().
+	 */
+	LockTablesWithoutReplicaIdentity((Form_pg_publication) GETSTRUCT(tup),
+									 schemaidlist);
 
 	if (stmt->for_all_tables)
 	{
@@ -1160,6 +1172,15 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 	CommandCounterIncrement();
 
 	pubform = (Form_pg_publication) GETSTRUCT(tup);
+
+	/*
+	 * Enabling publication of UPDATEs or DELETEs makes member tables that
+	 * have no usable replica identity require one; prevent concurrent writers
+	 * on such tables. see LockTablesWithoutReplicaIdentity().
+	 */
+	if (publish_given)
+		LockTablesWithoutReplicaIdentity(pubform,
+										 GetPublicationSchemas(pubform->oid));
 
 	/* Invalidate the relcache. */
 	if (pubform->puballtables)
@@ -1441,6 +1462,17 @@ AlterPublicationSchemas(AlterPublicationStmt *stmt,
 		return;
 
 	/*
+	 * Prevent concurrent writers on the schemas' tables.  See
+	 * LockTablesWithoutReplicaIdentity().
+	 *
+	 * Note that the catalog lock taken there must not be taken when no schema
+	 * is being added: acquiring it before the table locks taken by later
+	 * parts of the DDL would invert the lock ordering.
+	 */
+	if (stmt->action != AP_DropObjects)
+		LockTablesWithoutReplicaIdentity(pubform, schemaidlist);
+
+	/*
 	 * Schema lock is held until the publication is altered to prevent
 	 * concurrent schema deletion.
 	 */
@@ -1643,6 +1675,13 @@ AlterPublicationAllFlags(AlterPublicationStmt *stmt, Relation rel,
 								nulls, replaces);
 		CatalogTupleUpdate(rel, &tup->t_self, tup);
 		CommandCounterIncrement();
+
+		/*
+		 * Prevent concurrent writers on the publication's tables.  See
+		 * LockTablesWithoutReplicaIdentity().
+		 */
+		LockTablesWithoutReplicaIdentity((Form_pg_publication) GETSTRUCT(tup),
+										 NIL);
 
 		/* For ALL TABLES, we must invalidate all relcache entries */
 		if (replaces[Anum_pg_publication_puballtables - 1])
@@ -2066,6 +2105,139 @@ LockSchemaList(List *schemalist)
 	}
 }
 
+/*
+ * Prevent data-modifying statements from racing with a publication DDL that
+ * widens the set of changes tables publish (adding TABLES IN SCHEMA or ALL
+ * TABLES to a publication, enabling publication of UPDATE or DELETE), by
+ * locking the covered plain tables that have no usable replica identity in
+ * ShareRowExclusiveLock mode.
+ *
+ * An UPDATE or DELETE checks the replica identity requirement and decides
+ * what tuple data to write to WAL using the publication definition visible
+ * to the statement, while logical decoding uses the definition in effect at
+ * commit time.  If the DDL could commit while such a statement is in
+ * progress on a table without a replica identity, the change could be
+ * decoded and sent without the replica identity data the subscriber needs
+ * to apply it.  The following lock protocol prevents that:
+ *
+ * - The DDL locks the covered tables without a usable replica identity in
+ *   ShareRowExclusiveLock mode, which conflicts with the RowExclusiveLock
+ *   held by writers, so it waits for in-progress writers, and writers
+ *   starting afterwards see the new publication definition.  Tables with a
+ *   usable replica identity need not be locked: their changes carry the
+ *   identity data regardless of the publication definition.
+ *
+ * - The DDL then holds ShareLock on the pg_publication catalog until
+ *   commit, and RelationBuildPublicationDesc() takes a conflicting
+ *   RowExclusiveLock on it, held until end of transaction, when building
+ *   the publication descriptor of a table that has no usable replica
+ *   identity.  The descriptor is (re)built exactly when the table may be
+ *   new to the backend, e.g. a table created after the DDL surveyed the
+ *   existing tables, so the DDL cannot commit while such a statement is in
+ *   progress.  Note that this serializes the DDL with writers on tables
+ *   that are out of the DDL's scope too, but only with those touching
+ *   tables without a usable replica identity.
+ *
+ * No lock is needed to serialize with DDL that removes a table's replica
+ * identity: such removal takes AccessExclusiveLock on the table, so a writer
+ * on the table either ends before the removal commits (its WAL was written
+ * while the identity existed), or starts after it and then takes the catalog
+ * lock when rebuiling publication descriptor as described above, blocking the
+ * publication DDL's commit.
+ *
+ * To avoid deadlocks, the catalog lock is taken only after the table locks:
+ * a data-modifying statement necessarily holds a lock on its table when
+ * building the publication descriptor, so the DDL cannot take the catalog
+ * lock first.  Note that a transaction holding the catalog lock from an
+ * earlier descriptor build can still deadlock with this DDL when it later
+ * requests a lock on a table locked here; such cycles are resolved by the
+ * deadlock detector.
+ *
+ * Since each locked table consumes an entry in the shared lock table, the
+ * tables locked are counted along the way, and a clear error is raised if
+ * they exceed half of the lock table size (cf. NLOCKENTS() in lock.c).  This
+ * is expected to be rare, since a table without a replica identity cannot
+ * be updated or deleted through the publication anyway.
+ */
+static void
+LockTablesWithoutReplicaIdentity(Form_pg_publication pubform, List *schemas)
+{
+	List	   *relids = NIL;
+	uint64		maxlocks;
+	int			num_without_ri = 0;
+
+	Assert(!(pubform->puballtables && schemas));
+
+	if (!pubform->pubupdate && !pubform->pubdelete)
+		return;
+
+	/*
+	 * Nothing is covered by the publication, now or in the future; no lock is
+	 * needed.  Note that an empty schema still needs the catalog lock below,
+	 * to cover tables created in it while this DDL is in progress.
+	 */
+	if (!pubform->puballtables && schemas == NIL)
+		return;
+
+	if (pubform->puballtables)
+		relids = GetAllPublishableTables();
+
+	foreach_oid(schemaid, schemas)
+		relids = list_concat(relids,
+							 GetSchemaPublicationRelations(schemaid,
+														   PUBLICATION_PART_LEAF));
+
+	maxlocks = (uint64) (max_locks_per_xact * (MaxBackends + max_prepared_xacts - 1)) / 2;
+
+	/*
+	 * Lock the tables in OID order, so that concurrent publication DDLs
+	 * cannot deadlock with each other by locking them in different orders.
+	 */
+	list_sort(relids, list_oid_cmp);
+	list_deduplicate_oid(relids);
+
+	foreach_oid(relid, relids)
+	{
+		Relation	rel;
+
+		/* Allow query cancel in case this takes a long time */
+		CHECK_FOR_INTERRUPTS();
+
+		rel = try_relation_open(relid, ShareRowExclusiveLock);
+		if (rel == NULL)
+			continue;			/* concurrently dropped */
+
+		/*
+		 * Skip if not a publishable table, is a sequence, or has a usable
+		 * replica identity.
+		 */
+		if (!is_publishable_relation(rel) ||
+			rel->rd_rel->relkind == RELKIND_SEQUENCE ||
+			OidIsValid(RelationGetReplicaIndex(rel)) ||
+			rel->rd_rel->relreplident == REPLICA_IDENTITY_FULL)
+		{
+			table_close(rel, ShareRowExclusiveLock);
+			continue;
+		}
+
+		if (++num_without_ri > maxlocks)
+			ereport(ERROR,
+					(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
+					 errmsg("too many tables without a replica identity in the publication"),
+					 errhint("Set a replica identity on the tables that need to be updated or deleted, or exclude them from the publication.")));
+
+		/* Hold the lock until end of transaction */
+		table_close(rel, NoLock);
+	}
+
+	/*
+	 * Serialize with concurrent publication descriptor builds.  ShareLock is
+	 * the weakest mode that conflicts with the RowExclusiveLock those take on
+	 * this catalog, and, unlike ShareRowExclusiveLock, it does not needlessly
+	 * serialize concurrent publication DDLs against each other.
+	 */
+	LockRelationOid(PublicationRelationId, ShareLock);
+}
 
 /*
  * Add listed tables to the publication.
