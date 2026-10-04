@@ -155,6 +155,7 @@ static Plan *set_mergeappend_references(PlannerInfo *root,
 										int rtoffset);
 static void set_hash_references(PlannerInfo *root, Plan *plan, int rtoffset);
 static Relids offset_relid_set(Relids relids, int rtoffset);
+static Node *fix_dummy_setop_vars_mutator(Node *node, void *context);
 static Node *fix_scan_expr(PlannerInfo *root, Node *node,
 						   int rtoffset, double num_exec);
 static Node *fix_scan_expr_mutator(Node *node, fix_scan_expr_context *context);
@@ -1060,27 +1061,23 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 					 * Here we rewrite these to use varno==1, which is the
 					 * varno of the first set-op child.  Without this, EXPLAIN
 					 * will have trouble displaying targetlists of dummy set
-					 * operations.
+					 * operations.  The Vars might be inside an expression,
+					 * such as a type coercion added by a parent set
+					 * operation.
 					 */
 					foreach(l, splan->plan.targetlist)
 					{
 						TargetEntry *tle = (TargetEntry *) lfirst(l);
 						Var		   *var = (Var *) tle->expr;
 
-						if (var && IsA(var, Var))
-						{
-							if (var->varno == ROWID_VAR)
-								tle->expr = (Expr *) makeNullConst(var->vartype,
-																   var->vartypmod,
-																   var->varcollid);
-							else if (var->varno == 0)
-								tle->expr = (Expr *) makeVar(1,
-															 var->varattno,
-															 var->vartype,
-															 var->vartypmod,
-															 var->varcollid,
-															 var->varlevelsup);
-						}
+						if (var && IsA(var, Var) && var->varno == ROWID_VAR)
+							tle->expr = (Expr *) makeNullConst(var->vartype,
+															   var->vartypmod,
+															   var->varcollid);
+						else
+							tle->expr = (Expr *)
+								fix_dummy_setop_vars_mutator((Node *) tle->expr,
+															 NULL);
 					}
 
 					splan->plan.targetlist =
@@ -2244,6 +2241,32 @@ fix_alternative_subplan(PlannerInfo *root, AlternativeSubPlan *asplan,
 	root->isUsedSubplan[bestplan->plan_id - 1] = true;
 
 	return (Node *) bestplan;
+}
+
+/*
+ * fix_dummy_setop_vars_mutator
+ *		Change the varno 0 Vars made by prepunion.c to varno 1.
+ */
+static Node *
+fix_dummy_setop_vars_mutator(Node *node, void *context)
+{
+	if (node == NULL)
+		return NULL;
+	if (IsA(node, Var))
+	{
+		Var		   *var = (Var *) node;
+
+		if (var->varno == 0)
+			return (Node *) makeVar(1,
+									var->varattno,
+									var->vartype,
+									var->vartypmod,
+									var->varcollid,
+									var->varlevelsup);
+		return node;
+	}
+	return expression_tree_mutator(node, fix_dummy_setop_vars_mutator,
+								   context);
 }
 
 /*
