@@ -1388,6 +1388,67 @@ SELECT ten FROM tenk1 dummy WHERE 1=2;
                      Output: t2.four
 (11 rows)
 
+-- Ensure the Append left with a single child after removing an empty input
+-- doesn't use the child's pathkeys.
+SET enable_hashagg = off;
+EXPLAIN (COSTS OFF)
+SELECT two FROM tenk1 WHERE two = 1
+INTERSECT ALL
+SELECT four FROM tenk1 WHERE four = 1
+UNION ALL
+SELECT ten FROM tenk1 WHERE 1=2;
+              QUERY PLAN               
+---------------------------------------
+ SetOp Intersect All
+   ->  Sort
+         Sort Key: tenk1.two
+         ->  Seq Scan on tenk1
+               Filter: (two = 1)
+   ->  Sort
+         Sort Key: tenk1_1.four
+         ->  Seq Scan on tenk1 tenk1_1
+               Filter: (four = 1)
+(9 rows)
+
+EXPLAIN (COSTS OFF)
+(SELECT two FROM tenk1 WHERE two = 1
+ INTERSECT
+ SELECT four FROM tenk1 WHERE four = 1)
+EXCEPT ALL
+SELECT ten FROM tenk1 WHERE 1=2;
+              QUERY PLAN               
+---------------------------------------
+ SetOp Intersect
+   ->  Sort
+         Sort Key: tenk1.two
+         ->  Seq Scan on tenk1
+               Filter: (two = 1)
+   ->  Sort
+         Sort Key: tenk1_1.four
+         ->  Seq Scan on tenk1 tenk1_1
+               Filter: (four = 1)
+(9 rows)
+
+-- As above, but the child's output needs a type coercion
+EXPLAIN (COSTS OFF)
+(SELECT two FROM tenk1 UNION SELECT four FROM tenk1)
+UNION ALL
+SELECT ten::numeric FROM tenk1 WHERE 1=2;
+                    QUERY PLAN                     
+---------------------------------------------------
+ Result
+   ->  Unique
+         ->  Merge Append
+               Sort Key: tenk1.two
+               ->  Sort
+                     Sort Key: tenk1.two
+                     ->  Seq Scan on tenk1
+               ->  Sort
+                     Sort Key: tenk1_1.four
+                     ->  Seq Scan on tenk1 tenk1_1
+(10 rows)
+
+RESET enable_hashagg;
 -- Test constraint exclusion of UNION ALL subqueries
 explain (costs off)
  SELECT * FROM

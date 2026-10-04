@@ -531,6 +531,30 @@ SELECT four FROM tenk1 t2
 UNION
 SELECT ten FROM tenk1 dummy WHERE 1=2;
 
+-- Ensure the Append left with a single child after removing an empty input
+-- doesn't use the child's pathkeys.
+SET enable_hashagg = off;
+EXPLAIN (COSTS OFF)
+SELECT two FROM tenk1 WHERE two = 1
+INTERSECT ALL
+SELECT four FROM tenk1 WHERE four = 1
+UNION ALL
+SELECT ten FROM tenk1 WHERE 1=2;
+
+EXPLAIN (COSTS OFF)
+(SELECT two FROM tenk1 WHERE two = 1
+ INTERSECT
+ SELECT four FROM tenk1 WHERE four = 1)
+EXCEPT ALL
+SELECT ten FROM tenk1 WHERE 1=2;
+
+-- As above, but the child's output needs a type coercion
+EXPLAIN (COSTS OFF)
+(SELECT two FROM tenk1 UNION SELECT four FROM tenk1)
+UNION ALL
+SELECT ten::numeric FROM tenk1 WHERE 1=2;
+RESET enable_hashagg;
+
 -- Test constraint exclusion of UNION ALL subqueries
 explain (costs off)
  SELECT * FROM
