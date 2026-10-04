@@ -863,6 +863,17 @@ generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
 										NIL, NULL, 0, false, -1);
 
 	/*
+	 * Although we told create_append_path to assign NIL pathkeys to the
+	 * AppendPath, it may have overridden that (if there's just one surviving
+	 * child path, it will use that path's pathkeys).  However, createplan.c
+	 * will fail because the append relation's tlist contains varno-0 Vars
+	 * (cf. generate_append_tlist), which won't match what is in the pathkeys.
+	 * We need to fix that someday, but for now, just force the AppendPath's
+	 * pathkeys back to NIL.
+	 */
+	apath->pathkeys = NIL;
+
+	/*
 	 * Initialize the result row estimate to the total input size.  This is
 	 * correct for UNION ALL; for the UNION case it is overwritten below with
 	 * the estimated number of distinct groups.
