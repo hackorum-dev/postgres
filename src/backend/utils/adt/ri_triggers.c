@@ -302,7 +302,8 @@ static bool ri_LockPKTuple(Relation pk_rel, TupleTableSlot *slot, Snapshot snap,
 						   bool *concurrently_updated);
 static bool ri_fastpath_is_applicable(const RI_ConstraintInfo *riinfo);
 static bool ri_check_fastpath_index(RI_ConstraintInfo *riinfo,
-									Relation pk_rel, Relation idx_rel);
+									Relation fk_rel, Relation pk_rel,
+									Relation idx_rel);
 static void ri_CheckPermissions(const RI_ConstraintInfo *riinfo,
 								Relation query_rel);
 static bool recheck_matched_pk_tuple(Relation idxrel, ScanKeyData *skeys,
@@ -2486,7 +2487,7 @@ get_ri_constraint_root(Oid constrOid)
 }
 
 /*
- * Callback for pg_constraint and pg_amop inval events
+ * Callback for pg_constraint, pg_amop and pg_cast inval events
  *
  * While most syscache callbacks just flush all their entries, pg_constraint
  * gets enough update traffic that it's probably worth being smarter.
@@ -2520,6 +2521,13 @@ InvalidateConstraintCacheCallBack(Datum arg, SysCacheIdentifier cacheid,
 	 * rare.
 	 */
 	if (cacheid == AMOPOPID)
+		hashvalue = 0;
+
+	/*
+	 * Likewise for pg_cast: whether a constraint's FK values need a coercion
+	 * function, which decides fast-path eligibility, depends on it.
+	 */
+	if (cacheid == CASTSOURCETARGET)
 		hashvalue = 0;
 
 	/*
@@ -2803,7 +2811,7 @@ ri_FastPathCheck(RI_ConstraintInfo *riinfo,
 
 	idx_rel = index_open(riinfo->conindid, AccessShareLock);
 
-	if (!ri_check_fastpath_index(riinfo, pk_rel, idx_rel))
+	if (!ri_check_fastpath_index(riinfo, fk_rel, pk_rel, idx_rel))
 	{
 		index_close(idx_rel, NoLock);
 		table_close(pk_rel, NoLock);
@@ -3034,7 +3042,7 @@ ri_fastpath_is_applicable(const RI_ConstraintInfo *riinfo)
  * The index-property checks use the held relation descriptors.
  */
 static bool
-ri_check_fastpath_index(RI_ConstraintInfo *riinfo,
+ri_check_fastpath_index(RI_ConstraintInfo *riinfo, Relation fk_rel,
 						Relation pk_rel, Relation idx_rel)
 {
 	/* Opening the index can have processed further invalidations. */
@@ -3094,6 +3102,31 @@ ri_check_fastpath_index(RI_ConstraintInfo *riinfo,
 
 		if (get_op_opfamily_strategy(riinfo->pf_eq_oprs[i],
 									 idx_rel->rd_opfamily[idx_col]) != BTEqualStrategyNumber)
+		{
+			riinfo->fastpath_state = RI_FASTPATH_UNUSABLE;
+			return false;
+		}
+	}
+
+	/*
+	 * Leave FK values that need a coercion function to reach the equality
+	 * operator's input type to SPI.  The SPI query applies such a coercion as
+	 * part of an expression, which takes care of the function's declared
+	 * arguments, its input collation, a NULL result, volatility, array
+	 * coercion, and replanning when the function changes; a direct call would
+	 * have to reproduce all of that.  Binary-coercible values, including
+	 * domains, need no function and stay on the fast path, as do cross-type
+	 * operators, which take the FK type directly.
+	 */
+	for (int i = 0; i < riinfo->nkeys; i++)
+	{
+		Oid			fk_type = RIAttType(fk_rel, riinfo->fk_attnums[i]);
+		Oid			lefttype;
+		Oid			righttype;
+
+		op_input_types(riinfo->pf_eq_oprs[i], &lefttype, &righttype);
+		if (getBaseType(fk_type) != righttype &&
+			!IsBinaryCoercible(fk_type, righttype))
 		{
 			riinfo->fastpath_state = RI_FASTPATH_UNUSABLE;
 			return false;
@@ -3615,11 +3648,14 @@ ri_InitHashTables(void)
 									  RI_INIT_CONSTRAINTHASHSIZE,
 									  &ctl, HASH_ELEM | HASH_BLOBS);
 
-	/* Arrange to flush cache on pg_constraint or pg_amop changes */
+	/* Arrange to flush cache on pg_constraint, pg_amop or pg_cast changes */
 	CacheRegisterSyscacheCallback(CONSTROID,
 								  InvalidateConstraintCacheCallBack,
 								  (Datum) 0);
 	CacheRegisterSyscacheCallback(AMOPOPID,
+								  InvalidateConstraintCacheCallBack,
+								  (Datum) 0);
+	CacheRegisterSyscacheCallback(CASTSOURCETARGET,
 								  InvalidateConstraintCacheCallBack,
 								  (Datum) 0);
 
