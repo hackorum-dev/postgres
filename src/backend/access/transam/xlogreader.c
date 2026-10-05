@@ -36,6 +36,7 @@
 #ifndef FRONTEND
 #include "pgstat.h"
 #include "storage/bufmgr.h"
+#include "utils/memutils.h"
 #include "utils/wait_event.h"
 #else
 #include "common/logging.h"
@@ -55,6 +56,9 @@ static bool ValidXLogRecord(XLogReaderState *state, XLogRecord *record,
 static void ResetDecoder(XLogReaderState *state);
 static void WALOpenSegmentInit(WALOpenSegment *seg, WALSegmentContext *segcxt,
 							   int segsize, const char *waldir);
+#ifndef FRONTEND
+static void xlogreader_close_segment(void *arg);
+#endif
 
 /* size of the buffer allocated for error message. */
 #define MAX_ERRORMSG_LEN 1000
@@ -159,9 +163,51 @@ XLogReaderAllocate(int wal_segment_size, const char *waldir,
 	return state;
 }
 
+#ifndef FRONTEND
+/*
+ * Memory reset callback for an XLogReader.
+ *
+ * Close the WAL segment file when the memory context holding the reader is
+ * reset or deleted.
+ */
+static void
+xlogreader_close_segment(void *arg)
+{
+	XLogReaderState *state = (XLogReaderState *) arg;
+
+	if (state->seg.ws_file != -1)
+		state->routine.segment_close(state);
+}
+
+/*
+ * Register a memory reset callback, closing a segment, if necessary.
+ *
+ * This is useful when opening a segment with BasicOpenFile(), to guarantee
+ * that the segment is closed before XLogReaderFree() is reached.
+ */
+void
+XLogReaderRegisterReset(XLogReaderState *state)
+{
+	if (state->reset_cb_registered)
+		return;
+
+	state->reset_cb.func = xlogreader_close_segment;
+	state->reset_cb.arg = state;
+	MemoryContextRegisterResetCallback(GetMemoryChunkContext(state),
+									   &state->reset_cb);
+	state->reset_cb_registered = true;
+}
+#endif
+
 void
 XLogReaderFree(XLogReaderState *state)
 {
+#ifndef FRONTEND
+	if (state->reset_cb_registered)
+		MemoryContextUnregisterResetCallback(GetMemoryChunkContext(state),
+											 &state->reset_cb);
+#endif
+
 	if (state->seg.ws_file != -1)
 		state->routine.segment_close(state);
 

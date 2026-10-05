@@ -109,7 +109,9 @@ typedef struct XLogReaderRoutine
 
 	/*
 	 * WAL segment close callback.  ->seg.ws_file shall be set to a negative
-	 * number.
+	 * number.  This should not throw an error, as it may be called in a
+	 * memory context reset callback if XLogReaderRegisterReset() has been
+	 * used.
 	 */
 	WALSegmentCloseCB segment_close;
 } XLogReaderRoutine;
@@ -315,6 +317,13 @@ struct XLogReaderState
 	 * data.
 	 */
 	bool		nonblocking;
+
+#ifndef FRONTEND
+
+	/* Reset callback on the memory context holding this reader. */
+	MemoryContextCallback reset_cb;
+	bool		reset_cb_registered;
+#endif
 };
 
 /*
@@ -334,6 +343,11 @@ extern XLogReaderState *XLogReaderAllocate(int wal_segment_size,
 
 /* Free an XLogReader */
 extern void XLogReaderFree(XLogReaderState *state);
+
+#ifndef FRONTEND
+/* Register a reset callback */
+extern void XLogReaderRegisterReset(XLogReaderState *state);
+#endif
 
 /* Optionally provide a circular decoding buffer to allow readahead. */
 extern void XLogReaderSetDecodeBuffer(XLogReaderState *state,
