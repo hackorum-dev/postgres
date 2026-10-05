@@ -99,6 +99,7 @@
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
+#include "utils/injection_point.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -22506,6 +22507,9 @@ ATExecAttachPartitionIdx(List **wqueue, Relation parentIdx, RangeVar *name)
 	/* keep these locks till commit */
 	relation_close(partTbl, NoLock);
 	relation_close(partIdx, NoLock);
+
+	INJECTION_POINT("alter-index-attach-complete",
+				get_rel_name(RelationGetRelid(parentIdx)));
 
 	return address;
 }

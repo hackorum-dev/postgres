@@ -42,6 +42,7 @@ injection_points_isolation = [
   'ri_fastpath_snapshot',
   'syscache-update-pruned',
   'heap_lock_update',
+  'partitioned_index_attach_race',
   'on_conflict_probe_window',
 ]
 
