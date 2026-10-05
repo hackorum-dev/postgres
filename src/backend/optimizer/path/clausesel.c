@@ -14,6 +14,8 @@
  */
 #include "postgres.h"
 
+#include "access/htup_details.h"
+#include "catalog/pg_statistic.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
 #include "optimizer/optimizer.h"
@@ -42,6 +44,7 @@ static void addRangeClause(RangeQueryClause **rqlist, Node *clause,
 						   bool varonleft, bool isLTsel, Selectivity s2);
 static RelOptInfo *find_single_rel_for_clauses(PlannerInfo *root,
 											   List *clauses);
+static double expr_nullfrac(PlannerInfo *root, Node *expr);
 static Selectivity clauselist_selectivity_or(PlannerInfo *root,
 											 List *clauses,
 											 int varRelid,
@@ -578,6 +581,25 @@ find_single_rel_for_clauses(PlannerInfo *root, List *clauses)
 }
 
 /*
+ * expr_nullfrac -
+ *	  Return the null fraction of an expression, or zero if we have no
+ *	  statistics for it.
+ */
+static double
+expr_nullfrac(PlannerInfo *root, Node *expr)
+{
+	VariableStatData vardata;
+	double		nullfrac = 0.0;
+
+	examine_variable(root, expr, 0, &vardata);
+	if (HeapTupleIsValid(vardata.statsTuple))
+		nullfrac = ((Form_pg_statistic) GETSTRUCT(vardata.statsTuple))->stanullfrac;
+	ReleaseVariableStats(vardata);
+
+	return nullfrac;
+}
+
+/*
  * treat_as_join_clause -
  *	  Decide whether an operator clause is to be handled by the
  *	  restriction or join estimator.  Subroutine for clause_selectivity().
@@ -854,11 +876,22 @@ clause_selectivity_ext(PlannerInfo *root,
 		/*
 		 * DistinctExpr has the same representation as OpExpr, but the
 		 * contained operator is "=" not "<>", so we must negate the result.
-		 * This estimation method doesn't give the right behavior for nulls,
-		 * but it's better than doing nothing.
+		 * First add the fraction of rows having both inputs null, which "="
+		 * does not count.  We don't do that for semijoins and antijoins,
+		 * where the "=" estimate is not a fraction of row pairs.
 		 */
 		if (IsA(clause, DistinctExpr))
+		{
+			if (sjinfo == NULL ||
+				(sjinfo->jointype != JOIN_SEMI &&
+				 sjinfo->jointype != JOIN_ANTI))
+			{
+				s1 += expr_nullfrac(root, linitial(opclause->args)) *
+					expr_nullfrac(root, lsecond(opclause->args));
+				CLAMP_PROBABILITY(s1);
+			}
 			s1 = 1.0 - s1;
+		}
 	}
 	else if (is_funcclause(clause))
 	{
