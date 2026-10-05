@@ -21620,7 +21620,7 @@ QueuePartitionConstraintValidation(List **wqueue, Relation scanrel,
 		/* Grab a work queue entry. */
 		tab = ATGetQueueEntry(wqueue, scanrel);
 		Assert(tab->partition_constraint == NULL);
-		tab->partition_constraint = (Expr *) linitial(partConstraint);
+		tab->partition_constraint = make_ands_explicit(partConstraint);
 		tab->validate_default = validate_default;
 	}
 	else if (scanrel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
@@ -21937,9 +21937,6 @@ ATExecAttachPartition(List **wqueue, Relation rel, PartitionCmd *cmd,
 		partConstraint =
 			(List *) eval_const_expressions(NULL,
 											(Node *) partConstraint);
-
-		/* XXX this sure looks wrong */
-		partConstraint = list_make1(make_ands_explicit(partConstraint));
 
 		/*
 		 * Adjust the generated constraint to match this partition's attribute
