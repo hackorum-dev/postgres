@@ -398,10 +398,11 @@ CopyToJsonOneRow(CopyToState cstate, TupleTableSlot *slot)
 		 * Full table or query without column list.  For queries, the slot's
 		 * TupleDesc may carry RECORDOID, which is not registered in the type
 		 * cache and would cause composite_to_json's lookup_rowtype_tupdesc
-		 * call to fail.  Build a HeapTuple stamped with the blessed
-		 * descriptor so the type can be looked up correctly.
+		 * call to fail, or the row type of a scanned table, whose column
+		 * names can differ from the query's.  Always build a HeapTuple
+		 * stamped with the blessed descriptor.
 		 */
-		if (!cstate->rel && slot->tts_tupleDescriptor->tdtypeid == RECORDOID)
+		if (!cstate->rel)
 		{
 			HeapTuple	tup = heap_form_tuple(cstate->tupDesc,
 											  slot->tts_values,
