@@ -1,4 +1,3 @@
-# A foreign key check racing a rebuild of the index it resolves through.
 #
 # Pause the RI fast path before it locks the referenced table, allowing
 # REINDEX CONCURRENTLY to repoint the constraint.  Verify that the check
@@ -7,7 +6,7 @@
 
 setup
 {
-    CREATE EXTENSION injection_points;
+    CREATE EXTENSION IF NOT EXISTS injection_points;
     CREATE TABLE ri_pk (id int PRIMARY KEY);
     INSERT INTO ri_pk SELECT g FROM generate_series(1, 100) g;
     CREATE TABLE ri_fk (id int PRIMARY KEY, pid int REFERENCES ri_pk(id));
@@ -19,7 +18,6 @@ setup
 teardown
 {
     DROP TABLE ri_fk, ri_pk, ri_old_index;
-    DROP EXTENSION injection_points;
 }
 
 # The rebuild, stopped just before it repoints the constraint.

@@ -9,7 +9,7 @@
 
 setup
 {
-    CREATE EXTENSION injection_points;
+    CREATE EXTENSION IF NOT EXISTS injection_points;
     CREATE TABLE reind_deferred (id int, val int,
         CONSTRAINT uq_val UNIQUE(val) DEFERRABLE INITIALLY DEFERRED);
     INSERT INTO reind_deferred VALUES (1, 1), (2, 2);
@@ -18,7 +18,6 @@ setup
 teardown
 {
     DROP TABLE reind_deferred;
-    DROP EXTENSION injection_points;
 }
 
 session s1

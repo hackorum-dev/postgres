@@ -67,7 +67,6 @@ setup
 teardown
 {
 	DROP TABLE repack_toast;
-	DROP EXTENSION injection_points;
 	DROP FUNCTION gen_compressible(int);
 	DROP FUNCTION gen_compressible_external(int);
 	DROP FUNCTION gen_external();

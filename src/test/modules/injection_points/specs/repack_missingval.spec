@@ -29,7 +29,6 @@ teardown
 {
 	DROP TABLE repack_missingval;
 	DROP FUNCTION repack_return_old();
-	DROP EXTENSION injection_points;
 }
 
 session s1

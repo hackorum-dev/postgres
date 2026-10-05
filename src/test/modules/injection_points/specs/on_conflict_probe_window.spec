@@ -13,7 +13,7 @@
 
 setup
 {
-	CREATE EXTENSION injection_points;
+	CREATE EXTENSION IF NOT EXISTS injection_points;
 	CREATE TABLE probe_a (key int PRIMARY KEY, val int);
 	CREATE TABLE probe_b (key int PRIMARY KEY, val int);
 	INSERT INTO probe_a VALUES (1, 0);
@@ -24,7 +24,6 @@ setup
 teardown
 {
 	DROP TABLE probe_a, probe_b;
-	DROP EXTENSION injection_points;
 }
 
 session s1

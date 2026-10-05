@@ -1,7 +1,7 @@
 # REPACK (CONCURRENTLY) ... USING INDEX ...;
 setup
 {
-	CREATE EXTENSION injection_points;
+	CREATE EXTENSION IF NOT EXISTS injection_points;
 
 	CREATE TABLE repack_test(i int PRIMARY KEY, j int,
 				 k int GENERATED ALWAYS AS (j * 2) STORED);
@@ -16,7 +16,6 @@ setup
 teardown
 {
 	DROP TABLE repack_test;
-	DROP EXTENSION injection_points;
 
 	DROP TABLE relfilenodes;
 	DROP TABLE data_s1;

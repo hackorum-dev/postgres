@@ -9,7 +9,7 @@
 # Just to save on filesystem syscalls, use relkind=c for every other rel.
 setup
 {
-	CREATE EXTENSION injection_points;
+	CREATE EXTENSION IF NOT EXISTS injection_points;
 	CREATE SCHEMA vactest;
 	CREATE FUNCTION vactest.mkrels(text, int, int) RETURNS void
 		LANGUAGE plpgsql SET search_path = vactest AS $$
@@ -35,7 +35,6 @@ setup
 teardown
 {
 	DROP SCHEMA vactest CASCADE;
-	DROP EXTENSION injection_points;
 }
 
 # Wait during inplace update, in a VACUUM of vactest.orig50.

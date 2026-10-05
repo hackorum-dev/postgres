@@ -5,7 +5,7 @@
 # for MVCC correctness.
 setup
 {
-	CREATE EXTENSION injection_points;
+	CREATE EXTENSION IF NOT EXISTS injection_points;
 
 	CREATE TABLE repack_race(i int PRIMARY KEY, j int);
 	INSERT INTO repack_race(i, j) VALUES (1, 1), (2, 2);
@@ -14,7 +14,6 @@ setup
 teardown
 {
 	DROP TABLE repack_race;
-	DROP EXTENSION injection_points;
 }
 
 session s1

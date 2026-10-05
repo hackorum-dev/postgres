@@ -22,7 +22,7 @@
 # output, to verify that the test exercises the scenario we want.
 setup
 {
-	CREATE EXTENSION injection_points;
+	CREATE EXTENSION IF NOT EXISTS injection_points;
 
 	CREATE TABLE t (id int PRIMARY KEY);
 	do $$
@@ -43,7 +43,6 @@ setup
 teardown
 {
 	DROP TABLE t;
-	DROP EXTENSION injection_points;
 }
 
 session s1

@@ -6,7 +6,7 @@
 # can produce both as candidates and requires exact recheck.
 setup
 {
-	CREATE EXTENSION injection_points;
+	CREATE EXTENSION IF NOT EXISTS injection_points;
 
 	CREATE TABLE repack_temporal_multirange (
 		id int4multirange,
@@ -34,7 +34,6 @@ setup
 teardown
 {
 	DROP TABLE repack_temporal_multirange;
-	DROP EXTENSION injection_points;
 	DROP TABLE relfilenodes;
 }
 

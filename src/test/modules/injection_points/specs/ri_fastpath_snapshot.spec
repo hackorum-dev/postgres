@@ -6,7 +6,7 @@
 
 setup
 {
-    CREATE EXTENSION injection_points;
+    CREATE EXTENSION IF NOT EXISTS injection_points;
     CREATE ROLE regress_ri_snapshot;
     CREATE TABLE ri_snapshot_pk (id int PRIMARY KEY);
     CREATE TABLE ri_snapshot_fk (pid int);
@@ -20,7 +20,6 @@ teardown
 {
     DROP TABLE ri_snapshot_fk, ri_snapshot_pk;
     DROP ROLE regress_ri_snapshot;
-    DROP EXTENSION injection_points;
 }
 
 session s1

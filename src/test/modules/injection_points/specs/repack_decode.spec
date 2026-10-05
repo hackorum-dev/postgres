@@ -1,6 +1,6 @@
 setup
 {
-	CREATE EXTENSION injection_points;
+	CREATE EXTENSION IF NOT EXISTS injection_points;
 
 	BEGIN;
 	-- Generate a string of random characters that is not likely to be
@@ -22,7 +22,6 @@ setup
 teardown
 {
 	DROP TABLE repack_toast;
-	DROP EXTENSION injection_points;
 	DROP FUNCTION gen_external();
 	SELECT pg_drop_replication_slot('s');
 }

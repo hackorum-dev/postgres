@@ -25,7 +25,7 @@
 # on filesystem syscalls, use relkind=c for every other rel.
 setup
 {
-	CREATE EXTENSION injection_points;
+	CREATE EXTENSION IF NOT EXISTS injection_points;
 	CREATE SCHEMA vactest;
 	-- Ensure a leader RELOID catcache entry.  PARALLEL RESTRICTED since a
 	-- parallel worker running pg_relation_filenode() would lack that effect.
@@ -94,7 +94,6 @@ setup
 teardown
 {
 	DROP SCHEMA vactest CASCADE;
-	DROP EXTENSION injection_points;
 }
 
 # Wait during GRANT.  Disable debug_discard_caches, since we're here to

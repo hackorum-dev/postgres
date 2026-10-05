@@ -6,7 +6,7 @@
 # target row.
 setup
 {
-	CREATE EXTENSION injection_points;
+	CREATE EXTENSION IF NOT EXISTS injection_points;
 
 	CREATE TABLE repack_temporal (
 		id int4range,
@@ -28,7 +28,6 @@ setup
 teardown
 {
 	DROP TABLE repack_temporal;
-	DROP EXTENSION injection_points;
 	DROP TABLE relfilenodes;
 }
 

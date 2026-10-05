@@ -5,11 +5,7 @@
 
 setup
 {
-	CREATE EXTENSION injection_points;
-}
-teardown
-{
-	DROP EXTENSION injection_points;
+	CREATE EXTENSION IF NOT EXISTS injection_points;
 }
 
 # The first waiter, that gets canceled or terminated.  This does not

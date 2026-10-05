@@ -4,7 +4,7 @@
 # they'll comfortably fit in a single page.  The OLD tuple 1 is propagated
 # through the concurrent update because of the trigger.
 setup {
-	CREATE EXTENSION injection_points;
+	CREATE EXTENSION IF NOT EXISTS injection_points;
 
 	CREATE TABLE repack_dropped (id int PRIMARY KEY, a text, b text);
 	ALTER TABLE repack_dropped ALTER COLUMN b SET STORAGE EXTERNAL;

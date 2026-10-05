@@ -6,11 +6,7 @@
 
 setup
 {
-	CREATE EXTENSION injection_points;
-}
-teardown
-{
-	DROP EXTENSION injection_points;
+	CREATE EXTENSION IF NOT EXISTS injection_points;
 }
 
 # Wait happens in the first session, wakeup in the second session.
