@@ -2819,7 +2819,7 @@ apply_concurrent_changes(BufFile *file, ChangeContext *chgcxt)
 			/*
 			 * Adjust spilled_tuple so that it can be used as the new tuple in
 			 * the update that we're about to replay.  This fixes TOAST
-			 * pointers as well as remove useless values from dropped columns.
+			 * pointers.
 			 */
 			prepare_concurrent_update(spilled_tuple, ondisk_tuple);
 
@@ -2946,6 +2946,7 @@ apply_concurrent_delete(Relation rel, TupleTableSlot *slot)
 static void
 restore_tuple(BufFile *file, Relation relation, TupleTableSlot *slot)
 {
+	TupleDesc	desc = slot->tts_tupleDescriptor;
 	uint32		t_len;
 	HeapTuple	tup;
 	int			natt_ext;
@@ -2966,6 +2967,17 @@ restore_tuple(BufFile *file, Relation relation, TupleTableSlot *slot)
 	ExecForceStoreHeapTuple(tup, slot, false);
 
 	/*
+	 * Dropped columns can still have values in the tuple.  Mark them as null:
+	 * they'd waste space, and the new heap might have no TOAST table to store
+	 * them in.
+	 */
+	for (int i = 0; i < desc->natts; i++)
+	{
+		if (TupleDescCompactAttr(desc, i)->attisdropped)
+			slot->tts_isnull[i] = true;
+	}
+
+	/*
 	 * Next, read any attributes we stored separately into the tts_values
 	 * array elements expecting them, if any.  This matches
 	 * repack_store_change.
@@ -2973,8 +2985,6 @@ restore_tuple(BufFile *file, Relation relation, TupleTableSlot *slot)
 	BufFileReadExact(file, &natt_ext, sizeof(natt_ext));
 	if (natt_ext > 0)
 	{
-		TupleDesc	desc = slot->tts_tupleDescriptor;
-
 		for (int i = 0; i < desc->natts; i++)
 		{
 			CompactAttribute *attr = TupleDescCompactAttr(desc, i);
@@ -3020,10 +3030,6 @@ restore_tuple(BufFile *file, Relation relation, TupleTableSlot *slot)
  * - Any EXTERNAL_ONDISK toast pointers so that it points to the corresponding
  *   toast value in 'src' (the transient table) instead.  The TOAST storage for
  *   'dest' is going to be dropped, so these values cannot be used any longer.
- *
- * We also apply the following optimization:
- * - If any columns are dropped but the slot still contains values, mark them
- *   as null to avoid uselessly wasting space in the new relation.
  */
 static void
 prepare_concurrent_update(TupleTableSlot *dest, TupleTableSlot *src)
@@ -3036,14 +3042,7 @@ prepare_concurrent_update(TupleTableSlot *dest, TupleTableSlot *src)
 		varlena    *varlena_dst;
 
 		if (attr->attisdropped)
-		{
-			if (!slot_attisnull(dest, i + 1))
-			{
-				slot_getsomeattrs(dest, i + 1);
-				dest->tts_isnull[i] = true;
-			}
 			continue;
-		}
 		if (attr->attlen != -1)
 			continue;
 		if (slot_attisnull(dest, i + 1))
