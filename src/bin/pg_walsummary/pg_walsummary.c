@@ -135,7 +135,7 @@ dump_one_relation(ws_options *opt, RelFileLocator *rlocator,
 	BlockNumber endblock = InvalidBlockNumber;
 
 	/* Dump limit block, if any. */
-	if (limit_block != InvalidBlockNumber)
+	if (!opt->quiet && limit_block != InvalidBlockNumber)
 		printf("TS %u, DB %u, REL %u, FORK %s: limit %u\n",
 			   rlocator->spcOid, rlocator->dbOid, rlocator->relNumber,
 			   forkNames[forknum], limit_block);

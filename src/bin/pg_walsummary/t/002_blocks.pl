@@ -3,6 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use File::Compare;
+use File::Copy;
 use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
@@ -45,6 +46,24 @@ SELECT EXISTS (
 )
 EOM
 ok($result, "WAL summarization caught up after insert");
+
+# --quiet must also suppress limit blocks caused by relation creation.
+my $summary_dir = $node1->data_dir . '/pg_wal/summaries';
+my @summaries = map { "$summary_dir/$_" }
+  sort grep { /^[0-9A-F]{40}\.summary$/ } slurp_dir($summary_dir);
+command_like(
+	[ 'pg_walsummary', @summaries ],
+	qr/: limit 0$/m,
+	'relation creation produces limit blocks');
+for my $option ('-q', '--quiet')
+{
+	command_checks_all(
+		[ 'pg_walsummary', $option, @summaries ],
+		0,
+		[qr/\A\z/],
+		[qr/\A\z/],
+		"$option suppresses all output");
+}
 
 # The WAL summarizer should have generated some IO statistics.
 $node1->poll_query_until(
@@ -102,5 +121,17 @@ like($stdout, qr/FORK main: block 0$/m, "stdout shows block 0 modified");
 like($stdout, qr/FORK vm: block 0$/m, "stdout shows VM block 0 modified");
 is($stderr, '', 'stderr is empty');
 is(0 + @lines, 3, "UPDATE modified 3 blocks");
+
+# Quiet mode must still parse every file, including the final checksum.
+my $corrupt_summary = $node1->basedir . '/corrupt.summary';
+copy($filename, $corrupt_summary) or die "copy failed: $!";
+truncate($corrupt_summary, (-s $corrupt_summary) - 1)
+  or die "truncate failed: $!";
+command_checks_all(
+	[ 'pg_walsummary', '-q', @summaries, $corrupt_summary ],
+	1,
+	[qr/\A\z/],
+	[qr/ends unexpectedly/],
+	'-q parses all files and detects truncation');
 
 done_testing();
