@@ -1,0 +1,92 @@
+Parsed test spec with 4 sessions
+
+starting permutation: s1_attach_partb1 ctrl_lock ctrl_gate s2_attach_partc1 ctrl_release s2_barrier ctrl_wakeup s1_barrier test_state_broken test_fk_fail test_heal test_fk_ok
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step s1_attach_partb1: 
+	ALTER INDEX partb_pkey ATTACH PARTITION partb1_pkey;
+ <waiting ...>
+step ctrl_lock: 
+	BEGIN;
+	LOCK TABLE partc1 IN ACCESS EXCLUSIVE MODE;
+
+step ctrl_gate: 
+	DO $$
+	DECLARE
+		n integer := 0;
+	BEGIN
+		WHILE NOT EXISTS
+		      (SELECT 1 FROM pg_stat_activity
+		        WHERE wait_event = 'alter-index-attach-complete')
+		LOOP
+			PERFORM pg_sleep(0.01);
+			n := n + 1;
+			IF n > 3000 THEN
+				RAISE EXCEPTION 's1 never reached the injection point';
+			END IF;
+		END LOOP;
+	END
+	$$;
+
+step s2_attach_partc1: 
+	ALTER INDEX partc_pkey ATTACH PARTITION partc1_pkey;
+ <waiting ...>
+step ctrl_release: 
+	ROLLBACK;
+
+step s2_attach_partc1: <... completed>
+step s2_barrier: 
+	SELECT 1 AS s2_done;
+
+s2_done
+-------
+      1
+(1 row)
+
+step ctrl_wakeup: 
+	SELECT injection_points_wakeup('alter-index-attach-complete');
+
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step s1_attach_partb1: <... completed>
+step s1_barrier: 
+	SELECT 1 AS s1_done;
+
+s1_done
+-------
+      1
+(1 row)
+
+step test_state_broken: 
+	SELECT c.relname, i.indisvalid
+	  FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+	 WHERE c.relname IN ('top_pkey', 'parta_pkey', 'partb_pkey',
+	                     'partb1_pkey', 'partc_pkey', 'partc1_pkey')
+	 ORDER BY c.relname;
+
+relname    |indisvalid
+-----------+----------
+parta_pkey |t         
+partb1_pkey|t         
+partb_pkey |t         
+partc1_pkey|t         
+partc_pkey |t         
+top_pkey   |f         
+(6 rows)
+
+step test_fk_fail: 
+	ALTER TABLE fk ADD CONSTRAINT fk_a_fkey FOREIGN KEY (a) REFERENCES top(a);
+
+ERROR:  there is no unique constraint matching given keys for referenced table "top"
+step test_heal: 
+	ALTER INDEX top_pkey ATTACH PARTITION parta_pkey;
+
+step test_fk_ok: 
+	ALTER TABLE fk ADD CONSTRAINT fk_a_fkey FOREIGN KEY (a) REFERENCES top(a);
+

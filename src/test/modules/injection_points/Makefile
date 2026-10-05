@@ -35,6 +35,7 @@ ISOLATION = basic \
 	    syscache-update-pruned \
 	    $(WAIT_CLEANUP_TST) \
 	    heap_lock_update \
+	    partitioned_index_attach_race \
 	    on_conflict_probe_window
 
 # some isolation tests require wal_level=replica
