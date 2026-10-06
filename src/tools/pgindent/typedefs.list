@@ -452,6 +452,7 @@ ClosestMatchState
 Clump
 ClusterInfo
 ClusterParams
+ClusterPosture
 CmdType
 CoalesceExpr
 CoerceParamHook
@@ -1350,6 +1351,7 @@ InjectionPointEntry
 InjectionPointSharedState
 InjectionPointsCtl
 InlineCodeBlock
+InplaceUpgradePosture
 InsertStmt
 Instrumentation
 Int128AggState
@@ -1875,6 +1877,7 @@ Oid
 Oid8
 OidOptions
 OkeysState
+OldControlFormat
 OldMultiXactReader
 OldToNewMapping
 OldToNewMappingData
@@ -3319,6 +3322,8 @@ UnresolvedTupData
 UpdateContext
 UpdateStmt
 UpgradeFlag
+UpgradeOwner
+UpgradePosture
 UpgradeTask
 UpgradeTaskProcessCB
 UpgradeTaskReport
