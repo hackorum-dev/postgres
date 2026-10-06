@@ -361,6 +361,14 @@ reindex_one_database(ConnParams *cparams, ReindexType type,
 				Assert(user_list != NULL);
 
 				/*
+				 * Batching the indexes of one table into a single
+				 * multi-statement query does not work with CONCURRENTLY, so
+				 * refuse the combination.
+				 */
+				if (concurrently)
+					pg_fatal("cannot use multiple jobs to reindex indexes concurrently");
+
+				/*
 				 * Generate a list of indexes and a matching list of table
 				 * OIDs, based on the user-specified index names.
 				 */
