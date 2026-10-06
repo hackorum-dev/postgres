@@ -317,6 +317,23 @@ extern "C++"
 #endif
 
 /*
+ * pg_attribute_strict_flex_array allows specifying the level of strictness for
+ * an individual flexible array member. For instance, most of the time we should
+ * use FLEXIBLE_ARRAY_MEMBER when defining flexible arrays in structs, but
+ * sometimes those structs are embedded within other structs that may not allow
+ * us to do that. pg_attribute_strict_flex_array is a backdoor to lessen
+ * strictness for the singular member such that we can define a flexible array
+ * member using other idioms.
+ *
+ * Currently only available on GCC 15+.
+ */
+#if __has_attribute (strict_flex_array)
+#define pg_attribute_strict_flex_array(level) __attribute__((strict_flex_array(level)))
+#else
+#define pg_attribute_strict_flex_array(level)
+#endif
+
+/*
  * pg_attribute_counted_by specifies that a flexible array member is "counted
  * by" another struct member.  This allows the compiler to improve detection
  * of object size information and to provide better results in compile-time
