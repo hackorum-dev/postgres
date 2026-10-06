@@ -377,6 +377,7 @@ enum AttStatsColumns
 	ATTSTATS_RANGE_LENGTH_HISTOGRAM,
 	ATTSTATS_RANGE_EMPTY_FRAC,
 	ATTSTATS_RANGE_BOUNDS_HISTOGRAM,
+	ATTSTATS_MOST_COMMON_VALS_KIND,
 	ATTSTATS_NUM_FIELDS,
 };
 
@@ -6371,6 +6372,8 @@ import_fetched_statistics(Relation relation,
 						  get_opt_value(res, row, ATTSTATS_RANGE_EMPTY_FRAC));
 			set_text_arg(&args[13],
 						 get_opt_value(res, row, ATTSTATS_RANGE_BOUNDS_HISTOGRAM));
+			set_int32_arg(&args[14],
+						  get_opt_value(res, row, ATTSTATS_MOST_COMMON_VALS_KIND));
 
 			/* Try to import the statistics. */
 			if (!import_attribute_statistics(relation, attnum, false,
@@ -6378,7 +6381,7 @@ import_fetched_statistics(Relation relation,
 											 &args[3], &args[4], &args[5],
 											 &args[6], &args[7], &args[8],
 											 &args[9], &args[10], &args[11],
-											 &args[12], &args[13]))
+											 &args[12], &args[13], &args[14]))
 			{
 				ereport(WARNING,
 						errmsg("could not import statistics for foreign table \"%s.%s\" --- attribute statistics import failed for column \"%s\" of this foreign table",
