@@ -1382,8 +1382,11 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
  * installs it as the projection's inner tuple.  A scan node has no inner
  * plan, so INNER_VAR is otherwise unused here.
  *
- * Only float8/float4 expressions qualify: those are the only types
- * index_store_float8_orderby_distances() can deliver.
+ * indexorderbyexact[i] comes from index_orderby_returnable(), which also
+ * limits this to float8/float4, the only types
+ * index_store_float8_orderby_distances() can deliver.  The planner costs
+ * the scan with the same test (path_target_cost() in pathnode.c), so what
+ * is costed is what is built.
  */
 static void
 replace_orderby_tlist_refs(IndexScan *splan)
@@ -1409,9 +1412,7 @@ replace_orderby_tlist_refs(IndexScan *splan)
 			Oid			typ = exprType((Node *) orig);
 
 			i++;
-			if (lfirst_int(le) &&
-				(typ == FLOAT8OID || typ == FLOAT4OID) &&
-				equal(tle->expr, orig))
+			if (lfirst_int(le) && equal(tle->expr, orig))
 			{
 				tle->expr = (Expr *) makeVar(INNER_VAR, i, typ,
 											 exprTypmod((Node *) orig),
