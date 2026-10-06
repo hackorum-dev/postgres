@@ -70,6 +70,7 @@ extern void TwoPhaseTransactionGid(Oid subid, TransactionId xid, char *gid_res,
 								   int szgid);
 extern bool LookupGXactBySubid(Oid subid);
 
+extern int	CountPreparedTransactions(void);
 extern TransactionId TwoPhaseGetOldestXidInCommit(void);
 
 #endif							/* TWOPHASE_H */

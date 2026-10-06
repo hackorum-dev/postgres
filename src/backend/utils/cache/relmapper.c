@@ -68,7 +68,6 @@
  * speed searching by insisting on OID order, but it really shouldn't be
  * worth the trouble given the intended size of the mapping sets.
  */
-#define RELMAPPER_FILENAME		"pg_filenode.map"
 #define RELMAPPER_TEMP_FILENAME	"pg_filenode.map.tmp"
 
 #define RELMAPPER_FILEMAGIC		0x592717	/* version ID value */

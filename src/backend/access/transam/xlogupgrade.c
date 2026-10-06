@@ -45,19 +45,17 @@
 #include "common/inplace_upgrade_posture.h"
 #include "miscadmin.h"
 #include "pgstat.h"
-#include "storage/copydir.h"
 #include "storage/fd.h"
 #include "upgrade/bundle.h"
+#include "upgrade/inplace_upgrade.h"
 
 /* Transaction IDs per pg_xact segment file */
 #define CLOG_XACTS_PER_SEGMENT \
 	((uint64) CLOG_XACTS_PER_PAGE * SLRU_PAGES_PER_SEGMENT)
 
 static void take_over_primary(ControlFileData *cf);
-static void stash_file(const char *path, const char *stashpath);
 static bool control_file_stashed(void);
 static void read_whole_file(const char *path, char *buf, int len);
-static void register_created_file(const char *path);
 static uint64 aligned_next_fxid(FullTransactionId nextXid);
 static void write_start_segment(ControlFileData *cf, char *fname);
 static void write_pg_xact_page(FullTransactionId nextXid);
@@ -175,9 +173,10 @@ take_over_primary(ControlFileData *cf)
 
 	/*
 	 * A takeover that finds the control file unchanged since it was stashed
-	 * repeats an interrupted one, whose created files are on the list.
-	 * Otherwise the old version may have run since and reused their names, so
-	 * the list starts afresh.
+	 * repeats an interrupted one.  Its WAL segment can differ from the one
+	 * the interrupted takeover created, so the list keeps that one, and a
+	 * rollback removes both.  Otherwise the old version may have run since
+	 * and reused the names on the list, so the list starts afresh.
 	 */
 	if (!control_file_stashed() &&
 		unlink(INPLACE_UPGRADE_CREATED_FILES) < 0 && errno != ENOENT)
@@ -185,7 +184,7 @@ take_over_primary(ControlFileData *cf)
 				(errcode_for_file_access(),
 				 errmsg("could not remove file \"%s\": %m",
 						INPLACE_UPGRADE_CREATED_FILES)));
-	stash_file(XLOG_CONTROL_FILE, INPLACE_UPGRADE_CONTROL_STASH);
+	InplaceUpgradeStashFile(XLOG_CONTROL_FILE, INPLACE_UPGRADE_CONTROL_STASH);
 
 	/*
 	 * After the takeover, startup discards the statistics file because it
@@ -193,7 +192,8 @@ take_over_primary(ControlFileData *cf)
 	 * so stash it first.
 	 */
 	if (access(PGSTAT_STAT_PERMANENT_FILENAME, F_OK) == 0)
-		stash_file(PGSTAT_STAT_PERMANENT_FILENAME, INPLACE_UPGRADE_STATS_STASH);
+		InplaceUpgradeStashFile(PGSTAT_STAT_PERMANENT_FILENAME,
+								INPLACE_UPGRADE_STATS_STASH);
 
 	/* The control file's new contents */
 	cf->pg_control_version = PG_CONTROL_VERSION;
@@ -237,22 +237,6 @@ take_over_primary(ControlFileData *cf)
 					   LSN_FORMAT_ARGS(cf->checkPoint), walfname,
 					   EpochFromFullTransactionId(nextXid),
 					   XidFromFullTransactionId(nextXid))));
-}
-
-/*
- * Keep a copy of a file the takeover replaces.  The original is intact
- * until the control file is rewritten, so a repeated takeover copies it
- * again, harmlessly.
- */
-static void
-stash_file(const char *path, const char *stashpath)
-{
-	if (unlink(stashpath) < 0 && errno != ENOENT)
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not remove file \"%s\": %m", stashpath)));
-	copy_file(path, stashpath);
-	fsync_fname(INPLACE_UPGRADE_DIR, true);
 }
 
 /*
@@ -300,56 +284,6 @@ read_whole_file(const char *path, char *buf, int len)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not close file \"%s\": %m", path)));
-}
-
-/*
- * Record a file before the takeover creates it, so that a rollback removes
- * it.  The list of created files has one path per line, relative to the data
- * directory.  Recording comes first so that a takeover interrupted between
- * the two steps leaves no file that a rollback misses.
- *
- * A repeated takeover appends to the list, because its start segment can
- * differ from the one the interrupted takeover created.  A rollback skips
- * listed files that don't exist.
- */
-static void
-register_created_file(const char *path)
-{
-	int			fd;
-	char		line[MAXPGPATH + 1];
-	int			len;
-
-	len = snprintf(line, sizeof(line), "%s\n", path);
-	fd = OpenTransientFile(INPLACE_UPGRADE_CREATED_FILES,
-						   O_WRONLY | O_CREAT | O_APPEND | PG_BINARY);
-	if (fd < 0)
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not open file \"%s\": %m",
-						INPLACE_UPGRADE_CREATED_FILES)));
-
-	errno = 0;
-	if (write(fd, line, len) != len)
-	{
-		/* if write didn't set errno, assume problem is no disk space */
-		if (errno == 0)
-			errno = ENOSPC;
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not write to file \"%s\": %m",
-						INPLACE_UPGRADE_CREATED_FILES)));
-	}
-	if (pg_fsync(fd) != 0)
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not fsync file \"%s\": %m",
-						INPLACE_UPGRADE_CREATED_FILES)));
-	if (CloseTransientFile(fd) != 0)
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not close file \"%s\": %m",
-						INPLACE_UPGRADE_CREATED_FILES)));
-	fsync_fname(INPLACE_UPGRADE_DIR, true);
 }
 
 /*
@@ -468,7 +402,8 @@ write_start_segment(ControlFileData *cf, char *fname)
 
 	XLogFileName(fname, tli, newsegno, walsegsz);
 	snprintf(path, sizeof(path), "%s/%s", XLOGDIR, fname);
-	register_created_file(path);
+	InplaceUpgradeRegisterCreatedFile(path);
+	fsync_fname(INPLACE_UPGRADE_DIR, true);
 	create_or_recreate_file(path, buf.data, XLOG_BLCKSZ, walsegsz);
 	fsync_fname(XLOGDIR, true);
 }
@@ -488,7 +423,8 @@ write_pg_xact_page(FullTransactionId nextXid)
 	snprintf(fname, sizeof(fname), "%04X",
 			 (uint32) (XidFromFullTransactionId(nextXid) / CLOG_XACTS_PER_SEGMENT));
 	snprintf(path, sizeof(path), "pg_xact/%s", fname);
-	register_created_file(path);
+	InplaceUpgradeRegisterCreatedFile(path);
+	fsync_fname(INPLACE_UPGRADE_DIR, true);
 	create_or_recreate_file(path, zeroes.data, BLCKSZ, BLCKSZ);
 	fsync_fname("pg_xact", true);
 }

@@ -70,6 +70,7 @@
 #include "catalog/pg_database.h"
 #include "common/controldata_utils.h"
 #include "common/file_utils.h"
+#include "common/inplace_upgrade_posture.h"
 #include "executor/instrument.h"
 #include "miscadmin.h"
 #include "pg_trace.h"
@@ -7481,6 +7482,34 @@ ControlFileInplaceUpgradeMode(const ControlFileData *cf)
 {
 	return cf->inplaceUpgradeMode ||
 		cf->pg_control_version != PG_CONTROL_VERSION;
+}
+
+/*
+ * Where the cluster stands in an in-place upgrade, from the control file in
+ * shared memory (see common/inplace_upgrade_posture.c).  Reports no error,
+ * so that the postmaster can call it.
+ *
+ * NB: The postmaster cannot take ControlFileLock, so it copies the control
+ * file unlocked, and may see fields from before and after an update.  It
+ * asks only whether the catalogs are migrated, and no update makes a
+ * cluster whose catalogs are not migrated look as if they were: that takes
+ * the marker "migrated".  A copy torn by the takeover at startup, with the
+ * new version number but upgrade mode not yet set, still belongs to the old
+ * version, since PG_VERSION names the old version until the upgrade goes
+ * live.
+ */
+void
+GetInplaceUpgradePosture(InplaceUpgradePosture *posture)
+{
+	ControlFileData cf;
+
+	if (IsUnderPostmaster)
+		LWLockAcquire(ControlFileLock, LW_SHARED);
+	memcpy(&cf, ControlFile, sizeof(ControlFileData));
+	if (IsUnderPostmaster)
+		LWLockRelease(ControlFileLock);
+
+	InplaceUpgradeGetPosture(&cf, DataDir, posture);
 }
 
 /*

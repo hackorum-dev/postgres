@@ -224,6 +224,7 @@ typedef enum WALAvailability
 	WALAVAIL_REMOVED,			/* WAL segment has been removed */
 } WALAvailability;
 
+struct InplaceUpgradePosture;
 struct XLogRecData;
 struct XLogReaderState;
 
@@ -303,6 +304,7 @@ extern TimeLineID GetWALInsertionTimeLine(void);
 extern TimeLineID GetWALInsertionTimeLineIfSet(void);
 extern XLogRecPtr GetLastImportantRecPtr(void);
 extern bool GetInplaceUpgradeMode(void);
+extern void GetInplaceUpgradePosture(struct InplaceUpgradePosture *posture);
 extern void SetUpgradeBoundaryRequest(bool request);
 extern bool UpgradeBoundaryActive(void);
 

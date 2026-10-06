@@ -32,6 +32,7 @@ subdir('statistics')
 subdir('storage')
 subdir('tcop')
 subdir('tsearch')
+subdir('upgrade')
 subdir('utils')
 
 subdir('po', if_found: libintl)

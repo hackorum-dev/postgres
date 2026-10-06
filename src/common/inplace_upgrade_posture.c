@@ -4,7 +4,10 @@
  *		Where a data directory stands in an in-place major version upgrade
  *
  * The posture of a cluster is derived from durable facts in its data
- * directory alone: the control file and PG_VERSION.
+ * directory alone: the control file, the markers of the rollback bundle
+ * (see upgrade/bundle.h), the error the in-place upgrade migrator left, and
+ * PG_VERSION.  The server, the postmaster, and pg_inplace_upgrade all ask
+ * here, so that each of them reaches the same answer the same way.
  *
  * Nothing here reports an error: input that cannot be
  * read gives the posture UPGRADE_POSTURE_UNREADABLE, with the reason in its
@@ -32,10 +35,12 @@
 
 #include <fcntl.h>
 #include <limits.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "common/inplace_upgrade_posture.h"
 #include "port/pg_crc32c.h"
+#include "upgrade/bundle.h"
 
 #ifndef FRONTEND
 #include "storage/fd.h"
@@ -62,6 +67,8 @@ static const OldControlFormat old_control_formats[] = {
 
 static const OldControlFormat *old_control_format(uint32 pg_control_version);
 static int	read_file_start(const char *path, void *buf, int len);
+static bool file_exists(const char *datadir, const char *name,
+						InplaceUpgradePosture *result);
 static int	data_major_version(const char *datadir,
 							   InplaceUpgradePosture *result);
 
@@ -174,8 +181,8 @@ InplaceUpgradeReadControlFile(const char *path, ControlFileData *cf,
  *
  * A cluster owned by the old version is at a boundary if its latest
  * checkpoint is a boundary checkpoint and it shut down there.  A cluster
- * owned by the new version is taken over if it is in upgrade mode, and live
- * otherwise.
+ * owned by the new version is live unless it is in upgrade mode, in which
+ * case its markers show how far the upgrade has come.
  */
 void
 InplaceUpgradeGetPosture(const ControlFileData *cf, const char *datadir,
@@ -218,8 +225,16 @@ InplaceUpgradeGetPosture(const ControlFileData *cf, const char *datadir,
 
 	if (!cf->inplaceUpgradeMode)
 		result->posture = UPGRADE_POSTURE_LIVE;
+	else if (file_exists(datadir, INPLACE_UPGRADE_MARKER_DIR "/" INPLACE_UPGRADE_MARKER_MIGRATED, result))
+		result->posture = UPGRADE_POSTURE_MIGRATED;
+	else if (file_exists(datadir, INPLACE_UPGRADE_MIGRATE_ERROR, result))
+		result->posture = UPGRADE_POSTURE_MIGRATION_FAILED;
 	else
 		result->posture = UPGRADE_POSTURE_TAKEN_OVER;
+
+	/* A file that could not be stat'ed counts as absent above. */
+	if (result->detail[0] != '\0')
+		result->posture = UPGRADE_POSTURE_UNREADABLE;
 }
 
 /*
@@ -245,6 +260,29 @@ read_file_start(const char *path, void *buf, int len)
 	close(fd);
 	errno = save_errno;
 	return r;
+}
+
+/*
+ * Does the file exist in the data directory?  A file that cannot be stat'ed
+ * for any other reason than its absence leaves the reason in result->detail,
+ * and once a reason is there, every file counts as absent.
+ */
+static bool
+file_exists(const char *datadir, const char *name,
+			InplaceUpgradePosture *result)
+{
+	char		path[MAXPGPATH];
+	struct stat st;
+
+	if (result->detail[0] != '\0')
+		return false;
+	snprintf(path, sizeof(path), "%s/%s", datadir, name);
+	if (stat(path, &st) == 0)
+		return true;
+	if (errno != ENOENT)
+		snprintf(result->detail, sizeof(result->detail),
+				 "could not stat file \"%s\": %m", path);
+	return false;
 }
 
 /*

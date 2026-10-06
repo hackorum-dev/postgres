@@ -908,6 +908,7 @@ FormData_pg_collation
 FormData_pg_constraint
 FormData_pg_conversion
 FormData_pg_database
+FormData_pg_database_20
 FormData_pg_db_role_setting
 FormData_pg_default_acl
 FormData_pg_depend
@@ -968,6 +969,7 @@ Form_pg_collation
 Form_pg_constraint
 Form_pg_conversion
 Form_pg_database
+Form_pg_database_20
 Form_pg_db_role_setting
 Form_pg_default_acl
 Form_pg_depend
@@ -1717,6 +1719,7 @@ MCVItem
 MCVList
 MEMORY_BASIC_INFORMATION
 MGVTBL
+MigrateDatabase
 MINIDUMPWRITEDUMP
 MINIDUMP_TYPE
 MJEvalResult

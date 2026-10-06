@@ -41,6 +41,7 @@ PG_PROCTYPE(B_CHECKPOINTER, "checkpointer", gettext_noop("checkpointer"), Checkp
 PG_PROCTYPE(B_DATACHECKSUMSWORKER_LAUNCHER, "checksums", gettext_noop("datachecksums launcher"), NULL, false)
 PG_PROCTYPE(B_DATACHECKSUMSWORKER_WORKER, "checksums", gettext_noop("datachecksums worker"), NULL, false)
 PG_PROCTYPE(B_DEAD_END_BACKEND, "backend", gettext_noop("dead-end client backend"), BackendMain, true)
+PG_PROCTYPE(B_INPLACE_UPGRADE_MIGRATOR, "inplaceupgrade", gettext_noop("in-place upgrade migrator"), InplaceUpgradeMigratorMain, true)
 PG_PROCTYPE(B_INVALID, "postmaster", gettext_noop("unrecognized"), NULL, false)
 PG_PROCTYPE(B_IO_WORKER, "ioworker", gettext_noop("io worker"), IoWorkerMain, true)
 PG_PROCTYPE(B_LOGGER, "syslogger", gettext_noop("syslogger"), SysLoggerMain, false)

@@ -22,6 +22,8 @@ typedef enum UpgradePosture
 	UPGRADE_POSTURE_NOT_PREPARED,	/* the old version's, not at a boundary */
 	UPGRADE_POSTURE_AT_BOUNDARY,	/* shut down at an upgrade boundary */
 	UPGRADE_POSTURE_TAKEN_OVER, /* taken over, migration not begun */
+	UPGRADE_POSTURE_MIGRATION_FAILED,	/* the migrator left an error */
+	UPGRADE_POSTURE_MIGRATED,	/* catalogs migrated, not yet live */
 	UPGRADE_POSTURE_LIVE,		/* the new version's for good */
 } UpgradePosture;
 

@@ -342,6 +342,11 @@ BackendInitialize(ClientSocket *client_sock, CAC_state cac)
 						(errcode(ERRCODE_TOO_MANY_CONNECTIONS),
 						 errmsg("sorry, too many clients already")));
 				break;
+			case CAC_INPLACE_UPGRADE:
+				ereport(FATAL,
+						(errcode(ERRCODE_CANNOT_CONNECT_NOW),
+						 errmsg("the database system is migrating its catalogs for an in-place upgrade")));
+				break;
 			case CAC_OK:
 				break;
 		}

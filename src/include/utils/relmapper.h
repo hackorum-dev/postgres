@@ -34,6 +34,9 @@ typedef struct xl_relmap_update
 
 #define MinSizeOfRelmapUpdate offsetof(xl_relmap_update, data)
 
+/* Name of the map file, in the global directory and in each database's */
+#define RELMAPPER_FILENAME		"pg_filenode.map"
+
 
 extern RelFileNumber RelationMapOidToFilenumber(Oid relationId, bool shared);
 

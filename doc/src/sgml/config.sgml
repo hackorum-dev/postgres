@@ -7513,6 +7513,7 @@ local0.*    /var/log/postgresql
          <member><literal>bgwriter</literal></member>
          <member><literal>checkpointer</literal></member>
          <member><literal>checksums</literal></member>
+         <member><literal>inplaceupgrade</literal></member>
          <member><literal>ioworker</literal></member>
          <member><literal>postmaster</literal></member>
          <member><literal>slotsyncworker</literal></member>

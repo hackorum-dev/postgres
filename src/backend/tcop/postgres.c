@@ -3507,6 +3507,11 @@ ProcessInterrupts(void)
 					 errmsg("terminating background worker \"%s\" due to administrator command",
 							MyBgworkerEntry->bgw_type),
 					 ERRDETAIL_SIGNAL_SENDER(sender_pid, sender_uid)));
+		else if (AmInplaceUpgradeMigratorProcess())
+			ereport(FATAL,
+					(errcode(ERRCODE_ADMIN_SHUTDOWN),
+					 errmsg("terminating in-place upgrade migrator due to administrator command"),
+					 ERRDETAIL_SIGNAL_SENDER(sender_pid, sender_uid)));
 		else if (AmIoWorkerProcess())
 		{
 			ereport(DEBUG1,

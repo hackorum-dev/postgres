@@ -349,6 +349,7 @@ typedef enum BackendType
 	B_BG_WORKER,
 	B_WAL_SENDER,
 	B_SLOTSYNC_WORKER,
+	B_INPLACE_UPGRADE_MIGRATOR,
 
 	B_STANDALONE_BACKEND,
 
@@ -395,6 +396,7 @@ extern PGDLLIMPORT BackendType MyBackendType;
 #define AmBackgroundWorkerProcess() (MyBackendType == B_BG_WORKER)
 #define AmWalSenderProcess()        (MyBackendType == B_WAL_SENDER)
 #define AmLogicalSlotSyncWorkerProcess() (MyBackendType == B_SLOTSYNC_WORKER)
+#define AmInplaceUpgradeMigratorProcess() (MyBackendType == B_INPLACE_UPGRADE_MIGRATOR)
 #define AmArchiverProcess()			(MyBackendType == B_ARCHIVER)
 #define AmBackgroundWriterProcess() (MyBackendType == B_BG_WRITER)
 #define AmCheckpointerProcess()		(MyBackendType == B_CHECKPOINTER)
@@ -409,7 +411,8 @@ extern PGDLLIMPORT BackendType MyBackendType;
 
 #define AmSpecialWorkerProcess() \
 	(AmAutoVacuumLauncherProcess() || \
-	 AmLogicalSlotSyncWorkerProcess())
+	 AmLogicalSlotSyncWorkerProcess() || \
+	 AmInplaceUpgradeMigratorProcess())
 
 /*
  * Backend types that are spawned by the postmaster to serve a client or

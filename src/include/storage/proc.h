@@ -515,12 +515,13 @@ extern PGDLLIMPORT PGPROC *PreparedXactProcs;
 
 /*
  * We set aside some extra PGPROC structures for "special worker" processes,
- * which are full-fledged backends (they can run transactions)
- * but are unique animals that there's never more than one of.
- * Currently there are two such processes: the autovacuum launcher
- * and the slotsync worker.
+ * which are full-fledged backends (they can take heavyweight locks, and
+ * most run transactions) but are unique animals that there's never more
+ * than one of.
+ * Currently there are three such processes: the autovacuum launcher,
+ * the slotsync worker and the in-place upgrade migrator.
  */
-#define NUM_SPECIAL_WORKER_PROCS	2
+#define NUM_SPECIAL_WORKER_PROCS	3
 
 /*
  * We set aside some extra PGPROC structures for auxiliary processes,

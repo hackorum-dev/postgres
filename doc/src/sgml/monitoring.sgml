@@ -1112,6 +1112,13 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
         </listitem>
         <listitem>
          <para>
+          <literal>in-place upgrade migrator</literal>: The background
+          process that migrates the catalogs at the start of an in-place
+          upgrade, before the server accepts connections.
+         </para>
+        </listitem>
+        <listitem>
+         <para>
           <literal>io worker</literal>: A background process performing
           asynchronous I/O, active when <xref linkend="guc-io-method"/> is set
           to <literal>worker</literal>.

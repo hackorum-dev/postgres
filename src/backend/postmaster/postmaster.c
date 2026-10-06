@@ -93,6 +93,7 @@
 #include "access/xlog_internal.h"
 #include "access/xlogrecovery.h"
 #include "common/file_perm.h"
+#include "common/inplace_upgrade_posture.h"
 #include "common/pg_prng.h"
 #include "lib/ilist.h"
 #include "libpq/libpq.h"
@@ -118,6 +119,7 @@
 #include "storage/shmem_internal.h"
 #include "tcop/backend_startup.h"
 #include "tcop/tcopprot.h"
+#include "upgrade/inplace_upgrade.h"
 #include "utils/datetime.h"
 #include "utils/memutils.h"
 #include "utils/pidfile.h"
@@ -267,7 +269,8 @@ static PMChild *StartupPMChild = NULL,
 		   *AutoVacLauncherPMChild = NULL,
 		   *PgArchPMChild = NULL,
 		   *SysLoggerPMChild = NULL,
-		   *SlotSyncWorkerPMChild = NULL;
+		   *SlotSyncWorkerPMChild = NULL,
+		   *InplaceUpgradeMigratorPMChild = NULL;
 
 /* Startup process's status */
 typedef enum
@@ -289,6 +292,9 @@ static StartupStatusEnum StartupStatus = STARTUP_NOT_RUNNING;
 static int	Shutdown = NoShutdown;
 
 static bool FatalError = false; /* T if recovering from backend crash */
+
+/* T if the in-place upgrade migrator failed; we exit instead of restarting */
+static bool InplaceUpgradeMigratorFailed = false;
 
 /*
  * We use a simple state machine to control startup, shutdown, and
@@ -441,6 +447,8 @@ static int	ServerLoop(void);
 static int	BackendStartup(ClientSocket *client_sock);
 static void report_fork_failure_to_client(ClientSocket *client_sock, int errnum);
 static CAC_state canAcceptConnections(BackendType backend_type);
+static bool InplaceUpgradeCatalogsUsable(void);
+static void ReportReadyForConnections(void);
 static void signal_child(PMChild *pmchild, int signal);
 static bool SignalChildren(int signal, BackendTypeMask targetMask);
 static void TerminateChildren(int signal);
@@ -1870,7 +1878,65 @@ canAcceptConnections(BackendType backend_type)
 	if (!connsAllowed && backend_type == B_BACKEND)
 		return CAC_SHUTDOWN;	/* shutdown is pending */
 
+	/*
+	 * During an in-place upgrade, no backend may read the catalogs before
+	 * they are migrated.
+	 */
+	if (!InplaceUpgradeCatalogsUsable())
+		return CAC_INPLACE_UPGRADE;
+
 	return result;
+}
+
+/*
+ * During an in-place upgrade, are the catalogs usable yet?
+ *
+ * After the takeover at startup, the catalogs still have the previous major
+ * version's row layouts, which this version can't read.  Until the in-place
+ * upgrade migrator has migrated them, no process may read a catalog through
+ * the relation cache.  So we admit no connections, and start neither the
+ * autovacuum launcher nor any background worker that connects to a
+ * database.
+ *
+ * The catalogs are usable once the posture is migrated or live.  Deriving
+ * the posture raises no error, which matters because the postmaster must not
+ * raise one.  An unreadable posture counts as not migrated, so the migrator
+ * runs and reports the problem.
+ *
+ * The result is cached once true, since the catalogs can't become unusable
+ * again while the server runs.
+ */
+static bool
+InplaceUpgradeCatalogsUsable(void)
+{
+	static bool usable = false;
+	InplaceUpgradePosture posture;
+
+	if (usable || !GetInplaceUpgradeMode())
+		return true;
+
+	GetInplaceUpgradePosture(&posture);
+	usable = (posture.posture == UPGRADE_POSTURE_MIGRATED ||
+			  posture.posture == UPGRADE_POSTURE_LIVE);
+
+	return usable;
+}
+
+/*
+ * Report that we are open for business: in the log, in the lock file for
+ * pg_ctl, and to systemd.
+ */
+static void
+ReportReadyForConnections(void)
+{
+	ereport(LOG,
+			(errmsg("database system is ready to accept connections")));
+
+	/* Report status */
+	AddToDataDirLockFile(LOCK_FILE_LINE_PM_STATUS, PM_STATUS_READY);
+#ifdef USE_SYSTEMD
+	sd_notify(0, "READY=1");
+#endif
 }
 
 /*
@@ -2378,15 +2444,14 @@ process_pm_child_exit(void)
 			 */
 			StartWorkerNeeded = true;
 
-			/* at this point we are really open for business */
-			ereport(LOG,
-					(errmsg("database system is ready to accept connections")));
-
-			/* Report status */
-			AddToDataDirLockFile(LOCK_FILE_LINE_PM_STATUS, PM_STATUS_READY);
-#ifdef USE_SYSTEMD
-			sd_notify(0, "READY=1");
-#endif
+			/*
+			 * At this point we are really open for business, unless the
+			 * catalogs of an in-place upgrade remain to be migrated.  Then
+			 * the main loop starts the migrator, and we report ready once it
+			 * is done, so that "pg_ctl start" waits for it.
+			 */
+			if (InplaceUpgradeCatalogsUsable())
+				ReportReadyForConnections();
 
 			continue;
 		}
@@ -2549,6 +2614,62 @@ process_pm_child_exit(void)
 			if (!EXIT_STATUS_0(exitstatus) && !EXIT_STATUS_1(exitstatus))
 				HandleChildCrash(pid, exitstatus,
 								 _("slot sync worker process"));
+			continue;
+		}
+
+		/*
+		 * Was it the in-place upgrade migrator?  If it is done, the catalogs
+		 * are usable, and we open for business.  Exiting on a shutdown
+		 * request, or on a signal we sent, is not a failure.
+		 *
+		 * Any other exit is: the migration cannot go on, and restarting the
+		 * migrator would most likely fail the same way, as with a failed
+		 * startup process.  If it reported an error, shut down normally. The
+		 * next start runs it again.  If it died some other way, treat that as
+		 * a crash, but shut down instead of reinitializing.
+		 */
+		if (InplaceUpgradeMigratorPMChild &&
+			pid == InplaceUpgradeMigratorPMChild->pid)
+		{
+			ReleasePostmasterChildSlot(InplaceUpgradeMigratorPMChild);
+			InplaceUpgradeMigratorPMChild = NULL;
+
+			if (EXIT_STATUS_0(exitstatus) && InplaceUpgradeCatalogsUsable())
+			{
+				/* Start what we held back, and report ready */
+				StartWorkerNeeded = true;
+				if (pmState == PM_RUN && Shutdown == NoShutdown)
+					ReportReadyForConnections();
+				continue;
+			}
+
+			if (Shutdown > NoShutdown &&
+				(EXIT_STATUS_0(exitstatus) || EXIT_STATUS_1(exitstatus)))
+				continue;
+			if (FatalError || Shutdown >= ImmediateShutdown)
+				continue;
+
+			InplaceUpgradeMigratorFailed = true;
+			if (EXIT_STATUS_0(exitstatus) || EXIT_STATUS_1(exitstatus))
+			{
+				LogChildExit(LOG, _("in-place upgrade migrator"),
+							 pid, exitstatus);
+				ereport(LOG,
+						(errmsg("shutting down due to in-place upgrade migrator failure")));
+				Shutdown = Max(Shutdown, FastShutdown);
+				connsAllowed = false;
+				AddToDataDirLockFile(LOCK_FILE_LINE_PM_STATUS,
+									 PM_STATUS_STOPPING);
+#ifdef USE_SYSTEMD
+				sd_notify(0, "STOPPING=1");
+#endif
+				if (pmState == PM_RUN)
+					UpdatePMState(PM_STOP_BACKENDS);
+				/* PostmasterStateMachine logic does the rest */
+			}
+			else
+				HandleChildCrash(pid, exitstatus,
+								 _("in-place upgrade migrator"));
 			continue;
 		}
 
@@ -2971,13 +3092,15 @@ PostmasterStateMachine(void)
 								B_BG_WORKER);
 
 		/*
-		 * No walwriter, bgwriter, slot sync worker, or WAL summarizer either.
+		 * No walwriter, bgwriter, slot sync worker, WAL summarizer, or
+		 * in-place upgrade migrator either.
 		 */
 		targetMask = btmask_add(targetMask,
 								B_WAL_WRITER,
 								B_BG_WRITER,
 								B_SLOTSYNC_WORKER,
-								B_WAL_SUMMARIZER);
+								B_WAL_SUMMARIZER,
+								B_INPLACE_UPGRADE_MIGRATOR);
 
 		/* If we're in recovery, also stop startup and walreceiver procs */
 		targetMask = btmask_add(targetMask,
@@ -3201,6 +3324,7 @@ PostmasterStateMachine(void)
 			Assert(WalWriterPMChild == NULL);
 			Assert(AutoVacLauncherPMChild == NULL);
 			Assert(SlotSyncWorkerPMChild == NULL);
+			Assert(InplaceUpgradeMigratorPMChild == NULL);
 			/* syslogger is not considered here */
 			UpdatePMState(PM_NO_CHILDREN);
 		}
@@ -3225,6 +3349,8 @@ PostmasterStateMachine(void)
 			ereport(LOG, (errmsg("abnormal database system shutdown")));
 			ExitPostmaster(1);
 		}
+		else if (InplaceUpgradeMigratorFailed)
+			ExitPostmaster(1);
 		else
 		{
 			/*
@@ -3237,11 +3363,12 @@ PostmasterStateMachine(void)
 	}
 
 	/*
-	 * If the startup process failed, or the user does not want an automatic
-	 * restart after backend crashes, wait for all non-syslogger children to
-	 * exit, and then exit postmaster.  We don't try to reinitialize when the
-	 * startup process fails, because more than likely it will just fail again
-	 * and we will keep trying forever.
+	 * If the startup process or the in-place upgrade migrator failed, or the
+	 * user does not want an automatic restart after backend crashes, wait for
+	 * all non-syslogger children to exit, and then exit postmaster.  We don't
+	 * try to reinitialize when the startup process or the migrator fails,
+	 * because more than likely it will just fail again and we will keep
+	 * trying forever.
 	 */
 	if (pmState == PM_NO_CHILDREN)
 	{
@@ -3249,6 +3376,12 @@ PostmasterStateMachine(void)
 		{
 			ereport(LOG,
 					(errmsg("shutting down due to startup process failure")));
+			ExitPostmaster(1);
+		}
+		if (InplaceUpgradeMigratorFailed)
+		{
+			ereport(LOG,
+					(errmsg("shutting down due to in-place upgrade migrator failure")));
 			ExitPostmaster(1);
 		}
 		if (!restart_after_crash)
@@ -3401,7 +3534,7 @@ LaunchMissingBackgroundProcesses(void)
 	 */
 	if (!IsBinaryUpgrade && AutoVacLauncherPMChild == NULL &&
 		(AutoVacuumingActive() || start_autovac_launcher) &&
-		pmState == PM_RUN)
+		pmState == PM_RUN && InplaceUpgradeCatalogsUsable())
 	{
 		AutoVacLauncherPMChild = StartChildProcess(B_AUTOVAC_LAUNCHER);
 		if (AutoVacLauncherPMChild != NULL)
@@ -3431,6 +3564,18 @@ LaunchMissingBackgroundProcesses(void)
 		Shutdown <= SmartShutdown && sync_replication_slots &&
 		ValidateSlotSyncParams(LOG) && SlotSyncWorkerCanRestart())
 		SlotSyncWorkerPMChild = StartChildProcess(B_SLOTSYNC_WORKER);
+
+	/*
+	 * During an in-place upgrade, the migrator runs in normal operation until
+	 * the catalogs are usable.  That includes normal operation after a crash
+	 * of some other process.  If the migrator itself failed, we are shutting
+	 * down.
+	 */
+	if (InplaceUpgradeMigratorPMChild == NULL && pmState == PM_RUN &&
+		Shutdown == NoShutdown && !InplaceUpgradeMigratorFailed &&
+		!InplaceUpgradeCatalogsUsable())
+		InplaceUpgradeMigratorPMChild =
+			StartChildProcess(B_INPLACE_UPGRADE_MIGRATOR);
 
 	/*
 	 * If we need to start a WAL receiver, try to do that now
@@ -4384,6 +4529,14 @@ maybe_start_bgworkers(void)
 				continue;
 			}
 		}
+
+		/*
+		 * A worker that connects to a database waits until the catalogs are
+		 * usable.  We are called again when they are.
+		 */
+		if ((rw->rw_worker.bgw_flags & BGWORKER_BACKEND_DATABASE_CONNECTION) &&
+			!InplaceUpgradeCatalogsUsable())
+			continue;
 
 		if (bgworker_should_start_now(rw->rw_worker.bgw_start_time))
 		{

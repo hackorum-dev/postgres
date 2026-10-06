@@ -38,6 +38,7 @@ typedef enum CAC_state
 	CAC_RECOVERY,
 	CAC_NOTHOTSTANDBY,
 	CAC_TOOMANY,
+	CAC_INPLACE_UPGRADE,
 } CAC_state;
 
 /* Information passed from postmaster to backend process in 'startup_data' */

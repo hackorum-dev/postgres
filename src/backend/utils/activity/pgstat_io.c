@@ -362,6 +362,7 @@ pgstat_tracks_io_bktype(BackendType bktype)
 		case B_BG_WORKER:
 		case B_BG_WRITER:
 		case B_CHECKPOINTER:
+		case B_INPLACE_UPGRADE_MIGRATOR:
 		case B_IO_WORKER:
 		case B_SLOTSYNC_WORKER:
 		case B_STANDALONE_BACKEND:
@@ -424,7 +425,7 @@ pgstat_tracks_io_object(BackendType bktype, IOObject io_object,
 		bktype == B_CHECKPOINTER || bktype == B_AUTOVAC_WORKER ||
 		bktype == B_STANDALONE_BACKEND || bktype == B_STARTUP ||
 		bktype == B_WAL_SUMMARIZER || bktype == B_WAL_WRITER ||
-		bktype == B_WAL_RECEIVER;
+		bktype == B_WAL_RECEIVER || bktype == B_INPLACE_UPGRADE_MIGRATOR;
 
 	if (no_temp_rel && io_context == IOCONTEXT_NORMAL &&
 		io_object == IOOBJECT_TEMP_RELATION)

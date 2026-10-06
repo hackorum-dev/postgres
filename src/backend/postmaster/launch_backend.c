@@ -53,6 +53,7 @@
 #include "storage/pg_shmem.h"
 #include "storage/shmem_internal.h"
 #include "tcop/backend_startup.h"
+#include "upgrade/inplace_upgrade.h"
 #include "utils/memutils.h"
 
 #ifdef EXEC_BACKEND

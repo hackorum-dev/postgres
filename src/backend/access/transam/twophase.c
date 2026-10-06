@@ -2825,6 +2825,22 @@ LookupGXactBySubid(Oid subid)
 }
 
 /*
+ * CountPreparedTransactions
+ *		Return the number of prepared transactions in all databases.
+ */
+int
+CountPreparedTransactions(void)
+{
+	int			result;
+
+	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
+	result = TwoPhaseState->numPrepXacts;
+	LWLockRelease(TwoPhaseStateLock);
+
+	return result;
+}
+
+/*
  * TwoPhaseGetOldestXidInCommit
  *		Return the oldest transaction ID from prepared transactions that are
  *		currently in the commit critical section.

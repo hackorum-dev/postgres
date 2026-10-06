@@ -27,6 +27,25 @@
 #define INPLACE_UPGRADE_STATS_STASH		INPLACE_UPGRADE_DIR "/pgstat.stat"
 
 /*
+ * The databases whose catalogs are migrated, one per line with its OID and
+ * its path relative to the data directory (see bundle.c).
+ */
+#define INPLACE_UPGRADE_DATABASES	INPLACE_UPGRADE_DIR "/databases"
+
+/*
+ * Markers: empty files, each recording that a step of the migration has
+ * completed (see bundle.c).
+ */
+#define INPLACE_UPGRADE_MARKER_DIR		INPLACE_UPGRADE_DIR "/markers"
+#define INPLACE_UPGRADE_MARKER_MIGRATED	"migrated"
+
+/*
+ * The error that ended the last attempt of the in-place upgrade migrator:
+ * its SQLSTATE on the first line, its message on the lines after that.
+ */
+#define INPLACE_UPGRADE_MIGRATE_ERROR	INPLACE_UPGRADE_DIR "/migrate_error"
+
+/*
  * The list of files that the upgrade creates, one path per line relative to
  * the data directory.  A rollback removes these files.
  */
