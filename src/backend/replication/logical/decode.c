@@ -895,9 +895,9 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		/*
 		 * Remove tuplecid changes queued by the aborted (sub)transactions
 		 * from the toplevel's list, before the transactions are torn down.
-		 * The abort record's primary xid tells
-		 * ReorderBufferCleanupSubTxnTupleCids() whether the whole toplevel
-		 * is going away, in which case scanning the list is pointless.
+		 * The abort record's primary xid tells the cleanup function whether
+		 * the whole toplevel is going away, in which case scanning the list is
+		 * pointless.
 		 *
 		 * Note that we must not try to decide that from the primary xid's
 		 * own association instead: an abort record is written once the
@@ -909,16 +909,16 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		 * all, while the released inner subtransactions it rolls back do
 		 * have one and their tuplecids still need to be removed.
 		 */
+		ReorderBufferCleanupAbortedSubTxnTupleCids(ctx->reorder, xid,
+												   parsed->nsubxacts,
+												   parsed->subxacts);
+
 		for (i = 0; i < parsed->nsubxacts; i++)
 		{
-			ReorderBufferCleanupSubTxnTupleCids(ctx->reorder,
-												parsed->subxacts[i],
-												xid);
 			ReorderBufferAbort(ctx->reorder, parsed->subxacts[i],
 							   buf->record->EndRecPtr, abort_time);
 		}
 
-		ReorderBufferCleanupSubTxnTupleCids(ctx->reorder, xid, xid);
 		ReorderBufferAbort(ctx->reorder, xid, buf->record->EndRecPtr,
 						   abort_time);
 	}
