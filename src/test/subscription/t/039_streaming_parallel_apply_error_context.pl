@@ -3,7 +3,7 @@
 # Test that an error relayed from a parallel apply worker (applying a
 # streamed transaction) to the leader does not get a misleading extra
 # CONTEXT line describing some other, unrelated transaction the leader
-# happens to be applying directly at the same time. This currently fails.
+# happens to be applying directly at the same time.
 #
 # This is the same underlying issue as reported upstream for the parallel
 # apply of non-streaming transactions patch set, but reproduced here
@@ -146,7 +146,7 @@ $node_subscriber->safe_psql('postgres',
 	"SELECT injection_points_wakeup('parallel-worker-before-stream-start')");
 
 $node_subscriber->wait_for_log(
-	qr/logical replication parallel apply worker exited due to error/,
+	qr/logical replication parallel apply worker/,
 	$log_offset);
 
 my $log_contents = slurp_file($node_subscriber->logfile, $log_offset);

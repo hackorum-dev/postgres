@@ -483,7 +483,12 @@ static ApplyRemoteCtx remote_ctx =
 	.origin_name = NULL,
 };
 
-ErrorContextCallback *apply_error_context_stack = NULL;
+/*
+ * Error context stack outside LogicalRepApplyLoop(), before
+ * apply_error_callback is pushed.  Used when the leader reports an error
+ * propagated from a parallel apply worker.
+ */
+ErrorContextCallback *apply_loop_outer_error_context_stack = NULL;
 
 MemoryContext ApplyMessageContext = NULL;
 MemoryContext ApplyContext = NULL;
@@ -4081,6 +4086,9 @@ LogicalRepApplyLoop(XLogRecPtr last_received)
 	/* mark as idle, before starting to loop */
 	pgstat_report_activity(STATE_IDLE, NULL);
 
+	/* Preserve the error context stack outside the apply loop. */
+	apply_loop_outer_error_context_stack = error_context_stack;
+
 	/*
 	 * Push apply error context callback. Fields will be filled while applying
 	 * a change.
@@ -4088,7 +4096,6 @@ LogicalRepApplyLoop(XLogRecPtr last_received)
 	errcallback.callback = apply_error_callback;
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
-	apply_error_context_stack = error_context_stack;
 
 	/* This outer loop iterates once per wait. */
 	for (;;)
@@ -4357,7 +4364,7 @@ LogicalRepApplyLoop(XLogRecPtr last_received)
 
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;
-	apply_error_context_stack = error_context_stack;
+	apply_loop_outer_error_context_stack = error_context_stack;
 
 	/* All done */
 	walrcv_endstreaming(LogRepWorkerWalRcvConn, &tli);

@@ -1033,6 +1033,9 @@ ProcessParallelApplyMessage(StringInfo msg)
 				/* Parse ErrorResponse. */
 				pq_parse_errornotice(msg, &edata);
 
+				/* Death of a worker isn't enough justification for suicide. */
+				edata.elevel = Min(edata.elevel, ERROR);
+
 				/*
 				 * If desired, add a context line to show that this is a
 				 * message propagated from a parallel apply worker. Otherwise,
@@ -1046,19 +1049,16 @@ ProcessParallelApplyMessage(StringInfo msg)
 					edata.context = pstrdup(_("logical replication parallel apply worker"));
 
 				/*
-				 * Context beyond that should use the error context callbacks
-				 * that were in effect in LogicalRepApplyLoop().
+				 * Use the callbacks saved before the leader's apply error
+				 * context callback was installed.
 				 */
-				error_context_stack = apply_error_context_stack;
+				error_context_stack = apply_loop_outer_error_context_stack;
 
-				/*
-				 * The actual error must have been reported by the parallel
-				 * apply worker.
-				 */
-				ereport(ERROR,
-						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-						 errmsg("logical replication parallel apply worker exited due to error"),
-						 errcontext("%s", edata.context)));
+				/* Rethrow error from parallel apply worker */
+				ThrowErrorData(&edata);
+
+				/* Not reachable */
+				Assert(false);
 			}
 
 			/*
