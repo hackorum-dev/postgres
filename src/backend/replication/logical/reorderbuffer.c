@@ -3218,10 +3218,10 @@ ReorderBufferCleanupAbortedSubTxnTupleCids(ReorderBuffer *rb,
 	/*
 	 * If the aborting subtransaction is unknown, try to find the toplevel
 	 * transaction through one of its children. There may be any number of
-	 * unknown children, but they cannot have queued tuplecid changes: decoding
-	 * a WAL record that queues such a change first associates its xid with the
-	 * toplevel transaction.  Therefore, if all children are unknown, there is
-	 * nothing to remove.
+	 * unknown children, but they cannot have queued tuplecid changes:
+	 * decoding a WAL record that queues such a change first associates its
+	 * xid with the toplevel transaction.  Therefore, if all children are
+	 * unknown, there is nothing to remove.
 	 */
 	if (txn == NULL)
 	{
