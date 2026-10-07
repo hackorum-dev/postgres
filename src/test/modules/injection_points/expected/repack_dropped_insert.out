@@ -1,0 +1,46 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_repack s2_insert s2_size s2_unlock s1_noop s2_size
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step s1_repack: 
+	REPACK (CONCURRENTLY) repack_dropped_insert;
+ <waiting ...>
+step s2_insert: 
+	INSERT INTO repack_dropped_insert (id, n) VALUES (2, 2);
+
+step s2_size: 
+	SELECT id, pg_column_size(repack_dropped_insert) < current_setting('block_size')::int
+		AS fits_in_one_block
+		FROM repack_dropped_insert ORDER BY id;
+
+id|fits_in_one_block
+--+-----------------
+ 1|f                
+ 2|f                
+(2 rows)
+
+step s2_unlock: 
+	SELECT injection_points_wakeup('repack-concurrently-before-lock');
+
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step s1_repack: <... completed>
+step s1_noop: 
+step s2_size: 
+	SELECT id, pg_column_size(repack_dropped_insert) < current_setting('block_size')::int
+		AS fits_in_one_block
+		FROM repack_dropped_insert ORDER BY id;
+
+id|fits_in_one_block
+--+-----------------
+ 1|t                
+ 2|t                
+(2 rows)
+
