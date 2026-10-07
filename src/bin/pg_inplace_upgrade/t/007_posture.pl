@@ -160,19 +160,31 @@ posture_like(
 my $markers = 'pg_inplace_upgrade_bundle/markers';
 
 $datadir = forge($node->data_dir, 'taken_over');
-unlink "$datadir/$markers/migrated";
+unlink "$datadir/$markers/planned", "$datadir/$markers/migrated";
 posture_like(
 	$datadir,
 	qr/^Upgrade posture:\s+taken over$/m,
 	'without markers, the cluster is taken over');
 
-$datadir = forge($node->data_dir, 'migration_failed');
+$datadir = forge($node->data_dir, 'migrating');
 unlink "$datadir/$markers/migrated";
+posture_like(
+	$datadir,
+	qr/^Upgrade posture:\s+migrating$/m,
+	'with only the marker "planned", the migration is running or interrupted'
+);
+
 touch("$datadir/pg_inplace_upgrade_bundle/migrate_error");
 posture_like(
 	$datadir,
 	qr/^Upgrade posture:\s+migration failed$/m,
 	'with the migrator\'s error, the migration failed');
+
+unlink "$datadir/$markers/planned";
+posture_like(
+	$datadir,
+	qr/^Upgrade posture:\s+migration failed$/m,
+	'with the migrator\'s error before the plan, the migration failed');
 
 SKIP:
 {

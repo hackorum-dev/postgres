@@ -425,7 +425,11 @@ CatCache
 CatCacheHeader
 CatalogId
 CatalogIdMapEntry
+CatalogIndex
+CatalogIndexKey
 CatalogIndexState
+CatalogRelation
+CatalogRewrite
 ChangeContext
 ChangeVarNodes_context
 ChannelName
@@ -439,6 +443,7 @@ ChecksumStateType
 Chromosome
 CkptSortItem
 CkptTsStatus
+ClassEntry
 ClientAuthentication_hook_type
 ClientCertMode
 ClientCertName
@@ -856,6 +861,7 @@ FileFdwPlanState
 FileNameMap
 FileSet
 FileTag
+FilenodeFixup
 FilterCommandType
 FilterObjectType
 FilterStateData
@@ -904,6 +910,7 @@ FormData_pg_auth_members
 FormData_pg_authid
 FormData_pg_cast
 FormData_pg_class
+FormData_pg_class_20
 FormData_pg_collation
 FormData_pg_constraint
 FormData_pg_conversion
@@ -965,6 +972,7 @@ Form_pg_auth_members
 Form_pg_authid
 Form_pg_cast
 Form_pg_class
+Form_pg_class_20
 Form_pg_collation
 Form_pg_constraint
 Form_pg_conversion
@@ -1256,6 +1264,7 @@ HeapTupleFreeze
 HeapTupleHeader
 HeapTupleHeaderData
 HeapTupleTableSlot
+HeapWriter
 HistControl
 HostCacheEntry
 HostsFileLoadResult
@@ -1304,6 +1313,7 @@ IndexAmRoutine
 IndexArrayKeyInfo
 IndexAttachInfo
 IndexAttrBitmapKind
+IndexBuild
 IndexBuildCallback
 IndexBuildResult
 IndexBulkDeleteCallback
@@ -1719,6 +1729,7 @@ MCVItem
 MCVList
 MEMORY_BASIC_INFORMATION
 MGVTBL
+MigrateCatalog
 MigrateDatabase
 MINIDUMPWRITEDUMP
 MINIDUMP_TYPE
@@ -1767,6 +1778,8 @@ MergeStmt
 MergeSupportFunc
 MergeWhenClause
 MetaCommand
+MigratePlan
+MigrateRelation
 MinMaxAggInfo
 MinMaxAggPath
 MinMaxExpr
@@ -1884,6 +1897,7 @@ OldControlFormat
 OldMultiXactReader
 OldToNewMapping
 OldToNewMappingData
+OldTupleCallback
 OnCommitAction
 OnCommitItem
 OnConflictAction

@@ -281,6 +281,56 @@ RelationMapOidToFilenumberForDatabase(char *dbpath, Oid relationId)
 }
 
 /*
+ * RelationMapUpdateFileForDatabase
+ *
+ * Replace the file numbers of the given relations in the map file of the
+ * database at dbpath, which need not be the one we are connected to (dbid
+ * InvalidOid, tsid GLOBALTABLESPACE_OID and dbpath "global" name the shared
+ * map), and WAL-log the new map.  The in-memory maps of this backend are
+ * left alone.
+ *
+ * This is for an in-place major version upgrade, which rewrites the mapped
+ * catalogs of a database under new file numbers from a process that is
+ * connected to no database, and switches the map when they are all written.
+ * No other backend can be connected to that database, so no sinval message
+ * is sent, and there is no transaction whose abort could remove the new
+ * files, so none of them need preserving.
+ */
+void
+RelationMapUpdateFileForDatabase(Oid dbid, Oid tsid, const char *dbpath,
+								 const Oid *relationIds,
+								 const RelFileNumber *fileNumbers,
+								 int nmappings)
+{
+	RelMapFile	map;
+
+	LWLockAcquire(RelationMappingLock, LW_EXCLUSIVE);
+
+	read_relmap_file(&map, unconstify(char *, dbpath), true, ERROR);
+
+	for (int i = 0; i < nmappings; i++)
+	{
+		int			j;
+
+		for (j = 0; j < map.num_mappings; j++)
+		{
+			if (map.mappings[j].mapoid == relationIds[i])
+			{
+				map.mappings[j].mapfilenumber = fileNumbers[i];
+				break;
+			}
+		}
+		if (j >= map.num_mappings)
+			elog(ERROR, "relation %u is not mapped in \"%s/%s\"",
+				 relationIds[i], dbpath, RELMAPPER_FILENAME);
+	}
+
+	write_relmap_file(&map, true, false, false, dbid, tsid, dbpath);
+
+	LWLockRelease(RelationMappingLock);
+}
+
+/*
  * RelationMapCopy
  *
  * Copy relmapfile from source db path to the destination db path and WAL log

@@ -22,8 +22,11 @@
 
 #include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/transam.h"
+#include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_tablespace_d.h"
+#include "common/int.h"
 #include "common/relpath.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
@@ -37,6 +40,8 @@ static void scan_mapped_catalog(const char *dbpath, Oid dbid, Oid tablespace,
 								Oid reloid, const char *relname,
 								OldTupleCallback callback, void *arg);
 static void collect_database(HeapTuple tuple, void *arg);
+static void collect_class(HeapTuple tuple, void *arg);
+static int	class_entry_cmp(const void *a, const void *b);
 
 
 /*
@@ -223,4 +228,65 @@ collect_database(HeapTuple tuple, void *arg)
 	 */
 	db->path = GetDatabasePath(db->oid, db->tablespace);
 	*databases = lappend(*databases, db);
+}
+
+/*
+ * Read what the migration needs of pg_class: the file of every relation
+ * with an OID in the range of the catalogs, sorted by OID.
+ */
+ClassEntry *
+InplaceUpgradeReadClasses(const MigrateDatabase *db, int *nclasses)
+{
+	List	   *entries = NIL;
+	ClassEntry *classes;
+	int			i = 0;
+
+	scan_mapped_catalog(db->path, db->oid, db->tablespace, RelationRelationId,
+						"pg_class", collect_class, &entries);
+
+	*nclasses = list_length(entries);
+	classes = palloc_array(ClassEntry, *nclasses);
+	foreach_ptr(ClassEntry, entry, entries)
+		classes[i++] = *entry;
+	qsort(classes, *nclasses, sizeof(ClassEntry), class_entry_cmp);
+
+	return classes;
+}
+
+static void
+collect_class(HeapTuple tuple, void *arg)
+{
+	List	  **entries = arg;
+	Form_pg_class_20 classform;
+	ClassEntry *entry;
+
+	classform = (Form_pg_class_20) GETSTRUCT(tuple);
+	if (classform->oid >= FirstNormalObjectId)
+		return;
+
+	entry = palloc_object(ClassEntry);
+	entry->oid = classform->oid;
+	entry->relfilenode = classform->relfilenode;
+	*entries = lappend(*entries, entry);
+}
+
+/*
+ * Find a relation in the result of InplaceUpgradeReadClasses(), or return
+ * NULL.
+ */
+const ClassEntry *
+InplaceUpgradeLookupClass(const ClassEntry *classes, int nclasses, Oid reloid)
+{
+	ClassEntry	key;
+
+	key.oid = reloid;
+	return bsearch(&key, classes, nclasses, sizeof(ClassEntry),
+				   class_entry_cmp);
+}
+
+static int
+class_entry_cmp(const void *a, const void *b)
+{
+	return pg_cmp_u32(((const ClassEntry *) a)->oid,
+					  ((const ClassEntry *) b)->oid);
 }

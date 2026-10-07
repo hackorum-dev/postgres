@@ -17,7 +17,12 @@
  *
  * The migrator first checks for conditions that the migration cannot
  * handle, and refuses with the data directory unchanged if it finds one.
- * Then it saves anything needed for rollback (see bundle.c).
+ * Then it saves anything needed for rollback (see bundle.c) and writes the
+ * marker "planned".  Then it rewrites every catalog of every database into a
+ * new file (see rewrite.c), switches each database's relation map to the new
+ * files once they are all written, and writes the marker "migrated".  A run
+ * that finds "planned" present refuses, because an earlier attempt may have
+ * changed the catalogs, and only a rollback undoes that.
  *
  * The migrator reports each step in the server log and in its process
  * title.  An error ends it, and the postmaster then shuts down; the error
@@ -38,10 +43,13 @@
 #include <unistd.h>
 
 #include "access/htup_details.h"
+#include "access/transam.h"
 #include "access/twophase.h"
 #include "access/xlog.h"
+#include "catalog/catalog_relations.h"
 #include "catalog/pg_tablespace_d.h"
 #include "common/inplace_upgrade_posture.h"
+#include "common/int.h"
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
 #include "pgstat.h"
@@ -65,12 +73,47 @@
 #include "utils/resowner.h"
 #include "utils/wait_event.h"
 
+/* The relations of one catalog, to rewrite */
+typedef struct MigrateCatalog
+{
+	const CatalogRelation *cat;
+	MigrateRelation heap;
+	MigrateRelation toast;
+	MigrateRelation toastindex;
+	MigrateRelation *indexes;	/* cat->nindexes entries */
+} MigrateCatalog;
+
+/* The catalogs of one database, or the shared catalogs, to rewrite */
+typedef struct MigratePlan
+{
+	Oid			dbid;			/* InvalidOid for the shared catalogs */
+	Oid			tablespace;
+	const char *dbpath;
+	MigrateCatalog *catalogs;
+	int			ncatalogs;
+	FilenodeFixup *fixups;		/* new file numbers of the unmapped ones */
+	int			nfixups;
+	Oid		   *mapped_oids;	/* new file numbers of the mapped ones */
+	RelFileNumber *mapped_filenumbers;
+	int			nmapped;
+} MigratePlan;
+
 static void migrate_catalogs(void);
 static void migrator_shmem_exit(int code, Datum arg);
 static void write_error_file(void);
 static void refuse_prepared_transactions(void);
 static void refuse_replication_slots(void);
 static void save_for_rollback(List *databases);
+static void migrate_shared_catalogs(void);
+static void migrate_database(MigrateDatabase *db);
+static void plan_catalogs(MigratePlan *plan, const ClassEntry *classes,
+						  int nclasses);
+static void plan_relation(MigratePlan *plan, MigrateRelation *rel,
+						  Oid reloid, const char *name,
+						  const ClassEntry *classes, int nclasses);
+static void execute_plan(MigratePlan *plan);
+static int	fixup_cmp(const void *a, const void *b);
+static RelFileNumber allocate_filenumber(const RelFileLocator *locator);
 
 
 /*
@@ -192,9 +235,24 @@ static void
 migrate_catalogs(void)
 {
 	List	   *databases;
+	InplaceUpgradePosture posture;
 
 	set_ps_display("checking the major version of the catalogs");
 	InplaceUpgradeCheckOldMajorVersion();
+
+	/*
+	 * Once the marker "planned" is there, an earlier attempt may have
+	 * switched relation maps and rewritten pg_class.  A new attempt would
+	 * read those and convert rows twice, and would take the copies kept for a
+	 * rollback again, from changed files.  The error of an earlier attempt is
+	 * gone by now, so the posture shows the marker as "migrating".
+	 */
+	InplaceUpgradeServerPosture(&posture);
+	if (posture.posture == UPGRADE_POSTURE_MIGRATING)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("an earlier attempt to migrate the catalogs may have changed them"),
+				 errhint("Roll the upgrade back.")));
 
 	/*
 	 * Refuse what the migration cannot handle.  Nothing has been written at
@@ -216,6 +274,14 @@ migrate_catalogs(void)
 
 	set_ps_display("saving files for a rollback");
 	save_for_rollback(databases);
+
+	InplaceUpgradeWriteMarker(INPLACE_UPGRADE_MARKER_PLANNED);
+	ereport(LOG,
+			(errmsg("the migration of the catalogs is planned")));
+
+	migrate_shared_catalogs();
+	foreach_ptr(MigrateDatabase, db, databases)
+		migrate_database(db);
 
 	InplaceUpgradeWriteMarker(INPLACE_UPGRADE_MARKER_MIGRATED);
 	ereport(LOG,
@@ -341,4 +407,218 @@ save_for_rollback(List *databases)
 	 * nobody registered.  Here it would show the directory after the new
 	 * binary's startup, not the old cluster's.
 	 */
+}
+
+/*
+ * The shared catalogs are all in the shared relation map, so there is no
+ * pg_class to consult for them.
+ */
+static void
+migrate_shared_catalogs(void)
+{
+	MigratePlan plan = {0};
+
+	ereport(LOG,
+			(errmsg("migrating the shared catalogs")));
+
+	plan.dbid = InvalidOid;
+	plan.tablespace = GLOBALTABLESPACE_OID;
+	plan.dbpath = "global";
+	plan_catalogs(&plan, NULL, 0);
+	execute_plan(&plan);
+}
+
+static void
+migrate_database(MigrateDatabase *db)
+{
+	MigratePlan plan = {0};
+	ClassEntry *classes;
+	int			nclasses;
+
+	ereport(LOG,
+			(errmsg("migrating the catalogs of database \"%s\"",
+					NameStr(db->name))));
+
+	set_ps_display(psprintf("reading pg_class of database %s",
+							NameStr(db->name)));
+	classes = InplaceUpgradeReadClasses(db, &nclasses);
+
+	plan.dbid = db->oid;
+	plan.tablespace = db->tablespace;
+	plan.dbpath = db->path;
+	plan_catalogs(&plan, classes, nclasses);
+	execute_plan(&plan);
+}
+
+/*
+ * Find the files of every catalog of this version, with its indexes and
+ * toast table, and allocate the new file number of each.  Every file number
+ * is known before a catalog is rewritten, since the rewrite of pg_class
+ * stores the new numbers of the unmapped relations in their rows.
+ *
+ * With classes NULL, plan the shared catalogs, which are all mapped.
+ */
+static void
+plan_catalogs(MigratePlan *plan, const ClassEntry *classes, int nclasses)
+{
+	bool		shared = (classes == NULL);
+	int			maxrels;
+
+	plan->ncatalogs = 0;
+	plan->catalogs = palloc_array(MigrateCatalog, lengthof(CatalogRelations));
+	maxrels = 0;
+	for (int i = 0; i < lengthof(CatalogRelations); i++)
+		maxrels += 3 + CatalogRelations[i].nindexes;
+	plan->nfixups = 0;
+	plan->fixups = palloc_array(FilenodeFixup, maxrels);
+	plan->nmapped = 0;
+	plan->mapped_oids = palloc_array(Oid, maxrels);
+	plan->mapped_filenumbers = palloc_array(RelFileNumber, maxrels);
+
+	for (int i = 0; i < lengthof(CatalogRelations); i++)
+	{
+		const CatalogRelation *cat = &CatalogRelations[i];
+		MigrateCatalog *mcat;
+
+		if (cat->shared != shared)
+			continue;
+
+		mcat = &plan->catalogs[plan->ncatalogs++];
+		mcat->cat = cat;
+		plan_relation(plan, &mcat->heap, cat->reloid, cat->name,
+					  classes, nclasses);
+		mcat->indexes = palloc_array(MigrateRelation, cat->nindexes);
+		for (int j = 0; j < cat->nindexes; j++)
+			plan_relation(plan, &mcat->indexes[j], cat->indexes[j].indexoid,
+						  cat->indexes[j].name, classes, nclasses);
+		if (OidIsValid(cat->toastoid))
+		{
+			plan_relation(plan, &mcat->toast, cat->toastoid,
+						  psprintf("pg_toast_%u", cat->reloid),
+						  classes, nclasses);
+			plan_relation(plan, &mcat->toastindex, cat->toastindexoid,
+						  psprintf("pg_toast_%u_index", cat->reloid),
+						  classes, nclasses);
+		}
+		else
+			mcat->toast.reloid = InvalidOid;
+	}
+
+	qsort(plan->fixups, plan->nfixups, sizeof(FilenodeFixup), fixup_cmp);
+}
+
+/*
+ * Plan one relation: find its file through pg_class or the relation map,
+ * and allocate the new one.
+ */
+static void
+plan_relation(MigratePlan *plan, MigrateRelation *rel, Oid reloid,
+			  const char *name, const ClassEntry *classes, int nclasses)
+{
+	RelFileNumber oldfilenumber = InvalidRelFileNumber;
+
+	rel->reloid = reloid;
+	rel->name = name;
+	rel->oldlocator.spcOid = plan->tablespace;
+	rel->oldlocator.dbOid = plan->dbid;
+	rel->newlocator = rel->oldlocator;
+
+	if (classes != NULL)
+	{
+		const ClassEntry *entry;
+
+		entry = InplaceUpgradeLookupClass(classes, nclasses, reloid);
+		if (entry == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_TABLE),
+					 errmsg("catalog relation \"%s\" (OID %u) not found in \"%s/pg_class\"",
+							name, reloid, plan->dbpath)));
+		oldfilenumber = entry->relfilenode;
+	}
+	rel->mapped = !RelFileNumberIsValid(oldfilenumber);
+	if (rel->mapped)
+	{
+		oldfilenumber =
+			RelationMapOidToFilenumberForDatabase(unconstify(char *, plan->dbpath),
+												  reloid);
+		if (!RelFileNumberIsValid(oldfilenumber))
+			elog(ERROR, "could not find \"%s\" in the relation map of \"%s\"",
+				 name, plan->dbpath);
+	}
+	rel->oldlocator.relNumber = oldfilenumber;
+	rel->newlocator.relNumber = allocate_filenumber(&rel->newlocator);
+
+	if (rel->mapped)
+	{
+		plan->mapped_oids[plan->nmapped] = reloid;
+		plan->mapped_filenumbers[plan->nmapped] = rel->newlocator.relNumber;
+		plan->nmapped++;
+	}
+	else
+	{
+		plan->fixups[plan->nfixups].reloid = reloid;
+		plan->fixups[plan->nfixups].relfilenode = rel->newlocator.relNumber;
+		plan->nfixups++;
+	}
+}
+
+/*
+ * Rewrite every planned catalog, then switch the relation map to the new
+ * files: the moment the new catalogs become the catalogs.
+ */
+static void
+execute_plan(MigratePlan *plan)
+{
+	for (int i = 0; i < plan->ncatalogs; i++)
+	{
+		MigrateCatalog *mcat = &plan->catalogs[i];
+
+		InplaceUpgradeRewriteCatalog(mcat->cat, &mcat->heap, mcat->indexes,
+									 OidIsValid(mcat->toast.reloid) ?
+									 &mcat->toast : NULL,
+									 &mcat->toastindex,
+									 plan->fixups, plan->nfixups);
+	}
+
+	set_ps_display(psprintf("switching the relation map of %s",
+							plan->dbpath));
+	RelationMapUpdateFileForDatabase(plan->dbid, plan->tablespace,
+									 plan->dbpath, plan->mapped_oids,
+									 plan->mapped_filenumbers, plan->nmapped);
+}
+
+static int
+fixup_cmp(const void *a, const void *b)
+{
+	return pg_cmp_u32(((const FilenodeFixup *) a)->reloid,
+					  ((const FilenodeFixup *) b)->reloid);
+}
+
+/*
+ * A file number for a new relation file in the database and tablespace of
+ * the locator: as GetNewRelFileNumber() does it, but for a database we are
+ * not connected to.  The OID counter is WAL-logged, so the standbys will
+ * have the same counter after the upgrade.
+ */
+static RelFileNumber
+allocate_filenumber(const RelFileLocator *locator)
+{
+	RelFileLocator candidate = *locator;
+	bool		collides;
+
+	do
+	{
+		SMgrRelation srel;
+
+		CHECK_FOR_INTERRUPTS();
+
+		candidate.relNumber = GetNewObjectId();
+
+		/* Check for an existing file of the same name */
+		srel = smgropen(candidate, INVALID_PROC_NUMBER);
+		collides = smgrexists(srel, MAIN_FORKNUM);
+		smgrclose(srel);
+	} while (collides);
+
+	return candidate.relNumber;
 }

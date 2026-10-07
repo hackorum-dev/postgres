@@ -4,4 +4,5 @@ backend_sources += files(
   'bundle.c',
   'migrate.c',
   'oldcatalog.c',
+  'rewrite.c',
 )

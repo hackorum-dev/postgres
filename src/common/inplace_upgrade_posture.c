@@ -229,6 +229,8 @@ InplaceUpgradeGetPosture(const ControlFileData *cf, const char *datadir,
 		result->posture = UPGRADE_POSTURE_MIGRATED;
 	else if (file_exists(datadir, INPLACE_UPGRADE_MIGRATE_ERROR, result))
 		result->posture = UPGRADE_POSTURE_MIGRATION_FAILED;
+	else if (file_exists(datadir, INPLACE_UPGRADE_MARKER_DIR "/" INPLACE_UPGRADE_MARKER_PLANNED, result))
+		result->posture = UPGRADE_POSTURE_MIGRATING;
 	else
 		result->posture = UPGRADE_POSTURE_TAKEN_OVER;
 

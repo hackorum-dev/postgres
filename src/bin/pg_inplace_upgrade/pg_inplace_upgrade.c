@@ -1137,6 +1137,7 @@ cmd_swap(void)
 		case UPGRADE_POSTURE_AT_BOUNDARY:
 			break;
 		case UPGRADE_POSTURE_TAKEN_OVER:
+		case UPGRADE_POSTURE_MIGRATING:
 		case UPGRADE_POSTURE_MIGRATION_FAILED:
 		case UPGRADE_POSTURE_MIGRATED:
 			pg_log_error("the cluster in \"%s\" has already been taken over by the new version",
@@ -1202,6 +1203,8 @@ posture_name(const ClusterPosture *cp)
 			return _("at an upgrade boundary");
 		case UPGRADE_POSTURE_TAKEN_OVER:
 			return _("taken over");
+		case UPGRADE_POSTURE_MIGRATING:
+			return _("migrating");
 		case UPGRADE_POSTURE_MIGRATION_FAILED:
 			return _("migration failed");
 		case UPGRADE_POSTURE_MIGRATED:

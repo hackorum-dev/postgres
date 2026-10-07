@@ -37,6 +37,7 @@
  * completed (see bundle.c).
  */
 #define INPLACE_UPGRADE_MARKER_DIR		INPLACE_UPGRADE_DIR "/markers"
+#define INPLACE_UPGRADE_MARKER_PLANNED	"planned"
 #define INPLACE_UPGRADE_MARKER_MIGRATED	"migrated"
 
 /*

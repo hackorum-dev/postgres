@@ -100,6 +100,7 @@
 #include "storage/spin.h"
 #include "storage/subsystems.h"
 #include "storage/sync.h"
+#include "upgrade/inplace_upgrade.h"
 #include "utils/guc_hooks.h"
 #include "utils/guc_tables.h"
 #include "utils/injection_point.h"
@@ -3735,6 +3736,11 @@ InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 	}
 
 	Assert(access(path, F_OK) != 0 && errno == ENOENT);
+
+	/* Register the segment for an in-place upgrade rollback before it exists. */
+	if (XLogCtl->inplaceUpgradeMode)
+		InplaceUpgradeRegisterCreatedFile(path);
+
 	if (durable_rename(tmppath, path, LOG) != 0)
 	{
 		LWLockRelease(ControlFileLock);

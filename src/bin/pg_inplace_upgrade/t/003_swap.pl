@@ -102,4 +102,32 @@ command_checks_all(
 	],
 	'swap run again refuses a cluster already taken over');
 
+# A catalog row written after the catalogs were frozen, as a write leaking
+# past the fence would be.  prepare leaves no point at which to write between
+# its freeze and its shutdown, so the freeze and the boundary are requested
+# by hand.  The rewrite of the catalog fails on the row, and names where it
+# is.
+my $unfrozen = old_node('unfrozen', '');
+$unfrozen->command_ok(
+	[
+		"$oldinstall/bin/vacuumdb", '--all',
+		'--freeze', '--schema' => 'pg_catalog'
+	],
+	'freeze the catalogs');
+my $tid = $unfrozen->safe_psql(
+	'postgres', q{
+	COMMENT ON SCHEMA public IS 'written after the freeze';
+	SELECT ctid FROM pg_description WHERE description = 'written after the freeze';
+});
+$unfrozen->safe_psql('postgres', 'SELECT pg_request_upgrade_boundary()');
+$unfrozen->stop;
+command_fails_like(
+	[ pg_inplace_upgrade($unfrozen), '--log' => $unfrozen->logfile, 'swap' ],
+	qr/did not start/,
+	'swap fails when a catalog tuple is not frozen');
+like(
+	slurp_file($unfrozen->logfile),
+	qr/ERROR:  catalog "pg_description" has 1 tuple that is not frozen\n.*DETAIL:  The first is tuple \Q$tid\E\./,
+	'the migration names the catalog and the first tuple that is not frozen');
+
 done_testing();

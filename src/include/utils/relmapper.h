@@ -43,6 +43,11 @@ extern RelFileNumber RelationMapOidToFilenumber(Oid relationId, bool shared);
 extern Oid	RelationMapFilenumberToOid(RelFileNumber filenumber, bool shared);
 extern RelFileNumber RelationMapOidToFilenumberForDatabase(char *dbpath,
 														   Oid relationId);
+extern void RelationMapUpdateFileForDatabase(Oid dbid, Oid tsid,
+											 const char *dbpath,
+											 const Oid *relationIds,
+											 const RelFileNumber *fileNumbers,
+											 int nmappings);
 extern void RelationMapCopy(Oid dbid, Oid tsid, char *srcdbpath,
 							char *dstdbpath);
 extern void RelationMapUpdateMap(Oid relationId, RelFileNumber fileNumber,

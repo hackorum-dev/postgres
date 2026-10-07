@@ -139,7 +139,30 @@ $primary->safe_psql(
 	INSERT INTO t SELECT g, md5(g::text) FROM generate_series(1, 1000) g;
 	ANALYZE t;
 	GRANT SELECT ON t TO app;
+	-- a view whose definition is too long for a catalog page, so that
+	-- its pg_rewrite row keeps it in the toast table
+	DO $$ BEGIN
+		EXECUTE format('CREATE VIEW v AS SELECT %L AS s',
+			(SELECT string_agg(md5(g::text), '')
+			 FROM generate_series(1, 400) g));
+	END $$;
 });
+
+# The catalogs' rows, and where they are, before the upgrade.  The
+# migration must carry the rows and move every catalog to a new file.
+my $stats_query = q{SELECT * FROM pg_statistic
+	WHERE starelid = 't'::regclass ORDER BY staattnum};
+my $old_stats = $primary->safe_psql('postgres', $stats_query);
+my $view_query = q{SELECT length(s), md5(s) FROM v};
+my $old_view = $primary->safe_psql('postgres', $view_query);
+# The catalogs' relations all have OIDs assigned in the catalog headers,
+# below FirstGenbkiObjectId; the information_schema tables that initdb
+# creates do not count.
+my $catalog_files_query =
+  q{SELECT string_agg(pg_relation_filenode(oid)::text, ',')
+	FROM pg_class WHERE oid < 10000 AND relkind IN ('r', 'i', 't')};
+my $old_catalog_files = $primary->safe_psql('postgres', $catalog_files_query);
+my $ncatalog_files = () = $old_catalog_files =~ /\d+/g;
 
 $primary->backup('bkp');
 my $standby =
@@ -188,6 +211,9 @@ is( $standby->safe_psql('postgres', 'SELECT pg_get_wal_replay_pause_state()'),
 	'standby paused at the upgrade boundary');
 is($standby->safe_psql('postgres', 'SELECT pg_upgrade_boundary_lsn()'),
 	$boundary_lsn, 'standby boundary is the primary shutdown checkpoint');
+my $standby_received =
+  $standby->safe_psql('postgres', 'SELECT pg_last_wal_receive_lsn()');
+
 # Digest of a file, for comparing copies of binary files
 sub file_digest
 {
@@ -347,6 +373,11 @@ $primary->set_install_path(undef);
 $primary->append_conf('postgresql.conf',
 	"log_min_messages = 'warning,postmaster:debug1'");
 
+# What the data directory holds before the new version touches it, for
+# checking afterwards that the migration removed nothing and registered
+# everything it created.
+my $before_swap = datadir_contents($primary);
+
 # The server reports ready only once the migrator is done, so the swap
 # returns only then.
 my $log_offset = -s $primary->logfile;
@@ -385,8 +416,8 @@ is(file_digest("$stash/pg_control"),
 is(file_digest("$stash/pgstat.stat"),
 	$old_stats_digest, 'old statistics file kept');
 like(slurp_file("$stash/created_files"),
-	qr/^pg_wal\/[0-9A-F]{24}\n$/,
-	'created files list names the new WAL segment');
+	qr/^pg_wal\/[0-9A-F]{24}\n/,
+	'created files list names the new WAL segment first');
 
 # The start checkpoint is new-version WAL, and the boundary segment is
 # untouched.
@@ -418,7 +449,7 @@ ok(-e $primary->data_dir . '/pg_inplace_upgrade_bundle/markers/migrated',
 my $log = substr(slurp_file($primary->logfile), $log_offset);
 like(
 	$log,
-	qr/LOG:  the catalogs are migrated.*LOG:  database system is ready to accept connections/s,
+	qr/LOG:  migrating the shared catalogs.*LOG:  migrating the catalogs of database "postgres".*LOG:  the catalogs are migrated.*LOG:  database system is ready to accept connections/s,
 	'ready reported after the migration');
 unlike(
 	$log,
@@ -426,7 +457,7 @@ unlike(
 	'logical replication launcher not started before the migration');
 
 # Upgrade mode suppresses checkpoints, so the latest checkpoint is still
-# the one before the migration.
+# the one before the migration, however much WAL the migration wrote.
 my $last_checkpoint_lsn = checkpoint_location($primary);
 is($last_checkpoint_lsn, $checkpoint_before_migration,
 	'no checkpoint since the migration');
@@ -461,6 +492,118 @@ $primary->connect_fails(
 );
 is($primary->safe_psql('postgres', 'SELECT count(*) FROM t'),
 	'1000', 'superuser connection admitted, data readable');
+
+# The catalogs were rewritten: every catalog relation is in a new file,
+# and the rows came through, the planner statistics and the toasted ones
+# included.  The rebuilt indexes find the rows that a sequential scan finds.
+is( $primary->safe_psql(
+		'postgres',
+		qq{SELECT count(*) FROM pg_class WHERE oid < 10000
+			AND relkind IN ('r', 'i', 't')
+			AND pg_relation_filenode(oid) IN ($old_catalog_files)}),
+	'0',
+	'no catalog relation is in its old file');
+is( $primary->safe_psql(
+		'postgres',
+		q{SELECT count(*) FROM pg_class WHERE oid < 10000
+			AND relkind IN ('r', 'i', 't')}),
+	$ncatalog_files,
+	'every catalog relation is still there');
+is($primary->safe_psql('postgres', $stats_query),
+	$old_stats, 'planner statistics carried through the migration');
+is($primary->safe_psql('postgres', $view_query),
+	$old_view, 'toasted view definition carried through the migration');
+is( $primary->safe_psql(
+		'postgres', q{SELECT 'v'::regclass::oid = (SELECT oid FROM pg_class
+			WHERE relname = 'v' AND relnamespace = 'public'::regnamespace)}),
+	't',
+	'rebuilt catalog index finds a row by name');
+is( $primary->safe_psql(
+		'postgres', q{SET enable_seqscan = off;
+			SELECT count(*) FROM pg_attribute WHERE attrelid > 0}),
+	$primary->safe_psql(
+		'postgres', q{SET enable_indexscan = off;
+			SET enable_bitmapscan = off;
+			SET enable_indexonlyscan = off;
+			SELECT count(*) FROM pg_attribute WHERE attrelid > 0}),
+	'rebuilt catalog index has every row');
+
+# Every file the migration created is on the created files list, and no
+# file that existed before the swap is gone.  The relation cache init
+# files are not the migration's: every start removes them, and the first
+# connection after the migration wrote them again.
+my %created = map { $_ => 1 } split /\n/, slurp_file("$stash/created_files");
+my $datadir = $primary->data_dir;
+my @missing;
+my @unregistered;
+foreach my $dir (qw(base global pg_wal pg_xact))
+{
+	find(
+		{
+			no_chdir => 1,
+			wanted => sub {
+				return unless -f $File::Find::name;
+				return if $File::Find::name =~ /pg_internal\.init$/;
+				my $path = $File::Find::name;
+				$path =~ s{^\Q$datadir\E/}{};
+				push @unregistered, $path
+				  if !exists $before_swap->{"/$path"}
+				  && !exists $created{$path};
+			}
+		},
+		$primary->data_dir . "/$dir");
+	foreach my $path (
+		grep {
+				 m{^/$dir/}
+			  && $before_swap->{$_} ne 'd'
+			  && !/pg_internal\.init$/
+		} keys %$before_swap)
+	{
+		push @missing, substr($path, 1) if !-e $primary->data_dir . $path;
+	}
+}
+is_deeply([ sort @unregistered ], [], 'every created file is registered');
+is_deeply([ sort @missing ], [], 'no pre-existing file was removed');
+
+# Everything the migration wrote is in WAL: a creation record per created
+# relation file, every page of every file that has any as a full page
+# image, and a relation map update per database.
+my $migration_wal =
+  `"$newbindir/pg_waldump" --path @{[$primary->data_dir]}/pg_wal --start $start_lsn 2>&1`;
+my @created_relations = grep { m{^(base|global)/} } keys %created;
+my $ndatabases = () = $databases =~ /^/mg;
+is( scalar(() = $migration_wal =~ /rmgr: Storage .* CREATE /g),
+	scalar @created_relations,
+	'a WAL record created every new relation file');
+my %fpi_pages;
+foreach my $record (grep { /rmgr: XLOG .* FPI / } split /\n/, $migration_wal)
+{
+	while ($record =~ m{rel (\d+)/(\d+)/(\d+) blk (\d+)}g)
+	{
+		my ($spc, $db, $rel, $blk) = ($1, $2, $3, $4);
+		my $file = $spc == 1664 ? "global/$rel" : "base/$db/$rel";
+		$fpi_pages{$file}{$blk} = 1;
+	}
+}
+my @unlogged_pages;
+foreach my $file (@created_relations)
+{
+	my $nblocks = (-s $primary->data_dir . "/$file") / 8192;
+	foreach my $blk (0 .. $nblocks - 1)
+	{
+		push @unlogged_pages, "$file blk $blk" if !$fpi_pages{$file}{$blk};
+	}
+}
+is_deeply([ sort @unlogged_pages ],
+	[],
+	'every page of every new relation file is in WAL as a full page image');
+is( scalar(() = $migration_wal =~ /rmgr: RelMap .* UPDATE /g),
+	$ndatabases + 1,
+	'relation map of every database and the shared one updated in WAL');
+
+# The parked standby received none of it.
+is($standby->safe_psql('postgres', 'SELECT pg_last_wal_receive_lsn()'),
+	$standby_received, 'standby received no migration WAL');
 
 # Archiving is fenced: no archiver runs, and switching WAL segments creates
 # no .ready file.
