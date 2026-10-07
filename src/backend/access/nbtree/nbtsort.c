@@ -80,14 +80,14 @@
  * these due to the special requirements for uniqueness-checking with
  * dead tuples.)
  */
-typedef struct BTSpool
+struct BTSpool
 {
 	Tuplesortstate *sortstate;	/* state data for tuplesort.c */
 	Relation	heap;
 	Relation	index;
 	bool		isunique;
 	bool		nulls_not_distinct;
-} BTSpool;
+};
 
 /*
  * Status for index builds performed in parallel.  This is allocated in a
@@ -259,10 +259,6 @@ typedef struct BTWriteState
 
 static double _bt_spools_heapscan(Relation heap, Relation index,
 								  BTBuildState *buildstate, IndexInfo *indexInfo);
-static void _bt_spooldestroy(BTSpool *btspool);
-static void _bt_spool(BTSpool *btspool, const ItemPointerData *self,
-					  const Datum *values, const bool *isnull);
-static void _bt_leafbuild(BTSpool *btspool, BTSpool *btspool2);
 static void _bt_build_callback(Relation index, ItemPointer tid, Datum *values,
 							   bool *isnull, bool tupleIsAlive, void *state);
 static BulkWriteBuffer _bt_blnewpage(BTWriteState *wstate, uint32 level);
@@ -515,9 +511,33 @@ _bt_spools_heapscan(Relation heap, Relation index, BTBuildState *buildstate,
 }
 
 /*
+ * Create a spool that sorts index entries in maintenance_work_mem, for a
+ * caller that collects the entries itself rather than scanning the heap.  The
+ * caller adds entries with _bt_spool() and then builds the index with
+ * _bt_leafbuild().
+ */
+BTSpool *
+_bt_spoolinit(Relation heap, Relation index, bool isunique,
+			  bool nulls_not_distinct)
+{
+	BTSpool    *btspool = palloc0_object(BTSpool);
+
+	btspool->heap = heap;
+	btspool->index = index;
+	btspool->isunique = isunique;
+	btspool->nulls_not_distinct = nulls_not_distinct;
+	btspool->sortstate =
+		tuplesort_begin_index_btree(heap, index, isunique, nulls_not_distinct,
+									maintenance_work_mem, NULL,
+									TUPLESORT_NONE);
+
+	return btspool;
+}
+
+/*
  * clean up a spool structure and its substructures.
  */
-static void
+void
 _bt_spooldestroy(BTSpool *btspool)
 {
 	tuplesort_end(btspool->sortstate);
@@ -527,7 +547,7 @@ _bt_spooldestroy(BTSpool *btspool)
 /*
  * spool an index entry into the sort file.
  */
-static void
+void
 _bt_spool(BTSpool *btspool, const ItemPointerData *self, const Datum *values, const bool *isnull)
 {
 	tuplesort_putindextuplevalues(btspool->sortstate, btspool->index,
@@ -538,7 +558,7 @@ _bt_spool(BTSpool *btspool, const ItemPointerData *self, const Datum *values, co
  * given a spool loaded by successive calls to _bt_spool,
  * create an entire btree.
  */
-static void
+void
 _bt_leafbuild(BTSpool *btspool, BTSpool *btspool2)
 {
 	BTWriteState wstate;

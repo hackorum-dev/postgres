@@ -1327,8 +1327,16 @@ extern void btadjustmembers(Oid opfamilyoid,
 /*
  * prototypes for functions in nbtsort.c
  */
+typedef struct BTSpool BTSpool;
+
 extern IndexBuildResult *btbuild(Relation heap, Relation index,
 								 struct IndexInfo *indexInfo);
 extern void _bt_parallel_build_main(dsm_segment *seg, shm_toc *toc);
+extern BTSpool *_bt_spoolinit(Relation heap, Relation index, bool isunique,
+							  bool nulls_not_distinct);
+extern void _bt_spool(BTSpool *btspool, const ItemPointerData *self,
+					  const Datum *values, const bool *isnull);
+extern void _bt_leafbuild(BTSpool *btspool, BTSpool *btspool2);
+extern void _bt_spooldestroy(BTSpool *btspool);
 
 #endif							/* NBTREE_H */
