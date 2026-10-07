@@ -4088,7 +4088,12 @@ LogicalRepApplyLoop(XLogRecPtr last_received)
 	errcallback.callback = apply_error_callback;
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
-	apply_error_context_stack = error_context_stack;
+
+	/*
+	 * Save the previous callbacks so that an error propagated from a parallel
+	 * apply worker does not use this leader's unrelated apply error context.
+	 */
+	apply_error_context_stack = errcallback.previous;
 
 	/* This outer loop iterates once per wait. */
 	for (;;)
