@@ -15,6 +15,7 @@
 
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/gist.h"
 #include "access/nbtree.h"
 #include "fmgr.h"
@@ -86,18 +87,14 @@ PrepareSortSupportComparisonShim(Oid cmpFunc, SortSupport ssup)
 }
 
 /*
- * Look up and call sortsupport function to setup SortSupport comparator;
- * or if no such function exists or it declines to set up the appropriate
- * state, prepare a suitable shim.
+ * Call the sortsupport function, if there is one, to setup SortSupport
+ * comparator; or if there is none or it declines to set up the appropriate
+ * state, prepare a suitable shim around the comparison function.
  */
 static void
-FinishSortSupportFunction(Oid opfamily, Oid opcintype, SortSupport ssup)
+FinishSortSupportFromProcs(Oid sortSupportFunction, Oid sortFunction,
+						   SortSupport ssup)
 {
-	Oid			sortSupportFunction;
-
-	/* Look for a sort support function */
-	sortSupportFunction = get_opfamily_proc(opfamily, opcintype, opcintype,
-											BTSORTSUPPORT_PROC);
 	if (OidIsValid(sortSupportFunction))
 	{
 		/*
@@ -109,18 +106,30 @@ FinishSortSupportFunction(Oid opfamily, Oid opcintype, SortSupport ssup)
 
 	if (ssup->comparator == NULL)
 	{
-		Oid			sortFunction;
-
-		sortFunction = get_opfamily_proc(opfamily, opcintype, opcintype,
-										 BTORDER_PROC);
-
-		if (!OidIsValid(sortFunction))
-			elog(ERROR, "missing support function %d(%u,%u) in opfamily %u",
-				 BTORDER_PROC, opcintype, opcintype, opfamily);
-
 		/* We'll use a shim to call the old-style btree comparator */
 		PrepareSortSupportComparisonShim(sortFunction, ssup);
 	}
+}
+
+/*
+ * Look up the sortsupport and comparison functions of an opfamily, and set
+ * up the SortSupport comparator from them.
+ */
+static void
+FinishSortSupportFunction(Oid opfamily, Oid opcintype, SortSupport ssup)
+{
+	Oid			sortSupportFunction;
+	Oid			sortFunction;
+
+	sortSupportFunction = get_opfamily_proc(opfamily, opcintype, opcintype,
+											BTSORTSUPPORT_PROC);
+	sortFunction = get_opfamily_proc(opfamily, opcintype, opcintype,
+									 BTORDER_PROC);
+	if (!OidIsValid(sortFunction))
+		elog(ERROR, "missing support function %d(%u,%u) in opfamily %u",
+			 BTORDER_PROC, opcintype, opcintype, opfamily);
+
+	FinishSortSupportFromProcs(sortSupportFunction, sortFunction, ssup);
 }
 
 /*
@@ -161,16 +170,31 @@ void
 PrepareSortSupportFromIndexRel(Relation indexRel, bool reverse,
 							   SortSupport ssup)
 {
-	Oid			opfamily = indexRel->rd_opfamily[ssup->ssup_attno - 1];
-	Oid			opcintype = indexRel->rd_opcintype[ssup->ssup_attno - 1];
+	Oid			sortSupportFunction;
+	Oid			sortFunction;
 
 	Assert(ssup->comparator == NULL);
 
 	if (!indexRel->rd_indam->amcanorder)
 		elog(ERROR, "unexpected non-amcanorder AM: %u", indexRel->rd_rel->relam);
+	if (indexRel->rd_indam->amsupport < BTSORTSUPPORT_PROC)
+		elog(ERROR, "too few support functions in AM %u: %u",
+			 indexRel->rd_rel->relam, indexRel->rd_indam->amsupport);
 	ssup->ssup_reverse = reverse;
 
-	FinishSortSupportFunction(opfamily, opcintype, ssup);
+	/*
+	 * The index relation carries the support functions of its opfamily for
+	 * each key column, so there is no need to look them up in the catalogs
+	 * again.
+	 */
+	sortSupportFunction = index_getprocid(indexRel, ssup->ssup_attno,
+										  BTSORTSUPPORT_PROC);
+	sortFunction = index_getprocid(indexRel, ssup->ssup_attno, BTORDER_PROC);
+	if (!OidIsValid(sortFunction))
+		elog(ERROR, "missing support function %d for attribute %d of index \"%s\"",
+			 BTORDER_PROC, ssup->ssup_attno, RelationGetRelationName(indexRel));
+
+	FinishSortSupportFromProcs(sortSupportFunction, sortFunction, ssup);
 }
 
 /*

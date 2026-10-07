@@ -27,7 +27,6 @@
 #include "storage/lwlock.h"
 #include "storage/subsystems.h"
 #include "utils/datum.h"
-#include "utils/lsyscache.h"
 #include "utils/rel.h"
 
 
@@ -1183,13 +1182,12 @@ _bt_allequalimage(Relation rel, bool debugmessage)
 
 	for (int i = 0; i < IndexRelationGetNumberOfKeyAttributes(rel); i++)
 	{
-		Oid			opfamily = rel->rd_opfamily[i];
 		Oid			opcintype = rel->rd_opcintype[i];
 		Oid			collation = rel->rd_indcollation[i];
 		Oid			equalimageproc;
 
-		equalimageproc = get_opfamily_proc(opfamily, opcintype, opcintype,
-										   BTEQUALIMAGE_PROC);
+		/* The relation carries its opfamily's support procs, so no lookup */
+		equalimageproc = index_getprocid(rel, i + 1, BTEQUALIMAGE_PROC);
 
 		/*
 		 * If there is no BTEQUALIMAGE_PROC then deduplication is assumed to
