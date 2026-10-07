@@ -2789,6 +2789,24 @@ apply_concurrent_changes(BufFile *file, ChangeContext *chgcxt)
 
 		if (kind == CHANGE_INSERT)
 		{
+			TupleDesc	desc = spilled_tuple->tts_tupleDescriptor;
+
+			/*
+			 * Dropped columns can still have values in the tuple.  Mark them
+			 * as null, like prepare_concurrent_update() does: the new heap
+			 * might have no TOAST table to store them in.
+			 */
+			for (int i = 0; i < desc->natts; i++)
+			{
+				CompactAttribute *attr = TupleDescCompactAttr(desc, i);
+
+				if (attr->attisdropped && !slot_attisnull(spilled_tuple, i + 1))
+				{
+					slot_getsomeattrs(spilled_tuple, i + 1);
+					spilled_tuple->tts_isnull[i] = true;
+				}
+			}
+
 			apply_concurrent_insert(rel, spilled_tuple, chgcxt);
 		}
 		else if (kind == CHANGE_DELETE)
