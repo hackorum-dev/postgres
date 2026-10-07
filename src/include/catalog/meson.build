@@ -110,10 +110,12 @@ output_files = [
   'syscache_ids.h',
   'syscache_info.h',
   'system_fk_info.h',
+  'catalog_relations.h',
 ]
 output_install = [
   dir_data,
   dir_data,
+  dir_include_server / 'catalog',
   dir_include_server / 'catalog',
   dir_include_server / 'catalog',
   dir_include_server / 'catalog',

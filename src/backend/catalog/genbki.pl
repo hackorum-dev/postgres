@@ -282,6 +282,14 @@ foreach my $row (@{ $catalog_data{pg_opclass} })
 	$opcoids{$key} = $row->{oid};
 }
 
+# btree opclass lookup by name, for the catalog indexes
+my %btree_opclasses;
+foreach my $row (@{ $catalog_data{pg_opclass} })
+{
+	$btree_opclasses{ $row->{opcname} } = $row
+	  if $row->{opcmethod} eq 'btree';
+}
+
 # operator OID lookup
 my %operoids;
 foreach my $row (@{ $catalog_data{pg_operator} })
@@ -452,15 +460,27 @@ open my $syscache_ids_fh, '>', $syscache_ids_file . $tmpext
 my $syscache_info_file = $output_path . 'syscache_info.h';
 open my $syscache_info_fh, '>', $syscache_info_file . $tmpext
   or die "can't open $syscache_info_file$tmpext: $!";
+my $catrels_file = $output_path . 'catalog_relations.h';
+open my $catrels_fh, '>', $catrels_file . $tmpext
+  or die "can't open $catrels_file$tmpext: $!";
 
 # Generate postgres.bki and pg_*_d.h headers.
 
 # version marker for .bki file
 print $bki "# PostgreSQL $major_version\n";
 
-# vars to hold data needed for schemapg.h
+# vars to hold data needed for schemapg.h and catalog_relations.h
 my %schemapg_entries;
 my @tables_needing_macros;
+my %catalog_attinfo;
+my $pgattr_schema;
+my @pgattr_attnames;
+
+# Limits of catalog_relations.h, checked while generating it: the number of
+# key columns of a catalog index, and the number of support procedures of
+# an index access method (BTNProcs, since every catalog index is a btree).
+my $CATALOG_INDEX_MAX_KEYS = 4;
+my $CATALOG_INDEX_NSUPPORT = 6;
 
 # produce output, one catalog at a time
 foreach my $catname (@catnames)
@@ -746,6 +766,151 @@ foreach my $table_name (@tables_needing_macros)
 # Closing boilerplate for schemapg.h
 print $schemapg "\n#endif\t\t\t\t\t\t\t/* SCHEMAPG_H */\n";
 
+# Now generate catalog_relations.h
+
+print_boilerplate($catrels_fh, "catalog_relations.h",
+	"Every system catalog with its toast table and indexes");
+print $catrels_fh <<EOM;
+#ifndef CATALOG_RELATIONS_H
+#define CATALOG_RELATIONS_H
+
+/*
+ * The catalogs as the catalog headers declare them, for code that cannot
+ * read pg_class, pg_attribute and pg_index to learn about them.  Every
+ * catalog index is a btree over plain columns; a key's support procedures
+ * are those of its operator class, by support number.
+ */
+
+#include "catalog/pg_attribute.h"
+#include "catalog/schemapg.h"
+
+#define CATALOG_INDEX_MAX_KEYS	$CATALOG_INDEX_MAX_KEYS
+#define CATALOG_INDEX_NSUPPORT	$CATALOG_INDEX_NSUPPORT
+
+typedef struct CatalogIndexKey
+{
+	AttrNumber	attnum;			/* column of the catalog */
+	Oid			opfamily;
+	Oid			opcintype;
+	Oid			collation;
+	Oid			keytype;		/* type stored in the index, if different */
+	int16		keytyplen;
+	bool		keytypbyval;
+	char		keytypalign;
+	char		keytypstorage;
+	RegProcedure support[CATALOG_INDEX_NSUPPORT];
+} CatalogIndexKey;
+
+typedef struct CatalogIndex
+{
+	Oid			indexoid;
+	const char *name;
+	bool		unique;
+	int			nkeys;
+	CatalogIndexKey keys[CATALOG_INDEX_MAX_KEYS];
+} CatalogIndex;
+
+typedef struct CatalogRelation
+{
+	Oid			reloid;
+	const char *name;
+	bool		shared;
+	int			natts;
+	const FormData_pg_attribute *attrs;
+	Oid			toastoid;		/* InvalidOid if the catalog has no toast table */
+	Oid			toastindexoid;
+	int			nindexes;
+	const CatalogIndex *indexes;
+} CatalogRelation;
+
+EOM
+
+my @catrels_entries;
+foreach my $catname (@catnames)
+{
+	my $catalog = $catalogs{$catname};
+	my @indexes;
+
+	printf $catrels_fh
+	  "static const FormData_pg_attribute CatalogAttrs_%s[] = {Schema_%s};\n",
+	  $catname, $catname;
+
+	foreach my $index (@{ $catalog->{indexing} })
+	{
+		push @indexes,
+		  catalog_index_entry(
+			$catname, $index->{index_name},
+			$index->{index_oid}, $index->{is_unique},
+			$index->{index_decl});
+	}
+	if (@indexes)
+	{
+		printf $catrels_fh
+		  "static const CatalogIndex CatalogIndexes_%s[] = {\n%s};\n",
+		  $catname, join('', @indexes);
+	}
+
+	my $toast = $catalog->{toasting}[0];
+	push @catrels_entries,
+	  sprintf(
+		"\t{%s, \"%s\", %s, %d, CatalogAttrs_%s, %s, %s, %d, %s},\n",
+		$catalog->{relation_oid},
+		$catname,
+		$catalog->{shared_relation} ? 'true' : 'false',
+		scalar @{ $catalog_attinfo{$catname} },
+		$catname,
+		$toast ? $toast->{toast_oid}       : 0,
+		$toast ? $toast->{toast_index_oid} : 0,
+		scalar @indexes,
+		@indexes ? "CatalogIndexes_$catname" : 'NULL');
+}
+
+print $catrels_fh "\nstatic const CatalogRelation CatalogRelations[] = {\n",
+  @catrels_entries, "};\n";
+
+# The toast tables of the catalogs all have the layout and the index that
+# toasting.c gives them.
+{
+	my @toast_schema = (
+		{ name => 'chunk_id', type => 'oid' },
+		{ name => 'chunk_seq', type => 'int4' },
+		{ name => 'chunk_data', type => 'bytea' });
+	my @rows;
+	my $attnum = 0;
+
+	foreach my $attr (@toast_schema)
+	{
+		my %row;
+
+		$attnum++;
+		$row{attnum} = $attnum;
+		$row{attrelid} = 0;
+		morph_row_for_pgattr(\%row, $pgattr_schema, $attr, 0);
+		$row{attnotnull} = 'f';
+		$row{attstorage} = 'p';
+		morph_row_for_schemapg(\%row, $pgattr_schema);
+		push @rows,
+		  sprintf "{ %s }",
+		  join(', ', grep { defined $_ } @row{@pgattr_attnames});
+	}
+	$catalog_attinfo{toast} = [
+		{ name => 'chunk_id', type => 'oid', collation => 0 },
+		{ name => 'chunk_seq', type => 'int4', collation => 0 },
+		{ name => 'chunk_data', type => 'bytea', collation => 0 }
+	];
+	print $catrels_fh
+	  "\nstatic const FormData_pg_attribute CatalogToastAttrs[] = {\n",
+	  join(",\n", @rows), "\n};\n";
+	my $toast_index = catalog_index_entry('toast', 'toast_index', 0, 1,
+		'btree(chunk_id oid_ops, chunk_seq int4_ops)');
+	$toast_index =~ s/,\n$/;\n/;
+	print $catrels_fh "\nstatic const CatalogIndex CatalogToastIndex =\n",
+	  $toast_index;
+}
+
+# Closing boilerplate for catalog_relations.h
+print $catrels_fh "\n#endif\t\t\t\t\t\t\t/* CATALOG_RELATIONS_H */\n";
+
 # Now generate system_fk_info.h
 
 print_boilerplate($fk_info, "system_fk_info.h",
@@ -850,6 +1015,7 @@ close $fk_info;
 close $constraints;
 close $syscache_ids_fh;
 close $syscache_info_fh;
+close $catrels_fh;
 
 # Finally, rename the completed files into place.
 Catalog::RenameTempFile($bkifile, $tmpext);
@@ -858,16 +1024,17 @@ Catalog::RenameTempFile($fk_info_file, $tmpext);
 Catalog::RenameTempFile($constraints_file, $tmpext);
 Catalog::RenameTempFile($syscache_ids_file, $tmpext);
 Catalog::RenameTempFile($syscache_info_file, $tmpext);
+Catalog::RenameTempFile($catrels_file, $tmpext);
 
 exit($num_errors != 0 ? 1 : 0);
 
 #################### Subroutines ########################
 
 
-# For each catalog marked as needing a schema macro, generate the
-# per-user-attribute data to be incorporated into schemapg.h.  Also, for
-# bootstrap catalogs, emit pg_attribute entries into the .bki file
-# for both user and system attributes.
+# For each catalog, generate the per-user-attribute data to be
+# incorporated into schemapg.h.  Also, for bootstrap catalogs, emit
+# pg_attribute entries into the .bki file for both user and system
+# attributes.
 sub gen_pg_attribute
 {
 	my $schema = shift;
@@ -878,15 +1045,18 @@ sub gen_pg_attribute
 		push @attnames, $column->{name};
 	}
 
+	# catalog_relations.h builds pg_attribute rows of its own later
+	$pgattr_schema = $schema;
+	@pgattr_attnames = @attnames;
+
 	foreach my $table_name (@catnames)
 	{
 		my $table = $catalogs{$table_name};
 
-		# Currently, all bootstrap catalogs also need schemapg.h
-		# entries, so skip if it isn't to be in schemapg.h.
-		next if !$table->{schema_macro};
-
+		# Every catalog gets schemapg.h entries: relcache.c needs them
+		# for the bootstrap catalogs, catalog_relations.h for all.
 		$schemapg_entries{$table_name} = [];
+		$catalog_attinfo{$table_name} = [];
 		push @tables_needing_macros, $table_name;
 
 		# Generate entries for user attributes.
@@ -908,6 +1078,14 @@ sub gen_pg_attribute
 
 			# If it's bootstrapped, put an entry in postgres.bki.
 			print_bki_insert(\%row, $schema) if $table->{bootstrap};
+
+			# Store what catalog_relations.h needs about the column.
+			push @{ $catalog_attinfo{$table_name} },
+			  {
+				name => $row{attname},
+				type => $attr->{type},
+				collation => $row{attcollation}
+			  };
 
 			# Store schemapg entries for later.
 			morph_row_for_schemapg(\%row, $schema);
@@ -959,6 +1137,24 @@ sub morph_row_for_pgattr
 
 	# Copy the type data from pg_type, and add some type-dependent items
 	my $type = $types{$atttype};
+
+	# An array of a catalog's row type (pg_statistic_ext_data.stxdexpr) is
+	# created at bootstrap and has no pg_type.dat entry; describe it as
+	# TypeCreate() will, with no type OID.  Only schemapg.h sees this row:
+	# a bootstrap catalog has no such column.
+	if (!defined $type && $atttype =~ /^_pg_/)
+	{
+		$type = {
+			oid => 0,
+			typlen => '-1',
+			typbyval => 'f',
+			typalign => 'd',
+			typstorage => 'x',
+			typcategory => 'A',
+			typcollation => '0'
+		};
+	}
+	die "unknown type $atttype of column $attname\n" if !defined $type;
 
 	$row->{atttypid} = $type->{oid};
 	$row->{attlen} = $type->{typlen};
@@ -1163,6 +1359,77 @@ sub assign_next_oid
 	  if $result >= $FirstUnpinnedObjectId;
 
 	return $result;
+}
+
+# The initializer of one CatalogIndex of catalog_relations.h: a catalog
+# index, parsed from its DECLARE_INDEX declaration, with the key columns
+# resolved against the catalog's columns and their operator classes
+# resolved against pg_opclass.dat, pg_opfamily.dat and pg_amproc.dat.
+sub catalog_index_entry
+{
+	my ($catname, $indexname, $indexoid, $is_unique, $decl) = @_;
+	my $attinfo = $catalog_attinfo{$catname};
+	my @keys;
+
+	$decl =~ /^btree\((.+)\)$/
+	  or die "$indexname: cannot parse declaration \"$decl\"\n";
+	foreach my $key (split /,\s*/, $1)
+	{
+		my ($colname, $opcname) = $key =~ /^(\w+) (\w+)$/
+		  or die
+		  "$indexname: key \"$key\" is not a plain column with an operator class\n";
+		my ($attnum) =
+		  grep { $attinfo->[ $_ - 1 ]{name} eq $colname } (1 .. @$attinfo);
+		die "$indexname: no column \"$colname\" in $catname\n" if !$attnum;
+
+		my $opclass = $btree_opclasses{$opcname}
+		  or die "$indexname: no btree operator class \"$opcname\"\n";
+		my $opfamily = $opfoids{ $opclass->{opcfamily} }
+		  or die "$indexname: no operator family \"$opclass->{opcfamily}\"\n";
+		my $opcintype = $opclass->{opcintype};
+		my @support = (0) x $CATALOG_INDEX_NSUPPORT;
+
+		foreach my $row (@{ $catalog_data{pg_amproc} })
+		{
+			next
+			  if $row->{amprocfamily} ne $opclass->{opcfamily}
+			  || $row->{amproclefttype} ne $opcintype
+			  || $row->{amprocrighttype} ne $opcintype;
+			die
+			  "$indexname: support procedure number $row->{amprocnum} is out of range\n"
+			  if $row->{amprocnum} > $CATALOG_INDEX_NSUPPORT;
+			my $procoid = $procoids{ $row->{amproc} }
+			  or die "$indexname: no procedure \"$row->{amproc}\"\n";
+			$support[ $row->{amprocnum} - 1 ] = $procoid;
+		}
+		die "$indexname: no comparison procedure for $opcname\n"
+		  if !$support[0];
+
+		my $keytype = $opclass->{opckeytype};
+		my $keytyperow = defined $keytype ? $types{$keytype} : undef;
+
+		push @keys,
+		  sprintf(
+			"{%d, %s, %s, %s, %s, %s, %s, '%s', '%s', {%s}}",
+			$attnum,
+			$opfamily,
+			$typeoids{$opcintype},
+			$attinfo->[ $attnum - 1 ]{collation},
+			$keytyperow ? $typeoids{$keytype}   : 0,
+			$keytyperow ? $keytyperow->{typlen} : 0,
+			$keytyperow
+			? ($keytyperow->{typbyval} eq 't' ? 'true' : 'false')
+			: 'false',
+			$keytyperow ? $keytyperow->{typalign}   : 'c',
+			$keytyperow ? $keytyperow->{typstorage} : 'p',
+			join(', ', @support));
+	}
+	die "$indexname has more than $CATALOG_INDEX_MAX_KEYS key columns\n"
+	  if @keys > $CATALOG_INDEX_MAX_KEYS;
+
+	return sprintf "\t{%s, \"%s\", %s, %d, {%s}},\n",
+	  $indexoid, $indexname, $is_unique ? 'true' : 'false',
+	  scalar @keys, join(', ', @keys);
 }
 
 sub print_boilerplate
