@@ -77,4 +77,12 @@ tests += {
       '--temp-config', files('extra.conf'),
     ],
   },
+  'tap': {
+    'env': {
+      'enable_injection_points': 'yes',
+    },
+    'tests': [
+      't/001_repack_error_context.pl',
+    ],
+  },
 }
