@@ -209,8 +209,10 @@ typedef struct RI_CompareHashEntry
 {
 	RI_CompareKey key;
 	bool		valid;			/* successfully initialized? */
+	bool		needs_coercion; /* values not binary-coercible to op input? */
+	int16		typlen;			/* typlen and typbyval of typeid, to compare */
+	bool		typbyval;		/* images when needs_coercion is set */
 	FmgrInfo	eq_opr_finfo;	/* call info for equality fn */
-	FmgrInfo	cast_func_finfo;	/* in case we must coerce input */
 } RI_CompareHashEntry;
 
 /*
@@ -3803,7 +3805,9 @@ ri_KeysEqual(Relation rel, TupleTableSlot *oldslot, TupleTableSlot *newslot,
  * Call the appropriate comparison operator for two values.
  * Normally this is equality, but for the PERIOD part of foreign keys
  * it is ContainedBy, so the order of lhs vs rhs is significant.
- * See below for how the collation is applied.
+ * See below for how the collation is applied.  If the values are not
+ * binary-coercible to the operator's input type, their images are compared
+ * instead.
  *
  * NB: we have already checked that neither value is null.
  */
@@ -3813,18 +3817,16 @@ ri_CompareWithCast(Oid eq_opr, Oid typeid, Oid collid,
 {
 	RI_CompareHashEntry *entry = ri_HashCompareOp(eq_opr, typeid);
 
-	/* Do we need to cast the values? */
-	if (OidIsValid(entry->cast_func_finfo.fn_oid))
-	{
-		lhs = FunctionCall3(&entry->cast_func_finfo,
-							lhs,
-							Int32GetDatum(-1),	/* typmod */
-							BoolGetDatum(false));	/* implicit coercion */
-		rhs = FunctionCall3(&entry->cast_func_finfo,
-							rhs,
-							Int32GetDatum(-1),	/* typmod */
-							BoolGetDatum(false));	/* implicit coercion */
-	}
+	/*
+	 * If the values are not binary-coercible to the operator's input type,
+	 * compare their images instead of coercing them.  Coercing them here
+	 * would mean reproducing what the check's query does when it applies the
+	 * coercion as an expression, and isn't needed: identical images satisfy
+	 * the operator, and treating different images as unequal only means the
+	 * caller runs a check it might have skipped.
+	 */
+	if (entry->needs_coercion)
+		return datum_image_eq(lhs, rhs, entry->typbyval, entry->typlen);
 
 	/*
 	 * Apply the comparison operator.
@@ -3886,55 +3888,24 @@ ri_HashCompareOp(Oid eq_opr, Oid typeid)
 	if (!entry->valid)
 	{
 		Oid			lefttype,
-					righttype,
-					castfunc;
-		CoercionPathType pathtype;
+					righttype;
 
 		/* We always need to know how to call the equality operator */
 		fmgr_info_cxt(get_opcode(eq_opr), &entry->eq_opr_finfo,
 					  TopMemoryContext);
 
 		/*
-		 * If we chose to use a cast from FK to PK type, we may have to apply
-		 * the cast function to get to the operator's input type.
-		 *
-		 * XXX eventually it would be good to support array-coercion cases
-		 * here and in ri_CompareWithCast().  At the moment there is no point
-		 * because cases involving nonidentical array types will be rejected
-		 * at constraint creation time.
-		 *
-		 * XXX perhaps also consider supporting CoerceViaIO?  No need at the
-		 * moment since that will never be generated for implicit coercions.
+		 * If we chose to use a cast from FK to PK type, the values may need a
+		 * coercion to get to the operator's input type: a cast function, an
+		 * array coercion, or a coercion via I/O.  ri_CompareWithCast() then
+		 * compares their images instead; see there.  IsBinaryCoercible() also
+		 * accepts a polymorphic input type such as ANYARRAY or ANYENUM, and
+		 * RECORD for a composite type, which need no coercion either.
 		 */
 		op_input_types(eq_opr, &lefttype, &righttype);
 		Assert(lefttype == righttype);
-		if (typeid == lefttype)
-			castfunc = InvalidOid;	/* simplest case */
-		else
-		{
-			pathtype = find_coercion_pathway(lefttype, typeid,
-											 COERCION_IMPLICIT,
-											 &castfunc);
-			if (pathtype != COERCION_PATH_FUNC &&
-				pathtype != COERCION_PATH_RELABELTYPE)
-			{
-				/*
-				 * The declared input type of the eq_opr might be a
-				 * polymorphic type such as ANYARRAY or ANYENUM, or other
-				 * special cases such as RECORD; find_coercion_pathway
-				 * currently doesn't subsume these special cases.
-				 */
-				if (!IsBinaryCoercible(typeid, lefttype))
-					elog(ERROR, "no conversion function from %s to %s",
-						 format_type_be(typeid),
-						 format_type_be(lefttype));
-			}
-		}
-		if (OidIsValid(castfunc))
-			fmgr_info_cxt(castfunc, &entry->cast_func_finfo,
-						  TopMemoryContext);
-		else
-			entry->cast_func_finfo.fn_oid = InvalidOid;
+		entry->needs_coercion = !IsBinaryCoercible(typeid, lefttype);
+		get_typlenbyval(typeid, &entry->typlen, &entry->typbyval);
 		entry->valid = true;
 	}
 

@@ -4206,3 +4206,130 @@ ERROR:  insert or update on table "ri_fk_io" violates foreign key constraint "ri
 DETAIL:  Key (a)=(2) is not present in table "ri_pk".
 ROLLBACK TO SAVEPOINT s;
 ROLLBACK;
+--
+-- UPDATEs of referencing rows whose key type needs a coercion to reach the
+-- equality operator's input type.  ri_KeysEqual() decides whether the key
+-- changed without applying the coercion; a check it can't skip applies it in
+-- its query.  Each statement runs in its own transaction, because
+-- ri_KeysEqual() is not consulted for rows inserted by the same transaction.
+--
+CREATE SCHEMA ri_upd_cast;
+SET search_path = ri_upd_cast;
+CREATE TABLE pk (id int4 PRIMARY KEY);
+INSERT INTO pk VALUES (1);
+-- A cast that returns NULL for one value, later replaced and dropped.
+CREATE TYPE word AS ENUM ('one', 'none');
+CREATE FUNCTION word_to_int4(word) RETURNS int4
+    LANGUAGE sql IMMUTABLE AS $$ SELECT CASE WHEN $1::text = 'one' THEN 1 END $$;
+CREATE CAST (word AS int4) WITH FUNCTION word_to_int4(word) AS IMPLICIT;
+CREATE TABLE fk_word (a word REFERENCES pk, n int);
+INSERT INTO fk_word VALUES ('one', 0);
+UPDATE fk_word SET n = n + 1;
+UPDATE fk_word SET a = 'none';	-- fails, as a violation
+ERROR:  insert or update on table "fk_word" violates foreign key constraint "fk_word_a_fkey"
+DETAIL:  Key (a)=(none) is not present in table "pk".
+CREATE FUNCTION word_to_int4_v2(word) RETURNS int4
+    LANGUAGE sql IMMUTABLE AS $$ SELECT 1 $$;
+DROP CAST (word AS int4);
+CREATE CAST (word AS int4) WITH FUNCTION word_to_int4_v2(word) AS IMPLICIT;
+DROP FUNCTION word_to_int4(word);
+UPDATE fk_word SET n = n + 1;	-- must not call the dropped function
+UPDATE fk_word SET a = 'none';	-- succeeds through the new cast
+SELECT * FROM fk_word;
+  a   | n 
+------+---
+ none | 2
+(1 row)
+
+-- A collation-sensitive cast from a collatable type.
+CREATE TYPE ctext;
+CREATE FUNCTION ctext_in(cstring) RETURNS ctext
+    AS 'textin' LANGUAGE internal IMMUTABLE STRICT;
+NOTICE:  return type ctext is only a shell
+CREATE FUNCTION ctext_out(ctext) RETURNS cstring
+    AS 'textout' LANGUAGE internal IMMUTABLE STRICT;
+NOTICE:  argument type ctext is only a shell
+LINE 1: CREATE FUNCTION ctext_out(ctext) RETURNS cstring
+                                  ^
+CREATE TYPE ctext (INPUT = ctext_in, OUTPUT = ctext_out,
+                   LIKE = text, COLLATABLE = true);
+CREATE FUNCTION ctext_lower(ctext) RETURNS text
+    AS 'lower' LANGUAGE internal IMMUTABLE STRICT;
+CREATE CAST (ctext AS text) WITH FUNCTION ctext_lower(ctext) AS IMPLICIT;
+CREATE TABLE pk_text (k text PRIMARY KEY);
+INSERT INTO pk_text VALUES ('abc');
+CREATE TABLE fk_text (a ctext REFERENCES pk_text, n int);
+INSERT INTO fk_text VALUES ('ABC', 0);
+UPDATE fk_text SET n = n + 1;
+SELECT * FROM fk_text;
+  a  | n 
+-----+---
+ ABC | 1
+(1 row)
+
+-- An array coercion (int2[] to int4[], allowed with an opclass declared for
+-- int4[]), which has no single cast function.
+CREATE FUNCTION i4a_lt(int4[], int4[]) RETURNS bool
+    AS 'array_lt' LANGUAGE internal IMMUTABLE STRICT;
+CREATE FUNCTION i4a_le(int4[], int4[]) RETURNS bool
+    AS 'array_le' LANGUAGE internal IMMUTABLE STRICT;
+CREATE FUNCTION i4a_eq(int4[], int4[]) RETURNS bool
+    AS 'array_eq' LANGUAGE internal IMMUTABLE STRICT;
+CREATE FUNCTION i4a_ge(int4[], int4[]) RETURNS bool
+    AS 'array_ge' LANGUAGE internal IMMUTABLE STRICT;
+CREATE FUNCTION i4a_gt(int4[], int4[]) RETURNS bool
+    AS 'array_gt' LANGUAGE internal IMMUTABLE STRICT;
+CREATE FUNCTION i4a_cmp(int4[], int4[]) RETURNS int4
+    AS 'btarraycmp' LANGUAGE internal IMMUTABLE STRICT;
+CREATE OPERATOR ri_upd_cast.<<< (LEFTARG = int4[], RIGHTARG = int4[], FUNCTION = i4a_lt);
+CREATE OPERATOR ri_upd_cast.<<= (LEFTARG = int4[], RIGHTARG = int4[], FUNCTION = i4a_le);
+CREATE OPERATOR ri_upd_cast.=== (LEFTARG = int4[], RIGHTARG = int4[], FUNCTION = i4a_eq);
+CREATE OPERATOR ri_upd_cast.>>= (LEFTARG = int4[], RIGHTARG = int4[], FUNCTION = i4a_ge);
+CREATE OPERATOR ri_upd_cast.>>> (LEFTARG = int4[], RIGHTARG = int4[], FUNCTION = i4a_gt);
+CREATE OPERATOR CLASS i4a_ops FOR TYPE int4[] USING btree AS
+    OPERATOR 1 ri_upd_cast.<<<, OPERATOR 2 ri_upd_cast.<<=,
+    OPERATOR 3 ri_upd_cast.===, OPERATOR 4 ri_upd_cast.>>=,
+    OPERATOR 5 ri_upd_cast.>>>, FUNCTION 1 i4a_cmp(int4[], int4[]);
+CREATE TABLE pk_arr (k int4[]);
+CREATE UNIQUE INDEX ON pk_arr (k i4a_ops);
+INSERT INTO pk_arr VALUES ('{1,2}');
+CREATE TABLE fk_arr (a int2[] REFERENCES pk_arr (k), n int);
+INSERT INTO fk_arr VALUES ('{1,2}', 0);
+UPDATE fk_arr SET n = n + 1;
+UPDATE fk_arr SET a = '{3}';	-- fails, as a violation
+ERROR:  insert or update on table "fk_arr" violates foreign key constraint "fk_arr_a_fkey"
+DETAIL:  Key (a)=({3}) is not present in table "pk_arr".
+SELECT * FROM fk_arr;
+   a   | n 
+-------+---
+ {1,2} | 1
+(1 row)
+
+-- A coercion via I/O, which has no cast function either.
+CREATE TYPE ioint;
+CREATE FUNCTION ioint_in(cstring) RETURNS ioint
+    AS 'int4in' LANGUAGE internal IMMUTABLE STRICT;
+NOTICE:  return type ioint is only a shell
+CREATE FUNCTION ioint_out(ioint) RETURNS cstring
+    AS 'int4out' LANGUAGE internal IMMUTABLE STRICT;
+NOTICE:  argument type ioint is only a shell
+LINE 1: CREATE FUNCTION ioint_out(ioint) RETURNS cstring
+                                  ^
+CREATE TYPE ioint (INPUT = ioint_in, OUTPUT = ioint_out, LIKE = int4);
+CREATE CAST (ioint AS int4) WITH INOUT AS IMPLICIT;
+CREATE TABLE fk_io (a ioint REFERENCES pk, n int);
+INSERT INTO fk_io VALUES ('1', 0);
+UPDATE fk_io SET n = n + 1;
+UPDATE fk_io SET a = '2';	-- fails, as a violation
+ERROR:  insert or update on table "fk_io" violates foreign key constraint "fk_io_a_fkey"
+DETAIL:  Key (a)=(2) is not present in table "pk".
+SELECT * FROM fk_io;
+ a | n 
+---+---
+ 1 | 1
+(1 row)
+
+RESET search_path;
+SET client_min_messages = warning;
+DROP SCHEMA ri_upd_cast CASCADE;
+RESET client_min_messages;
