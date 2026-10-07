@@ -238,7 +238,7 @@ extern PGDLLIMPORT MemoryContext ApplyContext;
 
 extern PGDLLIMPORT MemoryContext ApplyMessageContext;
 
-extern PGDLLIMPORT ErrorContextCallback *apply_error_context_stack;
+extern PGDLLIMPORT ErrorContextCallback *apply_loop_outer_error_context_stack;
 
 extern PGDLLIMPORT ParallelApplyWorkerShared *MyParallelShared;
 
