@@ -1,0 +1,92 @@
+Parsed test spec with 3 sessions
+
+starting permutation: s1_begin s1_update_nori s2_add_schema s3_update_ri s1_commit s3_update_nori
+step s1_begin: BEGIN;
+step s1_update_nori: UPDATE sch1.t_nori SET val = 2 WHERE id = 1;
+step s2_add_schema: ALTER PUBLICATION pub1 ADD TABLES IN SCHEMA sch1; <waiting ...>
+step s3_update_ri: UPDATE sch1.t_ri SET val = 2 WHERE id = 1;
+step s1_commit: COMMIT;
+step s2_add_schema: <... completed>
+step s3_update_nori: UPDATE sch1.t_nori SET val = 3 WHERE id = 1;
+ERROR:  cannot update table "t_nori" because it does not have a replica identity and publishes updates
+
+starting permutation: s1_begin s1_update_nori s2_add_schema_ins s3_update_ins s1_commit
+step s1_begin: BEGIN;
+step s1_update_nori: UPDATE sch1.t_nori SET val = 2 WHERE id = 1;
+step s2_add_schema_ins: ALTER PUBLICATION pub_ins ADD TABLES IN SCHEMA sch2;
+step s3_update_ins: UPDATE sch2.t_ins SET val = 2 WHERE id = 1;
+step s1_commit: COMMIT;
+
+starting permutation: s1_begin s1_update_w s2_set_publish_w s1_commit s3_update_w
+step s1_begin: BEGIN;
+step s1_update_w: UPDATE sch3.t_w SET val = 2 WHERE id = 1;
+step s2_set_publish_w: ALTER PUBLICATION pub_w SET (publish = 'insert, update'); <waiting ...>
+step s1_commit: COMMIT;
+step s2_set_publish_w: <... completed>
+step s3_update_w: UPDATE sch3.t_w SET val = 3 WHERE id = 1;
+ERROR:  cannot update table "t_w" because it does not have a replica identity and publishes updates
+
+starting permutation: s1_begin s1_update_nori s2_create_all s1_commit s3_update_nori s2_drop_all
+step s1_begin: BEGIN;
+step s1_update_nori: UPDATE sch1.t_nori SET val = 2 WHERE id = 1;
+step s2_create_all: CREATE PUBLICATION pub_all FOR ALL TABLES; <waiting ...>
+step s1_commit: COMMIT;
+step s2_create_all: <... completed>
+step s3_update_nori: UPDATE sch1.t_nori SET val = 3 WHERE id = 1;
+ERROR:  cannot update table "t_nori" because it does not have a replica identity and publishes updates
+step s2_drop_all: DROP PUBLICATION pub_all;
+
+starting permutation: s1_begin s1_update_nori s2_create_schema s1_commit s3_update_nori
+step s1_begin: BEGIN;
+step s1_update_nori: UPDATE sch1.t_nori SET val = 2 WHERE id = 1;
+step s2_create_schema: CREATE PUBLICATION pub_create FOR TABLES IN SCHEMA sch1; <waiting ...>
+step s1_commit: COMMIT;
+step s2_create_schema: <... completed>
+step s3_update_nori: UPDATE sch1.t_nori SET val = 3 WHERE id = 1;
+ERROR:  cannot update table "t_nori" because it does not have a replica identity and publishes updates
+
+starting permutation: s2_begin s2_add_empty s3_create_in_emp s3_begin s3_update_emp s2_commit s3_commit
+step s2_begin: BEGIN;
+step s2_add_empty: ALTER PUBLICATION pub_emp ADD TABLES IN SCHEMA sch_emp;
+step s3_create_in_emp: CREATE TABLE sch_emp.t_new (id int, val int);
+step s3_begin: BEGIN;
+step s3_update_emp: UPDATE sch_emp.t_new SET val = 1 WHERE id = 1; <waiting ...>
+step s2_commit: COMMIT;
+step s3_update_emp: <... completed>
+ERROR:  cannot update table "t_new" because it does not have a replica identity and publishes updates
+step s3_commit: COMMIT;
+
+starting permutation: s1_begin s1_update_nori s2_begin s2_setall s1_commit s3_create_new s3_begin s3_update_new s2_commit s3_commit
+step s1_begin: BEGIN;
+step s1_update_nori: UPDATE sch1.t_nori SET val = 2 WHERE id = 1;
+step s2_begin: BEGIN;
+step s2_setall: ALTER PUBLICATION pub_setall SET ALL TABLES; <waiting ...>
+step s1_commit: COMMIT;
+step s2_setall: <... completed>
+step s3_create_new: CREATE TABLE t_new (id int, val int);
+step s3_begin: BEGIN;
+step s3_update_new: UPDATE t_new SET val = 1 WHERE id = 1; <waiting ...>
+step s2_commit: COMMIT;
+step s3_update_new: <... completed>
+ERROR:  cannot update table "t_new" because it does not have a replica identity and publishes updates
+step s3_commit: COMMIT;
+
+starting permutation: s2_begin s2_add_schema_flip s3_flip s3_begin s3_update_ri2 s2_commit s3_commit
+step s2_begin: BEGIN;
+step s2_add_schema_flip: ALTER PUBLICATION pub_flip ADD TABLES IN SCHEMA sch1;
+step s3_flip: ALTER TABLE sch1.t_ri REPLICA IDENTITY NOTHING;
+step s3_begin: BEGIN;
+step s3_update_ri2: UPDATE sch1.t_ri SET val = 3 WHERE id = 1; <waiting ...>
+step s2_commit: COMMIT;
+step s3_update_ri2: <... completed>
+ERROR:  cannot update table "t_ri" because it does not have a replica identity and publishes updates
+step s3_commit: COMMIT;
+
+starting permutation: s1_begin s1_update_attach s2_attach s1_commit s3_update_attach
+step s1_begin: BEGIN;
+step s1_update_attach: UPDATE t_attach SET val = 2 WHERE id = 1;
+step s2_attach: ALTER TABLE schp.part ATTACH PARTITION t_attach FOR VALUES FROM (1000) TO (2000); <waiting ...>
+step s1_commit: COMMIT;
+step s2_attach: <... completed>
+step s3_update_attach: UPDATE t_attach SET val = 3 WHERE id = 1;
+ERROR:  cannot update table "t_attach" because it does not have a replica identity and publishes updates
