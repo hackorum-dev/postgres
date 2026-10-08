@@ -1425,6 +1425,37 @@ substitute_grouped_columns_mutator(Node *node,
 	}
 
 	/*
+	 * GROUP BY of a Const or Param refers to one targetlist entry.  Other
+	 * occurrences of the same value are not that column, so they must not
+	 * be replaced.
+	 */
+	if (context->sublevels_up == 0 &&
+		context->have_non_var_grouping &&
+		IsA(node, TargetEntry))
+	{
+		TargetEntry *tle = (TargetEntry *) node;
+		int			attnum = 0;
+
+		foreach(gl, context->groupClauses)
+		{
+			TargetEntry *grouptle = (TargetEntry *) lfirst(gl);
+
+			attnum++;
+			if (tle->ressortgroupref == grouptle->ressortgroupref &&
+				grouptle->ressortgroupref != 0 &&
+				(IsA(grouptle->expr, Const) || IsA(grouptle->expr, Param)))
+			{
+				TargetEntry *newtle = copyObject(tle);
+
+				newtle->expr = (Expr *) buildGroupedVar(attnum,
+														grouptle->ressortgroupref,
+														context);
+				return (Node *) newtle;
+			}
+		}
+	}
+
+	/*
 	 * If we have any GROUP BY items that are not simple Vars, check to see if
 	 * subexpression as a whole matches any GROUP BY item. We need to do this
 	 * at every recursion level so that we recognize GROUPed-BY expressions
@@ -1448,6 +1479,13 @@ substitute_grouped_columns_mutator(Node *node,
 			TargetEntry *tle = (TargetEntry *) lfirst(gl);
 
 			attnum++;
+
+			/*
+			 * Const and Param items were matched by targetlist entry above.
+			 */
+			if (IsA(tle->expr, Const) || IsA(tle->expr, Param))
+				continue;
+
 			if (equal(node, tle->expr))
 			{
 				/* acceptable, replace it with a GROUP Var */
@@ -1459,10 +1497,9 @@ substitute_grouped_columns_mutator(Node *node,
 	}
 
 	/*
-	 * Constants are always acceptable.  We have to do this after we checked
-	 * the subexpression as a whole for a match, because it is possible that
-	 * we have GROUP BY items that are constants, and the constants would
-	 * become not so constant after the grouping step.
+	 * Constants are always acceptable.  The grouped Const or Param itself
+	 * was replaced with its targetlist entry.  Any other constant is still
+	 * constant after grouping.
 	 */
 	if (IsA(node, Const) ||
 		IsA(node, Param))
