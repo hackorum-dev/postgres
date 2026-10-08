@@ -609,7 +609,9 @@ join_is_legal(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 		 * other join rel need not be formed, and that could lead to failure
 		 * to find any plan at all.  We have to consider not only rels that
 		 * are directly on the inner side of an OJ with the joinrel, but also
-		 * ones that are indirectly so, so search to find all such rels.
+		 * ones that are indirectly so, so search to find all such rels.  Any
+		 * rel that laterally references one of those rels must end up inside
+		 * the same outer join too, so include such rels in the search.
 		 */
 		join_lateral_rels = min_join_parameterization(root, joinrelids,
 													  rel1, rel2);
@@ -634,6 +636,22 @@ join_is_legal(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 					{
 						join_plus_rhs = bms_add_members(join_plus_rhs,
 														sjinfo->min_righthand);
+						more = true;
+					}
+				}
+
+				/* add rels that laterally reference any rel found so far */
+				for (int rti = 1; rti < root->simple_rel_array_size; rti++)
+				{
+					RelOptInfo *brel = root->simple_rel_array[rti];
+
+					if (brel == NULL || brel->reloptkind != RELOPT_BASEREL)
+						continue;
+
+					if (!bms_is_member(rti, join_plus_rhs) &&
+						bms_overlap(brel->lateral_relids, join_plus_rhs))
+					{
+						join_plus_rhs = bms_add_member(join_plus_rhs, rti);
 						more = true;
 					}
 				}
