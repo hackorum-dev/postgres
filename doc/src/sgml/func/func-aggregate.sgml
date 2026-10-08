@@ -432,7 +432,9 @@
         are coerced to text; value arguments are converted as per
         <function>to_json</function> or <function>to_jsonb</function>.
         The <parameter>key</parameter> cannot be null. If the
-        <parameter>value</parameter> is null then the entry is skipped,
+        <parameter>value</parameter> is null then the entry is skipped.
+        <function>jsonb_object_agg_strict</function> also skips an entry
+        whose value is a JSON <literal>null</literal>.
        </para></entry>
        <entry>No</entry>
       </row>
@@ -491,6 +493,8 @@
         <function>to_json</function> or <function>to_jsonb</function>.
         The <parameter>key</parameter> cannot be null. If the
         <parameter>value</parameter> is null then the entry is skipped.
+        <function>jsonb_object_agg_unique_strict</function> also skips an
+        entry whose value is a JSON <literal>null</literal>.
         If there is a duplicate key an error is thrown.
        </para></entry>
        <entry>No</entry>
