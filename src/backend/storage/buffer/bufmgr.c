@@ -3196,6 +3196,9 @@ MarkBufferDirty(Buffer buffer)
 	 * TerminateBufferIO() relies on the spinlock.
 	 */
 	old_buf_state = pg_atomic_read_u64(&bufHdr->state);
+
+	/* The following loop considers only the low half of the state */
+	Assert(((BM_DIRTY | BM_LOCKED) & 0xffffffff00000000) == 0);
 	for (;;)
 	{
 		if (old_buf_state & BM_LOCKED)
@@ -3206,8 +3209,8 @@ MarkBufferDirty(Buffer buffer)
 		Assert(BUF_STATE_GET_REFCOUNT(buf_state) > 0);
 		buf_state |= BM_DIRTY;
 
-		if (pg_atomic_compare_exchange_u64(&bufHdr->state, &old_buf_state,
-										   buf_state))
+		if (pg_atomic_compare_exchange_u64_lo(&bufHdr->state, &old_buf_state,
+											  buf_state))
 			break;
 	}
 
@@ -3314,6 +3317,14 @@ PinBuffer(BufferDesc *buf, BufferAccessStrategy strategy,
 		uint64		old_buf_state;
 
 		old_buf_state = pg_atomic_read_u64(&buf->state);
+
+		/* The following loop considers only the low-half of the state */
+		Assert(((
+			BM_VALID |
+			BM_LOCKED |
+			BUF_REFCOUNT_MASK |
+			BUF_USAGECOUNT_MASK
+		) & 0xffffffff00000000) == 0);
 		for (;;)
 		{
 			if (unlikely(skip_if_not_valid && !(old_buf_state & BM_VALID)))
@@ -3352,7 +3363,7 @@ PinBuffer(BufferDesc *buf, BufferAccessStrategy strategy,
 					buf_state += BUF_USAGECOUNT_ONE;
 			}
 
-			if (pg_atomic_compare_exchange_u64(&buf->state, &old_buf_state,
+			if (pg_atomic_compare_exchange_u64_lo(&buf->state, &old_buf_state,
 											   buf_state))
 			{
 				result = (buf_state & BM_VALID) != 0;
@@ -6155,7 +6166,14 @@ BufferLockAttempt(BufferDesc *buf_hdr, BufferLockMode mode)
 	 */
 	old_state = pg_atomic_read_u64(&buf_hdr->state);
 
-	/* loop until we've determined whether we could acquire the lock or not */
+	/* loop until we've determined whether we could acquire the lock or not.
+	 * This loop considers only half of the state */
+	Assert(((
+			BM_LOCK_VAL_EXCLUSIVE |
+			BM_LOCK_VAL_SHARED |
+			BM_LOCK_VAL_SHARE_EXCLUSIVE
+		) & 0x00000000ffffffff) == 0
+	);
 	while (true)
 	{
 		uint64		desired_state;
@@ -6192,8 +6210,8 @@ BufferLockAttempt(BufferDesc *buf_hdr, BufferLockMode mode)
 		 *
 		 * Retry if the value changed since we last looked at it.
 		 */
-		if (likely(pg_atomic_compare_exchange_u64(&buf_hdr->state,
-												  &old_state, desired_state)))
+		if (likely(pg_atomic_compare_exchange_u64_hi(&buf_hdr->state,
+													 &old_state, desired_state)))
 		{
 			if (lock_free)
 			{
@@ -7076,6 +7094,11 @@ SharedBufferBeginSetHintBits(Buffer buffer, BufferDesc *buf_hdr, uint64 *locksta
 		/* new lock level */
 		desired_state += BM_LOCK_VAL_SHARE_EXCLUSIVE;
 
+		/*
+		 * XXX: We could use pg_atomic_compare_exchange_u64_hi here.
+		 * However, doesn't update BM_DIRTY and BM_PERMANENT, used by
+		 * one of the callers.
+		 */
 		if (likely(pg_atomic_compare_exchange_u64(&buf_hdr->state,
 												  &old_state, desired_state)))
 		{
