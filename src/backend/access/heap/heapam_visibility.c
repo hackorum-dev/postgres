@@ -680,21 +680,9 @@ HeapTupleSatisfiesUpdate(HeapTuple htup, CommandId curcid,
 		 * what about the other members?
 		 */
 
-		if (!MultiXactIdIsRunning(HeapTupleHeaderGetRawXmax(tuple), false))
-		{
-			/*
-			 * There's no member, even just a locker, alive anymore, so we can
-			 * mark the Xmax as invalid.
-			 */
-			SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
-						InvalidTransactionId);
-			return TM_Ok;
-		}
-		else
-		{
-			/* There are lockers running */
-			return TM_BeingModified;
-		}
+		SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
+					InvalidTransactionId);
+		return TM_Ok;
 	}
 
 	if (TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetRawXmax(tuple)))
