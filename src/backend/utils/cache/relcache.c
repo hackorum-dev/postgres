@@ -5866,6 +5866,14 @@ RelationBuildPublicationDesc(Relation relation, PublicationDesc *pubdesc)
 		return;
 	}
 
+	/*
+	 * Prevent concurrent publication DDL to publish the table lacking replica
+	 * identity (see LockTablesWithoutReplicaIdentity).
+	 */
+	if (!OidIsValid(RelationGetReplicaIndex(relation)) &&
+		relation->rd_rel->relreplident != REPLICA_IDENTITY_FULL)
+		LockRelationOid(PublicationRelationId, RowExclusiveLock);
+
 	memset(pubdesc, 0, sizeof(PublicationDesc));
 	pubdesc->rf_valid_for_update = true;
 	pubdesc->rf_valid_for_delete = true;
