@@ -2762,4 +2762,44 @@ order by 1, 2;
  2 |   
 (6 rows)
 
+-- a grouped Const names one targetlist entry, not every equal Const
+select ARRAY[]::varchar(500)[] as a
+group by cast('true' as boolean);
+ a  
+----
+ {}
+(1 row)
+
+select ARRAY[]::char(1)[] as a
+group by cast(true as boolean);
+ a  
+----
+ {}
+(1 row)
+
+select ARRAY[]::varchar(500)[] as a
+group by cast(500 as int);
+ a  
+----
+ {}
+(1 row)
+
+select 'ab'::varchar(5) as v, true as t
+group by grouping sets ((cast(true as boolean)), ())
+order by t;
+ v  | t 
+----+---
+ ab | t
+ ab | 
+(2 rows)
+
+select ARRAY[]::varchar(5)[] as a, true as t
+group by grouping sets ((cast(true as boolean)), ())
+order by t;
+ a  | t 
+----+---
+ {} | t
+ {} | 
+(2 rows)
+
 -- end

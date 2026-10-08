@@ -803,4 +803,22 @@ from (values (1, 1), (2, 2)) as t (a, b)
 group by rollup(a, ab)
 order by 1, 2;
 
+-- a grouped Const names one targetlist entry, not every equal Const
+select ARRAY[]::varchar(500)[] as a
+group by cast('true' as boolean);
+
+select ARRAY[]::char(1)[] as a
+group by cast(true as boolean);
+
+select ARRAY[]::varchar(500)[] as a
+group by cast(500 as int);
+
+select 'ab'::varchar(5) as v, true as t
+group by grouping sets ((cast(true as boolean)), ())
+order by t;
+
+select ARRAY[]::varchar(5)[] as a, true as t
+group by grouping sets ((cast(true as boolean)), ())
+order by t;
+
 -- end
