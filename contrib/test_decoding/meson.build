@@ -29,6 +29,7 @@ test_decoding_isolation = [
   'twophase_snapshot',
   'skip_snapshot_restore',
   'invalidation_distribution',
+  'publication-ddl-update',
   'parallel_session_origin',
 ]
 
