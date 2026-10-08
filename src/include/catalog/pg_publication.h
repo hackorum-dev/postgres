@@ -188,6 +188,7 @@ extern List *GetSchemaPublicationRelations(Oid schemaid,
 										   PublicationPartOpt pub_partopt);
 extern List *GetAllSchemaPublicationRelations(Oid pubid,
 											  PublicationPartOpt pub_partopt);
+extern List *GetAllPublishableTables(void);
 extern List *GetPubPartitionOptionRelations(List *result,
 											PublicationPartOpt pub_partopt,
 											Oid relid);

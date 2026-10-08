@@ -1302,6 +1302,40 @@ GetAllSchemaPublicationRelations(Oid pubid, PublicationPartOpt pub_partopt)
 }
 
 /*
+ * Get the list of all plain tables in the database that could be published
+ * by a FOR ALL TABLES publication.
+ */
+List *
+GetAllPublishableTables(void)
+{
+	Relation	classRel;
+	TableScanDesc scan;
+	HeapTuple	tuple;
+	List	   *result = NIL;
+
+	classRel = table_open(RelationRelationId, AccessShareLock);
+
+	scan = table_beginscan_catalog(classRel, 0, NULL);
+	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+	{
+		Form_pg_class relForm = (Form_pg_class) GETSTRUCT(tuple);
+
+		/* Only plain tables receive the data-modifying statements. */
+		if (relForm->relkind != RELKIND_RELATION)
+			continue;
+
+		if (!is_publishable_class(relForm->oid, relForm))
+			continue;
+
+		result = lappend_oid(result, relForm->oid);
+	}
+
+	table_endscan(scan);
+	table_close(classRel, AccessShareLock);
+	return result;
+}
+
+/*
  * Get publication using oid
  *
  * The Publication struct and its data are palloc'ed here.
