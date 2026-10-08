@@ -731,6 +731,9 @@
          if <literal>ABSENT ON NULL</literal> is specified;
          if <literal>NULL ON NULL</literal> is specified or the clause
          omitted, the key is included with value <literal>NULL</literal>.
+         With <literal>ABSENT ON NULL</literal> and
+         <literal>RETURNING jsonb</literal>, a pair whose value is a JSON
+         <literal>null</literal> is omitted as well.
         </para>
         <para>
          <literal>json_object('code' VALUE 'P123', 'title': 'Jaws')</literal>
