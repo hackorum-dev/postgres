@@ -2978,6 +2978,10 @@ SplitTextOutputData
 SplitVar
 StackElem
 StakindFlags
+StarExcludeItem
+StarOptions
+StarRenameItem
+StarReplaceItem
 StartBufferIOResult
 StartDataPtrType
 StartLOPtrType
