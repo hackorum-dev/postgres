@@ -16,7 +16,10 @@ GETTEXT_TRIGGERS = $(BACKEND_COMMON_GETTEXT_TRIGGERS) \
                    ereport_startup_progress \
                    json_token_error:2 \
                    json_manifest_parse_failure:2 \
-                   error_cb:2
+                   error_cb:2 \
+                   json_setting_error:5 \
+                   hba_node_error:5 \
+                   section_shape_error:4
 GETTEXT_FLAGS    = $(BACKEND_COMMON_GETTEXT_FLAGS) \
                    GUC_check_errmsg:1:c-format \
                    GUC_check_errdetail:1:c-format \
@@ -25,7 +28,10 @@ GETTEXT_FLAGS    = $(BACKEND_COMMON_GETTEXT_FLAGS) \
                    report_invalid_record:2:c-format \
                    ereport_startup_progress:1:c-format \
                    json_token_error:2:c-format \
-                   error_cb:2:c-format
+                   error_cb:2:c-format \
+                   json_setting_error:5:c-format \
+                   hba_node_error:5:c-format \
+                   section_shape_error:4:c-format
 
 gettext-files: generated-parser-sources generated-headers
 	find $(srcdir) $(srcdir)/../common $(srcdir)/../port $(srcdir)/../include/ \( -name '*.c' -o -name "proctypelist.h" \) -print | LC_ALL=C sort >$@

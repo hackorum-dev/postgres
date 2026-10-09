@@ -71,6 +71,8 @@
    directory is initialized by <xref linkend="app-initdb"/>.  It is
    possible to place the authentication configuration file elsewhere,
    however; see the <xref linkend="guc-hba-file"/> configuration parameter.
+   The rules can also be written as a JSON document, in the tree format
+   described in <xref linkend="auth-pg-hba-json"/>.
   </para>
 
   <para>
@@ -891,6 +893,312 @@ local   all             @admins,+support                        scram-sha-256
 local   db1,db2,@demodbs  all                                   scram-sha-256
 </programlisting>
    </example>
+
+ </sect1>
+
+ <sect1 id="auth-pg-hba-json">
+  <title>Authentication Rules in a JSON Configuration File</title>
+
+  <indexterm>
+   <primary>pg_hba.json</primary>
+  </indexterm>
+
+  <para>
+   The client authentication rules can also be given as a JSON document.
+   When <xref linkend="guc-hba-file"/> names a file whose name ends in
+   <literal>.json</literal> (customarily <filename>pg_hba.json</filename>),
+   the file is read as such a document instead of in the format described
+   above.  The document is an object whose <literal>hba</literal> key
+   holds the rules; it may also have an <literal>include</literal> key,
+   described below, and any other key is an error.
+  </para>
+
+  <para>
+   The value of <literal>hba</literal> is an object with a single key,
+   <literal>children</literal>, whose value is an array of
+   <firstterm>nodes</firstterm>.  Rather than a flat list of records, the
+   nodes form a tree: a node carries match conditions and authentication
+   options that the nodes below it inherit and can override, and a node is
+   tried before its parent.  A node is an object with these keys, all
+   optional:
+  </para>
+
+  <table id="auth-pg-hba-json-keys">
+   <title>Keys of an <literal>hba</literal> Node</title>
+   <tgroup cols="2">
+    <thead>
+     <row>
+      <entry>Key</entry>
+      <entry>Meaning</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><literal>transport</literal></entry>
+      <entry>
+       <literal>"local"</literal> for Unix-domain socket connections or
+       <literal>"tcp"</literal> for TCP/IP connections.  The default is
+       <literal>"tcp"</literal>.
+      </entry>
+     </row>
+     <row>
+      <entry><literal>ssl</literal>, <literal>gss</literal></entry>
+      <entry>
+       <literal>"require"</literal> or <literal>"forbid"</literal>,
+       constraining the connection to use, or not use,
+       <acronym>SSL</acronym> or <acronym>GSSAPI</acronym> encryption.
+       When absent, both kinds of connections match.
+      </entry>
+     </row>
+     <row>
+      <entry><literal>databases</literal>, <literal>users</literal></entry>
+      <entry>
+       A string or an array of strings, each written as the corresponding
+       field of a <filename>pg_hba.conf</filename> record would be:
+       <literal>all</literal>, <literal>sameuser</literal>,
+       <literal>samerole</literal>, <literal>replication</literal>,
+       <literal>+<replaceable>group</replaceable></literal>,
+       <literal>/<replaceable>regex</replaceable></literal> and
+       <literal>@<replaceable>file</replaceable></literal> keep their
+       meaning.  The default is <literal>all</literal>.
+      </entry>
+     </row>
+     <row>
+      <entry><literal>address</literal></entry>
+      <entry>
+       A string or an array of strings: a CIDR address range, a host name,
+       <literal>samehost</literal>, <literal>samenet</literal> or
+       <literal>all</literal>.  The default is <literal>all</literal>.  A
+       separate netmask field is not available; use CIDR notation.  An IP
+       address without a prefix length is rejected rather than taken as a
+       single host; write <literal>/32</literal> or
+       <literal>/128</literal> for that.
+      </entry>
+     </row>
+     <row>
+      <entry><literal>auth</literal></entry>
+      <entry>
+       An object whose <literal>method</literal> key names the
+       authentication method, and whose other keys are the method's
+       options under their <filename>pg_hba.conf</filename> names, so
+       <literal>{"method": "ldap", "ldapserver": "ldap.example.com",
+       "ldaptls": 1}</literal> is the record
+       <literal>ldap ldapserver=ldap.example.com ldaptls=1</literal>.
+       Option values are strings, numbers or booleans; a boolean is
+       passed as <literal>1</literal> or <literal>0</literal>.
+      </entry>
+     </row>
+     <row>
+      <entry><literal>children</literal></entry>
+      <entry>
+       An array of nodes below this one.
+      </entry>
+     </row>
+     <row>
+      <entry><literal>import</literal></entry>
+      <entry>
+       The name of a file in <filename>pg_hba.conf</filename> format,
+       relative to the JSON file, whose records are inserted at this
+       position.  An import node may carry an <literal>optional</literal>
+       key set to <literal>true</literal>, in which case a missing file is
+       skipped; it may not have any other key.
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>
+   A child node starts out with the effective keys of its parent and
+   overrides them with its own:
+   <itemizedlist>
+    <listitem>
+     <para>
+      The match keys <literal>transport</literal>, <literal>ssl</literal>,
+      <literal>gss</literal>, <literal>databases</literal>,
+      <literal>users</literal> and <literal>address</literal> replace the
+      inherited value.  Whether the child's value is a subset of the
+      parent's is not checked, and usually could not be, as with role
+      memberships and regular expressions.  The nesting is a shorthand for
+      writing the inherited keys again, not a restriction: a child node
+      with <literal>"users": "all"</literal> below a node with
+      <literal>"users": "alice"</literal> matches every user, and does so
+      before the parent's own record is tried.  Match a smaller set in a
+      child, or omit the key to keep the parent's.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <literal>auth</literal> is merged key by key as well, unless the
+      child sets <literal>method</literal>: then the child's
+      <literal>auth</literal> replaces the inherited one entirely, since
+      the inherited options belonged to a different method.  A child
+      without a <literal>method</literal> thus adds options to the
+      inherited method, such as a client certificate requirement on top
+      of an inherited LDAP configuration.
+     </para>
+    </listitem>
+   </itemizedlist>
+  </para>
+
+  <para>
+   The tree is turned into an ordered list of records like those of
+   <filename>pg_hba.conf</filename>, and connections are matched against
+   that list with the first match winning, exactly as described above.
+   The order is depth first: for each node, the records of its children
+   come first, in array order, followed by the node's own record.  A node
+   emits a record of its own only if its effective <literal>auth</literal>
+   has a <literal>method</literal>; a node without one merely groups its
+   children.  A node without <literal>children</literal> must have a
+   method, since it would otherwise do nothing.  The effect is that a
+   more specific node, placed below the general one, is tried first, and
+   that a flat list of records is simply a tree of depth one.
+  </para>
+
+  <para>
+   The connection type of a record is derived from
+   <literal>transport</literal>, <literal>ssl</literal> and
+   <literal>gss</literal> as shown in <xref
+   linkend="auth-pg-hba-json-types"/>.  <literal>ssl</literal> and
+   <literal>gss</literal> cannot both be constrained in one record, and a
+   <literal>local</literal> node cannot have an <literal>address</literal>,
+   <literal>ssl</literal> or <literal>gss</literal> key, whether its own
+   or inherited.  An <literal>address</literal> array produces one record
+   per element.
+  </para>
+
+  <table id="auth-pg-hba-json-types">
+   <title>Connection Types Derived from Node Keys</title>
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry><literal>transport</literal></entry>
+      <entry><literal>ssl</literal></entry>
+      <entry><literal>gss</literal></entry>
+      <entry>Record type</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><literal>local</literal></entry>
+      <entry></entry>
+      <entry></entry>
+      <entry><literal>local</literal></entry>
+     </row>
+     <row>
+      <entry><literal>tcp</literal></entry>
+      <entry></entry>
+      <entry></entry>
+      <entry><literal>host</literal></entry>
+     </row>
+     <row>
+      <entry><literal>tcp</literal></entry>
+      <entry><literal>require</literal></entry>
+      <entry></entry>
+      <entry><literal>hostssl</literal></entry>
+     </row>
+     <row>
+      <entry><literal>tcp</literal></entry>
+      <entry><literal>forbid</literal></entry>
+      <entry></entry>
+      <entry><literal>hostnossl</literal></entry>
+     </row>
+     <row>
+      <entry><literal>tcp</literal></entry>
+      <entry></entry>
+      <entry><literal>require</literal></entry>
+      <entry><literal>hostgssenc</literal></entry>
+     </row>
+     <row>
+      <entry><literal>tcp</literal></entry>
+      <entry></entry>
+      <entry><literal>forbid</literal></entry>
+      <entry><literal>hostnogssenc</literal></entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>
+   A string in <literal>databases</literal>, <literal>users</literal> or
+   <literal>address</literal> is interpreted as the unquoted field would
+   be in <filename>pg_hba.conf</filename>, so <literal>"all"</literal> is
+   the keyword.  To name a database or role that happens to be spelled
+   like a keyword, or whose name starts with <literal>+</literal> or
+   <literal>@</literal>, wrap it in double quotes inside the JSON string:
+   <literal>"\"all\""</literal> is the role named <literal>all</literal>.
+  </para>
+
+  <para>
+   The following tree lets local users in with <literal>peer</literal>
+   authentication, authenticates everyone else connecting over
+   <acronym>SSL</acronym> against an LDAP server, additionally requires a
+   client certificate from members of the <literal>admins</literal> role,
+   and locks out one user.  It yields four records, in this order: the
+   local rule, then three <literal>hostssl</literal> records: the admins
+   rule, the rule rejecting <literal>jacob</literal>, and the general LDAP
+   rule.  The children inherit the <literal>ssl</literal> constraint, which
+   the client certificate option requires.
+<programlisting>
+"hba": {"children": [
+ {"transport": "local", "auth": {"method": "peer"}},
+ {"ssl": "require",
+  "auth": {"method": "ldap", "ldapserver": "ldap.example.com", "ldaptls": 1},
+  "children": [
+    {"users": "+admins", "auth": {"clientcert": "verify-full"}},
+    {"users": "jacob", "auth": {"method": "reject"}}
+  ]}
+]}
+</programlisting>
+  </para>
+
+  <para>
+   The default <filename>pg_hba.conf</filename> installed by
+   <xref linkend="app-initdb"/> corresponds to this tree:
+<programlisting>
+"hba": {"children": [
+ {"transport": "local", "auth": {"method": "trust"}},
+ {"address": ["127.0.0.1/32", "::1/128"], "auth": {"method": "trust"}},
+ {"databases": "replication", "children": [
+    {"transport": "local", "auth": {"method": "trust"}},
+    {"address": ["127.0.0.1/32", "::1/128"], "auth": {"method": "trust"}}
+ ]}
+]}
+</programlisting>
+  </para>
+
+  <para>
+   An <literal>import</literal> node splices an existing file in
+   <filename>pg_hba.conf</filename> format into the list at its position,
+   which allows a gradual move to the tree format.  The imported records
+   are complete rules and do not inherit anything from the nodes above
+   the import node.
+  </para>
+
+  <para>
+   A document can include further documents of the same form through its
+   <literal>include</literal> key: a file name, an object of the form
+   <literal>{"file": "<replaceable>name</replaceable>", "optional":
+   true}</literal>, or an array of either.  A relative name is relative to
+   the including file.  The last component of the name may contain the
+   wildcards <literal>*</literal> and <literal>?</literal>, in which case
+   all matching files are included in name order.  A file that does not
+   exist, or a pattern that matches nothing, is an error unless marked
+   optional.  The <literal>children</literal> of the <literal>hba</literal>
+   sections of all documents are concatenated, the including document's
+   first and then its includes in order, so an included file cannot put
+   rules before those of the file including it.
+  </para>
+
+  <para>
+   Errors in a node, including those a <filename>pg_hba.conf</filename>
+   record would also have, are reported with the file, the line of the
+   node, and its location in the document in a path notation such as
+   <literal>$.hba.children[1].children[0]</literal>.  The <link
+   linkend="view-pg-hba-file-rules"><structname>pg_hba_file_rules</structname></link>
+   view shows the derived records in evaluation order, with that path in
+   its <structfield>node_path</structfield> column.
+  </para>
  </sect1>
 
  <sect1 id="auth-username-maps">

@@ -24,6 +24,7 @@ OBJS = \
 	be-secure.o \
 	crypt.o \
 	hba.o \
+	hba_json.o \
 	ifaddr.o \
 	pqcomm.o \
 	pqformat.o \

@@ -39,6 +39,7 @@
 #include "storage/fd.h"
 #include "utils/acl.h"
 #include "utils/conffiles.h"
+#include "utils/config_json.h"
 #include "utils/guc.h"
 #include "utils/memutils.h"
 #include "utils/varlena.h"
@@ -251,7 +252,7 @@ next_token(char **lineptr, StringInfo buf,
 /*
  * Construct a palloc'd AuthToken struct, copying the given string.
  */
-static AuthToken *
+AuthToken *
 make_auth_token(const char *token, bool quoted)
 {
 	AuthToken  *authtoken;
@@ -561,6 +562,26 @@ tokenize_expand_file(List *tokens,
 }
 
 /*
+ * hba_expand_auth_file
+ *		Append the tokens of an @file to "tokens", for a caller outside the
+ *		tokenizer.
+ *
+ * The JSON loader meets @file references in its own fields, after the
+ * tokenizer is out of the picture; the file is read as if referenced from
+ * a depth-1 include, so the tokenizer context must exist.  On error
+ * *err_msg is set and the result may still be non-NIL, as for
+ * tokenize_expand_file().
+ */
+List *
+hba_expand_auth_file(List *tokens, const char *outer_filename,
+					 const char *inc_filename, int elevel, char **err_msg)
+{
+	Assert(tokenize_context);
+	return tokenize_expand_file(tokens, outer_filename, inc_filename, elevel,
+								1, err_msg);
+}
+
+/*
  * free_auth_file
  *		Free a file opened by open_auth_file().
  */
@@ -575,6 +596,33 @@ free_auth_file(FILE *file, int depth)
 		MemoryContextDelete(tokenize_context);
 		tokenize_context = NULL;
 	}
+}
+
+/*
+ * hba_tokenize_context_create
+ * hba_tokenize_context_delete
+ *		Manage the tokenization context on behalf of a caller that never
+ *		opens a top-level file.
+ *
+ * The JSON loader imports legacy files at depth 1, so neither
+ * open_auth_file() nor free_auth_file() would create or delete the
+ * context; the loader does it through these.
+ */
+void
+hba_tokenize_context_create(void)
+{
+	/* as in open_auth_file(), a leftover context is assumed to be gone */
+	tokenize_context = AllocSetContextCreate(CurrentMemoryContext,
+											 "tokenize_context",
+											 ALLOCSET_START_SMALL_SIZES);
+}
+
+void
+hba_tokenize_context_delete(void)
+{
+	if (tokenize_context != NULL)
+		MemoryContextDelete(tokenize_context);
+	tokenize_context = NULL;
 }
 
 /*
@@ -1342,6 +1390,13 @@ parse_hba_line(TokenizedAuthLine *tok_line, int elevel)
 	parsedline->sourcefile = pstrdup(file_name);
 	parsedline->linenumber = line_num;
 	parsedline->rawline = pstrdup(tok_line->raw_line);
+
+	/*
+	 * A rule compiled from the JSON tree carries its node path outside the
+	 * token stream; copy it into our context as well.
+	 */
+	if (tok_line->node_path != NULL)
+		parsedline->node_path = pstrdup(tok_line->node_path);
 
 	/* Check the record type. */
 	Assert(tok_line->fields != NIL);
@@ -2451,22 +2506,58 @@ check_hba(Port *port)
 bool
 load_hba(void)
 {
-	FILE	   *file;
+	bool		use_json = (config_json_auth_source(HbaFileName) != NULL);
+	FILE	   *file = NULL;
 	List	   *hba_lines = NIL;
 	ListCell   *line;
 	List	   *new_parsed_lines = NIL;
 	bool		ok = true;
 	MemoryContext oldcxt;
 	MemoryContext hbacxt;
+	MemoryContext jsoncxt = NULL;
 
-	file = open_auth_file(HbaFileName, LOG, 0, NULL);
-	if (file == NULL)
+	if (use_json)
 	{
-		/* error already logged */
-		return false;
-	}
+		List	   *documents;
+		char	   *err;
 
-	tokenize_auth_file(HbaFileName, file, &hba_lines, LOG, 0);
+		/*
+		 * The documents and the compiled lines are only needed until the
+		 * lines are parsed; keep them out of the long-lived contexts.
+		 */
+		jsoncxt = AllocSetContextCreate(CurrentMemoryContext,
+										"hba json load context",
+										ALLOCSET_START_SMALL_SIZES);
+		oldcxt = MemoryContextSwitchTo(jsoncxt);
+		if (!config_json_load_section("hba", HbaFileName, LOG, &documents,
+									  &err))
+		{
+			/* error already logged, and nothing tokenized yet */
+			MemoryContextSwitchTo(oldcxt);
+			MemoryContextDelete(jsoncxt);
+			return false;
+		}
+		if (!tokenize_hba_json(documents, &hba_lines, LOG, &err))
+		{
+			/* error already logged */
+			MemoryContextSwitchTo(oldcxt);
+			free_json_section_tokens();
+			MemoryContextDelete(jsoncxt);
+			return false;
+		}
+		MemoryContextSwitchTo(oldcxt);
+	}
+	else
+	{
+		file = open_auth_file(HbaFileName, LOG, 0, NULL);
+		if (file == NULL)
+		{
+			/* error already logged */
+			return false;
+		}
+
+		tokenize_auth_file(HbaFileName, file, &hba_lines, LOG, 0);
+	}
 
 	/* Now parse all the lines */
 	Assert(PostmasterContext);
@@ -2517,7 +2608,13 @@ load_hba(void)
 	}
 
 	/* Free tokenizer memory */
-	free_auth_file(file, 0);
+	if (use_json)
+	{
+		free_json_section_tokens();
+		MemoryContextDelete(jsoncxt);
+	}
+	else
+		free_auth_file(file, 0);
 	MemoryContextSwitchTo(oldcxt);
 
 	if (!ok)

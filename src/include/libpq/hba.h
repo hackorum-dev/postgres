@@ -133,6 +133,8 @@ typedef struct HbaLine
 	bool		oauth_skip_usermap;
 	List	   *oauth_opt_keys;
 	List	   *oauth_opt_vals;
+	char	   *node_path;		/* JSON node this rule was compiled from, or
+								 * NULL for a legacy line */
 } HbaLine;
 
 typedef struct IdentLine
@@ -181,6 +183,8 @@ typedef struct TokenizedAuthLine
 	int			line_num;		/* Line number */
 	char	   *raw_line;		/* Raw line text */
 	char	   *err_msg;		/* Error message if any */
+	char	   *node_path;		/* JSON node this rule was compiled from, or
+								 * NULL for a legacy line */
 } TokenizedAuthLine;
 
 /* avoid including libpq/libpq-be.h here */
@@ -200,5 +204,20 @@ extern FILE *open_auth_file(const char *filename, int elevel, int depth,
 extern void free_auth_file(FILE *file, int depth);
 extern void tokenize_auth_file(const char *filename, FILE *file,
 							   List **tok_lines, int elevel, int depth);
+extern void hba_tokenize_context_create(void);
+extern void hba_tokenize_context_delete(void);
+extern AuthToken *make_auth_token(const char *token, bool quoted);
+extern List *hba_expand_auth_file(List *tokens, const char *outer_filename,
+								  const char *inc_filename, int elevel,
+								  char **err_msg);
+
+/* in hba_json.c */
+struct JsonConfNode;
+extern bool tokenize_hba_json(List *documents, List **tok_lines, int elevel,
+							  char **file_err);
+extern void free_json_section_tokens(void);
+extern bool section_shape_error(struct JsonConfNode *node, int elevel,
+								char **file_err, const char *fmt, ...)
+			pg_attribute_printf(4, 5);
 
 #endif							/* HBA_H */

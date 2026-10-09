@@ -60,6 +60,49 @@ AbsoluteConfigLocation(const char *location, const char *calling_file)
 
 
 /*
+ * Match a file name against a pattern with "*" (any run of characters,
+ * including none) and "?" (any one character).  There is no portable
+ * fnmatch(), and character classes are more than configuration includes
+ * need.  Recursion is one level per "*" in the pattern, which is fine for
+ * directory entry names.
+ */
+static bool
+wildcard_match(const char *pattern, const char *name)
+{
+	for (;;)
+	{
+		switch (*pattern)
+		{
+			case '\0':
+				return *name == '\0';
+			case '?':
+				if (*name == '\0')
+					return false;
+				pattern++;
+				name++;
+				break;
+			case '*':
+				while (*pattern == '*')
+					pattern++;
+				if (*pattern == '\0')
+					return true;
+				for (; *name != '\0'; name++)
+				{
+					if (wildcard_match(pattern, name))
+						return true;
+				}
+				return false;
+			default:
+				if (*pattern != *name)
+					return false;
+				pattern++;
+				name++;
+				break;
+		}
+	}
+}
+
+/*
  * GetConfFilesInDir
  *
  * Returns the list of config files located in a directory, in alphabetical
@@ -69,6 +112,21 @@ AbsoluteConfigLocation(const char *location, const char *calling_file)
 char	  **
 GetConfFilesInDir(const char *includedir, const char *calling_file,
 				  int elevel, int *num_filenames, char **err_msg)
+{
+	return GetConfFilesInDirPattern(includedir, calling_file, "*.conf",
+									elevel, num_filenames, err_msg);
+}
+
+/*
+ * GetConfFilesInDirPattern
+ *
+ * Like GetConfFilesInDir, but the caller chooses which file names count,
+ * as a wildcard pattern matched against the bare file name.
+ */
+char	  **
+GetConfFilesInDirPattern(const char *includedir, const char *calling_file,
+						 const char *pattern, int elevel,
+						 int *num_filenames, char **err_msg)
 {
 	char	   *directory;
 	DIR		   *d;
@@ -117,15 +175,13 @@ GetConfFilesInDir(const char *includedir, const char *calling_file,
 		char		filename[MAXPGPATH];
 
 		/*
-		 * Only parse files with names ending in ".conf".  Explicitly reject
+		 * Only parse files whose names match the pattern.  Explicitly reject
 		 * files starting with ".".  This excludes things like "." and "..",
 		 * as well as typical hidden files, backup files, and editor debris.
 		 */
-		if (strlen(de->d_name) < 6)
-			continue;
 		if (de->d_name[0] == '.')
 			continue;
-		if (strcmp(de->d_name + strlen(de->d_name) - 5, ".conf") != 0)
+		if (!wildcard_match(pattern, de->d_name))
 			continue;
 
 		join_path_components(filename, directory, de->d_name);
