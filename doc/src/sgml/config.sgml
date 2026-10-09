@@ -600,6 +600,12 @@ include_dir 'conf.d'
      </para>
 
      <para>
+      <xref linkend="app-initdb"/> creates such a root when given
+      <option>--config-format=json</option>; it contains only the settings
+      <command>initdb</command> chose and the default authentication rules.
+     </para>
+
+     <para>
       A short example:
 <programlisting>
 {
