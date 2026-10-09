@@ -236,7 +236,7 @@ be_tls_init(bool isServerStart)
 		{
 			ereport(isServerStart ? FATAL : LOG,
 					errcode(ERRCODE_CONFIG_FILE_ERROR),
-					errmsg("could not load file \"%s\": %s", HostsFileName,
+					errmsg("could not load file \"%s\": %s", hosts_source_name(),
 						   err_msg ? err_msg : "unknown error"));
 			goto error;
 		}
@@ -382,7 +382,7 @@ be_tls_init(bool isServerStart)
 				errmsg("no SSL configurations loaded"),
 		/*- translator: The two %s contain filenames */
 				errhint("If ssl_sni is enabled then add configuration to file \"%s\", else file \"%s\".",
-						HostsFileName, "postgresql.conf"));
+						hosts_source_name(), ConfigFileName));
 		goto error;
 	}
 
@@ -685,7 +685,7 @@ init_host_context(HostsLine *host, bool isServerStart, bool *hasWarned)
 							"Set \"%s\" to \"off\" to make use of the hook "
 							"that is currently installed, or remove the hook "
 							"and use per-host passphrase commands in \"%s\".",
-							"ssl_sni", HostsFileName));
+							"ssl_sni", hosts_source_name()));
 			*hasWarned = true;
 		}
 

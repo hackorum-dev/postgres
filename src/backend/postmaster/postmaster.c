@@ -1347,7 +1347,7 @@ PostmasterMain(int argc, char *argv[])
 		 */
 		ereport(FATAL,
 		/* translator: %s is a configuration file */
-				(errmsg("could not load %s", HbaFileName)));
+				(errmsg("could not load %s", hba_source_name())));
 	}
 	if (!load_ident())
 	{
@@ -2037,11 +2037,12 @@ process_pm_reload_request(void)
 		if (!load_hba())
 			ereport(LOG,
 			/* translator: %s is a configuration file */
-					(errmsg("%s was not reloaded", HbaFileName)));
+					(errmsg("%s was not reloaded", hba_source_name())));
 
 		if (!load_ident())
 			ereport(LOG,
-					(errmsg("%s was not reloaded", IdentFileName)));
+			/* translator: %s is a configuration file */
+					(errmsg("%s was not reloaded", ident_source_name())));
 
 #ifdef USE_SSL
 		/* Reload SSL configuration as well */
