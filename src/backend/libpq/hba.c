@@ -1383,6 +1383,8 @@ parse_hba_line(TokenizedAuthLine *tok_line, int elevel)
 	ListCell   *field;
 	List	   *tokens;
 	ListCell   *tokencell;
+	ListCell   *k,
+			   *v;
 	AuthToken  *token;
 	HbaLine    *parsedline;
 
@@ -1392,11 +1394,18 @@ parse_hba_line(TokenizedAuthLine *tok_line, int elevel)
 	parsedline->rawline = pstrdup(tok_line->raw_line);
 
 	/*
-	 * A rule compiled from the JSON tree carries its node path outside the
-	 * token stream; copy it into our context as well.
+	 * A rule compiled from the JSON tree carries its node path and settings
+	 * outside the token stream; copy them into our context as well.
 	 */
 	if (tok_line->node_path != NULL)
 		parsedline->node_path = pstrdup(tok_line->node_path);
+	forboth(k, tok_line->settings_keys, v, tok_line->settings_vals)
+	{
+		parsedline->settings_keys = lappend(parsedline->settings_keys,
+											pstrdup(lfirst(k)));
+		parsedline->settings_vals = lappend(parsedline->settings_vals,
+											pstrdup(lfirst(v)));
+	}
 
 	/* Check the record type. */
 	Assert(tok_line->fields != NIL);
@@ -3060,17 +3069,38 @@ load_ident(void)
 
 
 /*
+ * Apply the settings of the matched rule.  They were validated when the
+ * rule was loaded, so a failure here is unexpected; log and go on, the
+ * connection is still usable.
+ */
+static void
+apply_hba_settings(HbaLine *hba)
+{
+	ListCell   *k,
+			   *v;
+
+	forboth(k, hba->settings_keys, v, hba->settings_vals)
+		(void) set_config_option(lfirst(k), lfirst(v), PGC_HBA, PGC_S_HBA,
+								 GUC_ACTION_SET, true, LOG, false);
+}
+
+/*
  *	Determine what authentication method should be used when accessing database
  *	"database" from frontend "raddr", user "user".  Return the method and
  *	an optional argument (stored in fields of *port), and STATUS_OK.
  *
  *	If the file does not contain any entry matching the request, we return
  *	method = uaImplicitReject.
+ *
+ *	The matched rule's settings take effect here, before authentication
+ *	starts, so that they can influence it (authentication_timeout).  The
+ *	implicit reject rule has none.
  */
 void
 hba_getauthmethod(Port *port)
 {
 	check_hba(port);
+	apply_hba_settings(port->hba);
 }
 
 

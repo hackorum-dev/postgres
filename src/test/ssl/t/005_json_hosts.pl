@@ -85,6 +85,7 @@ sub session_query
 
 my $datadir = $node->data_dir;
 my $hosts_json = "$datadir/pg_hosts.json";
+my $hba_json = "$datadir/pg_hba.json";
 
 sub write_file
 {
@@ -131,13 +132,26 @@ ok(unlink("$datadir/pg_hosts.conf"), 'legacy hosts file removed');
 # JSON hosts file
 ##############################################################################
 
+# The hba rules move to a JSON file too, with a rule carrying a setting
+# in front of the imported pg_hba.conf, to check that an hba setting
+# overrides a hosts setting for the same parameter.
+write_file($hba_json, <<"EOF");
+{"hba": {"children": [
+   {"address": "$SERVERHOSTCIDR", "ssl": "require",
+    "databases": "trustdb", "users": "anotheruser",
+    "auth": {"method": "trust"},
+    "settings": {"work_mem": "12MB"}},
+   {"import": "pg_hba.conf"}]}}
+EOF
 $node->append_conf('postgresql.conf', <<"EOF");
 ssl_sni = on
 hosts_file = '$hosts_json'
+hba_file = '$hba_json'
 EOF
 
-# example.org gets its CA from the defaults, the default entry overrides
-# the certificate, the no-SNI entry takes everything from the defaults.
+# example.org gets its CA from the defaults and carries a setting, the
+# default entry overrides the certificate and sets a list parameter from
+# an array, the no-SNI entry takes everything from the defaults.
 # example.net and example.com come from an imported legacy file that reads
 # its host names from an @file.
 write_file("$datadir/hosts_extra.conf",
@@ -150,8 +164,10 @@ my $hosts = <<'EOF';
               "ssl_cert_file": "server-cn-only.crt",
               "ssl_key_file": "server-cn-only.key"},
  "entries": {
-   "example.org": {"ssl_cert_file": "server-cn-only+server_ca.crt"},
-   "*": {"ssl_cert_file": "server-cn-only.crt"},
+   "example.org": {"ssl_cert_file": "server-cn-only+server_ca.crt",
+                   "settings": {"work_mem": "11MB"}},
+   "*": {"ssl_cert_file": "server-cn-only.crt",
+         "settings": {"search_path": ["My Schema", "public"]}},
    "/no_sni/": {}
  }}
 EOF
@@ -160,10 +176,14 @@ $node->restart;
 
 $node->connect_ok(
 	"$connstr host=example.org sslrootcert=ssl/root_ca.crt sslmode=verify-ca",
-	'per-host certificate selected from JSON entries');
+	'per-host certificate selected from JSON entries',
+	sql => q{SELECT setting, source FROM pg_settings WHERE name = 'work_mem'},
+	expected_stdout => qr/^11264\|hosts$/m);
 $node->connect_ok(
 	"$connstr host=example.net sslrootcert=ssl/root_ca.crt sslmode=verify-ca",
-	'certificate of an imported legacy entry selected');
+	'certificate of an imported legacy entry selected',
+	sql => q{SELECT setting, source FROM pg_settings WHERE name = 'work_mem'},
+	expected_stdout => qr/^4096\|default$/m);
 $node->connect_ok(
 	"$connstr host=example.com sslrootcert=ssl/root_ca.crt sslmode=verify-ca",
 	'certificate of an imported @file host name selected');
@@ -173,26 +193,37 @@ $node->connect_ok(
 $node->connect_ok(
 	"$connstr host=other.example.org sslrootcert=ssl/root+server_ca.crt "
 	  . "sslmode=require",
-	'default entry used without matching name');
+	'default entry used without matching name',
+	sql => q{SELECT setting, source FROM pg_settings WHERE name = 'work_mem'},
+	expected_stdout => qr/^4096\|default$/m);
 $node->connect_fails(
 	"$connstr host=other.example.org sslrootcert=ssl/root_ca.crt "
 	  . "sslmode=verify-ca",
 	'default entry has no intermediate CA',
 	expected_stderr => qr/certificate verify failed/);
 
+# The hba rule for anotheruser sets the same parameter, and wins.
+$node->connect_ok(
+	"$connstr user=anotheruser host=example.org "
+	  . "sslrootcert=ssl/root_ca.crt sslmode=verify-ca",
+	'hba setting overrides the hosts setting',
+	sql => q{SELECT setting, source FROM pg_settings WHERE name = 'work_mem'},
+	expected_stdout => qr/^12288\|hba$/m);
+
 $res = view_query(
 	q{
 	SELECT entry_number, regexp_replace(file_name, '.*/', ''), hostname,
 	       regexp_replace(ssl_cert_file, '.*/', ''), ssl_ca_file,
-	       ssl_passphrase_command_supports_reload, error
+	       ssl_passphrase_command_supports_reload, settings::text, error
 	FROM pg_hosts_file_entries ORDER BY entry_number, hostname});
 is( $res,
-	qq{1|hosts_extra.conf|example.com|server-cn-only+server_ca.crt||f|\n}
-	  . qq{1|hosts_extra.conf|example.net|server-cn-only+server_ca.crt||f|\n}
+	qq{1|hosts_extra.conf|example.com|server-cn-only+server_ca.crt||f||\n}
+	  . qq{1|hosts_extra.conf|example.net|server-cn-only+server_ca.crt||f||\n}
 	  . qq{2|pg_hosts.json|example.org|server-cn-only+server_ca.crt|}
-	  . qq{root_ca.crt|f|\n}
-	  . qq{3|pg_hosts.json|*|server-cn-only.crt|root_ca.crt|f|\n}
-	  . qq{4|pg_hosts.json|/no_sni/|server-cn-only.crt|root_ca.crt|f|},
+	  . qq{root_ca.crt|f|{"work_mem": "11MB"}|\n}
+	  . qq{3|pg_hosts.json|*|server-cn-only.crt|root_ca.crt|f|}
+	  . qq{{"search_path": "\\"My Schema\\", public"}|\n}
+	  . qq{4|pg_hosts.json|/no_sni/|server-cn-only.crt|root_ca.crt|f||},
 	'pg_hosts_file_entries lists JSON entries with defaults applied');
 
 ##############################################################################
@@ -217,13 +248,16 @@ $node->reload;
 $node->wait_for_log(qr/duplicate hosts entry "EXAMPLE.org"/, $log_offset);
 SKIP:
 {
-	skip 'new backends load the SSL configuration with EXEC_BACKEND', 2
+	skip 'new backends load the SSL configuration with EXEC_BACKEND', 3
 	  if $exec_backend eq 'on';
 
 	$node->connect_ok(
 		"$connstr host=example.org sslrootcert=ssl/root_ca.crt "
 		  . "sslmode=verify-ca",
-		'old hosts configuration kept after failed reload');
+		'old hosts configuration kept after failed reload',
+		sql =>
+		  q{SELECT setting, source FROM pg_settings WHERE name = 'work_mem'},
+		expected_stdout => qr/^11264\|hosts$/m);
 }
 ($res) = session_query(
 	q{SELECT hostname, error FROM pg_hosts_file_entries
@@ -243,8 +277,8 @@ write_file(
 is($res, 'example.net|duplicate hosts entry "example.net"',
 	'duplicate of an imported hostname shown in view');
 
-# Per-entry problems: a non-object entry, an unrecognized key, and a
-# wrong type.
+# Per-entry problems: a non-object entry, an unrecognized key, a wrong
+# type, and a setting that does not validate.
 write_file(
 	"$datadir/conf.d/dup.json",
 	qq({"hosts": {"entries": {\n)
@@ -252,14 +286,18 @@ write_file(
 	  . qq( "b.example.org": {"ssl_cert_file": "server-cn-only.crt", )
 	  . qq("ssl_key_file": "server-cn-only.key", "ssl_crl_file": "x"},\n)
 	  . qq( "c.example.org": {"ssl_cert_file": "server-cn-only.crt", )
-	  . qq("ssl_key_file": 1}}}}\n));
+	  . qq("ssl_key_file": 1},\n)
+	  . qq( "d.example.org": {"ssl_cert_file": "server-cn-only.crt", )
+	  . qq("ssl_key_file": "server-cn-only.key", )
+	  . qq("settings": {"work_mem": "lots"}}}}}\n));
 ($res) = session_query(
 	q{SELECT hostname, error FROM pg_hosts_file_entries
 	  WHERE error IS NOT NULL ORDER BY hostname});
 is( $res,
 	qq{a.example.org|hosts entry must be an object, not string\n}
 	  . qq{b.example.org|unrecognized key "ssl_crl_file"\n}
-	  . qq{c.example.org|"ssl_key_file" must be a string},
+	  . qq{c.example.org|"ssl_key_file" must be a string\n}
+	  . qq{d.example.org|invalid value for parameter "work_mem": "lots"},
 	'per-entry errors shown in view');
 
 # A section of the wrong shape is a file-level error, as is a key the

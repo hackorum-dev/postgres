@@ -105,7 +105,7 @@
   max => 'INT_MAX / 2',
 },
 
-{ name => 'authentication_timeout', type => 'int', context => 'PGC_SIGHUP', group => 'CONN_AUTH_AUTH',
+{ name => 'authentication_timeout', type => 'int', context => 'PGC_HBA', group => 'CONN_AUTH_AUTH',
   short_desc => 'Sets the maximum allowed time to complete client authentication.',
   flags => 'GUC_UNIT_S',
   variable => 'AuthenticationTimeout',

@@ -1125,8 +1125,9 @@ include_dir 'conf.d'
         hung clients from occupying a connection indefinitely.
         If this value is specified without units, it is taken as seconds.
         The default is one minute (<literal>1m</literal>).
-        This parameter can only be set in the <filename>postgresql.conf</filename>
-        file or on the server command line.
+        This parameter can be set in the <filename>postgresql.conf</filename>
+        file, on the server command line, or per rule in the client
+        authentication configuration (see <xref linkend="auth-pg-hba-json"/>).
        </para>
       </listitem>
      </varlistentry>

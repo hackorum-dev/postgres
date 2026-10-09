@@ -5,7 +5,7 @@
  *
  * The "hba" section of a JSON configuration is a tree of nodes.  Each node
  * narrows the match (transport, ssl, gss, databases, users, address) and
- * carries authentication options (auth) that its children inherit.  We
+ * carries a property bag (auth, settings) that its children inherit.  We
  * walk the tree depth first, children before the node's own rule, and emit
  * one TokenizedAuthLine per node that has an authentication method, with
  * the fields in the classic pg_hba.conf order.  parse_hba_line() then
@@ -36,6 +36,7 @@
  * effective node by applying the child's own keys:
  *
  * - match fields replace the inherited value wholesale;
+ * - "settings" merge key by key;
  * - "auth" merges key by key, unless the child sets "method", in which
  *   case the child's "auth" replaces the parent's entirely, since the
  *   parent's options belong to a method that is no longer in use.
@@ -47,13 +48,19 @@
  * method emits nothing of its own; it only groups its children.
  *
  * Import nodes splice a legacy file in at their position.  Legacy lines
- * are complete rules and inherit nothing.  The "import" lists of the
- * ident and hosts sections work the same way.
+ * are complete rules, so they inherit only "settings", never match fields
+ * or "auth".  The "import" lists of the ident and hosts sections work the
+ * same way, without anything to inherit.
  *
  * The "defaults" object of the hosts section is merged key by key across
  * all documents, later documents overriding, and then applied under every
  * entry's own keys.  Host names must be unique across the documents and
  * the imported files, compared case-insensitively as the SNI match is.
+ *
+ * Settings are not part of the token stream, since parse_hba_line() knows
+ * nothing about them.  They are validated here, so that applying them at
+ * match time cannot fail, and attached to the TokenizedAuthLine, from
+ * where parse_hba_line() copies them into the HbaLine.
  *
  *-------------------------------------------------------------------------
  */
@@ -89,6 +96,8 @@ typedef struct HbaNodeState
 	JsonConfNode *address;		/* NULL = "all" */
 	List	   *auth_keys;		/* char *, "method" included */
 	List	   *auth_vals;		/* JsonConfNode * */
+	List	   *settings_keys;	/* char * */
+	List	   *settings_vals;	/* JsonConfNode * */
 } HbaNodeState;
 
 static void walk_node(JsonConfNode *node, const HbaNodeState *parent,
@@ -97,17 +106,20 @@ static void walk_node(JsonConfNode *node, const HbaNodeState *parent,
 
 /*
  * Replace or append a key in a pair of parallel lists.  Insertion order is
- * kept, so inherited keys stay in front of the node's own.
+ * kept, so inherited keys stay in front of the node's own.  Setting names
+ * are parameter names, which match regardless of case; everything else
+ * matches exactly.
  */
 static void
-kv_put(List **keys, List **vals, const char *key, void *val)
+kv_put(List **keys, List **vals, const char *key, void *val, bool guc_names)
 {
 	ListCell   *k,
 			   *v;
 
 	forboth(k, *keys, v, *vals)
 	{
-		if (strcmp(lfirst(k), key) == 0)
+		if (guc_names ? guc_name_compare(lfirst(k), key) == 0 :
+			strcmp(lfirst(k), key) == 0)
 		{
 			lfirst(v) = val;
 			return;
@@ -132,11 +144,39 @@ kv_get(List *keys, List *vals, const char *key)
 }
 
 /*
- * A line that carries the node's identity, but no fields yet.  raw_line is
- * the node path until the caller knows the rule text.
+ * Build the text form of the effective settings, as parse_hba_line() and
+ * the GUC machinery want them.
+ */
+static void
+settings_text_lists(const HbaNodeState *st, List **keys, List **vals)
+{
+	ListCell   *k,
+			   *v;
+
+	*keys = NIL;
+	*vals = NIL;
+	forboth(k, st->settings_keys, v, st->settings_vals)
+	{
+		JsonConfNode *at;
+		char	   *err;
+		char	   *text;
+
+		/* merge_node() has checked the shape */
+		text = config_json_setting_text(lfirst(k), lfirst(v), &at, &err);
+
+		Assert(text !=NULL);
+		*keys = lappend(*keys, pstrdup(lfirst(k)));
+		*vals = lappend(*vals, pstrdup(text));
+	}
+}
+
+/*
+ * A line that carries the node's identity and effective settings, but no
+ * fields yet.  raw_line is the node path until the caller knows the rule
+ * text.  "st" is NULL for an ident line, which has no settings.
  */
 static TokenizedAuthLine *
-new_tok_line(JsonConfNode *node)
+new_tok_line(JsonConfNode *node, const HbaNodeState *st)
 {
 	TokenizedAuthLine *tok = palloc0_object(TokenizedAuthLine);
 
@@ -144,6 +184,8 @@ new_tok_line(JsonConfNode *node)
 	tok->line_num = node->line;
 	tok->node_path = config_json_path(node);
 	tok->raw_line = pstrdup(tok->node_path);
+	if (st != NULL)
+		settings_text_lists(st, &tok->settings_keys, &tok->settings_vals);
 	return tok;
 }
 
@@ -166,14 +208,15 @@ node_error_callback(void *arg)
  * "node".  The message is translated here.
  */
 static void hba_node_error(JsonConfNode *node, JsonConfNode *at,
-						   List **tok_lines, int elevel,
-						   const char *fmt, ...) pg_attribute_printf(5, 6);
+						   const HbaNodeState *st, List **tok_lines,
+						   int elevel, const char *fmt, ...)
+			pg_attribute_printf(6, 7);
 
 static void
-hba_node_error(JsonConfNode *node, JsonConfNode *at, List **tok_lines,
-			   int elevel, const char *fmt, ...)
+hba_node_error(JsonConfNode *node, JsonConfNode *at, const HbaNodeState *st,
+			   List **tok_lines, int elevel, const char *fmt, ...)
 {
-	TokenizedAuthLine *tok = new_tok_line(node);
+	TokenizedAuthLine *tok = new_tok_line(node, st);
 	StringInfoData msg;
 
 	fmt = _(fmt);
@@ -201,7 +244,7 @@ hba_node_error(JsonConfNode *node, JsonConfNode *at, List **tok_lines,
 /* The keys of an hba node other than an import node. */
 static const char *const node_keys[] = {
 	"transport", "ssl", "gss", "databases", "users", "address", "auth",
-	"children", NULL
+	"settings", "children", NULL
 };
 
 /* Is the string one of the given keywords?  The list ends with NULL. */
@@ -258,7 +301,7 @@ check_key_type(const char *key, JsonConfNode *val)
 			return psprintf(_("\"%s\" must be a string or a non-empty array of strings"),
 							key);
 	}
-	else if (strcmp(key, "auth") == 0)
+	else if (strcmp(key, "auth") == 0 || strcmp(key, "settings") == 0)
 	{
 		if (val->type != JCN_OBJECT)
 			return psprintf(_("\"%s\" must be an object"), key);
@@ -289,11 +332,14 @@ merge_node(const HbaNodeState *parent, JsonConfNode *node,
 	ListCell   *k,
 			   *v;
 	JsonConfNode *val,
-			   *auth;
+			   *auth,
+			   *settings;
 
 	*out = *parent;
 	out->auth_keys = list_copy(parent->auth_keys);
 	out->auth_vals = list_copy(parent->auth_vals);
+	out->settings_keys = list_copy(parent->settings_keys);
+	out->settings_vals = list_copy(parent->settings_vals);
 
 	forboth(k, node->keys, v, node->values)
 	{
@@ -348,7 +394,22 @@ merge_node(const HbaNodeState *parent, JsonConfNode *node,
 								(char *) lfirst(k));
 				return false;
 			}
-			kv_put(&out->auth_keys, &out->auth_vals, lfirst(k), o);
+			kv_put(&out->auth_keys, &out->auth_vals, lfirst(k), o, false);
+		}
+	}
+
+	/* settings always merge */
+	settings = config_json_get(node, "settings");
+	if (settings != NULL)
+	{
+		forboth(k, settings->keys, v, settings->values)
+		{
+			JsonConfNode *o = lfirst(v);
+
+			/* a list value is joined as it is for the GUCs of the document */
+			if (config_json_setting_text(lfirst(k), o, at, err) == NULL)
+				return false;
+			kv_put(&out->settings_keys, &out->settings_vals, lfirst(k), o, true);
 		}
 	}
 
@@ -493,6 +554,27 @@ type_keyword(JsonConfNode *node, const HbaNodeState *st, char **err)
 }
 
 /*
+ * Validate the effective settings of a node that is about to emit rules.
+ * A grouping node without a method never gets here; a bad setting on it
+ * is reported by each emitting descendant, which inherits it.
+ */
+static bool
+check_settings(JsonConfNode *node, const HbaNodeState *st, List **tok_lines,
+			   int elevel)
+{
+	List	   *keys,
+			   *vals;
+	char	   *err = NULL;
+
+	settings_text_lists(st, &keys, &vals);
+	if (validate_connection_settings(keys, vals, PGC_HBA, &err))
+		return true;
+
+	hba_node_error(node, node, st, tok_lines, elevel, "%s", err);
+	return false;
+}
+
+/*
  * The classic text of a rule built from the given fields, for the "line
  * matched" messages: the JSON node alone does not show what it inherited.
  */
@@ -591,9 +673,11 @@ emit_rule(JsonConfNode *node, const HbaNodeState *st, List **tok_lines,
 
 	if ((type = type_keyword(node, st, &err)) == NULL)
 	{
-		hba_node_error(node, node, tok_lines, elevel, "%s", err);
+		hba_node_error(node, node, st, tok_lines, elevel, "%s", err);
 		return;
 	}
+	if (!check_settings(node, st, tok_lines, elevel))
+		return;
 
 	/*
 	 * The lists are shared by the emitted lines; parse_hba_line() copies the
@@ -612,7 +696,7 @@ emit_rule(JsonConfNode *node, const HbaNodeState *st, List **tok_lines,
 	if (err != NULL)
 	{
 		/* the @file error has been logged with the node's context already */
-		TokenizedAuthLine *tok = new_tok_line(node);
+		TokenizedAuthLine *tok = new_tok_line(node, st);
 
 		tok->err_msg = err;
 		*tok_lines = lappend(*tok_lines, tok);
@@ -630,7 +714,7 @@ emit_rule(JsonConfNode *node, const HbaNodeState *st, List **tok_lines,
 	foreach(lc, addresses)
 	{
 		AuthToken  *addr = lfirst(lc);
-		TokenizedAuthLine *tok = new_tok_line(node);
+		TokenizedAuthLine *tok = new_tok_line(node, st);
 		List	   *fields;
 		ListCell   *k,
 				   *v;
@@ -735,16 +819,18 @@ read_import_file(JsonConfNode *fileval, bool optional, List **lines,
 
 /*
  * Splice a legacy file in at the import node's position.  The legacy lines
- * are complete rules and inherit nothing.
+ * inherit the effective settings, nothing else.
  */
 static void
-import_node(JsonConfNode *node, List **tok_lines, int elevel)
+import_node(JsonConfNode *node, const HbaNodeState *st, List **tok_lines,
+			int elevel)
 {
 	JsonConfNode *imp = config_json_get(node, "import");
 	JsonConfNode *opt = config_json_get(node, "optional");
 	ListCell   *k,
 			   *v;
 	List	   *lines;
+	ListCell   *lc;
 	char	   *err;
 
 	/* an import node is a leaf with exactly these two keys */
@@ -755,31 +841,34 @@ import_node(JsonConfNode *node, List **tok_lines, int elevel)
 		if (strcmp(key, "import") == 0 || strcmp(key, "optional") == 0)
 			continue;
 		if (string_in(key, node_keys))
-			hba_node_error(node, lfirst(v), tok_lines, elevel,
+			hba_node_error(node, lfirst(v), st, tok_lines, elevel,
 						   "import node cannot have \"%s\"", key);
 		else
-			hba_node_error(node, lfirst(v), tok_lines, elevel,
+			hba_node_error(node, lfirst(v), st, tok_lines, elevel,
 						   "unrecognized key \"%s\"", key);
 		return;
 	}
 	if (imp->type != JCN_STRING)
 	{
-		hba_node_error(node, imp, tok_lines, elevel,
+		hba_node_error(node, imp, st, tok_lines, elevel,
 					   "\"%s\" must be a string", "import");
 		return;
 	}
 	if (opt != NULL && opt->type != JCN_BOOL)
 	{
-		hba_node_error(node, opt, tok_lines, elevel,
+		hba_node_error(node, opt, st, tok_lines, elevel,
 					   "\"%s\" must be a boolean", "optional");
 		return;
 	}
+	if (!check_settings(node, st, tok_lines, elevel))
+		return;
+
 	if (!read_import_file(imp, opt != NULL && opt->boolval, &lines, elevel,
 						  &err))
 	{
 		if (err != NULL)
 		{
-			TokenizedAuthLine *tok = new_tok_line(node);
+			TokenizedAuthLine *tok = new_tok_line(node, st);
 
 			tok->err_msg = err;
 			*tok_lines = lappend(*tok_lines, tok);
@@ -787,7 +876,13 @@ import_node(JsonConfNode *node, List **tok_lines, int elevel)
 		return;
 	}
 
-	*tok_lines = list_concat(*tok_lines, lines);
+	foreach(lc, lines)
+	{
+		TokenizedAuthLine *tok = lfirst(lc);
+
+		settings_text_lists(st, &tok->settings_keys, &tok->settings_vals);
+		*tok_lines = lappend(*tok_lines, tok);
+	}
 }
 
 /*
@@ -808,7 +903,7 @@ walk_node(JsonConfNode *node, const HbaNodeState *parent, List **tok_lines,
 
 	if (node->type != JCN_OBJECT)
 	{
-		hba_node_error(node, node, tok_lines, elevel,
+		hba_node_error(node, node, parent, tok_lines, elevel,
 					   "hba node must be an object, not %s",
 					   config_json_type_name(node->type));
 		return;
@@ -816,13 +911,13 @@ walk_node(JsonConfNode *node, const HbaNodeState *parent, List **tok_lines,
 
 	if (config_json_get(node, "import") != NULL)
 	{
-		import_node(node, tok_lines, elevel);
+		import_node(node, parent, tok_lines, elevel);
 		return;
 	}
 
 	if (!merge_node(parent, node, &st, &err, &at))
 	{
-		hba_node_error(node, at, tok_lines, elevel, "%s", err);
+		hba_node_error(node, at, parent, tok_lines, elevel, "%s", err);
 		return;
 	}
 
@@ -846,7 +941,7 @@ walk_node(JsonConfNode *node, const HbaNodeState *parent, List **tok_lines,
 		 * emits nothing and is almost certainly a mistake.  An empty children
 		 * array is a leaf.
 		 */
-		hba_node_error(node, node, tok_lines, elevel,
+		hba_node_error(node, node, &st, tok_lines, elevel,
 					   "leaf node has no authentication method");
 	}
 }
@@ -958,7 +1053,7 @@ import_auth_lines(JsonConfNode *imports, List **tok_lines, int elevel,
 		{
 			if (err != NULL)
 			{
-				TokenizedAuthLine *tok = new_tok_line(fileval);
+				TokenizedAuthLine *tok = new_tok_line(fileval, NULL);
 
 				tok->err_msg = err;
 				*tok_lines = lappend(*tok_lines, tok);
@@ -1019,12 +1114,12 @@ emit_mapping(const char *mapname, const char *sysname, JsonConfNode *pg,
 
 	if (pg->type != JCN_STRING)
 	{
-		hba_node_error(pg, pg, tok_lines, elevel,
+		hba_node_error(pg, pg, NULL, tok_lines, elevel,
 					   "\"%s\" must be a string or a non-empty array of strings",
 					   sysname);
 		return;
 	}
-	tok = new_tok_line(pg);
+	tok = new_tok_line(pg, NULL);
 	systoks = append_json_tokens(NIL, sysname, pg, elevel, &err);
 	if (err == NULL)
 		pgtoks = append_json_tokens(NIL, pg->strval, pg, elevel, &err);
@@ -1128,12 +1223,12 @@ compile_ident_documents(List *documents, List **tok_lines, int elevel,
 }
 
 /*
- * Keys of a hosts entry, and of "defaults": the ssl_* parameters an entry
- * overrides for its host.
+ * Keys of a hosts entry, and of "defaults".  All but "settings" are the
+ * ssl_* parameters an entry overrides for its host.
  */
 static const char *const hosts_entry_keys[] = {
 	"ssl_cert_file", "ssl_key_file", "ssl_ca_file", "ssl_passphrase_command",
-	"ssl_passphrase_command_supports_reload", NULL
+	"ssl_passphrase_command_supports_reload", "settings", NULL
 };
 
 /*
@@ -1215,6 +1310,30 @@ hosts_collect(JsonConfNode *obj, HostsLine *out, char **err,
 			}
 			out->ssl_passphrase_reload = val->boolval;
 		}
+		else if (strcmp(key, "settings") == 0)
+		{
+			ListCell   *sk,
+					   *sv;
+
+			if (val->type != JCN_OBJECT)
+			{
+				*err = psprintf(_("\"%s\" must be an object"), key);
+				return false;
+			}
+			forboth(sk, val->keys, sv, val->values)
+			{
+				JsonConfNode *o = lfirst(sv);
+				char	   *text;
+
+				/* as in the hba section, an array is a list value */
+				text = config_json_setting_text(lfirst(sk), o, at, err);
+
+				if (text == NULL)
+					return false;
+				kv_put(&out->settings_keys, &out->settings_vals, lfirst(sk),
+					   pstrdup(text), true);
+			}
+		}
 		else
 		{
 			char	  **field;
@@ -1241,8 +1360,9 @@ hosts_collect(JsonConfNode *obj, HostsLine *out, char **err,
 /*
  * Compile one key of "entries" into an entry.  The entry starts out as a
  * copy of the merged defaults, its own keys go on top, and then the
- * certificate and key must be there.  The entry is returned even on
- * error, with err_msg set.
+ * certificate and key must be there, and the settings must validate, so
+ * that applying them at the handshake cannot fail.  The entry is returned
+ * even on error, with err_msg set.
  */
 static HostsLine *
 compile_hosts_entry(const char *hostname, JsonConfNode *node,
@@ -1277,6 +1397,8 @@ compile_hosts_entry(const char *hostname, JsonConfNode *node,
 	entry->ssl_ca = defaults->ssl_ca;
 	entry->ssl_passphrase_cmd = defaults->ssl_passphrase_cmd;
 	entry->ssl_passphrase_reload = defaults->ssl_passphrase_reload;
+	entry->settings_keys = list_copy(defaults->settings_keys);
+	entry->settings_vals = list_copy(defaults->settings_vals);
 	if (!hosts_collect(node, entry, &err, &at))
 	{
 		hosts_entry_error(entry, at, elevel, "%s", err);
@@ -1291,6 +1413,11 @@ compile_hosts_entry(const char *hostname, JsonConfNode *node,
 						  "ssl_cert_file" : "ssl_key_file");
 		return entry;
 	}
+
+	if (!validate_connection_settings(entry->settings_keys,
+									  entry->settings_vals,
+									  PGC_HOSTS, &err))
+		hosts_entry_error(entry, node, elevel, "%s", err);
 
 	return entry;
 }
@@ -1499,6 +1626,10 @@ copy_hosts_entry(const HostsLine *src)
 	dst->ssl_passphrase_reload = src->ssl_passphrase_reload;
 	if (src->node_path != NULL)
 		dst->node_path = pstrdup(src->node_path);
+	foreach(lc, src->settings_keys)
+		dst->settings_keys = lappend(dst->settings_keys, pstrdup(lfirst(lc)));
+	foreach(lc, src->settings_vals)
+		dst->settings_vals = lappend(dst->settings_vals, pstrdup(lfirst(lc)));
 	if (src->err_msg != NULL)
 		dst->err_msg = pstrdup(src->err_msg);
 	return dst;
