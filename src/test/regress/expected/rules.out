@@ -1374,6 +1374,17 @@ pg_hba_file_rules| SELECT rule_number,
     node_path,
     error
    FROM pg_hba_file_rules() a(rule_number, file_name, line_number, type, database, user_name, address, netmask, auth_method, options, node_path, error);
+pg_hosts_file_entries| SELECT entry_number,
+    file_name,
+    line_number,
+    hostname,
+    ssl_cert_file,
+    ssl_key_file,
+    ssl_ca_file,
+    ssl_passphrase_command,
+    ssl_passphrase_command_supports_reload,
+    error
+   FROM pg_hosts_file_entries() a(entry_number, file_name, line_number, hostname, ssl_cert_file, ssl_key_file, ssl_ca_file, ssl_passphrase_command, ssl_passphrase_command_supports_reload, error);
 pg_ident_file_mappings| SELECT map_number,
     file_name,
     line_number,

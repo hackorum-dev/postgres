@@ -14,11 +14,14 @@
  */
 #include "postgres.h"
 
+#include <sys/stat.h>
+
 #include "access/htup_details.h"
 #include "catalog/objectaddress.h"
 #include "common/ip.h"
 #include "funcapi.h"
 #include "libpq/hba.h"
+#include "libpq/libpq.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/config_json.h"
@@ -36,6 +39,11 @@ static void fill_ident_line(Tuplestorestate *tuple_store, TupleDesc tupdesc,
 							int map_number, char *filename, int lineno,
 							IdentLine *ident, const char *err_msg);
 static void fill_ident_view(Tuplestorestate *tuple_store, TupleDesc tupdesc);
+static void fill_hosts_entry(Tuplestorestate *tuple_store, TupleDesc tupdesc,
+							 int entry_number, const char *filename,
+							 int lineno, const char *hostname,
+							 HostsLine *host, const char *err_msg);
+static void fill_hosts_view(Tuplestorestate *tuple_store, TupleDesc tupdesc);
 
 
 /*
@@ -670,6 +678,257 @@ pg_ident_file_mappings(PG_FUNCTION_ARGS)
 	/* Fill the tuplestore */
 	rsi = (ReturnSetInfo *) fcinfo->resultinfo;
 	fill_ident_view(rsi->setResult, rsi->setDesc);
+
+	PG_RETURN_NULL();
+}
+
+/* Number of columns in pg_hosts_file_entries view */
+#define NUM_PG_HOSTS_FILE_ENTRIES_ATTS	10
+
+/*
+ * fill_hosts_entry
+ *		Build one row of pg_hosts_file_entries view, add it to tuplestore.
+ *
+ * tuple_store: where to store data
+ * tupdesc: tuple descriptor for the view
+ * entry_number: unique identifier among all valid entries
+ * filename: configuration file name (must always be valid)
+ * lineno: line number of configuration file (must always be valid)
+ * hostname: the host name this row is for (NULL if none could be read)
+ * host: parsed entry data (can be NULL, in which case err_msg should be set)
+ * err_msg: error message (NULL if none)
+ *
+ * A legacy line with several host names gives one row per name, all with
+ * the same entry_number.  With an error, only the host name is shown.
+ *
+ * Note: leaks memory, but we don't care since this is run in a short-lived
+ * memory context.
+ */
+static void
+fill_hosts_entry(Tuplestorestate *tuple_store, TupleDesc tupdesc,
+				 int entry_number, const char *filename, int lineno,
+				 const char *hostname, HostsLine *host, const char *err_msg)
+{
+	Datum		values[NUM_PG_HOSTS_FILE_ENTRIES_ATTS];
+	bool		nulls[NUM_PG_HOSTS_FILE_ENTRIES_ATTS];
+	HeapTuple	tuple;
+	int			index;
+
+	Assert(tupdesc->natts == NUM_PG_HOSTS_FILE_ENTRIES_ATTS);
+
+	memset(values, 0, sizeof(values));
+	memset(nulls, 0, sizeof(nulls));
+	index = 0;
+
+	/* entry_number, nothing on error */
+	if (err_msg)
+		nulls[index++] = true;
+	else
+		values[index++] = Int32GetDatum(entry_number);
+
+	/* file_name */
+	values[index++] = CStringGetTextDatum(filename);
+
+	/* line_number */
+	values[index++] = Int32GetDatum(lineno);
+
+	/* hostname */
+	if (hostname)
+		values[index++] = CStringGetTextDatum(hostname);
+	else
+		nulls[index++] = true;
+
+	if (host != NULL && err_msg == NULL)
+	{
+		values[index++] = CStringGetTextDatum(host->ssl_cert);
+		values[index++] = CStringGetTextDatum(host->ssl_key);
+		if (host->ssl_ca)
+			values[index++] = CStringGetTextDatum(host->ssl_ca);
+		else
+			nulls[index++] = true;
+		if (host->ssl_passphrase_cmd)
+			values[index++] = CStringGetTextDatum(host->ssl_passphrase_cmd);
+		else
+			nulls[index++] = true;
+		values[index++] = BoolGetDatum(host->ssl_passphrase_reload);
+	}
+	else
+	{
+		/* no parsing result, so set the fields derived from it to nulls */
+		memset(&nulls[index], true,
+			   (NUM_PG_HOSTS_FILE_ENTRIES_ATTS - index - 1) * sizeof(bool));
+		index = NUM_PG_HOSTS_FILE_ENTRIES_ATTS - 1;
+	}
+
+	/* error */
+	Assert(index == NUM_PG_HOSTS_FILE_ENTRIES_ATTS - 1);
+	if (err_msg)
+		values[index] = CStringGetTextDatum(err_msg);
+	else
+		nulls[index] = true;
+
+	tuple = heap_form_tuple(tupdesc, values, nulls);
+	tuplestore_puttuple(tuple_store, tuple);
+}
+
+/*
+ * One row per host name of an entry; a problem that left no host name,
+ * such as an import file that could not be read, gets one row without.
+ */
+static void
+fill_hosts_entry_rows(Tuplestorestate *tuple_store, TupleDesc tupdesc,
+					  int entry_number, const char *filename, int lineno,
+					  List *hostnames, HostsLine *host, const char *err_msg)
+{
+	ListCell   *lc;
+
+	if (hostnames == NIL)
+	{
+		fill_hosts_entry(tuple_store, tupdesc, entry_number, filename, lineno,
+						 NULL, host, err_msg);
+		return;
+	}
+	foreach(lc, hostnames)
+		fill_hosts_entry(tuple_store, tupdesc, entry_number, filename, lineno,
+						 lfirst(lc), host, err_msg);
+}
+
+/*
+ * fill_hosts_view
+ *		Read the SNI hosts configuration and fill the tuplestore with view
+ *		records.
+ *
+ * The entries come from hosts_file, in either format.
+ */
+static void
+fill_hosts_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
+{
+	int			entry_number = 0;
+	ListCell   *lc;
+	MemoryContext hostscxt;
+	MemoryContext oldcxt;
+
+	/* Everything parsed here is short-lived */
+	hostscxt = AllocSetContextCreate(CurrentMemoryContext,
+									 "hosts parser context",
+									 ALLOCSET_SMALL_SIZES);
+	oldcxt = MemoryContextSwitchTo(hostscxt);
+
+	/*
+	 * As for the other views, a file that cannot be loaded at all is an error
+	 * rather than a row; the problems of individual entries are rows.
+	 */
+	if (config_json_auth_source(HostsFileName) != NULL)
+	{
+		List	   *documents;
+		List	   *entries;
+		char	   *file_err;
+		bool		found;
+
+		if (!config_json_load_section("hosts", HostsFileName, DEBUG3,
+									  &documents, &file_err))
+			ereport(ERROR,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("could not load configuration file \"%s\"",
+							HostsFileName),
+					 errdetail_internal("%s", file_err)));
+		entries = parse_hosts_json(documents, DEBUG3, &found, &file_err);
+		if (file_err != NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("could not load configuration file \"%s\"",
+							HostsFileName),
+					 errdetail_internal("%s", file_err)));
+
+		foreach(lc, entries)
+		{
+			HostsLine  *host = lfirst(lc);
+
+			/* No error, set a new entry number */
+			if (host->err_msg == NULL)
+				entry_number++;
+
+			fill_hosts_entry_rows(tuple_store, tupdesc, entry_number,
+								  host->sourcefile, host->linenumber,
+								  host->hostnames, host, host->err_msg);
+		}
+	}
+	else
+	{
+		struct stat st;
+		FILE	   *file;
+		List	   *hosts_lines = NIL;
+
+		/* a missing file is an empty one, as load_hosts() treats it */
+		if (stat(HostsFileName, &st) != 0 && errno == ENOENT)
+		{
+			MemoryContextSwitchTo(oldcxt);
+			MemoryContextDelete(hostscxt);
+			return;
+		}
+
+		file = open_auth_file(HostsFileName, ERROR, 0, NULL);
+		tokenize_auth_file(HostsFileName, file, &hosts_lines, DEBUG3, 0);
+
+		foreach(lc, hosts_lines)
+		{
+			TokenizedAuthLine *tok_line = (TokenizedAuthLine *) lfirst(lc);
+			HostsLine  *host = NULL;
+			List	   *hostnames = NIL;
+
+			/* don't parse lines that already have errors */
+			if (tok_line->err_msg == NULL)
+				host = parse_hosts_line(tok_line, DEBUG3);
+
+			/* No error, set a new entry number */
+			if (tok_line->err_msg == NULL)
+				entry_number++;
+
+			/*
+			 * For a line that did not parse, show the host names it did have,
+			 * from the first field.
+			 */
+			if (host != NULL)
+				hostnames = host->hostnames;
+			else if (tok_line->fields != NIL)
+			{
+				ListCell   *t;
+
+				foreach(t, (List *) linitial(tok_line->fields))
+					hostnames = lappend(hostnames,
+										((AuthToken *) lfirst(t))->string);
+			}
+
+			fill_hosts_entry_rows(tuple_store, tupdesc, entry_number,
+								  tok_line->file_name, tok_line->line_num,
+								  hostnames, host, tok_line->err_msg);
+		}
+
+		/* Free tokenizer memory */
+		free_auth_file(file, 0);
+	}
+
+	MemoryContextSwitchTo(oldcxt);
+	MemoryContextDelete(hostscxt);
+}
+
+/*
+ * SQL-accessible SRF to return all the entries in the pg_hosts.conf file.
+ */
+Datum
+pg_hosts_file_entries(PG_FUNCTION_ARGS)
+{
+	ReturnSetInfo *rsi;
+
+	/*
+	 * Build tuplestore to hold the result rows.  We must use the Materialize
+	 * mode to be safe against file changes while the cursor is open.
+	 */
+	InitMaterializedSRF(fcinfo, 0);
+
+	/* Fill the tuplestore */
+	rsi = (ReturnSetInfo *) fcinfo->resultinfo;
+	fill_hosts_view(rsi->setResult, rsi->setDesc);
 
 	PG_RETURN_NULL();
 }

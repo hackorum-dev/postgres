@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  *
  * hba_json.c
- *	  Compile the JSON hba tree and ident maps.
+ *	  Compile the JSON hba tree, ident maps and hosts entries.
  *
  * The "hba" section of a JSON configuration is a tree of nodes.  Each node
  * narrows the match (transport, ssl, gss, databases, users, address) and
@@ -16,6 +16,12 @@
  * from system user name to PostgreSQL user name, or to an array of them.
  * Every pair becomes one (map, system user, pg user) line for
  * parse_ident_line().
+ *
+ * The "hosts" section is flat as well: "entries" is an object from host
+ * name to an object with the fields of a pg_hosts.conf line, named after
+ * the ssl_* parameters they stand in for.  It has no classic token form to
+ * go through, so it is compiled straight into HostsLines; imported legacy
+ * lines go through parse_hosts_line() as they do for pg_hosts.conf.
  *
  * Portions Copyright (c) 1996-2026, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -41,8 +47,13 @@
  * method emits nothing of its own; it only groups its children.
  *
  * Import nodes splice a legacy file in at their position.  Legacy lines
- * are complete rules and inherit nothing.  The "import" list of the
- * ident section works the same way.
+ * are complete rules and inherit nothing.  The "import" lists of the
+ * ident and hosts sections work the same way.
+ *
+ * The "defaults" object of the hosts section is merged key by key across
+ * all documents, later documents overriding, and then applied under every
+ * entry's own keys.  Host names must be unique across the documents and
+ * the imported files, compared case-insensitively as the SNI match is.
  *
  *-------------------------------------------------------------------------
  */
@@ -58,8 +69,8 @@
 #include "utils/memutils.h"
 
 /*
- * Everything the tokenize_*_json() functions allocate while compiling
- * lives here.
+ * Everything the tokenize_*_json() functions and parse_hosts_json()
+ * allocate while compiling lives here.
  */
 static MemoryContext hba_json_context = NULL;
 
@@ -1117,6 +1128,383 @@ compile_ident_documents(List *documents, List **tok_lines, int elevel,
 }
 
 /*
+ * Keys of a hosts entry, and of "defaults": the ssl_* parameters an entry
+ * overrides for its host.
+ */
+static const char *const hosts_entry_keys[] = {
+	"ssl_cert_file", "ssl_key_file", "ssl_ca_file", "ssl_passphrase_command",
+	"ssl_passphrase_command_supports_reload", NULL
+};
+
+/*
+ * Record a per-entry error: report it at elevel, and mark the entry, so
+ * that the view shows it in place and the load fails.  "at" is the node
+ * the message is about; NULL for an imported legacy line, which has a
+ * file position only.  The message is translated here.
+ */
+static void hosts_entry_error(HostsLine *entry, JsonConfNode *at,
+							  int elevel, const char *fmt, ...)
+			pg_attribute_printf(4, 5);
+
+static void
+hosts_entry_error(HostsLine *entry, JsonConfNode *at, int elevel,
+				  const char *fmt, ...)
+{
+	StringInfoData msg;
+
+	fmt = _(fmt);
+	initStringInfo(&msg);
+	for (;;)
+	{
+		va_list		args;
+		int			needed;
+
+		va_start(args, fmt);
+		needed = appendStringInfoVA(&msg, fmt, args);
+		va_end(args);
+		if (needed == 0)
+			break;
+		enlargeStringInfo(&msg, needed);
+	}
+	entry->err_msg = msg.data;
+	if (at != NULL)
+		ereport(elevel,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg_internal("%s", msg.data),
+				 config_json_errcontext(at)));
+	else
+		ereport(elevel,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg_internal("%s", msg.data),
+				 errcontext("line %d of configuration file \"%s\"",
+							entry->linenumber, entry->sourcefile)));
+}
+
+/*
+ * Apply the keys of an entry or "defaults" object to "out", on top of
+ * whatever it holds: a key that is not given keeps its value, which is how
+ * defaults merge across documents and under an entry.  Returns false with
+ * *err set and *at pointing at the offending value for an unrecognized key
+ * or a value of the wrong type.
+ */
+static bool
+hosts_collect(JsonConfNode *obj, HostsLine *out, char **err,
+			  JsonConfNode **at)
+{
+	ListCell   *k,
+			   *v;
+
+	forboth(k, obj->keys, v, obj->values)
+	{
+		const char *key = lfirst(k);
+		JsonConfNode *val = lfirst(v);
+
+		*at = val;
+		if (!string_in(key, hosts_entry_keys))
+		{
+			*err = psprintf(_("unrecognized key \"%s\""), key);
+			return false;
+		}
+
+		if (strcmp(key, "ssl_passphrase_command_supports_reload") == 0)
+		{
+			if (val->type != JCN_BOOL)
+			{
+				*err = psprintf(_("\"%s\" must be a boolean"), key);
+				return false;
+			}
+			out->ssl_passphrase_reload = val->boolval;
+		}
+		else
+		{
+			char	  **field;
+
+			if (val->type != JCN_STRING)
+			{
+				*err = psprintf(_("\"%s\" must be a string"), key);
+				return false;
+			}
+			if (strcmp(key, "ssl_cert_file") == 0)
+				field = &out->ssl_cert;
+			else if (strcmp(key, "ssl_key_file") == 0)
+				field = &out->ssl_key;
+			else if (strcmp(key, "ssl_ca_file") == 0)
+				field = &out->ssl_ca;
+			else
+				field = &out->ssl_passphrase_cmd;
+			*field = pstrdup(val->strval);
+		}
+	}
+	return true;
+}
+
+/*
+ * Compile one key of "entries" into an entry.  The entry starts out as a
+ * copy of the merged defaults, its own keys go on top, and then the
+ * certificate and key must be there.  The entry is returned even on
+ * error, with err_msg set.
+ */
+static HostsLine *
+compile_hosts_entry(const char *hostname, JsonConfNode *node,
+					const HostsLine *defaults, int elevel)
+{
+	HostsLine  *entry = palloc0_object(HostsLine);
+	char	   *err = NULL;
+	JsonConfNode *at = NULL;
+
+	entry->sourcefile = pstrdup(node->file);
+	entry->linenumber = node->line;
+	entry->node_path = config_json_path(node);
+	entry->rawline = pstrdup(entry->node_path);
+	entry->hostnames = list_make1(pstrdup(hostname));
+
+	if (hostname[0] == '\0')
+	{
+		hosts_entry_error(entry, node, elevel, "host name cannot be empty");
+		return entry;
+	}
+	if (node->type != JCN_OBJECT)
+	{
+		hosts_entry_error(entry, node, elevel,
+						  "hosts entry must be an object, not %s",
+						  config_json_type_name(node->type));
+		return entry;
+	}
+
+	/* the defaults, then the entry's own keys on top */
+	entry->ssl_cert = defaults->ssl_cert;
+	entry->ssl_key = defaults->ssl_key;
+	entry->ssl_ca = defaults->ssl_ca;
+	entry->ssl_passphrase_cmd = defaults->ssl_passphrase_cmd;
+	entry->ssl_passphrase_reload = defaults->ssl_passphrase_reload;
+	if (!hosts_collect(node, entry, &err, &at))
+	{
+		hosts_entry_error(entry, at, elevel, "%s", err);
+		return entry;
+	}
+
+	if (entry->ssl_cert == NULL || entry->ssl_key == NULL)
+	{
+		hosts_entry_error(entry, node, elevel,
+						  "missing required key \"%s\"",
+						  entry->ssl_cert == NULL ?
+						  "ssl_cert_file" : "ssl_key_file");
+		return entry;
+	}
+
+	return entry;
+}
+
+/*
+ * The entry for an imported legacy line: parse_hosts_line()'s result, or
+ * for a line that did not tokenize or parse, a placeholder that carries
+ * the message and whatever host names the line did have, for the view.
+ */
+static HostsLine *
+import_hosts_line(TokenizedAuthLine *tok, int elevel)
+{
+	HostsLine  *entry;
+
+	if (tok->err_msg == NULL &&
+		(entry = parse_hosts_line(tok, elevel)) != NULL)
+		return entry;
+
+	entry = palloc0_object(HostsLine);
+	entry->sourcefile = pstrdup(tok->file_name);
+	entry->linenumber = tok->line_num;
+	entry->rawline = pstrdup(tok->raw_line);
+	if (tok->node_path != NULL)
+		entry->node_path = pstrdup(tok->node_path);
+	entry->err_msg = pstrdup(tok->err_msg);
+	if (tok->fields != NIL)
+	{
+		ListCell   *lc;
+
+		foreach(lc, (List *) linitial(tok->fields))
+			entry->hostnames = lappend(entry->hostnames,
+									   pstrdup(((AuthToken *) lfirst(lc))->string));
+	}
+	return entry;
+}
+
+/*
+ * Append an entry to the list, after checking its host names against
+ * those seen so far.  A repeated name marks the entry, unless it already
+ * has an error, which is reported first; its names still count as seen,
+ * since fixing the entry would not make the duplicate go away.  "at" is
+ * the entry's node, or NULL for an imported line.
+ */
+static void
+add_hosts_entry(HostsLine *entry, JsonConfNode *at, List **entries,
+				List **seen, int elevel)
+{
+	ListCell   *lc;
+
+	foreach(lc, entry->hostnames)
+	{
+		const char *hostname = lfirst(lc);
+		ListCell   *s;
+		bool		dup = false;
+
+		foreach(s, *seen)
+		{
+			if (pg_strcasecmp(lfirst(s), hostname) == 0)
+			{
+				dup = true;
+				break;
+			}
+		}
+		if (dup && entry->err_msg == NULL)
+			hosts_entry_error(entry, at, elevel,
+							  "duplicate hosts entry \"%s\"", hostname);
+		*seen = lappend(*seen, (char *) hostname);
+	}
+	*entries = lappend(*entries, entry);
+}
+
+/*
+ * Check the shape of one document's "hosts" section.  Returns the section,
+ * NULL if the document has none, or sets *file_err and returns NULL with
+ * *ok cleared.
+ */
+static JsonConfNode *
+hosts_section(JsonConfNode *doc, int elevel, bool *ok, char **file_err)
+{
+	static const char *const keys[] = {"import", "defaults", "entries", NULL};
+	JsonConfNode *hosts = config_json_get(doc, "hosts");
+	JsonConfNode *val;
+	ListCell   *k,
+			   *v;
+
+	if (hosts == NULL)
+		return NULL;
+	if (hosts->type != JCN_OBJECT)
+	{
+		*ok = section_shape_error(hosts, elevel, file_err,
+								  "\"%s\" must be an object", "hosts");
+		return NULL;
+	}
+	forboth(k, hosts->keys, v, hosts->values)
+	{
+		if (!string_in(lfirst(k), keys))
+		{
+			*ok = section_shape_error(lfirst(v), elevel, file_err,
+									  "unrecognized key \"%s\"",
+									  (char *) lfirst(k));
+			return NULL;
+		}
+	}
+	if ((val = config_json_get(hosts, "defaults")) != NULL &&
+		val->type != JCN_OBJECT)
+	{
+		*ok = section_shape_error(val, elevel, file_err,
+								  "\"%s\" must be an object", "defaults");
+		return NULL;
+	}
+	if ((val = config_json_get(hosts, "entries")) != NULL &&
+		val->type != JCN_OBJECT)
+	{
+		*ok = section_shape_error(val, elevel, file_err,
+								  "\"%s\" must be an object", "entries");
+		return NULL;
+	}
+	return hosts;
+}
+
+/*
+ * The "hosts" section of every document.  The defaults of all documents
+ * are merged first, since an entry in an early document may rely on a
+ * default set by a later one; then come each document's imports and
+ * entries, in load order.
+ */
+static bool
+compile_hosts_documents(List *documents, List **entries, int elevel,
+						char **file_err)
+{
+	HostsLine	defaults = {0};
+	List	   *seen = NIL;
+	ListCell   *lc;
+	bool		ok = true;
+
+	foreach(lc, documents)
+	{
+		JsonConfNode *hosts = hosts_section(lfirst(lc), elevel, &ok, file_err);
+		JsonConfNode *defs;
+		char	   *err;
+		JsonConfNode *at;
+
+		if (!ok)
+			return false;
+		if (hosts == NULL)
+			continue;
+
+		/* a bad default would spoil every entry, so it is a file-level error */
+		defs = config_json_get(hosts, "defaults");
+		if (defs != NULL && !hosts_collect(defs, &defaults, &err, &at))
+			return section_shape_error(at, elevel, file_err, "%s", err);
+	}
+
+	foreach(lc, documents)
+	{
+		JsonConfNode *hosts = config_json_get(lfirst(lc), "hosts");
+		JsonConfNode *imports,
+				   *ents;
+		List	   *tok_lines = NIL;
+		ListCell   *k,
+				   *v;
+
+		if (hosts == NULL)
+			continue;
+
+		imports = config_json_get(hosts, "import");
+		if (imports != NULL &&
+			!import_auth_lines(imports, &tok_lines, elevel, file_err))
+			return false;
+		foreach(k, tok_lines)
+			add_hosts_entry(import_hosts_line(lfirst(k), elevel), NULL,
+							entries, &seen, elevel);
+
+		ents = config_json_get(hosts, "entries");
+		if (ents == NULL)
+			continue;
+		forboth(k, ents->keys, v, ents->values)
+			add_hosts_entry(compile_hosts_entry(lfirst(k), lfirst(v),
+												&defaults, elevel),
+							lfirst(v), entries, &seen, elevel);
+	}
+	return true;
+}
+
+/* A copy of an entry and everything it points to, in the current context. */
+static HostsLine *
+copy_hosts_entry(const HostsLine *src)
+{
+	HostsLine  *dst = palloc0_object(HostsLine);
+	ListCell   *lc;
+
+	dst->linenumber = src->linenumber;
+	dst->sourcefile = pstrdup(src->sourcefile);
+	if (src->rawline != NULL)
+		dst->rawline = pstrdup(src->rawline);
+	foreach(lc, src->hostnames)
+		dst->hostnames = lappend(dst->hostnames, pstrdup(lfirst(lc)));
+	if (src->ssl_cert != NULL)
+		dst->ssl_cert = pstrdup(src->ssl_cert);
+	if (src->ssl_key != NULL)
+		dst->ssl_key = pstrdup(src->ssl_key);
+	if (src->ssl_ca != NULL)
+		dst->ssl_ca = pstrdup(src->ssl_ca);
+	if (src->ssl_passphrase_cmd != NULL)
+		dst->ssl_passphrase_cmd = pstrdup(src->ssl_passphrase_cmd);
+	dst->ssl_passphrase_reload = src->ssl_passphrase_reload;
+	if (src->node_path != NULL)
+		dst->node_path = pstrdup(src->node_path);
+	if (src->err_msg != NULL)
+		dst->err_msg = pstrdup(src->err_msg);
+	return dst;
+}
+
+/*
  * Set up the contexts a section compiler needs, and switch to the one its
  * output goes to.  Returns the caller's context; free_json_section_tokens()
  * undoes the rest.
@@ -1199,6 +1587,57 @@ tokenize_ident_json(List *documents, List **tok_lines, int elevel,
 {
 	return tokenize_json_section(compile_ident_documents, documents,
 								 tok_lines, elevel, file_err);
+}
+
+/*
+ * parse_hosts_json
+ *		Compile the "hosts" sections of the given documents into entries.
+ *
+ * Unlike the other sections there is no token form for a caller to parse,
+ * so the result is final: a list of HostsLines, in the order the SNI
+ * match tries them, with the entries that have a problem included and
+ * marked by err_msg.  *found tells whether any document has a "hosts" key
+ * at all, whatever its shape, which load_hosts() distinguishes from a
+ * section without entries.  Returns NIL with *file_err set for file-level
+ * problems (a section, "defaults" or "entries" of the wrong shape, a
+ * malformed import list); *found is set in that case too, so that a
+ * caller checking it first cannot mistake a broken section for a missing
+ * one.
+ *
+ * The entries, and *file_err, are allocated in the caller's context; the
+ * documents may be freed afterwards, as everything else this needed is
+ * released before returning.
+ */
+List *
+parse_hosts_json(List *documents, int elevel, bool *found, char **file_err)
+{
+	MemoryContext oldcxt;
+	List	   *entries = NIL;
+	List	   *result = NIL;
+	ListCell   *lc;
+
+	*file_err = NULL;
+
+	/* decided before compiling, so that no error path can leave it unset */
+	*found = false;
+	foreach(lc, documents)
+	{
+		if (config_json_get(lfirst(lc), "hosts") != NULL)
+			*found = true;
+	}
+
+	oldcxt = json_section_begin();
+	if (!compile_hosts_documents(documents, &entries, elevel, file_err))
+		entries = NIL;
+	MemoryContextSwitchTo(oldcxt);
+
+	if (*file_err != NULL)
+		*file_err = pstrdup(*file_err);
+	foreach(lc, entries)
+		result = lappend(result, copy_hosts_entry(lfirst(lc)));
+
+	free_json_section_tokens();
+	return result;
 }
 
 /*
