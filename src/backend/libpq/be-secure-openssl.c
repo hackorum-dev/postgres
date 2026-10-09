@@ -2098,6 +2098,9 @@ sni_clienthello_cb(SSL *ssl, int *al, void *arg)
 	}
 
 found:
+	/* the chosen entry may carry settings for this connection */
+	apply_hosts_settings(install_config);
+
 	if (!ssl_update_ssl(ssl, install_config))
 	{
 		*al = SSL_AD_INTERNAL_ERROR;

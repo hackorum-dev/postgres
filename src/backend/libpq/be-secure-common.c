@@ -530,3 +530,23 @@ load_hosts(List **hosts, char **err_msg)
 
 	return HOSTSFILE_LOAD_OK;
 }
+
+/*
+ * apply_hosts_settings
+ *
+ * Apply the settings of the hosts entry chosen for a connection.  This runs
+ * in the backend during the TLS handshake, before client authentication.
+ * The settings were validated when the entry was loaded, so a failure here
+ * is unexpected and only logged.  An hba rule applies its settings later and
+ * from a higher source, so it overrides these on conflict.
+ */
+void
+apply_hosts_settings(HostsLine *host)
+{
+	ListCell   *k,
+			   *v;
+
+	forboth(k, host->settings_keys, v, host->settings_vals)
+		(void) set_config_option(lfirst(k), lfirst(v), PGC_HOSTS, PGC_S_HOSTS,
+								 GUC_ACTION_SET, true, LOG, false);
+}

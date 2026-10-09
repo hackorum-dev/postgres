@@ -54,14 +54,24 @@
  * certain point in their main loop. It's safer to wait than to read a
  * file asynchronously.)
  *
+ * HOSTS options can be set everywhere SIGHUP options can, and additionally
+ * for the connections matched by an entry of the hosts configuration.
+ *
+ * HBA options can be set everywhere HOSTS options can, and additionally
+ * for the connections matched by a rule of the client authentication
+ * configuration.  Both are applied as soon as the connection has been
+ * matched, before authentication, and remain in effect for the life of
+ * the connection.  Options of any later (less restrictive) context can
+ * also be set from a hosts entry or an hba rule.
+ *
  * BACKEND and SU_BACKEND options can only be set at postmaster startup,
- * from the configuration file, or by client request in the connection
- * startup packet (e.g., from libpq's PGOPTIONS variable).  SU_BACKEND
- * options can be set from the startup packet only when the user is a
- * superuser.  Furthermore, an already-started backend will ignore changes
- * to such an option in the configuration file.  The idea is that these
- * options are fixed for a given backend once it's started, but they can
- * vary across backends.
+ * from the configuration file, from a hosts entry or an hba rule, or by
+ * client request in the connection startup packet (e.g., from libpq's
+ * PGOPTIONS variable).  SU_BACKEND options can be set from the startup
+ * packet only when the user is a superuser.  Furthermore, an
+ * already-started backend will ignore changes to such an option in the
+ * configuration file.  The idea is that these options are fixed for a
+ * given backend once it's started, but they can vary across backends.
  *
  * SUSET options can be set at postmaster startup, with the SIGHUP
  * mechanism, or from the startup packet or SQL if you're a superuser.
@@ -73,6 +83,8 @@ typedef enum
 	PGC_INTERNAL,
 	PGC_POSTMASTER,
 	PGC_SIGHUP,
+	PGC_HOSTS,					/* also settable per hosts entry */
+	PGC_HBA,					/* also settable per hba rule */
 	PGC_SU_BACKEND,
 	PGC_BACKEND,
 	PGC_SUSET,
@@ -87,6 +99,11 @@ typedef enum
  * to process sources in any convenient order without affecting results.
  * Sources <= PGC_S_OVERRIDE will set the default used by RESET, as well
  * as the current value.
+ *
+ * PGC_S_HOSTS and PGC_S_HBA rank above PGC_S_GLOBAL and below
+ * PGC_S_DATABASE so that a per-database or per-role setting still
+ * overrides a value from a hosts entry or hba rule, while global
+ * defaults do not.
  *
  * PGC_S_INTERACTIVE isn't actually a source value, but is the
  * dividing line between "interactive" and "non-interactive" sources for
@@ -116,6 +133,8 @@ typedef enum
 	PGC_S_FILE,					/* postgresql.conf */
 	PGC_S_ARGV,					/* postmaster command line */
 	PGC_S_GLOBAL,				/* global in-database setting */
+	PGC_S_HOSTS,				/* from the matched hosts entry */
+	PGC_S_HBA,					/* from the matched hba rule */
 	PGC_S_DATABASE,				/* per-database setting */
 	PGC_S_USER,					/* per-user setting */
 	PGC_S_DATABASE_USER,		/* per-user-and-database setting */
@@ -448,6 +467,9 @@ extern int	set_config_option(const char *name, const char *value,
 							  GucContext context, GucSource source,
 							  GucAction action, bool changeVal, int elevel,
 							  bool is_reload);
+extern bool validate_connection_settings(List *keys, List *vals,
+										 GucContext context, char **err_msg);
+extern int	guc_name_compare(const char *namea, const char *nameb);
 extern int	set_config_option_ext(const char *name, const char *value,
 								  GucContext context, GucSource source,
 								  Oid srole,

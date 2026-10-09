@@ -3221,6 +3221,84 @@ parse_and_validate_value(const struct config_generic *record,
 
 
 /*
+ * validate_connection_settings
+ *		Check settings attached to a client authentication rule before they
+ *		are stored with it.
+ *
+ * Every entry of the parallel lists must name an existing parameter that
+ * can be set in the given context, with a value that parses.  Done at load
+ * time, so that applying the settings when a connection matches cannot
+ * fail.
+ *
+ * The settings are applied before a database is selected, where a check
+ * hook cannot look up catalog objects and accepts their names on faith.
+ * The validation may however run in a connected backend, when the view
+ * over the file reloads it, where the same hook would reject a name it
+ * does not find.  Validate as PGC_S_TEST, the source used for ALTER ROLE
+ * SET and other settings stored for later use: a hook then reports a
+ * missing object as a NOTICE at most, so the answer is the same wherever
+ * the file is loaded.  The role is the bootstrap superuser's, as it is for
+ * any other configuration file; set_config_option() would take it from
+ * the current user, which the postmaster does not have.
+ *
+ * Returns false with *err_msg set to the first problem.  Nothing is
+ * logged; the caller knows where the setting came from and reports it.
+ * set_config_option() has the message text we want (unrecognized
+ * parameter, cannot be changed now, invalid value), but only as an
+ * ereport, so run it at ERROR and catch the error.
+ */
+bool
+validate_connection_settings(List *keys, List *vals, GucContext context,
+							 char **err_msg)
+{
+	ListCell   *k,
+			   *v;
+
+	*err_msg = NULL;
+	forboth(k, keys, v, vals)
+	{
+		MemoryContext oldcxt = CurrentMemoryContext;
+		bool		ok = true;
+
+		PG_TRY();
+		{
+			/*
+			 * With changeVal false a valid setting yields -1, "accepted but
+			 * not applied".  A problem is reported at ERROR and lands in the
+			 * catch block, so 0 cannot be returned here; check it anyway in
+			 * case that ever changes.
+			 */
+			if (set_config_option_ext(lfirst(k), lfirst(v), context,
+									  PGC_S_TEST, BOOTSTRAP_SUPERUSERID,
+									  GUC_ACTION_SET, false, ERROR,
+									  false) == 0)
+				ok = false;
+		}
+		PG_CATCH();
+		{
+			ErrorData  *edata;
+
+			MemoryContextSwitchTo(oldcxt);
+			edata = CopyErrorData();
+			FlushErrorState();
+			*err_msg = pstrdup(edata->message);
+			FreeErrorData(edata);
+			ok = false;
+		}
+		PG_END_TRY();
+
+		if (!ok)
+		{
+			if (*err_msg == NULL)
+				*err_msg = psprintf("parameter \"%s\" cannot be set here",
+									(char *) lfirst(k));
+			return false;
+		}
+	}
+	return true;
+}
+
+/*
  * set_config_option: sets option `name' to given value.
  *
  * The value should be a string, which will be parsed and converted to
@@ -3449,6 +3527,28 @@ set_config_with_handle(const char *name, config_handle *handle,
 			 * signals to individual backends only.
 			 */
 			break;
+		case PGC_HOSTS:
+			if (context != PGC_HOSTS && context != PGC_SIGHUP &&
+				context != PGC_POSTMASTER)
+			{
+				ereport(elevel,
+						(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
+						 errmsg("parameter \"%s\" cannot be changed now",
+								record->name)));
+				return 0;
+			}
+			break;
+		case PGC_HBA:
+			if (context != PGC_HBA && context != PGC_HOSTS &&
+				context != PGC_SIGHUP && context != PGC_POSTMASTER)
+			{
+				ereport(elevel,
+						(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
+						 errmsg("parameter \"%s\" cannot be changed now",
+								record->name)));
+				return 0;
+			}
+			break;
 		case PGC_SU_BACKEND:
 			if (context == PGC_BACKEND)
 			{
@@ -3502,6 +3602,8 @@ set_config_with_handle(const char *name, config_handle *handle,
 			else if (context != PGC_POSTMASTER &&
 					 context != PGC_BACKEND &&
 					 context != PGC_SU_BACKEND &&
+					 context != PGC_HOSTS &&
+					 context != PGC_HBA &&
 					 source != PGC_S_CLIENT)
 			{
 				ereport(elevel,

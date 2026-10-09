@@ -25,7 +25,9 @@
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/config_json.h"
+#include "utils/fmgrprotos.h"
 #include "utils/guc.h"
+#include "utils/json.h"
 #include "utils/tuplestore.h"
 
 
@@ -173,8 +175,35 @@ get_hba_options(HbaLine *hba)
 		return NULL;
 }
 
+/*
+ * The settings attached to a rule or a hosts entry, as a jsonb object of
+ * name/value pairs; the values are the text they were given as.
+ */
+static Datum
+settings_to_jsonb(List *keys, List *vals)
+{
+	StringInfoData buf;
+	ListCell   *k,
+			   *v;
+	bool		first = true;
+
+	initStringInfo(&buf);
+	appendStringInfoChar(&buf, '{');
+	forboth(k, keys, v, vals)
+	{
+		if (!first)
+			appendStringInfoString(&buf, ", ");
+		first = false;
+		escape_json(&buf, lfirst(k));
+		appendStringInfoString(&buf, ": ");
+		escape_json(&buf, lfirst(v));
+	}
+	appendStringInfoChar(&buf, '}');
+	return DirectFunctionCall1(jsonb_in, CStringGetDatum(buf.data));
+}
+
 /* Number of columns in pg_hba_file_rules view */
-#define NUM_PG_HBA_FILE_RULES_ATTS	 12
+#define NUM_PG_HBA_FILE_RULES_ATTS	 13
 
 /*
  * fill_hba_line
@@ -366,13 +395,20 @@ fill_hba_line(Tuplestorestate *tuple_store, TupleDesc tupdesc,
 	else
 	{
 		/* no parsing result, so set the fields derived from it to nulls */
-		memset(&nulls[3], true, (NUM_PG_HBA_FILE_RULES_ATTS - 5) * sizeof(bool));
-		index = NUM_PG_HBA_FILE_RULES_ATTS - 2;
+		memset(&nulls[3], true, (NUM_PG_HBA_FILE_RULES_ATTS - 6) * sizeof(bool));
+		index = NUM_PG_HBA_FILE_RULES_ATTS - 3;
 	}
 
 	/* node_path, known even when the rule did not parse */
 	if (node_path)
 		values[index++] = CStringGetTextDatum(node_path);
+	else
+		nulls[index++] = true;
+
+	/* settings */
+	if (hba != NULL && hba->settings_keys != NIL)
+		values[index++] = settings_to_jsonb(hba->settings_keys,
+											hba->settings_vals);
 	else
 		nulls[index++] = true;
 
@@ -683,7 +719,7 @@ pg_ident_file_mappings(PG_FUNCTION_ARGS)
 }
 
 /* Number of columns in pg_hosts_file_entries view */
-#define NUM_PG_HOSTS_FILE_ENTRIES_ATTS	10
+#define NUM_PG_HOSTS_FILE_ENTRIES_ATTS	11
 
 /*
  * fill_hosts_entry
@@ -751,6 +787,11 @@ fill_hosts_entry(Tuplestorestate *tuple_store, TupleDesc tupdesc,
 		else
 			nulls[index++] = true;
 		values[index++] = BoolGetDatum(host->ssl_passphrase_reload);
+		if (host->settings_keys != NIL)
+			values[index++] = settings_to_jsonb(host->settings_keys,
+												host->settings_vals);
+		else
+			nulls[index++] = true;
 	}
 	else
 	{

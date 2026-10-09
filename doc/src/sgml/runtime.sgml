@@ -2724,7 +2724,8 @@ openssl x509 -req -in server.csr -text -days 365 \
     "globex.db.example.com": {"ssl_cert_file": "globex.crt", "ssl_key_file": "globex.key",
                               "ssl_passphrase_command": "pass show pg/globex-key",
                               "ssl_passphrase_command_supports_reload": true},
-    "*":                     {"ssl_cert_file": "server.crt", "ssl_key_file": "server.key"}
+    "*":                     {"ssl_cert_file": "server.crt", "ssl_key_file": "server.key",
+                              "settings": {"log_connections": "all"}}
   }
 }
 </programlisting>
@@ -2763,6 +2764,20 @@ openssl x509 -req -in server.csr -text -days 365 \
     <literal>hosts</literal> section in any document, the
     <literal>ssl_*</literal> parameters apply to all connections, as they
     do when <xref linkend="guc-hosts-file"/> is missing.
+   </para>
+
+   <para>
+    An entry can also carry <literal>settings</literal>, an object of
+    configuration parameters and their values.  They are applied to the
+    session, in the <literal>hosts</literal> context (see
+    <xref linkend="view-pg-settings"/>), when the entry is selected for a
+    connection during the handshake, whether by its host name or as the
+    default or <literal>/no_sni/</literal> entry, before client
+    authentication.  Settings of the authentication rule that then matches
+    the connection (see <xref linkend="auth-pg-hba-json"/>) are applied
+    later and override them where both set the same parameter.  Settings
+    are validated when the configuration is loaded, and an entry with an
+    unknown parameter or an invalid value is an error like any other.
    </para>
 
    <para>

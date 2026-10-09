@@ -1556,6 +1556,16 @@ AND c1.path[c2.level] = c2.path[c2.level];
 
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>settings</structfield> <type>jsonb</type>
+      </para>
+      <para>
+       Configuration parameters applied to connections matched by this
+       rule, as an object of parameter names and values, if any
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>error</structfield> <type>text</type>
       </para>
       <para>
@@ -1707,6 +1717,16 @@ AND c1.path[c2.level] = c2.path[c2.level];
       </para>
       <para>
        Whether the passphrase command can be run on reload
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>settings</structfield> <type>jsonb</type>
+      </para>
+      <para>
+       Configuration parameters applied to the connections this entry is
+       selected for, if any
       </para></entry>
      </row>
 
@@ -4121,12 +4141,42 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
     </listitem>
    </varlistentry>
    <varlistentry>
+    <!-- PGC_HOSTS -->
+    <term><literal>hosts</literal></term>
+    <listitem>
+     <para>
+      These settings behave like <literal>sighup</literal> settings, and can
+      also be set per entry of the SNI hosts configuration in JSON format
+      (see <xref linkend="ssl-sni"/>); such a value applies to the
+      connections matched by that entry.  Settings
+      with any of the <structfield>context</structfield> types listed below
+      can also be set per host entry.
+     </para>
+    </listitem>
+   </varlistentry>
+   <varlistentry>
+    <!-- PGC_HBA -->
+    <term><literal>hba</literal></term>
+    <listitem>
+     <para>
+      These settings behave like <literal>sighup</literal> settings, and can
+      also be set per rule of the client authentication rules in JSON
+      format (see <xref linkend="auth-pg-hba-json"/>), or per entry of the
+      SNI hosts configuration in JSON format; the value applies to the
+      connections matched by that rule or entry.  Settings with any of
+      the <structfield>context</structfield> types listed below can also be
+      set per rule or host entry.
+     </para>
+    </listitem>
+   </varlistentry>
+   <varlistentry>
     <!-- PGC_SU_BACKEND -->
     <term><literal>superuser-backend</literal></term>
     <listitem>
      <para>
       Changes to these settings can be made in
-      <filename>postgresql.conf</filename> without restarting the server.
+      <filename>postgresql.conf</filename> without restarting the server,
+      or per host entry or per client authentication rule.
       They can also be set for a particular session in the connection request
       packet (for example, via <application>libpq</application>'s <literal>PGOPTIONS</literal>
       environment variable), but only if the connecting user is a superuser
@@ -4145,7 +4195,8 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
     <listitem>
      <para>
       Changes to these settings can be made in
-      <filename>postgresql.conf</filename> without restarting the server.
+      <filename>postgresql.conf</filename> without restarting the server,
+      or per host entry or per client authentication rule.
       They can also be set for a particular session in the connection request
       packet (for example, via <application>libpq</application>'s <literal>PGOPTIONS</literal>
       environment variable); any user can make such a change for their session.
@@ -4163,6 +4214,7 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
     <listitem>
      <para>
       These settings can be set from <filename>postgresql.conf</filename>,
+      per host entry or per client authentication rule,
       or within a session via the <command>SET</command> command; but only superusers
       and users with the appropriate <literal>SET</literal> privilege
       can change them via <command>SET</command>.  Changes in
