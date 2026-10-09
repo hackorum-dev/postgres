@@ -9,6 +9,7 @@ use strict;
 use warnings FATAL => 'all';
 use Fcntl ':mode';
 use File::stat qw{lstat};
+use JSON::PP qw(decode_json);
 use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
@@ -330,5 +331,141 @@ command_like(
 command_fails(
 	[ 'pg_checksums', '--pgdata' => $datadir_nochecksums ],
 	"pg_checksums fails with data checksum disabled");
+
+# JSON configuration format
+command_fails_like(
+	[
+		'initdb', '--no-sync',
+		'--config-format' => 'bogus',
+		"$tempdir/dataX"
+	],
+	qr/unrecognized configuration format/,
+	'fails for invalid configuration format');
+command_fails_like(
+	[
+		'initdb', '--no-sync',
+		'--config-format' => 'json',
+		'--set' => 'HBA=x',
+		"$tempdir/dataX"
+	],
+	qr/"HBA" is a section of postgresql\.json and cannot be set with --set.*\n.*Edit the "hba" section/,
+	'fails for --set of a JSON section');
+command_fails_like(
+	[
+		'initdb', '--no-sync',
+		'--config-format' => 'json',
+		'--set' => 'hba_file=x',
+		"$tempdir/dataX"
+	],
+	qr/parameter "hba_file" cannot be set with --config-format=json/,
+	'fails for --set of a file parameter with JSON');
+
+# TZ is set so that a time zone is written even where none can be
+# detected.
+my $datadir_json = "$tempdir/data_json";
+{
+	local $ENV{TZ} = 'UTC';
+
+	command_ok(
+		[
+			'initdb', '--no-sync',
+			'--config-format' => 'json',
+			'--locale' => 'C',
+			'--wal-segsize' => '16',
+			'--set' => 'work_mem=7MB',
+			'--set' => 'max_connections=25',
+			'--set' => 'Max_Connections=26',
+			'--set' => 'Log_Min_Messages=debug1',
+			'--set' => 'LOG_MIN_MESSAGES=info',
+			'--set' => 'application_name=a"b\c',
+			$datadir_json
+		],
+		'successful creation with JSON configuration');
+}
+ok(-f "$datadir_json/postgresql.json", 'postgresql.json written');
+ok(-f "$datadir_json/postgresql.auto.conf", 'postgresql.auto.conf written');
+ok(!-f "$datadir_json/pg_hosts.conf", 'no pg_hosts.conf');
+ok(!-f "$datadir_json/postgresql.conf", 'no postgresql.conf');
+ok(!-f "$datadir_json/pg_hba.conf", 'no pg_hba.conf');
+ok(!-f "$datadir_json/pg_ident.conf", 'no pg_ident.conf');
+
+my $jconf = slurp_file("$datadir_json/postgresql.json");
+my $jdoc = decode_json($jconf);
+is($jdoc->{lc_messages}, 'C', 'lc_messages written');
+is($jdoc->{datestyle}, 'iso, mdy', 'datestyle written');
+ok(defined $jdoc->{timezone}, 'timezone written');
+is($jdoc->{log_timezone}, $jdoc->{timezone}, 'log_timezone follows timezone');
+like($jdoc->{dynamic_shared_memory_type},
+	qr/^(posix|sysv|windows|mmap)$/, 'dynamic_shared_memory_type written');
+is($jdoc->{min_wal_size}, '80MB', 'min_wal_size written');
+like($jdoc->{shared_buffers}, qr/^\d+[kM]B$/, 'shared_buffers written');
+is($jdoc->{work_mem}, '7MB', '--set value present');
+is($jdoc->{application_name}, 'a"b\c', '--set value escaped');
+is($jdoc->{max_connections}, 26, '--set overrides computed setting');
+like($jconf, qr/^  "max_connections": 26,$/m,
+	'override keeps canonical name and place');
+is($jdoc->{Log_Min_Messages},
+	'info', 'repeated --set keeps first spelling and last value');
+ok(!exists $jdoc->{LOG_MIN_MESSAGES}, 'repeated --set emitted once');
+is($jdoc->{hba}{children}[0]{auth}{method}, 'trust', 'auth method set');
+is_deeply($jdoc->{ident}, { maps => {} }, 'ident section present');
+
+# Start a cluster from a JSON root, with distinct local and host methods.
+# Cluster.pm appended its settings to postgresql.conf, which initdb did not
+# create; fold that file into the JSON root as an include so that only one
+# root exists.  On Windows, pg_regress --config-auth writes pg_hba.conf and
+# pg_ident.conf for SSPI; the JSON root ignores them and its own rules
+# apply.
+my $pwfile = "$tempdir/pwfile";
+append_to_file($pwfile, "secret\n");
+my $jnode = PostgreSQL::Test::Cluster->new('json');
+$jnode->init(
+	extra => [
+		'--config-format' => 'json',
+		'--auth' => 'md5',
+		'--auth-host' => 'scram-sha-256',
+		'--pwfile' => $pwfile
+	]);
+my $jd = $jnode->data_dir;
+rename("$jd/postgresql.conf", "$jd/cluster.conf") or die $!;
+my $root = slurp_file("$jd/postgresql.json");
+$root =~ s/^\{/{\n  "include": ["cluster.conf"],/
+  or die "could not add include to postgresql.json";
+open my $jf, '>', "$jd/postgresql.json" or die $!;
+print $jf $root;
+close $jf;
+$jnode->start;
+
+{
+	local $ENV{PGPASSWORD} = 'secret';
+
+	is($jnode->safe_psql('postgres', 'SHOW port'),
+		$jnode->port, 'include of the JSON root was read');
+	is( $jnode->safe_psql('postgres', 'SHOW max_connections'),
+		decode_json($root)->{max_connections},
+		'computed setting of the JSON root applied');
+
+	# initdb leaves out the ::1/128 entries when the platform has no IPv6,
+	# so the expected rules follow what it wrote.
+	my $ipv6 = ($root =~ /::1\/128/);
+	is( $jnode->safe_psql(
+			'postgres',
+			q{SELECT string_agg(type || ':' || database[1] || ':' ||
+			  coalesce(address, '-') || ':' || auth_method, ' '
+			  ORDER BY rule_number)
+			  FROM pg_hba_file_rules WHERE error IS NULL}),
+		join(' ',
+			'local:all:-:md5',
+			'host:all:127.0.0.1:scram-sha-256',
+			($ipv6 ? 'host:all:::1:scram-sha-256' : ()),
+			'local:replication:-:md5',
+			'host:replication:127.0.0.1:scram-sha-256',
+			($ipv6 ? 'host:replication:::1:scram-sha-256' : ())),
+		'default hba rules loaded from JSON');
+	is($jnode->safe_psql('postgres',
+			'SELECT count(*) FROM pg_hba_file_rules WHERE error IS NOT NULL'),
+		'0', 'no hba errors');
+}
+$jnode->stop;
 
 done_testing();

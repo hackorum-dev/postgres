@@ -169,6 +169,7 @@ static char *xlog_dir = NULL;
 static int	wal_segment_size_mb = (DEFAULT_XLOG_SEG_SIZE) / (1024 * 1024);
 static DataDirSyncMethod sync_method = DATA_DIR_SYNC_METHOD_FSYNC;
 static bool sync_data_files = true;
+static bool config_json = false;
 
 
 /* internal vars */
@@ -266,8 +267,12 @@ static char **replace_guc_value(char **lines,
 								const char *guc_name, const char *guc_value,
 								bool mark_as_comment);
 static bool guc_value_requires_quotes(const char *guc_value);
+static char *json_escape(const char *value);
+static char *json_scalar(const char *value);
 static char **readfile(const char *path);
 static void writefile(char *path, char **lines);
+static void write_conf_file(const char *filename, char **lines);
+static void copy_conf_file(const char *sample, const char *filename);
 static FILE *popen_check(const char *command, const char *mode);
 static char *get_id(void);
 static int	get_encoding_id(const char *encoding_name);
@@ -278,6 +283,11 @@ static void set_null_conf(void);
 static void test_config_settings(void);
 static bool test_specific_config_settings(int test_conns, int test_av_slots,
 										  int test_buffs);
+static bool have_ipv6_loopback(void);
+static void setup_auto_conf(void);
+static void json_setting(_stringlist **names, _stringlist **values,
+						 const char *name, const char *value);
+static void setup_config_json(void);
 static void setup_config(void);
 static void bootstrap_template1(void);
 static void setup_auth(FILE *cmdfd);
@@ -661,6 +671,56 @@ guc_value_requires_quotes(const char *guc_value)
 }
 
 /*
+ * Escape "value" for use as the contents of a JSON string literal.
+ *
+ * Only quotes and backslashes need it in practice; the values initdb writes
+ * (locale names, time zones, -c arguments) are not expected to contain
+ * control characters, but escape those too rather than emit an invalid
+ * document.
+ */
+static char *
+json_escape(const char *value)
+{
+	PQExpBuffer result = createPQExpBuffer();
+	char	   *data;
+
+	for (; *value; value++)
+	{
+		if (*value == '"' || *value == '\\')
+			appendPQExpBuffer(result, "\\%c", *value);
+		else if ((unsigned char) *value < 0x20)
+			appendPQExpBuffer(result, "\\u%04x", (unsigned char) *value);
+		else
+			appendPQExpBufferChar(result, *value);
+	}
+
+	data = result->data;
+	free(result);				/* but don't free result->data */
+
+	return data;
+}
+
+/*
+ * Format "value" as a JSON value.
+ *
+ * A plain integer is written as a number; anything else, including a number
+ * with a unit, becomes a string.  The server treats both spellings alike.
+ */
+static char *
+json_scalar(const char *value)
+{
+	const char *p = value;
+
+	if (*p == '-')
+		p++;
+	if ((p[0] == '0' && p[1] == '\0') ||
+		(p[0] >= '1' && p[0] <= '9' && strspn(p, "0123456789") == strlen(p)))
+		return pg_strdup(value);
+
+	return psprintf("\"%s\"", json_escape(value));
+}
+
+/*
  * get the lines from a text file
  *
  * The result is a malloc'd array of individually malloc'd strings.
@@ -729,6 +789,32 @@ writefile(char *path, char **lines)
 	if (fclose(out_file))
 		pg_fatal("could not close file \"%s\": %m", path);
 	free(lines);
+}
+
+/*
+ * write a configuration file into the data directory
+ *
+ * As writefile(), plus the permissions a configuration file gets.
+ */
+static void
+write_conf_file(const char *filename, char **lines)
+{
+	char		path[MAXPGPATH];
+
+	snprintf(path, sizeof(path), "%s/%s", pg_data, filename);
+
+	writefile(path, lines);
+	if (chmod(path, pg_file_create_mode) != 0)
+		pg_fatal("could not change permissions of \"%s\": %m", path);
+}
+
+/*
+ * install a sample configuration file verbatim
+ */
+static void
+copy_conf_file(const char *sample, const char *filename)
+{
+	write_conf_file(filename, readfile(sample));
 }
 
 /*
@@ -1037,6 +1123,10 @@ write_version_file(const char *extrapath)
 /*
  * set up an empty config file so we can check config settings by launching
  * a test backend
+ *
+ * The test backend looks for the root the way the server does, so the file
+ * must already be the one the chosen format uses: an empty JSON document is
+ * an empty object, not an empty file.
  */
 static void
 set_null_conf(void)
@@ -1044,10 +1134,13 @@ set_null_conf(void)
 	FILE	   *conf_file;
 	char	   *path;
 
-	path = psprintf("%s/postgresql.conf", pg_data);
+	path = psprintf("%s/%s", pg_data,
+					config_json ? "postgresql.json" : "postgresql.conf");
 	conf_file = fopen(path, PG_BINARY_W);
 	if (conf_file == NULL)
 		pg_fatal("could not open file \"%s\" for writing: %m", path);
+	if (config_json && fputs("{}\n", conf_file) < 0)
+		pg_fatal("could not write file \"%s\": %m", path);
 	if (fclose(conf_file))
 		pg_fatal("could not write file \"%s\": %m", path);
 	pfree(path);
@@ -1272,6 +1365,211 @@ pretty_wal_size(int segment_count)
 }
 
 /*
+ * Probe to see if there is really any platform support for IPv6, so that
+ * the IPv6 loopback entries can be left out of the authentication rules if
+ * not.  This avoids runtime warnings if getaddrinfo doesn't actually cope
+ * with IPv6.  Particularly useful on Windows, where executables built on a
+ * machine with IPv6 may have to run on a machine without.
+ */
+static bool
+have_ipv6_loopback(void)
+{
+	struct addrinfo *gai_result;
+	struct addrinfo hints;
+	int			err = 0;
+
+#ifdef WIN32
+	/* need to call WSAStartup before calling getaddrinfo */
+	WSADATA		wsaData;
+
+	err = WSAStartup(MAKEWORD(2, 2), &wsaData);
+#endif
+
+	/* for best results, this code should match parse_hba_line() */
+	hints.ai_flags = AI_NUMERICHOST;
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = 0;
+	hints.ai_protocol = 0;
+	hints.ai_addrlen = 0;
+	hints.ai_canonname = NULL;
+	hints.ai_addr = NULL;
+	hints.ai_next = NULL;
+
+	return (err == 0 &&
+			getaddrinfo("::1", NULL, &hints, &gai_result) == 0);
+}
+
+/*
+ * set up postgresql.auto.conf
+ */
+static void
+setup_auto_conf(void)
+{
+	char	  **conflines;
+
+	conflines = pg_malloc_array(char *, 3);
+	conflines[0] = pg_strdup("# Do not edit this file manually!\n");
+	conflines[1] = pg_strdup("# It will be overwritten by the ALTER SYSTEM command.\n");
+	conflines[2] = NULL;
+
+	write_conf_file("postgresql.auto.conf", conflines);
+}
+
+/*
+ * Set parameter "name" to "value" in the ordered settings list for
+ * postgresql.json.  A name already present, compared case-insensitively,
+ * keeps its place and first spelling and takes the new value, as
+ * replace_guc_value() does for postgresql.conf; the JSON loader would reject
+ * the name twice.  Otherwise the setting is appended.
+ */
+static void
+json_setting(_stringlist **names, _stringlist **values,
+			 const char *name, const char *value)
+{
+	_stringlist *n,
+			   *v;
+
+	for (n = *names, v = *values; n != NULL; n = n->next, v = v->next)
+	{
+		if (pg_strcasecmp(n->str, name) == 0)
+		{
+			free(v->str);
+			v->str = pg_strdup(value);
+			return;
+		}
+	}
+
+	add_stringlist_item(names, name);
+	add_stringlist_item(values, value);
+}
+
+/*
+ * set up postgresql.json, the configuration root in JSON format
+ *
+ * This writes the settings that setup_config() puts into postgresql.conf,
+ * and the authentication rules of pg_hba.conf.sample, into one document.
+ * The legacy sample's commented-out defaults have no place in it, and
+ * neither does the caution about "trust", which main() prints instead.
+ */
+static void
+setup_config_json(void)
+{
+	_stringlist *names = NULL;
+	_stringlist *values = NULL;
+	_stringlist *n,
+			   *v;
+	char		repltok[MAXPGPATH];
+	PQExpBuffer buf;
+	char	   *loopback;
+	char	   *local;
+	char	   *host;
+	char	  **conflines;
+
+	snprintf(repltok, sizeof(repltok), "%d", n_connections);
+	json_setting(&names, &values, "max_connections", repltok);
+
+	snprintf(repltok, sizeof(repltok), "%d", n_av_slots);
+	json_setting(&names, &values, "autovacuum_worker_slots", repltok);
+
+	if ((n_buffers * (BLCKSZ / 1024)) % 1024 == 0)
+		snprintf(repltok, sizeof(repltok), "%dMB",
+				 (n_buffers * (BLCKSZ / 1024)) / 1024);
+	else
+		snprintf(repltok, sizeof(repltok), "%dkB",
+				 n_buffers * (BLCKSZ / 1024));
+	json_setting(&names, &values, "shared_buffers", repltok);
+
+	json_setting(&names, &values, "dynamic_shared_memory_type",
+				 dynamic_shared_memory_type);
+
+	/* Caution: these depend on wal_segment_size_mb, they're not constants */
+	json_setting(&names, &values, "min_wal_size",
+				 pretty_wal_size(DEFAULT_MIN_WAL_SEGS));
+	json_setting(&names, &values, "max_wal_size",
+				 pretty_wal_size(DEFAULT_MAX_WAL_SEGS));
+
+	if (default_timezone)
+		json_setting(&names, &values, "log_timezone", default_timezone);
+
+	switch (locale_date_order(lc_time))
+	{
+		case DATEORDER_YMD:
+			strcpy(repltok, "iso, ymd");
+			break;
+		case DATEORDER_DMY:
+			strcpy(repltok, "iso, dmy");
+			break;
+		case DATEORDER_MDY:
+		default:
+			strcpy(repltok, "iso, mdy");
+			break;
+	}
+	json_setting(&names, &values, "datestyle", repltok);
+
+	if (default_timezone)
+		json_setting(&names, &values, "timezone", default_timezone);
+
+	json_setting(&names, &values, "lc_messages", lc_messages);
+	json_setting(&names, &values, "lc_monetary", lc_monetary);
+	json_setting(&names, &values, "lc_numeric", lc_numeric);
+	json_setting(&names, &values, "lc_time", lc_time);
+
+	snprintf(repltok, sizeof(repltok), "pg_catalog.%s",
+			 default_text_search_config);
+	json_setting(&names, &values, "default_text_search_config", repltok);
+
+	/* see setup_config() for the reasons behind these */
+	if ((strcmp(authmethodlocal, "md5") == 0 &&
+		 strcmp(authmethodhost, "scram-sha-256") != 0) ||
+		(strcmp(authmethodhost, "md5") == 0 &&
+		 strcmp(authmethodlocal, "scram-sha-256") != 0))
+		json_setting(&names, &values, "password_encryption", "md5");
+
+	if (pg_dir_create_mode == PG_DIR_MODE_GROUP)
+		json_setting(&names, &values, "log_file_mode", "0640");
+
+	/* and finally the -c switches */
+	for (n = extra_guc_names, v = extra_guc_values;
+		 n != NULL;				/* assume lists have the same length */
+		 n = n->next, v = v->next)
+		json_setting(&names, &values, n->str, v->str);
+
+	buf = createPQExpBuffer();
+	appendPQExpBufferStr(buf, "{\n");
+	for (n = names, v = values; n != NULL; n = n->next, v = v->next)
+		appendPQExpBuffer(buf, "  \"%s\": %s,\n",
+						  json_escape(n->str), json_scalar(v->str));
+
+	/* the authentication rules of pg_hba.conf.sample */
+	loopback = have_ipv6_loopback() ?
+		"[\"127.0.0.1/32\", \"::1/128\"]" : "[\"127.0.0.1/32\"]";
+	local = json_escape(authmethodlocal);
+	host = json_escape(authmethodhost);
+	appendPQExpBuffer(buf,
+					  "  \"hba\": {\"children\": [\n"
+					  "    {\"transport\": \"local\", \"auth\": {\"method\": \"%s\"}},\n"
+					  "    {\"address\": %s, \"auth\": {\"method\": \"%s\"}},\n"
+					  "    {\"databases\": \"replication\", \"children\": [\n"
+					  "      {\"transport\": \"local\", \"auth\": {\"method\": \"%s\"}},\n"
+					  "      {\"address\": %s, \"auth\": {\"method\": \"%s\"}}\n"
+					  "    ]}\n"
+					  "  ]},\n",
+					  local, loopback, host, local, loopback, host);
+	appendPQExpBufferStr(buf, "  \"ident\": {\"maps\": {}}\n}\n");
+
+	/* the server reads the file as UTF-8 */
+	if (pg_encoding_verifymbstr(PG_UTF8, buf->data, buf->len) != buf->len)
+		pg_fatal("generated configuration is not valid UTF-8");
+
+	conflines = pg_malloc_array(char *, 2);
+	conflines[0] = buf->data;
+	conflines[1] = NULL;
+	free(buf);					/* but don't free buf->data */
+
+	write_conf_file("postgresql.json", conflines);
+}
+
+/*
  * set up all the config files
  */
 static void
@@ -1279,12 +1577,26 @@ setup_config(void)
 {
 	char	  **conflines;
 	char		repltok[MAXPGPATH];
-	char		path[MAXPGPATH];
 	_stringlist *gnames,
 			   *gvalues;
 
 	fputs(_("creating configuration files ... "), stdout);
 	fflush(stdout);
+
+	/*
+	 * With a JSON root, postgresql.json takes the place of postgresql.conf,
+	 * pg_hba.conf and pg_ident.conf, and those must not be created: the
+	 * server refuses to choose between two roots.  pg_hosts.conf is not
+	 * created either, since nothing would read it.
+	 */
+	if (config_json)
+	{
+		setup_config_json();
+		setup_auto_conf();
+
+		check_ok();
+		return;
+	}
 
 	/* postgresql.conf */
 
@@ -1436,70 +1748,27 @@ setup_config(void)
 	}
 
 	/* ... and write out the finished postgresql.conf file */
-	snprintf(path, sizeof(path), "%s/postgresql.conf", pg_data);
-
-	writefile(path, conflines);
-	if (chmod(path, pg_file_create_mode) != 0)
-		pg_fatal("could not change permissions of \"%s\": %m", path);
+	write_conf_file("postgresql.conf", conflines);
 
 
 	/* postgresql.auto.conf */
 
-	conflines = pg_malloc_array(char *, 3);
-	conflines[0] = pg_strdup("# Do not edit this file manually!\n");
-	conflines[1] = pg_strdup("# It will be overwritten by the ALTER SYSTEM command.\n");
-	conflines[2] = NULL;
-
-	sprintf(path, "%s/postgresql.auto.conf", pg_data);
-
-	writefile(path, conflines);
-	if (chmod(path, pg_file_create_mode) != 0)
-		pg_fatal("could not change permissions of \"%s\": %m", path);
+	setup_auto_conf();
 
 
 	/* pg_hba.conf */
 
 	conflines = readfile(hba_file);
 
-	/*
-	 * Probe to see if there is really any platform support for IPv6, and
-	 * comment out the relevant pg_hba line if not.  This avoids runtime
-	 * warnings if getaddrinfo doesn't actually cope with IPv6.  Particularly
-	 * useful on Windows, where executables built on a machine with IPv6 may
-	 * have to run on a machine without.
-	 */
+	/* comment out the IPv6 lines if the platform cannot handle them */
+	if (!have_ipv6_loopback())
 	{
-		struct addrinfo *gai_result;
-		struct addrinfo hints;
-		int			err = 0;
-
-#ifdef WIN32
-		/* need to call WSAStartup before calling getaddrinfo */
-		WSADATA		wsaData;
-
-		err = WSAStartup(MAKEWORD(2, 2), &wsaData);
-#endif
-
-		/* for best results, this code should match parse_hba_line() */
-		hints.ai_flags = AI_NUMERICHOST;
-		hints.ai_family = AF_UNSPEC;
-		hints.ai_socktype = 0;
-		hints.ai_protocol = 0;
-		hints.ai_addrlen = 0;
-		hints.ai_canonname = NULL;
-		hints.ai_addr = NULL;
-		hints.ai_next = NULL;
-
-		if (err != 0 ||
-			getaddrinfo("::1", NULL, &hints, &gai_result) != 0)
-		{
-			conflines = replace_token(conflines,
-									  "host    all             all             ::1/128",
-									  "#host    all             all             ::1/128");
-			conflines = replace_token(conflines,
-									  "host    replication     all             ::1/128",
-									  "#host    replication     all             ::1/128");
-		}
+		conflines = replace_token(conflines,
+								  "host    all             all             ::1/128",
+								  "#host    all             all             ::1/128");
+		conflines = replace_token(conflines,
+								  "host    replication     all             ::1/128",
+								  "#host    replication     all             ::1/128");
 	}
 
 	/* Replace default authentication methods */
@@ -1514,30 +1783,16 @@ setup_config(void)
 							  "@authcomment@",
 							  (strcmp(authmethodlocal, "trust") == 0 || strcmp(authmethodhost, "trust") == 0) ? AUTHTRUST_WARNING : "");
 
-	snprintf(path, sizeof(path), "%s/pg_hba.conf", pg_data);
-
-	writefile(path, conflines);
-	if (chmod(path, pg_file_create_mode) != 0)
-		pg_fatal("could not change permissions of \"%s\": %m", path);
+	write_conf_file("pg_hba.conf", conflines);
 
 
 	/* pg_ident.conf */
 
-	conflines = readfile(ident_file);
-
-	snprintf(path, sizeof(path), "%s/pg_ident.conf", pg_data);
-
-	writefile(path, conflines);
-	if (chmod(path, pg_file_create_mode) != 0)
-		pg_fatal("could not change permissions of \"%s\": %m", path);
+	copy_conf_file(ident_file, "pg_ident.conf");
 
 	/* pg_hosts.conf */
-	conflines = readfile(hosts_file);
-	snprintf(path, sizeof(path), "%s/pg_hosts.conf", pg_data);
 
-	writefile(path, conflines);
-	if (chmod(path, pg_file_create_mode) != 0)
-		pg_fatal("could not change permissions of \"%s\": %m", path);
+	copy_conf_file(hosts_file, "pg_hosts.conf");
 
 	check_ok();
 }
@@ -2531,6 +2786,8 @@ usage(const char *progname)
 	printf(_("  -A, --auth=METHOD         default authentication method for local connections\n"));
 	printf(_("      --auth-host=METHOD    default authentication method for local TCP/IP connections\n"));
 	printf(_("      --auth-local=METHOD   default authentication method for local-socket connections\n"));
+	printf(_("      --config-format=FORMAT\n"
+			 "                            configuration file format: conf (default) or json\n"));
 	printf(_(" [-D, --pgdata=]DATADIR     location for this database cluster\n"));
 	printf(_("  -E, --encoding=ENCODING   set default encoding for new databases\n"));
 	printf(_("  -g, --allow-group-access  allow group read/execute on data directory\n"));
@@ -3207,6 +3464,7 @@ main(int argc, char *argv[])
 		{"sync-method", required_argument, NULL, 19},
 		{"no-data-checksums", no_argument, NULL, 20},
 		{"no-sync-data-files", no_argument, NULL, 21},
+		{"config-format", required_argument, NULL, 22},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -3404,6 +3662,14 @@ main(int argc, char *argv[])
 			case 21:
 				sync_data_files = false;
 				break;
+			case 22:
+				if (strcmp(optarg, "conf") == 0)
+					config_json = false;
+				else if (strcmp(optarg, "json") == 0)
+					config_json = true;
+				else
+					pg_fatal("unrecognized configuration format: %s", optarg);
+				break;
 			default:
 				/* getopt_long already emitted a complaint */
 				pg_log_error_hint("Try \"%s --help\" for more information.", progname);
@@ -3411,6 +3677,43 @@ main(int argc, char *argv[])
 		}
 	}
 
+
+	/*
+	 * A JSON root holds the authentication rules and maps itself, so the
+	 * parameters naming separate files for them, and the section names,
+	 * cannot be set with -c.
+	 */
+	if (config_json)
+	{
+		static const char *const sections[] = {"hba", "ident", "hosts"};
+		_stringlist *gnames;
+
+		for (gnames = extra_guc_names; gnames != NULL; gnames = gnames->next)
+		{
+			const char *name = gnames->str;
+
+			for (int i = 0; i < lengthof(sections); i++)
+			{
+				if (pg_strcasecmp(name, sections[i]) == 0)
+				{
+					pg_log_error("\"%s\" is a section of postgresql.json and cannot be set with --set",
+								 name);
+					pg_log_error_hint("Edit the \"%s\" section of postgresql.json after initdb.",
+									  sections[i]);
+					exit(1);
+				}
+			}
+			if (pg_strcasecmp(name, "hba_file") == 0 ||
+				pg_strcasecmp(name, "ident_file") == 0 ||
+				pg_strcasecmp(name, "hosts_file") == 0)
+			{
+				pg_log_error("parameter \"%s\" cannot be set with --config-format=json",
+							 name);
+				pg_log_error_hint("With a JSON configuration file, client authentication is configured in its \"hba\", \"ident\" and \"hosts\" sections.");
+				exit(1);
+			}
+		}
+	}
 
 	/*
 	 * Non-option argument specifies data directory as long as it wasn't
@@ -3528,8 +3831,22 @@ main(int argc, char *argv[])
 	{
 		printf("\n");
 		pg_log_warning("enabling \"trust\" authentication for local connections");
-		pg_log_warning_hint("You can change this by editing pg_hba.conf or using the option -A, or "
-							"--auth-local and --auth-host, the next time you run initdb.");
+		pg_log_warning_hint("You can change this by editing %s or using the option -A, or "
+							"--auth-local and --auth-host, the next time you run initdb.",
+							config_json ? "postgresql.json" : "pg_hba.conf");
+	}
+
+	/*
+	 * pg_hba.conf carries a caution about an explicitly chosen "trust" as a
+	 * comment, which strict JSON has no room for, so say it here instead.
+	 */
+	if (config_json && !authwarning &&
+		(strcmp(authmethodlocal, "trust") == 0 ||
+		 strcmp(authmethodhost, "trust") == 0))
+	{
+		printf("\n");
+		pg_log_warning("\"trust\" authentication allows any local user to connect as any PostgreSQL user");
+		pg_log_warning_hint("If you do not trust all your local users, use another authentication method.");
 	}
 
 	if (!noinstructions)
