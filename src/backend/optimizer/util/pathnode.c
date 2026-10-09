@@ -1720,7 +1720,7 @@ create_material_path(RelOptInfo *rel, Path *subpath, bool enabled)
 	pathnode->path.pathtype = T_Material;
 	pathnode->path.parent = rel;
 	pathnode->path.pathtarget = rel->reltarget;
-	pathnode->path.param_info = subpath->param_info;
+	pathnode->path.param_info = get_wrapper_parampathinfo(subpath);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
@@ -1756,7 +1756,7 @@ create_memoize_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->path.pathtype = T_Memoize;
 	pathnode->path.parent = rel;
 	pathnode->path.pathtarget = rel->reltarget;
-	pathnode->path.param_info = subpath->param_info;
+	pathnode->path.param_info = get_wrapper_parampathinfo(subpath);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
@@ -2613,7 +2613,7 @@ create_projection_path(PlannerInfo *root,
 	pathnode->path.pathtype = T_Result;
 	pathnode->path.parent = rel;
 	pathnode->path.pathtarget = target;
-	pathnode->path.param_info = subpath->param_info;
+	pathnode->path.param_info = get_wrapper_parampathinfo(subpath);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe &&
@@ -2868,7 +2868,7 @@ create_incremental_sort_path(PlannerInfo *root,
 	pathnode->path.parent = rel;
 	/* Sort doesn't project, so use source path's pathtarget */
 	pathnode->path.pathtarget = subpath->pathtarget;
-	pathnode->path.param_info = subpath->param_info;
+	pathnode->path.param_info = get_wrapper_parampathinfo(subpath);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
@@ -2916,7 +2916,7 @@ create_sort_path(PlannerInfo *root,
 	pathnode->path.parent = rel;
 	/* Sort doesn't project, so use source path's pathtarget */
 	pathnode->path.pathtarget = subpath->pathtarget;
-	pathnode->path.param_info = subpath->param_info;
+	pathnode->path.param_info = get_wrapper_parampathinfo(subpath);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
@@ -3017,7 +3017,7 @@ create_unique_path(PlannerInfo *root,
 	pathnode->path.parent = rel;
 	/* Unique doesn't project, so use source path's pathtarget */
 	pathnode->path.pathtarget = subpath->pathtarget;
-	pathnode->path.param_info = subpath->param_info;
+	pathnode->path.param_info = get_wrapper_parampathinfo(subpath);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
@@ -3083,7 +3083,7 @@ create_agg_path(PlannerInfo *root,
 	pathnode->path.pathtype = T_Agg;
 	pathnode->path.parent = rel;
 	pathnode->path.pathtarget = target;
-	pathnode->path.param_info = subpath->param_info;
+	pathnode->path.param_info = get_wrapper_parampathinfo(subpath);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
@@ -3167,7 +3167,7 @@ create_groupingsets_path(PlannerInfo *root,
 	pathnode->path.pathtype = T_Agg;
 	pathnode->path.parent = rel;
 	pathnode->path.pathtarget = target;
-	pathnode->path.param_info = subpath->param_info;
+	pathnode->path.param_info = get_wrapper_parampathinfo(subpath);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
