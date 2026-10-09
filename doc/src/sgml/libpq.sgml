@@ -10572,7 +10572,7 @@ PGOAUTHDEBUG=UNSAFE                      <lineannotation>legacy format; enables 
       <listitem>
        <para>
         Prints the total number of calls to the flow plugin to standard error
-        when the OAuth flow completes. This helps developers debug the async
+        when the OAuth flow completes. This helps developers debug asynchronous
         callback behavior.
        </para>
       </listitem>

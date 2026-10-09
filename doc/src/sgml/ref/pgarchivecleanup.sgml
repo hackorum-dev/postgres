@@ -23,8 +23,8 @@ PostgreSQL documentation
   <cmdsynopsis>
    <command>pg_archivecleanup</command>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
-   <arg choice="plain"><replaceable>archivelocation</replaceable></arg>
-   <arg choice="plain"><replaceable>oldestkeptwalfile</replaceable></arg>
+   <arg choice="plain"><replaceable>archive_location</replaceable></arg>
+   <arg choice="plain"><replaceable>oldest_kept_wal_file</replaceable></arg>
   </cmdsynopsis>
  </refsynopsisdiv>
 
@@ -44,28 +44,28 @@ PostgreSQL documentation
    server to use <application>pg_archivecleanup</application>, put this into its
    <filename>postgresql.conf</filename> configuration file:
 <programlisting>
-archive_cleanup_command = 'pg_archivecleanup <replaceable>archivelocation</replaceable> "%r"'
+archive_cleanup_command = 'pg_archivecleanup <replaceable>archive_location</replaceable> "%r"'
 </programlisting>
-   where <replaceable>archivelocation</replaceable> is the directory from which WAL segment
+   where <replaceable>archive_location</replaceable> is the directory from which WAL segment
    files should be removed.
   </para>
   <para>
    When used within <xref linkend="guc-archive-cleanup-command"/>, all WAL files
    logically preceding the value of the <literal>%r</literal> argument will be removed
-   from <replaceable>archivelocation</replaceable>. This minimizes the number of files
+   from <replaceable>archive_location</replaceable>. This minimizes the number of files
    that need to be retained, while preserving crash-restart capability.  Use of
-   this parameter is appropriate if the <replaceable>archivelocation</replaceable> is a
+   this parameter is appropriate if the <replaceable>archive_location</replaceable> is a
    transient staging area for this particular standby server, but
-   <emphasis>not</emphasis> when the <replaceable>archivelocation</replaceable> is intended as a
+   <emphasis>not</emphasis> when the <replaceable>archive_location</replaceable> is intended as a
    long-term WAL archive area, or when multiple standby servers are recovering
    from the same archive location.
   </para>
   <para>
    When used as a standalone program all WAL files logically preceding the
-   <replaceable>oldestkeptwalfile</replaceable> will be removed from <replaceable>archivelocation</replaceable>.
+   <replaceable>oldest_kept_wal_file</replaceable> will be removed from <replaceable>archive_location</replaceable>.
    In this mode, if you specify a <filename>.partial</filename> or <filename>.backup</filename>
    file name, then only the file prefix will be used as the
-   <replaceable>oldestkeptwalfile</replaceable>. This treatment of <filename>.backup</filename>
+   <replaceable>oldest_kept_wal_file</replaceable>. This treatment of <filename>.backup</filename>
    file name allows you to remove
    all WAL files archived prior to a specific base backup without error.
    For example, the following example will remove all files older than
@@ -80,7 +80,7 @@ pg_archivecleanup:  removing file "archive/00000001000000370000000E"
   </para>
   <para>
    <application>pg_archivecleanup</application> assumes that
-   <replaceable>archivelocation</replaceable> is a directory readable and writable by the
+   <replaceable>archive_location</replaceable> is a directory readable and writable by the
    server-owning user.
   </para>
  </refsect1>

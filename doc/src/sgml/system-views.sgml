@@ -1167,7 +1167,7 @@ AND c1.path[c2.level] = c2.path[c2.level];
        <structfield>type</structfield> <type>text</type>
       </para>
       <para>
-       The type of allocation.  Possible values are <literal>segment</literal>,
+       The type of the allocation.  Possible values are <literal>segment</literal>,
        <literal>area</literal>, and <literal>hash</literal>, which correspond
        to dynamic shared memory segments, areas, and hash tables, respectively.
       </para></entry>
@@ -1178,7 +1178,7 @@ AND c1.path[c2.level] = c2.path[c2.level];
        <structfield>size</structfield> <type>int8</type>
       </para>
       <para>
-       Size of the allocation in bytes.  NULL for entries that failed
+       The size of the allocation in bytes.  NULL for entries that failed
        initialization.
       </para></entry>
      </row>
@@ -4232,7 +4232,7 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
        <structfield>size</structfield> <type>int8</type>
       </para>
       <para>
-       Size of the allocation in bytes
+       The size of the allocation in bytes.
       </para></entry>
      </row>
 
@@ -4241,7 +4241,7 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
        <structfield>allocated_size</structfield> <type>int8</type>
       </para>
       <para>
-       Size of the allocation in bytes including padding. For anonymous
+       The size of the allocation in bytes including padding. For anonymous
        allocations, no information about padding is available, so the
        <literal>size</literal> and <literal>allocated_size</literal> columns
        will always be equal. Padding is not meaningful for free memory, so

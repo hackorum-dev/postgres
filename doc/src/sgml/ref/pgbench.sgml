@@ -815,7 +815,7 @@ pgbench <optional> <replaceable>options</replaceable> </optional> <replaceable>d
           <para>deadlock failures;</para>
          </listitem>
          <listitem>
-          <para>other failures;</para>
+          <para>other failures.</para>
          </listitem>
         </itemizedlist>
         See <xref linkend="failures-and-retries"/> for more information.

@@ -2604,8 +2604,8 @@ openssl x509 -req -in server.csr -text -days 365 \
     <productname>PostgreSQL</productname> can be configured for Server Name
     Indication, <acronym>SNI</acronym>, using the <xref linkend="guc-ssl-sni"/>
     configuration parameter. <productname>PostgreSQL</productname> inspects the
-    TLS hostname extension in the SSL connection handshake, and selects the
-    right certificate, key and CA certificate to use for the connection based
+    TLS hostname extension in the SSL connection handshake and selects the
+    right certificate, key, and CA certificate to use for the connection based
     on entries in the <xref linkend="guc-hosts-file"/> configuration file.
    </para>
 
@@ -2665,8 +2665,8 @@ openssl x509 -req -in server.csr -text -days 365 \
         <entry>Required</entry>
         <entry>
          Certificate and key to use for connections to the host specified in
-         the connection.  Multiple hostnames can be defined by using a comma
-         separated list. The certificate and key will be used for connections
+         the connection.  Multiple hostnames can be defined by using a
+         comma-separated list. The certificate and key will be used for connections
          to all hosts in the list.
         </entry>
        </row>

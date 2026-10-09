@@ -2876,7 +2876,7 @@ CONTEXT:  processing remote data for replication origin "pg_16395" during "INSER
      <link linkend="sql-createsubscription-params-with-retain-dead-tuples"><literal>retain_dead_tuples</literal></link>
      is enabled, the upgraded subscriber may be unable to detect conflicts or
      log relevant commit timestamps and origins when applying changes from the
-     publisher occurred before the upgrade. Additionally, immediately after the
+     publisher that occurred before the upgrade. Additionally, immediately after the
      upgrade, the vacuum may remove the deleted rows that are required for
      conflict detection. This can affect the changes that were not replicated
      before the upgrade. To ensure consistent conflict tracking, users should

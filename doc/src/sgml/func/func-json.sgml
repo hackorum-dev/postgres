@@ -2789,7 +2789,7 @@ ERROR:  jsonpath member accessor can only be applied to an object
         <returnvalue><replaceable>string</replaceable></returnvalue>
        </para>
        <para>
-        String converted to all lower case according to the rules of the database's locale.
+        String converted to all lower case according to the rules of the database's locale
        </para>
        <para>
         <literal>jsonb_path_query('"TOM"', '$.lower()')</literal>
@@ -2803,7 +2803,7 @@ ERROR:  jsonpath member accessor can only be applied to an object
         <returnvalue><replaceable>string</replaceable></returnvalue>
        </para>
        <para>
-        String converted to all upper case according to the rules of the database's locale.
+        String converted to all upper case according to the rules of the database's locale
        </para>
        <para>
         <literal>jsonb_path_query('"tom"', '$.upper()')</literal>
@@ -2819,7 +2819,7 @@ ERROR:  jsonpath member accessor can only be applied to an object
        <para>
         String with the first letter of each word converted to upper case
         according to the rules of the database's locale. Words are sequences
-        of alphanumeric characters separated by non-alphanumeric characters.
+        of alphanumeric characters separated by non-alphanumeric characters
        </para>
        <para>
         <literal>jsonb_path_query('"hi THOMAS"', '$.initcap()')</literal>
@@ -2833,7 +2833,7 @@ ERROR:  jsonpath member accessor can only be applied to an object
         <returnvalue><replaceable>string</replaceable></returnvalue>
        </para>
        <para>
-        String with all occurrences of substring from replaced with substring to.
+        String with all occurrences of substring from replaced with substring to
        </para>
        <para>
         <literal>jsonb_path_query('"abcdefabcdef"', '$.replace("cd", "XX")')</literal>
@@ -2850,7 +2850,7 @@ ERROR:  jsonpath member accessor can only be applied to an object
         String split at occurrences of <replaceable>delimiter</replaceable>
         and returns the <replaceable>n</replaceable>'th field (counting from
         one) or, when <replaceable>n</replaceable> is negative, returns the
-        |<replaceable>n</replaceable>|'th-from-last field.
+        |<replaceable>n</replaceable>|'th-from-last field
        </para>
        <para>
         <literal>jsonb_path_query('"abc~@~def~@~ghi"', '$.split_part("~@~", 2)')</literal>
@@ -2868,7 +2868,7 @@ ERROR:  jsonpath member accessor can only be applied to an object
         <returnvalue><replaceable>string</replaceable></returnvalue>
        </para>
        <para>
-        String with the longest string containing only spaces or the
+        String with the longest substring containing only spaces or the
         characters in <replaceable>characters</replaceable> removed from the
         start of <replaceable>string</replaceable>
        </para>
@@ -2888,7 +2888,7 @@ ERROR:  jsonpath member accessor can only be applied to an object
         <returnvalue><replaceable>string</replaceable></returnvalue>
        </para>
        <para>
-        String with the longest string containing only spaces or the
+        String with the longest substring containing only spaces or the
         characters in <replaceable>characters</replaceable> removed from the
         end of <replaceable>string</replaceable>
        </para>
@@ -2908,7 +2908,7 @@ ERROR:  jsonpath member accessor can only be applied to an object
         <returnvalue><replaceable>string</replaceable></returnvalue>
        </para>
        <para>
-        String with the longest string containing only spaces or the
+        String with the longest substring containing only spaces or the
         characters in <replaceable>characters</replaceable> removed from the
         start and end of <replaceable>string</replaceable>
        </para>
@@ -3318,7 +3318,7 @@ $.* ? (@ like_regex "^\\d+$")
    SQL/JSON functions <literal>JSON_EXISTS()</literal>,
    <literal>JSON_QUERY()</literal>, and <literal>JSON_VALUE()</literal>
    described in <xref linkend="functions-sqljson-querying"/> can be used
-   to query JSON documents.  Each of these functions apply a
+   to query JSON documents.  Each of these functions applies a
    <replaceable>path_expression</replaceable> (an SQL/JSON path query) to a
    <replaceable>context_item</replaceable> (the document).  See
    <xref linkend="functions-sqljson-path"/> for more details on what

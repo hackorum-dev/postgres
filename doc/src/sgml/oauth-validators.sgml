@@ -117,7 +117,7 @@
          That is, "trusted" in the sense that the OAuth client and the
          <productname>PostgreSQL</productname> server are controlled by the same
          entity. Notably, the Device Authorization client flow supported by
-         libpq does not usually meet this bar, since it's designed for use by
+         libpq does not usually meet this bar, since it is designed for use by
          public/untrusted clients.
         </para>
        </footnote>
@@ -433,7 +433,7 @@ typedef struct ValidatorModuleResult
   <sect2 id="oauth-validator-callback-shutdown">
    <title>Shutdown Callback</title>
    <para>
-    The <function>shutdown_cb</function> callback is executed when the server
+    The <function>shutdown_cb</function> callback is executed when the
     backend has finished validating tokens for the connection. If the validator
     module has any allocated state, this callback should free it to avoid
     resource leaks.
@@ -505,7 +505,7 @@ void RegisterOAuthHBAOptions(ValidatorModuleState *state, int num,
 
 <programlisting>
 /*
- * Retrieve the string value of an HBA option which was registered via
+ * Retrieve the string value of an HBA option, which was registered via
  * RegisterOAuthHBAOptions(). Usable only during validate_cb or shutdown_cb.
  *
  * If the user has set the corresponding option in pg_hba.conf, this function
@@ -554,7 +554,7 @@ const char *GetOAuthHBAOption(const ValidatorModuleState *state,
        <footnote>
         <para>
          If a module finds an invalid option value during <function>validate_cb</function>,
-         it's recommended to <link linkend="oauth-validator-callback-validate">signal
+         it is recommended to <link linkend="oauth-validator-callback-validate">signal
          an internal error</link> by setting <structfield>result->error_detail</structfield>
          to a description of the problem and returning <literal>false</literal>.
         </para>

@@ -2337,7 +2337,7 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
 
     <para>
      Since SQL:2008, the SQL standard includes regular expression operators
-     and functions that performs pattern
+     and functions that perform pattern
      matching according to the XQuery regular expression
      standard:
      <itemizedlist>
