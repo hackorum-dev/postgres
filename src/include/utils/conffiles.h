@@ -23,5 +23,10 @@ extern char **GetConfFilesInDir(const char *includedir,
 								const char *calling_file,
 								int elevel, int *num_filenames,
 								char **err_msg);
+extern char **GetConfFilesInDirPattern(const char *includedir,
+									   const char *calling_file,
+									   const char *pattern,
+									   int elevel, int *num_filenames,
+									   char **err_msg);
 
 #endif							/* CONFFILES_H */

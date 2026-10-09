@@ -1410,7 +1410,10 @@ AND c1.path[c2.level] = c2.path[c2.level];
    <link linkend="auth-pg-hba-conf"><filename>pg_hba.conf</filename></link>.
    A row appears in this view for each
    non-empty, non-comment line in the file, with annotations indicating
-   whether the rule could be applied successfully.
+   whether the rule could be applied successfully.  When the rules come
+   from the <literal>hba</literal> section of a JSON document (see <xref
+   linkend="auth-pg-hba-json"/>), a row appears for each rule derived
+   from the tree, in the order in which the rules are tried.
   </para>
 
   <para>
@@ -1536,6 +1539,18 @@ AND c1.path[c2.level] = c2.path[c2.level];
 
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>node_path</structfield> <type>text</type>
+      </para>
+      <para>
+       Location of the node this rule was derived from within a JSON
+       configuration file, such as
+       <literal>$.hba.children[1].children[0]</literal>; null for a
+       rule read from a file in <filename>pg_hba.conf</filename> format
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>error</structfield> <type>text</type>
       </para>
       <para>
@@ -1549,7 +1564,8 @@ AND c1.path[c2.level] = c2.path[c2.level];
 
   <para>
    Usually, a row reflecting an incorrect entry will have values for only
-   the <structfield>line_number</structfield> and <structfield>error</structfield> fields.
+   the <structfield>line_number</structfield>, <structfield>node_path</structfield>
+   and <structfield>error</structfield> fields.
   </para>
 
   <para>

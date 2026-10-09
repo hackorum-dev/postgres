@@ -1237,6 +1237,7 @@ HashSkewBucket
 HashState
 HashValueFunc
 HbaLine
+HbaNodeState
 HeadlineJsonState
 HeadlineParsedText
 HeadlineWordEntry
@@ -1417,6 +1418,9 @@ JsonArrayQueryConstructor
 JsonBaseObjectInfo
 JsonBehavior
 JsonBehaviorType
+JsonConfNode
+JsonConfNodeType
+JsonConfParseState
 JsonConstructorExpr
 JsonConstructorExprState
 JsonConstructorType

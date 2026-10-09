@@ -558,7 +558,10 @@ include_dir 'conf.d'
       <listitem>
        <para>
          Specifies the configuration file for host-based authentication
-         (customarily called <filename>pg_hba.conf</filename>).
+         (customarily called <filename>pg_hba.conf</filename>, or
+         <filename>pg_hba.json</filename> for the JSON format described in
+         <xref linkend="auth-pg-hba-json"/>; a file whose name ends in
+         <literal>.json</literal> is read as JSON).
          This parameter can only be set at server start.
        </para>
       </listitem>
