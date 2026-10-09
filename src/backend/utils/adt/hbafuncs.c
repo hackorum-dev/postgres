@@ -21,6 +21,7 @@
 #include "libpq/hba.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
+#include "utils/config_json.h"
 #include "utils/guc.h"
 #include "utils/tuplestore.h"
 
@@ -28,7 +29,8 @@
 static ArrayType *get_hba_options(HbaLine *hba);
 static void fill_hba_line(Tuplestorestate *tuple_store, TupleDesc tupdesc,
 						  int rule_number, char *filename, int lineno,
-						  HbaLine *hba, const char *err_msg);
+						  const char *node_path, HbaLine *hba,
+						  const char *err_msg);
 static void fill_hba_view(Tuplestorestate *tuple_store, TupleDesc tupdesc);
 static void fill_ident_line(Tuplestorestate *tuple_store, TupleDesc tupdesc,
 							int map_number, char *filename, int lineno,
@@ -164,7 +166,7 @@ get_hba_options(HbaLine *hba)
 }
 
 /* Number of columns in pg_hba_file_rules view */
-#define NUM_PG_HBA_FILE_RULES_ATTS	 11
+#define NUM_PG_HBA_FILE_RULES_ATTS	 12
 
 /*
  * fill_hba_line
@@ -175,6 +177,7 @@ get_hba_options(HbaLine *hba)
  * rule_number: unique identifier among all valid rules
  * filename: configuration file name (must always be valid)
  * lineno: line number of configuration file (must always be valid)
+ * node_path: JSON node the rule was compiled from (NULL for a legacy line)
  * hba: parsed line data (can be NULL, in which case err_msg should be set)
  * err_msg: error message (NULL if none)
  *
@@ -183,8 +186,8 @@ get_hba_options(HbaLine *hba)
  */
 static void
 fill_hba_line(Tuplestorestate *tuple_store, TupleDesc tupdesc,
-			  int rule_number, char *filename, int lineno, HbaLine *hba,
-			  const char *err_msg)
+			  int rule_number, char *filename, int lineno,
+			  const char *node_path, HbaLine *hba, const char *err_msg)
 {
 	Datum		values[NUM_PG_HBA_FILE_RULES_ATTS];
 	bool		nulls[NUM_PG_HBA_FILE_RULES_ATTS];
@@ -354,15 +357,23 @@ fill_hba_line(Tuplestorestate *tuple_store, TupleDesc tupdesc,
 	}
 	else
 	{
-		/* no parsing result, so set relevant fields to nulls */
-		memset(&nulls[3], true, (NUM_PG_HBA_FILE_RULES_ATTS - 4) * sizeof(bool));
+		/* no parsing result, so set the fields derived from it to nulls */
+		memset(&nulls[3], true, (NUM_PG_HBA_FILE_RULES_ATTS - 5) * sizeof(bool));
+		index = NUM_PG_HBA_FILE_RULES_ATTS - 2;
 	}
 
-	/* error */
-	if (err_msg)
-		values[NUM_PG_HBA_FILE_RULES_ATTS - 1] = CStringGetTextDatum(err_msg);
+	/* node_path, known even when the rule did not parse */
+	if (node_path)
+		values[index++] = CStringGetTextDatum(node_path);
 	else
-		nulls[NUM_PG_HBA_FILE_RULES_ATTS - 1] = true;
+		nulls[index++] = true;
+
+	/* error */
+	Assert(index == NUM_PG_HBA_FILE_RULES_ATTS - 1);
+	if (err_msg)
+		values[index] = CStringGetTextDatum(err_msg);
+	else
+		nulls[index] = true;
 
 	tuple = heap_form_tuple(tupdesc, values, nulls);
 	tuplestore_puttuple(tuple_store, tuple);
@@ -370,12 +381,15 @@ fill_hba_line(Tuplestorestate *tuple_store, TupleDesc tupdesc,
 
 /*
  * fill_hba_view
- *		Read the pg_hba.conf file and fill the tuplestore with view records.
+ *		Read the hba configuration and fill the tuplestore with view records.
+ *
+ * The rules come from hba_file, in either format.
  */
 static void
 fill_hba_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 {
-	FILE	   *file;
+	bool		use_json = (config_json_auth_source(HbaFileName) != NULL);
+	FILE	   *file = NULL;
 	List	   *hba_lines = NIL;
 	ListCell   *line;
 	int			rule_number = 0;
@@ -383,14 +397,46 @@ fill_hba_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 	MemoryContext oldcxt;
 
 	/*
-	 * In the unlikely event that we can't open pg_hba.conf, we throw an
+	 * In the unlikely event that we can't open or load the file, we throw an
 	 * error, rather than trying to report it via some sort of view entry.
 	 * (Most other error conditions should result in a message in a view
 	 * entry.)
 	 */
-	file = open_auth_file(HbaFileName, ERROR, 0, NULL);
+	if (use_json)
+	{
+		List	   *documents;
+		char	   *file_err;
 
-	tokenize_auth_file(HbaFileName, file, &hba_lines, DEBUG3, 0);
+		/*
+		 * Only tokenize_hba_json() creates the contexts that
+		 * free_json_section_tokens() releases; after a failed load of the
+		 * documents there is nothing of ours to free, and the statics may
+		 * still point at memory an earlier, aborted call has lost to the
+		 * per-query reset.
+		 */
+		if (!config_json_load_section("hba", HbaFileName, DEBUG3,
+									  &documents, &file_err))
+			ereport(ERROR,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("could not load configuration file \"%s\"",
+							HbaFileName),
+					 errdetail_internal("%s", file_err)));
+		if (!tokenize_hba_json(documents, &hba_lines, DEBUG3, &file_err))
+		{
+			free_json_section_tokens();
+			ereport(ERROR,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("could not load configuration file \"%s\"",
+							HbaFileName),
+					 errdetail_internal("%s", file_err)));
+		}
+	}
+	else
+	{
+		file = open_auth_file(HbaFileName, ERROR, 0, NULL);
+
+		tokenize_auth_file(HbaFileName, file, &hba_lines, DEBUG3, 0);
+	}
 
 	/* Now parse all the lines */
 	hbacxt = AllocSetContextCreate(CurrentMemoryContext,
@@ -411,12 +457,15 @@ fill_hba_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 			rule_number++;
 
 		fill_hba_line(tuple_store, tupdesc, rule_number,
-					  tok_line->file_name, tok_line->line_num, hbaline,
-					  tok_line->err_msg);
+					  tok_line->file_name, tok_line->line_num,
+					  tok_line->node_path, hbaline, tok_line->err_msg);
 	}
 
 	/* Free tokenizer memory */
-	free_auth_file(file, 0);
+	if (use_json)
+		free_json_section_tokens();
+	else
+		free_auth_file(file, 0);
 	/* Free parse_hba_line memory */
 	MemoryContextSwitchTo(oldcxt);
 	MemoryContextDelete(hbacxt);

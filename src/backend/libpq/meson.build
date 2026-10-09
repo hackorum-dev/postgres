@@ -10,6 +10,7 @@ backend_sources += files(
   'be-secure.c',
   'crypt.c',
   'hba.c',
+  'hba_json.c',
   'ifaddr.c',
   'pqcomm.c',
   'pqformat.c',
