@@ -593,9 +593,9 @@
     <para>
      A set of
      <glossterm linkend="glossary-background-worker">background worker</glossterm>
-     processes which can enable or disable data checksums in a running cluster.
-     The process which coordinates the work is known as the
-     <firstterm>data checksums launcher</firstterm> and the process which
+     processes that can enable or disable data checksums in a running cluster.
+     The process that coordinates the work is known as the
+     <firstterm>data checksums launcher</firstterm> and the process that
      operates on the individual databases is known as the
      <firstterm>data checksums worker</firstterm>.
     </para>

@@ -153,14 +153,14 @@ PostgreSQL documentation
        <itemizedlist>
         <listitem>
          <para>
-          <filename>pg_createsubscriber_server.log</filename> which captures logs
+          <filename>pg_createsubscriber_server.log</filename>, which captures logs
           related to stopping and starting the standby server,
          </para>
         </listitem>
         <listitem>
          <para>
-          <filename>pg_createsubscriber_internal.log</filename> which captures
-          internal diagnostic output (validations, checks, etc.)
+          <filename>pg_createsubscriber_internal.log</filename>, which captures
+          internal diagnostic output (validations, checks, etc.).
          </para>
         </listitem>
        </itemizedlist>
@@ -327,7 +327,7 @@ PostgreSQL documentation
        If a specified publication already exists on the publisher, it is reused.
        It is useful to partially replicate the database if the specified
        publication includes a list of tables. If the publication does not exist,
-       it is automatically created with <literal>FOR ALL TABLES</literal>. Use
+       it is automatically created with <literal>FOR ALL TABLES</literal>. Use the
        <option>--dry-run</option> option to preview which publications will be
        reused and which will be created.
       </para>
@@ -575,7 +575,7 @@ PostgreSQL documentation
       <application>pg_createsubscriber</application> terminates if recovery
       does not end until the given number of seconds.  Upon completion, the
       included configuration file is renamed to
-      <filename>pg_createsubscriber.conf.disabled</filename> so as it is no
+      <filename>pg_createsubscriber.conf.disabled</filename> so that it is no
       longer loaded on subsequent restarts.
      </para>
     </step>

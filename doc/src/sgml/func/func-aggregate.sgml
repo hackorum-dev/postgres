@@ -432,7 +432,7 @@
         are coerced to text; value arguments are converted as per
         <function>to_json</function> or <function>to_jsonb</function>.
         The <parameter>key</parameter> cannot be null. If the
-        <parameter>value</parameter> is null then the entry is skipped,
+        <parameter>value</parameter> is null, then the entry is skipped.
        </para></entry>
        <entry>No</entry>
       </row>
@@ -461,7 +461,7 @@
         are coerced to text; value arguments are converted as per
         <function>to_json</function> or <function>to_jsonb</function>.
         Values can be null, but keys cannot.
-        If there is a duplicate key an error is thrown.
+        If there is a duplicate key, an error is thrown.
        </para></entry>
        <entry>No</entry>
       </row>
@@ -490,8 +490,8 @@
         are coerced to text; value arguments are converted as per
         <function>to_json</function> or <function>to_jsonb</function>.
         The <parameter>key</parameter> cannot be null. If the
-        <parameter>value</parameter> is null then the entry is skipped.
-        If there is a duplicate key an error is thrown.
+        <parameter>value</parameter> is null, then the entry is skipped.
+        If there is a duplicate key, an error is thrown.
        </para></entry>
        <entry>No</entry>
       </row>

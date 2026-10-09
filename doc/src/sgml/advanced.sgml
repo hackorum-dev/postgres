@@ -258,8 +258,8 @@ COMMIT;
    </note>
 
    <para>
-    When an error occurs within a transaction block the transaction is not
-    ended, but instead goes into an aborted state.  While in this state all
+    When an error occurs within a transaction block, the transaction is not
+    ended but instead goes into an aborted state.  While in this state, all
     commands except <xref linkend="sql-commit"/> and
     <xref linkend="sql-rollback"/> are rejected.  Importantly, both those
     commands will behave identically &mdash; they roll back and close the

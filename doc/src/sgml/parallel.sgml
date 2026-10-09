@@ -301,8 +301,8 @@ EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
     </listitem>
     <listitem>
       <para>
-        In a <emphasis>parallel tid range scan</emphasis>, the range of blocks
-        will be subdivided into smaller ranges which are shared among the
+        In a <emphasis>parallel TID range scan</emphasis>, the range of blocks
+        will be subdivided into smaller ranges, which are shared among the
         cooperating processes.  Each worker process will complete the scanning
         of its given range of blocks before requesting an additional range of
         blocks.

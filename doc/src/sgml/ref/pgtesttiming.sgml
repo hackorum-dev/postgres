@@ -162,7 +162,7 @@ PostgreSQL documentation
    instruction (used for <command>EXPLAIN ANALYZE</command>).  At the end
    of the output, the <acronym>TSC</acronym> frequency, which may either be
    sourced from CPU information directly, or the alternate calibration
-   mechanism are shown, as well as whether the <acronym>TSC</acronym> clock
+   mechanism is shown, as well as whether the <acronym>TSC</acronym> clock
    source will be used by default.
   </para>
 

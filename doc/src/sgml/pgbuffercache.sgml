@@ -56,19 +56,19 @@
  </indexterm>
 
  <para>
-  This module provides the <function>pg_buffercache_pages()</function>
-  function (wrapped in the <structname>pg_buffercache</structname> view), the
-  <function>pg_buffercache_os_pages()</function> function (wrapped in the
+  This module provides the following functions: <function>pg_buffercache_pages()</function>
+  (wrapped in the <structname>pg_buffercache</structname> view),
+  <function>pg_buffercache_os_pages()</function> (wrapped in the
   <structname>pg_buffercache_os_pages</structname> and
-  <structname>pg_buffercache_numa</structname> views), the
-  <function>pg_buffercache_summary()</function> function, the
-  <function>pg_buffercache_usage_counts()</function> function, the
-  <function>pg_buffercache_evict()</function> function, the
-  <function>pg_buffercache_evict_relation()</function> function, the
-  <function>pg_buffercache_evict_all()</function> function, the
-  <function>pg_buffercache_mark_dirty()</function> function, the
-  <function>pg_buffercache_mark_dirty_relation()</function> function and the
-  <function>pg_buffercache_mark_dirty_all()</function> function.
+  <structname>pg_buffercache_numa</structname> views),
+  <function>pg_buffercache_summary()</function>,
+  <function>pg_buffercache_usage_counts()</function>,
+  <function>pg_buffercache_evict()</function>,
+  <function>pg_buffercache_evict_relation()</function>,
+  <function>pg_buffercache_evict_all()</function>,
+  <function>pg_buffercache_mark_dirty()</function>,
+  <function>pg_buffercache_mark_dirty_relation()</function>, and
+  <function>pg_buffercache_mark_dirty_all()</function>.
  </para>
 
  <para>
@@ -80,7 +80,7 @@
 
  <para>
   The <function>pg_buffercache_os_pages()</function> function provides OS
-  pages mappings for shared buffer entries. When its argument is
+  page mappings for shared buffer entries. When its argument is
   <literal>true</literal>, it also provides <acronym>NUMA</acronym> node
   mappings for shared buffer entries (this information is not part of
   <function>pg_buffercache_pages()</function> itself, as it is much
@@ -626,10 +626,10 @@
    column of the <structname>pg_buffercache</structname> view.  It returns
    information about whether the buffer was marked as dirty.
    The <structfield>buffer_dirtied</structfield> column is true on success,
-   and false if the buffer was already dirty if the buffer was not valid or
+   and false if the buffer was already dirty, if the buffer was not valid, or
    if it could not be marked as dirty because it was pinned.
    The <structfield>buffer_already_dirty</structfield> column is true if
-   the buffer couldn't be marked as dirty because it was already dirty. The
+   the buffer could not be marked as dirty because it was already dirty. The
    result is immediately out of date upon return, as the buffer might become
    valid again at any time due to concurrent activity. The function is
    intended for developer testing only.
@@ -647,7 +647,7 @@
    relation identifier instead of buffer identifier. It tries to mark all
    buffers dirty for all forks in that relation.
    It returns the number of buffers marked as dirty, the number of buffers
-   already dirty and the number of buffers skipped because already pinned or
+   already dirty, and the number of buffers skipped because they are already pinned or
    invalid.
    The result is immediately out of date upon return, as the buffer might
    become valid again at any time due to concurrent activity. The function is
@@ -665,7 +665,7 @@
    <function>pg_buffercache_mark_dirty_all()</function> tries to mark all
    buffers dirty in the buffer pool.
    It returns the number of buffers marked as dirty, the number of buffers
-   already dirty and the number of buffers skipped because already pinned or
+   already dirty, and the number of buffers skipped because already pinned or
    invalid.
    The result is immediately out of date upon return, as the buffer might
    become valid again at any time due to concurrent activity. The function is

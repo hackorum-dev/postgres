@@ -58,7 +58,7 @@
   show the query ID, and the <literal>PLAN_ADVICE</literal> option will
   show plan advice.  Query identifiers can also be obtained through tools
   such as <xref linkend="pgstatstatements" /> or
-  <xref linkend="monitoring-pg-stat-activity-view" />, but these tools
+  <link linkend="monitoring-pg-stat-activity-view">pg_stat_activity</link>, but these tools
   will not provide plan advice strings. Note that
   <xref linkend="guc-compute-query-id" /> must be enabled for query
   identifiers to be computed; if set to <literal>auto</literal>, loading
@@ -102,7 +102,7 @@
 
     <listitem>
      <para>
-      Creates a new, empty advice stash with the given name.
+      Creates a new empty advice stash with the given name.
      </para>
     </listitem>
    </varlistentry>

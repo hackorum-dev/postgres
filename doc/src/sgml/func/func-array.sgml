@@ -145,7 +145,7 @@
   <para>
    <xref linkend="array-functions-table"/> shows the functions
    available for use with array types. See <xref linkend="arrays"/>
-   for more information  and examples of the use of these functions.
+   for more information and examples of the use of these functions.
   </para>
 
    <table id="array-functions-table">

@@ -93,7 +93,7 @@
      <term><option>-S</option></term>
      <term><option>--system-objects</option></term>
      <listitem><para>include system objects (those in
-      <option>information_schema</option>, <option>pg_toast</option>
+      <option>information_schema</option>, <option>pg_toast</option>,
       and <option>pg_catalog</option> schemas).
      </para></listitem>
     </varlistentry>
@@ -118,7 +118,7 @@
      <term><option>-x</option></term>
      <term><option>--extended</option></term>
      <listitem><para>display more information about each object shown: tablespace name,
-      schema name, OID and path.
+      schema name, OID, and path.
      </para></listitem>
     </varlistentry>
 
@@ -176,7 +176,7 @@
 
   <para>
    To display specific tables, select which tables to show by
-   using <option>-o</option>, <option>-f</option> and/or <option>-t</option>.
+   using <option>-o</option>, <option>-f</option>, and/or <option>-t</option>.
    <option>-o</option> takes an OID,
    <option>-f</option> takes a filenode,
    and <option>-t</option> takes a table name (actually, it's a <literal>LIKE</literal>
@@ -227,7 +227,7 @@
   <para>
    The environment variable <envar>PG_COLOR</envar> specifies whether to use
    color in diagnostic messages. Possible values are
-   <literal>always</literal>, <literal>auto</literal> and
+   <literal>always</literal>, <literal>auto</literal>, and
    <literal>never</literal>.
   </para>
  </refsect1>

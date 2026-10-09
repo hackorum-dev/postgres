@@ -674,7 +674,7 @@ DETAIL:  Synchronization could lead to data loss, because the remote slot needs 
         <para>
          A comma-separated list of publication names to subscribe to.
          The individual publication names are treated
-         as standard objects names and can be quoted the same as needed.
+         as standard object names and can be quoted the same as needed.
          At least one publication name is required.
         </para>
        </listitem>
@@ -734,7 +734,7 @@ DETAIL:  Synchronization could lead to data loss, because the remote slot needs 
        <listitem>
         <para>
          Enables sending two-phase transactions.
-         Minimum protocol version 3 is required to turn it on.
+         This requires protocol version 3 or higher.
          The default is <literal>off</literal>.
         </para>
        </listitem>

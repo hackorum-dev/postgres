@@ -1775,7 +1775,7 @@ include_dir 'conf.d'
       </term>
       <listitem>
        <para>
-        Enables SNI configuration for SSL connections.  When set to <literal>on</literal>
+        Enables SNI configuration for SSL connections.  When set to <literal>on</literal>,
         host configuration from <xref linkend="guc-hosts-file"/> is used, see
         <xref linkend="ssl-sni"/> for more details.
        </para>
@@ -3040,7 +3040,7 @@ include_dir 'conf.d'
        <listitem>
         <para>
          Sets the time after which entirely idle I/O worker processes exit, reducing the
-         size of pool to match demand.  The default is 1 minute.  This
+         size of the pool to match demand.  The default is 1 minute.  This
          parameter can only be set in the
          <filename>postgresql.conf</filename> file or on the server command
          line.
@@ -7971,7 +7971,7 @@ local0.*    /var/log/postgresql
       </term>
       <listitem>
        <para>
-        Causes analyze action executed by autovacuum to be logged if it ran for at
+        Causes each analyze action executed by autovacuum to be logged if it ran for at
         least the specified amount of time.  Setting this to zero logs
         all analyze actions by autovacuum. <literal>-1</literal> disables logging
         analyze actions by autovacuum. If this value is specified without units,

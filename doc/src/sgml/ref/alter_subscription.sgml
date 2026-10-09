@@ -181,7 +181,7 @@ ALTER SUBSCRIPTION <replaceable class="parameter">name</replaceable> RENAME TO <
 
      <para>
       The system catalog <link linkend="catalog-pg-subscription-rel">pg_subscription_rel</link>
-      is updated to record all tables and sequences known to the subscription,
+      is updated to record all tables and sequences known to the subscription
       that are still part of the publication.
      </para>
 

@@ -852,7 +852,7 @@ HINT:  Execute a database-wide VACUUM in that database.
      running <literal>UPDATE</literal> statements with foreign key checks,
      concurrent <literal>SELECT FOR SHARE</literal> operations, or frequent
      use of savepoints causing lock contention.
-     If <literal>oldest_multixact</literal> value remains unchanged while
+     If the <literal>oldest_multixact</literal> value remains unchanged while
      <literal>num_members</literal> grows, it could indicate that long-running
      transactions are preventing cleanup, or autovacuum is
      not keeping up with the workload.
@@ -1177,7 +1177,7 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
      <productname>PostgreSQL</productname> 19 (i.e., the order the tables are
      listed in the <literal>pg_class</literal> system catalog), set all of the
      aforementioned "weight" parameters to <literal>0.0</literal>.  Otherwise,
-     these "weight" parameters are multiplied to their respective component
+     these "weight" parameters are multiplied by their respective component
      scores.  For example, raising
      <xref linkend="guc-autovacuum-analyze-score-weight"/> to
      <literal>2.0</literal> effectively doubles the
