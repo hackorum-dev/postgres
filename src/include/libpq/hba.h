@@ -215,7 +215,11 @@ extern List *hba_expand_auth_file(List *tokens, const char *outer_filename,
 struct JsonConfNode;
 extern bool tokenize_hba_json(List *documents, List **tok_lines, int elevel,
 							  char **file_err);
+extern bool tokenize_ident_json(List *documents, List **tok_lines, int elevel,
+								char **file_err);
 extern void free_json_section_tokens(void);
+extern bool import_auth_lines(struct JsonConfNode *imports, List **tok_lines,
+							  int elevel, char **file_err);
 extern bool section_shape_error(struct JsonConfNode *node, int elevel,
 								char **file_err, const char *fmt, ...)
 			pg_attribute_printf(4, 5);

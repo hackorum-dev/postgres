@@ -576,7 +576,9 @@ include_dir 'conf.d'
       <listitem>
        <para>
          Specifies the configuration file for user name mapping
-         (customarily called <filename>pg_ident.conf</filename>).
+         (customarily called <filename>pg_ident.conf</filename>, or
+         <filename>pg_ident.json</filename> for the JSON format; a file
+         whose name ends in <literal>.json</literal> is read as JSON).
          This parameter can only be set at server start.
          See also <xref linkend="auth-username-maps"/>.
        </para>

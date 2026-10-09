@@ -1,7 +1,7 @@
 # Copyright (c) 2026, PostgreSQL Global Development Group
 
-# Test the JSON format of the client authentication rules, in the file
-# named by hba_file.
+# Test the JSON format of the client authentication rules and user name
+# maps, in the files named by hba_file and ident_file.
 
 use strict;
 use warnings FATAL => 'all';
@@ -18,6 +18,7 @@ my $node = PostgreSQL::Test::Cluster->new('json_hba');
 $node->init;
 my $datadir = $node->data_dir;
 my $hba_json = "$datadir/pg_hba.json";
+my $ident_json = "$datadir/pg_ident.json";
 
 sub write_file
 {
@@ -34,12 +35,21 @@ sub set_hba
 	write_file($hba_json, qq({"hba": $hba}\n));
 }
 
+# $ident is the JSON text of the "ident" value.
+sub set_ident
+{
+	my ($ident) = @_;
+	write_file($ident_json, qq({"ident": $ident}\n));
+}
+
 $node->append_conf('postgresql.conf', <<"EOF");
 listen_addresses = '127.0.0.1'
 hba_file = '$hba_json'
+ident_file = '$ident_json'
 EOF
 set_hba(
 	'{"children": [{"transport": "local", "auth": {"method": "trust"}}]}');
+set_ident('{}');
 $node->start;
 
 # With EXEC_BACKEND, each new backend loads the rules from the files
@@ -422,6 +432,145 @@ foreach my $case (
 	like($err, $re, "hba document $doc: problem reported");
 }
 $session->quit;
+
+# ident maps, tested with the peer method over the Unix socket; only
+# template1 goes through the map, so the test's own connections to
+# postgres keep working whatever the maps say
+my $sysuser = (getpwuid($<))[0];
+write_file("$datadir/mapped.txt", "carol\n");
+set_hba(<<'EOF');
+{"children": [
+   {"transport": "local", "databases": "template1",
+    "auth": {"method": "peer", "map": "m"}},
+   {"transport": "local", "auth": {"method": "trust"}}
+]}
+EOF
+set_ident(<<"EOF");
+{
+   "import": [{"file": "missing_ident.conf", "optional": true},
+              "legacy_ident.conf"],
+   "maps": {"m": {"$sysuser": ["alice", "\@mapped.txt"],
+                  "/^(.*)\$": "\\\\1"}}
+}
+EOF
+write_file("$datadir/legacy_ident.conf", "m $sysuser bob\n");
+$node->reload;
+$node->safe_psql('postgres', 'CREATE ROLE carol LOGIN');
+$res = $node->safe_psql(
+	'postgres', q{
+	SELECT map_number, regexp_replace(file_name, '.*/', ''), line_number,
+	       map_name, sys_name, pg_username, error IS NULL
+	FROM pg_ident_file_mappings ORDER BY map_number});
+is( $res,
+	join(
+		"\n",
+		"1|legacy_ident.conf|1|m|$sysuser|bob|t",
+		"2|pg_ident.json|4|m|$sysuser|alice|t",
+		"3|pg_ident.json|4|m|$sysuser|carol|t",
+		"4|pg_ident.json|5|m|/^(.*)\$|\\1|t"),
+	'imported mappings first, then one mapping per value element');
+
+$log_offset = -s $node->logfile;
+$node->psql('template1', '', connstr => 'dbname=template1 user=alice');
+my $peer_supported = !$node->log_contains(
+	qr/peer authentication is not supported on this platform/,
+	$log_offset);
+
+SKIP:
+{
+	skip 'peer authentication is not supported on this platform', 5
+	  unless $peer_supported;
+
+	$node->connect_ok('dbname=template1 user=alice',
+		'peer through a JSON map');
+	$node->connect_ok('dbname=template1 user=bob',
+		'peer through an imported legacy map');
+	$node->connect_ok('dbname=template1 user=carol',
+		'peer through a pg user name read from an @file');
+	$node->connect_ok("dbname=template1 user=$sysuser",
+		'peer through a regex key with \\1 substitution');
+	$node->connect_fails(
+		'dbname=template1 user=jacob',
+		'system user not mapped to the requested role',
+		expected_stderr => qr/Peer authentication failed/);
+}
+
+# the same map in an included document adds to it
+write_file("$datadir/ident_extra.json",
+	qq({"ident": {"maps": {"m": {"$sysuser": "jacob"}}}}\n));
+write_file($ident_json, <<"EOF");
+{"include": ["ident_extra.json"],
+ "ident": {"maps": {"m": {"$sysuser": "alice"}}}}
+EOF
+$node->reload;
+SKIP:
+{
+	skip 'peer authentication is not supported on this platform', 1
+	  unless $peer_supported;
+	$node->connect_ok('dbname=template1 user=jacob',
+		'mapping from an included document concatenated into the map');
+}
+
+$res = $node->safe_psql(
+	'postgres', q{
+	SELECT map_number, regexp_replace(file_name, '.*/', ''), line_number,
+	       pg_username
+	FROM pg_ident_file_mappings ORDER BY map_number});
+is( $res,
+	join("\n", "1|pg_ident.json|2|alice", "2|ident_extra.json|1|jacob"),
+	'included document listed after the including one');
+
+# per-mapping errors are rows in the view; the import of a missing file
+# too
+set_ident(<<"EOF");
+{
+   "import": "missing_ident.conf",
+   "maps": {"m": {"a": 1, "b": [1], "c": [], "d": "/([",
+                  "e": "\@empty.txt"}}
+}
+EOF
+$res = $node->safe_psql(
+	'postgres', q{
+	SELECT map_number IS NULL, line_number, error FROM pg_ident_file_mappings
+	ORDER BY line_number, error});
+like($res, qr/^t\|2\|could not open file ".*missing_ident\.conf"/m,
+	'missing import file reported');
+is( scalar(
+		() = $res =~
+		  /^t\|3\|"[abc]" must be a string or a non-empty array of strings/mg),
+	3, 'non-string, non-string element and empty array rejected');
+like($res, qr/^t\|3\|invalid regular expression/m,
+	'parse_ident_line errors pass through');
+like($res, qr/^t\|4\|missing entry at end of line/m,
+	'empty @file drops the field, as in pg_ident.conf');
+is(scalar(() = $res =~ /\n/g) + 1, 6, 'one row per bad mapping or import');
+$log_offset = -s $node->logfile;
+$node->reload;
+$node->wait_for_log(qr/pg_ident\.json was not reloaded/, $log_offset);
+
+# wrong section shapes fail the whole load
+foreach my $case (
+	[ '[]', qr/"ident" must be an object/ ],
+	[ '{"maps": {}, "bogus": 1}', qr/unrecognized key "bogus"/ ],
+	[ '{"maps": 1}', qr/"maps" must be an object/ ],
+	[ '{"maps": {"m": "x"}}', qr/map "m" must be an object/ ],
+	[
+		'{"import": [1]}',
+		qr/"import" must be a string, an object, or an array of these/
+	],
+	[ '{"import": {"file": "x", "bogus": 1}}', qr/unrecognized key "bogus"/ ],
+	[ '{"import": {"file": "x", "optional": 1}}',
+		qr/"optional" must be a boolean/ ])
+{
+	my ($ident, $re) = @$case;
+
+	set_ident($ident);
+	my ($ret, $out, $err) =
+	  $node->psql('postgres', 'SELECT * FROM pg_ident_file_mappings');
+	like($err, qr/could not load configuration file ".*pg_ident\.json"/,
+		"ident $ident: view fails");
+	like($err, $re, "ident $ident: shape reported");
+}
 
 # a document without rules: startup fails
 $node->stop;
