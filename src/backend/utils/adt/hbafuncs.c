@@ -566,12 +566,16 @@ fill_ident_line(Tuplestorestate *tuple_store, TupleDesc tupdesc,
 }
 
 /*
- * Read the pg_ident.conf file and fill the tuplestore with view records.
+ * fill_ident_view
+ *		Read the user name maps and fill the tuplestore with view records.
+ *
+ * The maps come from ident_file, in either format.
  */
 static void
 fill_ident_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 {
-	FILE	   *file;
+	bool		use_json = (config_json_auth_source(IdentFileName) != NULL);
+	FILE	   *file = NULL;
 	List	   *ident_lines = NIL;
 	ListCell   *line;
 	int			map_number = 0;
@@ -579,14 +583,40 @@ fill_ident_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 	MemoryContext oldcxt;
 
 	/*
-	 * In the unlikely event that we can't open pg_ident.conf, we throw an
+	 * In the unlikely event that we can't open or load the file, we throw an
 	 * error, rather than trying to report it via some sort of view entry.
 	 * (Most other error conditions should result in a message in a view
 	 * entry.)
 	 */
-	file = open_auth_file(IdentFileName, ERROR, 0, NULL);
+	if (use_json)
+	{
+		List	   *documents;
+		char	   *file_err;
 
-	tokenize_auth_file(IdentFileName, file, &ident_lines, DEBUG3, 0);
+		/* as in fill_hba_view(), free only what tokenizing created */
+		if (!config_json_load_section("ident", IdentFileName, DEBUG3,
+									  &documents, &file_err))
+			ereport(ERROR,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("could not load configuration file \"%s\"",
+							IdentFileName),
+					 errdetail_internal("%s", file_err)));
+		if (!tokenize_ident_json(documents, &ident_lines, DEBUG3, &file_err))
+		{
+			free_json_section_tokens();
+			ereport(ERROR,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("could not load configuration file \"%s\"",
+							IdentFileName),
+					 errdetail_internal("%s", file_err)));
+		}
+	}
+	else
+	{
+		file = open_auth_file(IdentFileName, ERROR, 0, NULL);
+
+		tokenize_auth_file(IdentFileName, file, &ident_lines, DEBUG3, 0);
+	}
 
 	/* Now parse all the lines */
 	identcxt = AllocSetContextCreate(CurrentMemoryContext,
@@ -612,7 +642,10 @@ fill_ident_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 	}
 
 	/* Free tokenizer memory */
-	free_auth_file(file, 0);
+	if (use_json)
+		free_json_section_tokens();
+	else
+		free_auth_file(file, 0);
 	/* Free parse_ident_line memory */
 	MemoryContextSwitchTo(oldcxt);
 	MemoryContextDelete(identcxt);
