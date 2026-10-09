@@ -189,6 +189,35 @@ PostgreSQL documentation
       </listitem>
      </varlistentry>
 
+     <varlistentry id="app-initdb-option-config-format">
+      <term><option>--config-format=<replaceable class="parameter">format</replaceable></option></term>
+      <listitem>
+       <para>
+        Selects the format of the configuration files that
+        <command>initdb</command> creates.  The default,
+        <literal>conf</literal>, writes <filename>postgresql.conf</filename>,
+        <filename>pg_hba.conf</filename> and <filename>pg_ident.conf</filename>.
+        With <literal>json</literal>, a single
+        <filename>postgresql.json</filename> takes their place (see <xref
+        linkend="config-json"/> and <xref linkend="auth-pg-hba-json"/>): it
+        holds the settings <command>initdb</command> determines, any given
+        with <option>--set</option>, and the same client authentication rules
+        the other files would contain, including those chosen with
+        <option>--auth</option> and its variants.  Parameters left at their
+        defaults are not listed; see <xref linkend="runtime-config"/> for
+        those.  The file is UTF-8, so <command>initdb</command> fails if a
+        value it would write, such as a locale name, is not valid UTF-8.
+        <filename>postgresql.auto.conf</filename> is created in either case,
+        <filename>pg_hosts.conf</filename> only with
+        <literal>conf</literal>, since nothing would read it with a JSON
+        configuration file.
+        The parameters <varname>hba_file</varname>,
+        <varname>ident_file</varname> and <varname>hosts_file</varname>
+        cannot be given with <option>--set</option> in this format.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="app-initdb-option-pgdata">
       <term><option>-D <replaceable class="parameter">datadir</replaceable></option></term>
       <term><option>--pgdata=<replaceable class="parameter">datadir</replaceable></option></term>
