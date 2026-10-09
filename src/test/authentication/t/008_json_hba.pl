@@ -1,7 +1,8 @@
 # Copyright (c) 2026, PostgreSQL Global Development Group
 
 # Test the JSON format of the client authentication rules and user name
-# maps, in the files named by hba_file and ident_file.
+# maps: as files of their own named by hba_file and ident_file, and as
+# sections of a JSON server configuration file.
 
 use strict;
 use warnings FATAL => 'all';
@@ -19,6 +20,7 @@ $node->init;
 my $datadir = $node->data_dir;
 my $hba_json = "$datadir/pg_hba.json";
 my $ident_json = "$datadir/pg_ident.json";
+my $root = "$datadir/postgresql.json";
 
 sub write_file
 {
@@ -692,6 +694,106 @@ $node->stop;
 write_file($hba_json, "{}\n");
 my $ret = $node->start(fail_ok => 1);
 is($ret, 0, 'hba document without rules fails to start');
+ok($node->log_contains(qr/contains no entries/), 'no entries reported');
+
+##############################################################################
+# Sections of a JSON server configuration file
+##############################################################################
+
+# The same rules and maps as sections of postgresql.json, which pulls in
+# the postgresql.conf written so far, except for the file parameters it
+# replaces.
+my $conf = PostgreSQL::Test::Utils::slurp_file("$datadir/postgresql.conf");
+$conf =~ s/^(hba_file|ident_file) = .*\n//mg;
+write_file("$datadir/postgresql.conf", $conf);
+unlink $hba_json, $ident_json;
+
+# $hba and $ident are the JSON texts of the sections; @include are
+# further include entries, already JSON-quoted.
+sub set_root
+{
+	my ($hba, $ident, @include) = @_;
+	my $includes = join(', ', '"postgresql.conf"', @include);
+	chomp($hba);
+	chomp($ident);
+	write_file($root,
+		qq({"include": [$includes],\n "hba": $hba,\n "ident": $ident}\n));
+}
+
+set_root(<<"EOF", qq({"maps": {"m": {"$sysuser": "alice"}}}));
+{"children": [
+   {"transport": "local", "databases": "template1",
+    "auth": {"method": "peer", "map": "m"}},
+   {"transport": "local", "auth": {"method": "trust"}},
+   {"address": "127.0.0.1/32", "auth": {"method": "scram-sha-256"},
+    "settings": {"authentication_timeout": "8"}}
+]}
+EOF
+$node->start(options => "-c config_file=$root");
+
+$res = $node->safe_psql(
+	'postgres', q{
+	SELECT rule_number, regexp_replace(file_name, '.*/', ''), line_number,
+	       auth_method, node_path
+	FROM pg_hba_file_rules ORDER BY rule_number});
+is( $res,
+	join(
+		"\n",
+		'1|postgresql.json|3|peer|$.hba.children[0]',
+		'2|postgresql.json|5|trust|$.hba.children[1]',
+		'3|postgresql.json|6|scram-sha-256|$.hba.children[2]'),
+	'rules read from the hba section of the configuration file');
+$res = $node->safe_psql(
+	'postgres', q{
+	SELECT map_number, regexp_replace(file_name, '.*/', ''), line_number,
+	       pg_username
+	FROM pg_ident_file_mappings ORDER BY map_number});
+is($res, "1|postgresql.json|9|alice",
+	'maps read from the ident section of the configuration file');
+SKIP:
+{
+	skip 'peer authentication is not supported on this platform', 1
+	  unless $peer_supported;
+	$node->connect_ok('dbname=template1 user=alice',
+		'peer through a map in the configuration file');
+}
+
+# A bad setting in an included file fails the settings reload, but not the
+# hba rules changed along with it, also where each backend loads them
+# itself.
+write_file("$datadir/bad_setting.json", '{"work_mem": {"x": 1}}');
+set_root(<<"EOF", '{}', '"bad_setting.json"');
+{"children": [
+   {"transport": "local", "auth": {"method": "trust"}},
+   {"address": "127.0.0.1/32", "auth": {"method": "scram-sha-256"},
+    "settings": {"authentication_timeout": "9"}}
+]}
+EOF
+{
+	my $offset = -s $node->logfile;
+
+	$node->reload;
+	$node->wait_for_log(
+		qr/"work_mem" must be a string, number, boolean, or array of these/,
+		$offset);
+	$node->connect_ok(
+		'host=127.0.0.1 dbname=postgres user=alice',
+		'hba rules reloaded despite a settings error',
+		sql => 'SHOW authentication_timeout',
+		expected_stdout => qr/^9s$/m);
+}
+
+# a rejected reload names the configuration file
+set_root('{"children": [{"users": "alice"}]}', '{}');
+$log_offset = -s $node->logfile;
+$node->reload;
+$node->wait_for_log(qr/postgresql\.json was not reloaded/, $log_offset);
+
+# missing hba section: startup fails
+$node->stop;
+write_file($root, qq({"include": ["postgresql.conf"]}\n));
+$ret = $node->start(fail_ok => 1, options => "-c config_file=$root");
+is($ret, 0, 'JSON configuration file without hba fails to start');
 ok($node->log_contains(qr/contains no entries/), 'no entries reported');
 
 done_testing();

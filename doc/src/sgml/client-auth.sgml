@@ -71,8 +71,9 @@
    directory is initialized by <xref linkend="app-initdb"/>.  It is
    possible to place the authentication configuration file elsewhere,
    however; see the <xref linkend="guc-hba-file"/> configuration parameter.
-   The rules can also be written as a JSON document, in the tree format
-   described in <xref linkend="auth-pg-hba-json"/>.
+   When the server configuration file is a JSON document (see <xref
+   linkend="config-json"/>), the rules are instead part of that document,
+   in the tree format described in <xref linkend="auth-pg-hba-json"/>.
   </para>
 
   <para>
@@ -902,6 +903,10 @@ local   db1,db2,@demodbs  all                                   scram-sha-256
   <indexterm>
    <primary>pg_hba.json</primary>
   </indexterm>
+  <indexterm>
+   <primary>postgresql.json</primary>
+   <secondary>hba section</secondary>
+  </indexterm>
 
   <para>
    The client authentication rules can also be given as a JSON document.
@@ -910,7 +915,11 @@ local   db1,db2,@demodbs  all                                   scram-sha-256
    the file is read as such a document instead of in the format described
    above.  The document is an object whose <literal>hba</literal> key
    holds the rules; it may also have an <literal>include</literal> key,
-   described below, and any other key is an error.
+   described below, and any other key is an error.  When the server
+   configuration file itself is a JSON document (see <xref
+   linkend="config-json"/>), the <literal>hba</literal> key of that
+   document holds the rules instead, and <varname>hba_file</varname>
+   cannot be set.
   </para>
 
   <para>
@@ -1417,6 +1426,10 @@ omicron         bryanh                  guest1
    <indexterm>
     <primary>pg_ident.json</primary>
    </indexterm>
+   <indexterm>
+    <primary>postgresql.json</primary>
+    <secondary>ident section</secondary>
+   </indexterm>
 
    <para>
     The user name maps can also be given as a JSON document, in the same
@@ -1425,9 +1438,12 @@ omicron         bryanh                  guest1
     names a file whose name ends in <literal>.json</literal> (customarily
     <filename>pg_ident.json</filename>), it is read as a document whose
     <literal>ident</literal> key holds the maps, with an optional
-    <literal>include</literal> key as described there.  The value is an
-    object with two optional keys.  <literal>maps</literal> is an object
-    whose keys are map names and whose values are the maps.  A map is an object from
+    <literal>include</literal> key as described there.  When the server
+    configuration file is a JSON document, its <literal>ident</literal>
+    key holds the maps instead, and <varname>ident_file</varname> cannot
+    be set.  The value is an object with two optional keys.
+    <literal>maps</literal> is an object whose keys are map names and
+    whose values are the maps.  A map is an object from
     system user name to database user name; the value is a string, or an
     array of strings when the same system user may connect as several
     database users, since JSON keys are unique.  Every pair is a mapping

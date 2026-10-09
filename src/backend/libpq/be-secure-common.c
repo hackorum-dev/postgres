@@ -365,7 +365,8 @@ parse_hosts_line(TokenizedAuthLine *tok_line, int elevel)
  * load_hosts_json
  *
  * The JSON counterpart of load_hosts(): the entries come from the "hosts"
- * sections of the JSON documents of hosts_file.  No section anywhere is the
+ * sections of the JSON documents, those of hosts_file or of the server
+ * configuration file.  No section anywhere is the
  * same as a missing file, a section without entries the same as an empty
  * one.  The documents and the compiler's scratch data are temporary; the
  * entries themselves are allocated in the caller's context, as the ones
@@ -449,8 +450,9 @@ load_hosts_json(List **hosts, char **err_msg)
  * the hosts configuration failed to load, the err_msg variable may have more
  * information in case it was passed as non-NULL.
  *
- * When hosts_file names a JSON file, the entries come from its "hosts"
- * sections instead; see load_hosts_json().
+ * When hosts_file names a JSON file, or the server configuration is a JSON
+ * document, the entries come from its "hosts" sections instead; see
+ * load_hosts_json().
  */
 HostsFileLoadResult
 load_hosts(List **hosts, char **err_msg)
@@ -529,6 +531,20 @@ load_hosts(List **hosts, char **err_msg)
 		return HOSTSFILE_EMPTY;
 
 	return HOSTSFILE_LOAD_OK;
+}
+
+/*
+ * hosts_source_name
+ *
+ * Name of the file the hosts entries come from, for messages: the server
+ * configuration file when its "hosts" section replaces hosts_file.
+ */
+const char *
+hosts_source_name(void)
+{
+	const char *source = config_json_auth_source(HostsFileName);
+
+	return source != NULL ? source : HostsFileName;
 }
 
 /*

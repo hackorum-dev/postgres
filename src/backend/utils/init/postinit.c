@@ -237,7 +237,7 @@ PerformAuthentication(Port *port)
 		 */
 		ereport(FATAL,
 		/* translator: %s is a configuration file */
-				(errmsg("could not load %s", HbaFileName)));
+				(errmsg("could not load %s", hba_source_name())));
 	}
 
 	if (!load_ident())
