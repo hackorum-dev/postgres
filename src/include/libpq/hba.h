@@ -163,6 +163,10 @@ typedef struct HostsLine
 	char	   *ssl_passphrase_cmd;
 	bool		ssl_passphrase_reload;
 
+	char	   *node_path;		/* JSON node this entry was compiled from, or
+								 * NULL for a legacy line */
+	char	   *err_msg;		/* why the entry is unusable, or NULL */
+
 	/* Internal bookkeeping */
 	void	   *ssl_ctx;		/* associated SSL_CTX* for the above settings */
 } HostsLine;
@@ -199,6 +203,7 @@ extern int	check_usermap(const char *usermap_name,
 						  bool case_insensitive);
 extern HbaLine *parse_hba_line(TokenizedAuthLine *tok_line, int elevel);
 extern IdentLine *parse_ident_line(TokenizedAuthLine *tok_line, int elevel);
+extern HostsLine *parse_hosts_line(TokenizedAuthLine *tok_line, int elevel);
 extern FILE *open_auth_file(const char *filename, int elevel, int depth,
 							char **err_msg);
 extern void free_auth_file(FILE *file, int depth);
@@ -217,6 +222,8 @@ extern bool tokenize_hba_json(List *documents, List **tok_lines, int elevel,
 							  char **file_err);
 extern bool tokenize_ident_json(List *documents, List **tok_lines, int elevel,
 								char **file_err);
+extern List *parse_hosts_json(List *documents, int elevel, bool *found,
+							  char **file_err);
 extern void free_json_section_tokens(void);
 extern bool import_auth_lines(struct JsonConfNode *imports, List **tok_lines,
 							  int elevel, char **file_err);

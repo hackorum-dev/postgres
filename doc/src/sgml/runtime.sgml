@@ -2708,6 +2708,70 @@ openssl x509 -req -in server.csr -text -days 365 \
    </para>
 
    <para>
+    The host entries can also be given as a JSON document, in the same way
+    as the client authentication rules (see <xref
+    linkend="auth-pg-hba-json"/>): when <xref linkend="guc-hosts-file"/>
+    names a file whose name ends in <literal>.json</literal> (customarily
+    <filename>pg_hosts.json</filename>), it is read as a document whose
+    <literal>hosts</literal> key holds the entries, with an optional
+    <literal>include</literal> key as described there:
+<programlisting>
+"hosts": {
+  "import": ["pg_hosts.conf"],
+  "defaults": {"ssl_ca_file": "/etc/postgresql/tls/internal-ca.crt"},
+  "entries": {
+    "acme.db.example.com":   {"ssl_cert_file": "acme.crt", "ssl_key_file": "acme.key"},
+    "globex.db.example.com": {"ssl_cert_file": "globex.crt", "ssl_key_file": "globex.key",
+                              "ssl_passphrase_command": "pass show pg/globex-key",
+                              "ssl_passphrase_command_supports_reload": true},
+    "*":                     {"ssl_cert_file": "server.crt", "ssl_key_file": "server.key"}
+  }
+}
+</programlisting>
+    The section is an object with up to three keys.
+    <literal>entries</literal> is an object whose keys are host names,
+    including the special values <literal>*</literal> and
+    <literal>/no_sni/</literal> of <xref linkend="hostname-values"/>, and
+    whose values are objects with the keys
+    <literal>ssl_cert_file</literal>, <literal>ssl_key_file</literal>,
+    <literal>ssl_ca_file</literal> and
+    <literal>ssl_passphrase_command</literal> (strings) and
+    <literal>ssl_passphrase_command_supports_reload</literal> (a boolean),
+    each with the meaning of the configuration parameter of the same name
+    for the connections to that host; relative file names are relative to
+    the data directory, as for the parameters.
+    <literal>ssl_cert_file</literal> and <literal>ssl_key_file</literal>
+    are required, the others are optional.  <literal>defaults</literal> is
+    an object with the same keys; its values apply to every entry that does
+    not set the key itself.
+   </para>
+
+   <para>
+    <literal>import</literal> names files in the format described above
+    to read in, as a string, an object with a <literal>file</literal> key
+    and an optional <literal>optional</literal> key, or an array of either,
+    with paths relative to the JSON file; the imported lines are used as
+    written, <literal>defaults</literal> does not apply to them.  Every
+    document, included ones too, can have a <literal>hosts</literal>
+    section: the <literal>defaults</literal> of all documents are merged,
+    later documents overriding earlier ones key by key, and the imports
+    and entries of each document follow those of the documents read
+    before it.  A host name can appear only once across all documents and
+    imported files, compared case-insensitively; a second occurrence is an
+    error.  As with any other error in the section, the server does not
+    start, or keeps the previous configuration on reload.  Without a
+    <literal>hosts</literal> section in any document, the
+    <literal>ssl_*</literal> parameters apply to all connections, as they
+    do when <xref linkend="guc-hosts-file"/> is missing.
+   </para>
+
+   <para>
+    The <link linkend="view-pg-hosts-file-entries"><structname>pg_hosts_file_entries</structname></link>
+    view shows the entries of the current hosts configuration in either
+    format, with the errors found in them.
+   </para>
+
+   <para>
     It is currently not possible to set different <literal>clientname</literal>
     values for the different certificates.  Any <literal>clientname</literal>
     setting in <xref linkend="guc-hba-file"/> will be applied during

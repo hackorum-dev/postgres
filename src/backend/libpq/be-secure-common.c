@@ -27,9 +27,9 @@
 #include "libpq/libpq.h"
 #include "storage/fd.h"
 #include "utils/builtins.h"
+#include "utils/config_json.h"
 #include "utils/guc.h"
-
-static HostsLine *parse_hosts_line(TokenizedAuthLine *tok_line, int elevel);
+#include "utils/memutils.h"
 
 /*
  * Run ssl_passphrase_command
@@ -184,14 +184,51 @@ check_ssl_key_file_permissions(const char *ssl_key_file, bool isServerStart)
 }
 
 /*
+ * Report a problem with a hosts line at elevel, and record it in the line,
+ * so that the view can show it in place.  The message is translated here.
+ */
+static void hosts_line_error(TokenizedAuthLine *tok_line, int elevel,
+							 const char *fmt, ...) pg_attribute_printf(3, 4);
+
+static void
+hosts_line_error(TokenizedAuthLine *tok_line, int elevel, const char *fmt, ...)
+{
+	StringInfoData msg;
+
+	fmt = _(fmt);
+	initStringInfo(&msg);
+	for (;;)
+	{
+		va_list		args;
+		int			needed;
+
+		va_start(args, fmt);
+		needed = appendStringInfoVA(&msg, fmt, args);
+		va_end(args);
+		if (needed == 0)
+			break;
+		enlargeStringInfo(&msg, needed);
+	}
+	tok_line->err_msg = msg.data;
+	ereport(elevel,
+			errcode(ERRCODE_CONFIG_FILE_ERROR),
+			errmsg_internal("%s", msg.data),
+			errcontext("line %d of configuration file \"%s\"",
+					   tok_line->line_num, tok_line->file_name));
+}
+
+/*
  * parse_hosts_line
  *
  * Parses a loaded line from the pg_hosts.conf configuration and pulls out the
  * hostname, certificate, key and CA parts in order to build an SNI config in
  * the TLS backend. Validation of the parsed values is left for the TLS backend
  * to implement.
+ *
+ * Returns NULL on error, with tok_line->err_msg set to the message.  The
+ * result is allocated in the current memory context.
  */
-static HostsLine *
+HostsLine *
 parse_hosts_line(TokenizedAuthLine *tok_line, int elevel)
 {
 	HostsLine  *parsedline;
@@ -217,11 +254,8 @@ parse_hosts_line(TokenizedAuthLine *tok_line, int elevel)
 		if ((tokens->length > 1) &&
 			(strcmp(hostname->string, "*") == 0 || strcmp(hostname->string, "/no_sni/") == 0))
 		{
-			ereport(elevel,
-					errcode(ERRCODE_CONFIG_FILE_ERROR),
-					errmsg("default and non-SNI entries cannot be mixed with other entries"),
-					errcontext("line %d of configuration file \"%s\"",
-							   tok_line->line_num, tok_line->file_name));
+			hosts_line_error(tok_line, elevel,
+							 "default and non-SNI entries cannot be mixed with other entries");
 			return NULL;
 		}
 
@@ -232,21 +266,15 @@ parse_hosts_line(TokenizedAuthLine *tok_line, int elevel)
 	field = lnext(tok_line->fields, field);
 	if (!field)
 	{
-		ereport(elevel,
-				errcode(ERRCODE_CONFIG_FILE_ERROR),
-				errmsg("missing entry at end of line"),
-				errcontext("line %d of configuration file \"%s\"",
-						   tok_line->line_num, tok_line->file_name));
+		hosts_line_error(tok_line, elevel,
+						 "missing entry at end of line");
 		return NULL;
 	}
 	tokens = lfirst(field);
 	if (tokens->length > 1)
 	{
-		ereport(elevel,
-				errcode(ERRCODE_CONFIG_FILE_ERROR),
-				errmsg("multiple values specified for SSL certificate"),
-				errcontext("line %d of configuration file \"%s\"",
-						   tok_line->line_num, tok_line->file_name));
+		hosts_line_error(tok_line, elevel,
+						 "multiple values specified for SSL certificate");
 		return NULL;
 	}
 	token = linitial(tokens);
@@ -256,21 +284,15 @@ parse_hosts_line(TokenizedAuthLine *tok_line, int elevel)
 	field = lnext(tok_line->fields, field);
 	if (!field)
 	{
-		ereport(elevel,
-				errcode(ERRCODE_CONFIG_FILE_ERROR),
-				errmsg("missing entry at end of line"),
-				errcontext("line %d of configuration file \"%s\"",
-						   tok_line->line_num, tok_line->file_name));
+		hosts_line_error(tok_line, elevel,
+						 "missing entry at end of line");
 		return NULL;
 	}
 	tokens = lfirst(field);
 	if (tokens->length > 1)
 	{
-		ereport(elevel,
-				errcode(ERRCODE_CONFIG_FILE_ERROR),
-				errmsg("multiple values specified for SSL key"),
-				errcontext("line %d of configuration file \"%s\"",
-						   tok_line->line_num, tok_line->file_name));
+		hosts_line_error(tok_line, elevel,
+						 "multiple values specified for SSL key");
 		return NULL;
 	}
 	token = linitial(tokens);
@@ -283,11 +305,8 @@ parse_hosts_line(TokenizedAuthLine *tok_line, int elevel)
 	tokens = lfirst(field);
 	if (tokens->length > 1)
 	{
-		ereport(elevel,
-				errcode(ERRCODE_CONFIG_FILE_ERROR),
-				errmsg("multiple values specified for SSL CA"),
-				errcontext("line %d of configuration file \"%s\"",
-						   tok_line->line_num, tok_line->file_name));
+		hosts_line_error(tok_line, elevel,
+						 "multiple values specified for SSL CA");
 		return NULL;
 	}
 	token = linitial(tokens);
@@ -300,11 +319,8 @@ parse_hosts_line(TokenizedAuthLine *tok_line, int elevel)
 		tokens = lfirst(field);
 		if (tokens->length > 1)
 		{
-			ereport(elevel,
-					errcode(ERRCODE_CONFIG_FILE_ERROR),
-					errmsg("multiple values specified for SSL passphrase command"),
-					errcontext("line %d of configuration file \"%s\"",
-							   tok_line->line_num, tok_line->file_name));
+			hosts_line_error(tok_line, elevel,
+							 "multiple values specified for SSL passphrase command");
 			return NULL;
 		}
 		token = linitial(tokens);
@@ -328,27 +344,99 @@ parse_hosts_line(TokenizedAuthLine *tok_line, int elevel)
 			 */
 			if (lnext(tok_line->fields, field))
 			{
-				ereport(elevel,
-						errcode(ERRCODE_CONFIG_FILE_ERROR),
-						errmsg("extra fields at end of line"),
-						errcontext("line %d of configuration file \"%s\"",
-								   tok_line->line_num, tok_line->file_name));
+				hosts_line_error(tok_line, elevel,
+								 "extra fields at end of line");
 				return NULL;
 			}
 
 			if (tokens->length > 1 || !parse_bool(token->string, &parsedline->ssl_passphrase_reload))
 			{
-				ereport(elevel,
-						errcode(ERRCODE_CONFIG_FILE_ERROR),
-						errmsg("incorrect syntax for boolean value SSL_passphrase_cmd_reload"),
-						errcontext("line %d of configuration file \"%s\"",
-								   tok_line->line_num, tok_line->file_name));
+				hosts_line_error(tok_line, elevel,
+								 "incorrect syntax for boolean value SSL_passphrase_cmd_reload");
 				return NULL;
 			}
 		}
 	}
 
 	return parsedline;
+}
+
+/*
+ * load_hosts_json
+ *
+ * The JSON counterpart of load_hosts(): the entries come from the "hosts"
+ * sections of the JSON documents of hosts_file.  No section anywhere is the
+ * same as a missing file, a section without entries the same as an empty
+ * one.  The documents and the compiler's scratch data are temporary; the
+ * entries themselves are allocated in the caller's context, as the ones
+ * from a legacy file are.
+ */
+static HostsFileLoadResult
+load_hosts_json(List **hosts, char **err_msg)
+{
+	MemoryContext oldcxt = CurrentMemoryContext;
+	MemoryContext jsoncxt;
+	List	   *documents;
+	List	   *entries;
+	ListCell   *lc;
+	char	   *err;
+	bool		found;
+	bool		ok = true;
+
+	jsoncxt = AllocSetContextCreate(CurrentMemoryContext,
+									"hosts json load context",
+									ALLOCSET_START_SMALL_SIZES);
+	MemoryContextSwitchTo(jsoncxt);
+	if (!config_json_load_section("hosts", HostsFileName, LOG, &documents,
+								  &err))
+	{
+		/* error already logged */
+		MemoryContextSwitchTo(oldcxt);
+		if (err_msg)
+			*err_msg = pstrdup(err);
+		MemoryContextDelete(jsoncxt);
+		return HOSTSFILE_LOAD_FAILED;
+	}
+	MemoryContextSwitchTo(oldcxt);
+
+	entries = parse_hosts_json(documents, LOG, &found, &err);
+	MemoryContextDelete(jsoncxt);
+
+	/*
+	 * A broken section must never pass for a missing one, as that would
+	 * silently fall back to the ssl_* parameters; so the error comes first.
+	 */
+	if (err != NULL)
+	{
+		if (err_msg)
+			*err_msg = err;
+		return HOSTSFILE_LOAD_FAILED;
+	}
+	if (!found)
+		return HOSTSFILE_MISSING;
+
+	/* entries with errors have been reported; any of them fails the load */
+	foreach(lc, entries)
+	{
+		HostsLine  *entry = lfirst(lc);
+
+		if (entry->err_msg != NULL)
+			ok = false;
+		else
+			*hosts = lappend(*hosts, entry);
+	}
+
+	if (!ok)
+	{
+		if (err_msg)
+			*err_msg = pstrdup(_("\"hosts\" section contains errors"));
+		return HOSTSFILE_LOAD_FAILED;
+	}
+
+	if (*hosts == NIL)
+		return HOSTSFILE_EMPTY;
+
+	return HOSTSFILE_LOAD_OK;
 }
 
 /*
@@ -360,6 +448,9 @@ parse_hosts_line(TokenizedAuthLine *tok_line, int elevel)
  * a HostsFileLoadResult value detailing the result of the operation.  When
  * the hosts configuration failed to load, the err_msg variable may have more
  * information in case it was passed as non-NULL.
+ *
+ * When hosts_file names a JSON file, the entries come from its "hosts"
+ * sections instead; see load_hosts_json().
  */
 HostsFileLoadResult
 load_hosts(List **hosts, char **err_msg)
@@ -383,6 +474,9 @@ load_hosts(List **hosts, char **err_msg)
 		return HOSTSFILE_LOAD_FAILED;
 	}
 	*hosts = NIL;
+
+	if (config_json_auth_source(HostsFileName) != NULL)
+		return load_hosts_json(hosts, err_msg);
 
 	/*
 	 * This is not an auth file per se, but it is using the same file format

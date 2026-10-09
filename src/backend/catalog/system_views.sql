@@ -672,6 +672,11 @@ CREATE VIEW pg_ident_file_mappings AS
 
 REVOKE ALL ON pg_ident_file_mappings FROM PUBLIC;
 
+CREATE VIEW pg_hosts_file_entries AS
+   SELECT * FROM pg_hosts_file_entries() AS A;
+
+REVOKE ALL ON pg_hosts_file_entries FROM PUBLIC;
+
 CREATE VIEW pg_timezone_abbrevs AS
     SELECT * FROM pg_timezone_abbrevs_zone() z
     UNION ALL
