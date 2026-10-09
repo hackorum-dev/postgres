@@ -1444,14 +1444,18 @@ _hash_finish_split(Relation rel, Buffer metabuf, Buffer obuf, Bucket obucket,
 	 * up and next insertion on old bucket will try again to complete the
 	 * split.
 	 */
+	INJECTION_POINT("hash-finish-split-before-cleanup-locks", NULL);
+
 	if (!ConditionalLockBufferForCleanup(obuf))
 	{
+		_hash_dropbuf(rel, bucket_nbuf);
 		hash_destroy(tidhtab);
 		return;
 	}
 	if (!ConditionalLockBufferForCleanup(bucket_nbuf))
 	{
 		LockBuffer(obuf, BUFFER_LOCK_UNLOCK);
+		_hash_dropbuf(rel, bucket_nbuf);
 		hash_destroy(tidhtab);
 		return;
 	}
