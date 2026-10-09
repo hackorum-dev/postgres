@@ -12,6 +12,11 @@
  * validates them exactly as it does for a legacy file, so the two formats
  * cannot drift apart in what they accept.
  *
+ * The "ident" section is flat: "maps" is an object of maps, each an object
+ * from system user name to PostgreSQL user name, or to an array of them.
+ * Every pair becomes one (map, system user, pg user) line for
+ * parse_ident_line().
+ *
  * Portions Copyright (c) 1996-2026, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -36,7 +41,8 @@
  * method emits nothing of its own; it only groups its children.
  *
  * Import nodes splice a legacy file in at their position.  Legacy lines
- * are complete rules and inherit nothing.
+ * are complete rules and inherit nothing.  The "import" list of the
+ * ident section works the same way.
  *
  *-------------------------------------------------------------------------
  */
@@ -678,8 +684,8 @@ emit_rule(JsonConfNode *node, const HbaNodeState *st, List **tok_lines,
  * *err set.
  *
  * The file is read at depth 1, as if included from pg_hba.conf: the
- * tokenizer then uses the context tokenize_hba_json() created rather
- * than making its own.  An open
+ * tokenizer then uses the context tokenize_hba_json() or
+ * tokenize_ident_json() created rather than making its own.  An open
  * failure is reported by open_auth_file() itself; the callback adds which
  * node asked for the file.
  */
@@ -874,6 +880,86 @@ section_shape_error(JsonConfNode *node, int elevel, char **file_err,
 }
 
 /*
+ * import_auth_lines
+ *		Append the lines of the legacy files an "import" value names.
+ *
+ * The value is a string, or an array whose elements are strings or
+ * {"file": ..., "optional": true} objects, like the "include" list of a
+ * document; paths are relative to the JSON file.  A malformed value is a
+ * section shape error.  A file that cannot be opened becomes a line with
+ * err_msg, as a broken include does in a legacy file, unless it is
+ * optional and does not exist.  The tokenizer context must exist.
+ */
+bool
+import_auth_lines(JsonConfNode *imports, List **tok_lines, int elevel,
+				  char **file_err)
+{
+	List	   *entries;
+	ListCell   *lc;
+
+	if (imports->type == JCN_ARRAY)
+		entries = imports->values;
+	else
+		entries = list_make1(imports);
+
+	foreach(lc, entries)
+	{
+		JsonConfNode *entry = lfirst(lc);
+		JsonConfNode *fileval = entry;
+		JsonConfNode *optval = NULL;
+		List	   *lines;
+		char	   *err;
+
+		if (entry->type == JCN_OBJECT)
+		{
+			ListCell   *k,
+					   *v;
+
+			forboth(k, entry->keys, v, entry->values)
+			{
+				const char *key = lfirst(k);
+
+				if (strcmp(key, "file") != 0 && strcmp(key, "optional") != 0)
+					return section_shape_error(lfirst(v), elevel, file_err,
+											   "unrecognized key \"%s\"", key);
+			}
+			fileval = config_json_get(entry, "file");
+			optval = config_json_get(entry, "optional");
+			if (fileval == NULL)
+				return section_shape_error(entry, elevel, file_err,
+										   "missing required key \"%s\"",
+										   "file");
+			if (fileval->type != JCN_STRING)
+				return section_shape_error(fileval, elevel, file_err,
+										   "\"%s\" must be a string", "file");
+		}
+		else if (entry->type != JCN_STRING)
+			return section_shape_error(entry, elevel, file_err,
+									   "\"%s\" must be a string, an object, or an array of these",
+									   "import");
+		if (optval != NULL && optval->type != JCN_BOOL)
+			return section_shape_error(optval, elevel, file_err,
+									   "\"%s\" must be a boolean",
+									   "optional");
+
+		if (!read_import_file(fileval, optval != NULL && optval->boolval,
+							  &lines, elevel, &err))
+		{
+			if (err != NULL)
+			{
+				TokenizedAuthLine *tok = new_tok_line(fileval);
+
+				tok->err_msg = err;
+				*tok_lines = lappend(*tok_lines, tok);
+			}
+			continue;
+		}
+		*tok_lines = list_concat(*tok_lines, lines);
+	}
+	return true;
+}
+
+/*
  * The "hba.children" of every document, compiled in order, so that an
  * included file's rules follow the including file's.
  */
@@ -905,6 +991,132 @@ compile_hba_documents(List *documents, List **tok_lines, int elevel,
 }
 
 /*
+ * One (map, system user, pg user) line.  "pg" is the value node, or one
+ * element of an array value; the line is attributed to it, so that the
+ * view points at the mapping rather than at the map.  Both names may be
+ * "@file" references, as in pg_ident.conf; parse_ident_line() rejects a
+ * file that holds more than one name, as it does for a legacy line.
+ */
+static void
+emit_mapping(const char *mapname, const char *sysname, JsonConfNode *pg,
+			 List **tok_lines, int elevel)
+{
+	TokenizedAuthLine *tok;
+	List	   *systoks,
+			   *pgtoks = NIL;
+	char	   *err = NULL;
+
+	if (pg->type != JCN_STRING)
+	{
+		hba_node_error(pg, pg, tok_lines, elevel,
+					   "\"%s\" must be a string or a non-empty array of strings",
+					   sysname);
+		return;
+	}
+	tok = new_tok_line(pg);
+	systoks = append_json_tokens(NIL, sysname, pg, elevel, &err);
+	if (err == NULL)
+		pgtoks = append_json_tokens(NIL, pg->strval, pg, elevel, &err);
+	if (err != NULL)
+	{
+		/* the @file error has been logged with the node's context already */
+		tok->err_msg = err;
+		*tok_lines = lappend(*tok_lines, tok);
+		return;
+	}
+
+	/*
+	 * An empty @file yields no tokens; like the legacy tokenizer, drop the
+	 * field rather than keep an empty one, and parse_ident_line() reports the
+	 * missing entry.
+	 */
+	tok->fields = list_make1(list_make1(make_auth_token(mapname, false)));
+	if (systoks != NIL)
+		tok->fields = lappend(tok->fields, systoks);
+	if (pgtoks != NIL)
+		tok->fields = lappend(tok->fields, pgtoks);
+	tok->raw_line = rule_text(tok->fields);
+	*tok_lines = lappend(*tok_lines, tok);
+}
+
+/*
+ * The "ident" section of every document: the imports first, then every
+ * key of "maps", so that maps of the same name across documents simply
+ * follow each other, as repeated map names do in pg_ident.conf.
+ */
+static bool
+compile_ident_documents(List *documents, List **tok_lines, int elevel,
+						char **file_err)
+{
+	ListCell   *lc;
+
+	foreach(lc, documents)
+	{
+		JsonConfNode *doc = lfirst(lc);
+		JsonConfNode *ident = config_json_get(doc, "ident");
+		JsonConfNode *imports,
+				   *maps;
+		ListCell   *k,
+				   *v;
+
+		if (ident == NULL)
+			continue;
+		if (ident->type != JCN_OBJECT)
+			return section_shape_error(ident, elevel, file_err,
+									   "\"%s\" must be an object", "ident");
+		forboth(k, ident->keys, v, ident->values)
+		{
+			const char *key = lfirst(k);
+
+			if (strcmp(key, "import") != 0 && strcmp(key, "maps") != 0)
+				return section_shape_error(lfirst(v), elevel, file_err,
+										   "unrecognized key \"%s\"", key);
+		}
+
+		imports = config_json_get(ident, "import");
+		if (imports != NULL &&
+			!import_auth_lines(imports, tok_lines, elevel, file_err))
+			return false;
+
+		maps = config_json_get(ident, "maps");
+		if (maps == NULL)
+			continue;
+		if (maps->type != JCN_OBJECT)
+			return section_shape_error(maps, elevel, file_err,
+									   "\"%s\" must be an object", "maps");
+		forboth(k, maps->keys, v, maps->values)
+		{
+			const char *mapname = lfirst(k);
+			JsonConfNode *map = lfirst(v);
+			ListCell   *sk,
+					   *sv;
+
+			if (map->type != JCN_OBJECT)
+				return section_shape_error(map, elevel, file_err,
+										   "map \"%s\" must be an object",
+										   mapname);
+			forboth(sk, map->keys, sv, map->values)
+			{
+				const char *sysname = lfirst(sk);
+				JsonConfNode *val = lfirst(sv);
+
+				if (val->type == JCN_ARRAY && val->values != NIL)
+				{
+					ListCell   *pl;
+
+					foreach(pl, val->values)
+						emit_mapping(mapname, sysname, lfirst(pl), tok_lines,
+									 elevel);
+				}
+				else
+					emit_mapping(mapname, sysname, val, tok_lines, elevel);
+			}
+		}
+	}
+	return true;
+}
+
+/*
  * Set up the contexts a section compiler needs, and switch to the one its
  * output goes to.  Returns the caller's context; free_json_section_tokens()
  * undoes the rest.
@@ -920,9 +1132,9 @@ json_section_begin(void)
 }
 
 /*
- * Frame of tokenize_hba_json(): set up the contexts, run the compiler,
- * and move a file-level message out of the context the caller is about
- * to free.
+ * Common frame of tokenize_hba_json() and tokenize_ident_json(): set up
+ * the contexts, run the compiler, and move a file-level message out of
+ * the context the caller is about to free.
  */
 static bool
 tokenize_json_section(bool (*compile) (List *, List **, int, char **),
@@ -970,8 +1182,28 @@ tokenize_hba_json(List *documents, List **tok_lines, int elevel,
 }
 
 /*
- * Release what tokenize_hba_json() allocated, including the tokenizer
- * context the imports used.
+ * tokenize_ident_json
+ *		Compile the "ident" sections of the given documents into lines.
+ *
+ * As tokenize_hba_json(), for user name maps: each document's imports
+ * come first, then one line per mapping of each map in "maps".  Maps with
+ * the same name in several documents concatenate, which falls out of the
+ * order.  A value that is neither a string nor a non-empty array of
+ * strings is a per-mapping error; the shape of "ident", "maps" and the
+ * maps themselves is a file-level error.  No "ident" section anywhere
+ * yields an empty list, which load_ident() accepts.
+ */
+bool
+tokenize_ident_json(List *documents, List **tok_lines, int elevel,
+					char **file_err)
+{
+	return tokenize_json_section(compile_ident_documents, documents,
+								 tok_lines, elevel, file_err);
+}
+
+/*
+ * Release what tokenize_hba_json() or tokenize_ident_json() allocated,
+ * including the tokenizer context the imports used.
  */
 void
 free_json_section_tokens(void)

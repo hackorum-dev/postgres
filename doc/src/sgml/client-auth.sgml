@@ -1366,6 +1366,83 @@ omicron         robert                  bob
 omicron         bryanh                  guest1
 </programlisting>
   </example>
+
+  <sect2 id="auth-username-maps-json">
+   <title>User Name Maps in a JSON Configuration File</title>
+
+   <indexterm>
+    <primary>pg_ident.json</primary>
+   </indexterm>
+
+   <para>
+    The user name maps can also be given as a JSON document, in the same
+    way as the authentication rules (see <xref
+    linkend="auth-pg-hba-json"/>): when <xref linkend="guc-ident-file"/>
+    names a file whose name ends in <literal>.json</literal> (customarily
+    <filename>pg_ident.json</filename>), it is read as a document whose
+    <literal>ident</literal> key holds the maps, with an optional
+    <literal>include</literal> key as described there.  The value is an
+    object with two optional keys.  <literal>maps</literal> is an object
+    whose keys are map names and whose values are the maps.  A map is an object from
+    system user name to database user name; the value is a string, or an
+    array of strings when the same system user may connect as several
+    database users, since JSON keys are unique.  Every pair is a mapping
+    as one line of <filename>pg_ident.conf</filename> would be.  A key
+    starting with a slash is a regular expression; in the value,
+    <literal>\1</literal>, <literal>all</literal>,
+    <literal>+<replaceable>role</replaceable></literal> and a leading
+    slash keep their meaning.
+    <literal>@<replaceable>file</replaceable></literal> is expanded in
+    either name, the system user name key as well as the value, as it is
+    in <filename>pg_ident.conf</filename>.  To name a database user
+    spelled like a keyword, wrap the value in double quotes inside the
+    JSON string, as for <literal>users</literal> in the
+    <literal>hba</literal> section.  The
+    example above, with the domain-stripping map added, reads:
+<programlisting>
+"ident": {
+  "maps": {
+    "omicron": {"bryanh": ["bryanh", "guest1"],
+                "ann": "ann",
+                "robert": "bob"},
+    "mymap":   {"/^(.*)@mydomain\\.com$": "\\1",
+                "/^(.*)@otherdomain\\.com$": "guest"}
+  }
+}
+</programlisting>
+    Backslashes are doubled because the JSON string syntax requires it.
+   </para>
+
+   <para>
+    <literal>import</literal> names files in <filename>pg_ident.conf</filename>
+    format whose mappings are added to the maps they name, which allows a
+    gradual move to the JSON format.  Like <literal>include</literal>, it
+    is a file name, relative to the JSON file, an object of the form
+    <literal>{"file": "<replaceable>name</replaceable>", "optional":
+    true}</literal>, or an array of either; a missing optional file is
+    skipped.  Imported mappings come before the document's own.
+   </para>
+
+   <para>
+    Where a document includes other documents, the maps of all their
+    <literal>ident</literal> sections are combined: a map name
+    used in several documents yields one map with all their mappings, the
+    including document's first.  As the order of mappings within a map
+    does not matter, this simply adds mappings to the map.
+   </para>
+
+   <para>
+    A mapping whose value is neither a string nor a non-empty array of
+    strings is reported as an error like a faulty line of
+    <filename>pg_ident.conf</filename>, with the file, the line of the
+    value and its location in the document, and the <link
+    linkend="view-pg-ident-file-mappings"><structname>pg_ident_file_mappings</structname></link>
+    view shows the mappings and such errors in that order.  An
+    <literal>ident</literal> value of the wrong shape, such as a map that
+    is not an object, prevents the maps from loading at all, and the view
+    reports it as an error instead of returning rows.
+   </para>
+  </sect2>
  </sect1>
 
  <sect1 id="auth-methods">

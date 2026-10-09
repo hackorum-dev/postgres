@@ -1587,6 +1587,10 @@ AND c1.path[c2.level] = c2.path[c2.level];
    <link linkend="auth-username-maps"><filename>pg_ident.conf</filename></link>.
    A row appears in this view for each non-empty, non-comment line in the file,
    with annotations indicating whether the map could be applied successfully.
+   When the maps come from the <literal>ident</literal> section of a JSON
+   document (see <xref linkend="auth-username-maps-json"/>), a row appears
+   for each mapping, and <structfield>line_number</structfield> is the
+   line of the mapping's value.
   </para>
 
   <para>

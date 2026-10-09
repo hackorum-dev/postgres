@@ -2942,24 +2942,57 @@ check_usermap(const char *usermap_name,
 bool
 load_ident(void)
 {
-	FILE	   *file;
+	bool		use_json = (config_json_auth_source(IdentFileName) != NULL);
+	FILE	   *file = NULL;
 	List	   *ident_lines = NIL;
 	ListCell   *line_cell;
 	List	   *new_parsed_lines = NIL;
 	bool		ok = true;
 	MemoryContext oldcxt;
 	MemoryContext ident_context;
+	MemoryContext jsoncxt = NULL;
 	IdentLine  *newline;
 
 	/* not FATAL ... we just won't do any special ident maps */
-	file = open_auth_file(IdentFileName, LOG, 0, NULL);
-	if (file == NULL)
+	if (use_json)
 	{
-		/* error already logged */
-		return false;
-	}
+		List	   *documents;
+		char	   *err;
 
-	tokenize_auth_file(IdentFileName, file, &ident_lines, LOG, 0);
+		/* as in load_hba(), the documents are only needed until parsed */
+		jsoncxt = AllocSetContextCreate(CurrentMemoryContext,
+										"ident json load context",
+										ALLOCSET_START_SMALL_SIZES);
+		oldcxt = MemoryContextSwitchTo(jsoncxt);
+		if (!config_json_load_section("ident", IdentFileName, LOG,
+									  &documents, &err))
+		{
+			/* error already logged, and nothing tokenized yet */
+			MemoryContextSwitchTo(oldcxt);
+			MemoryContextDelete(jsoncxt);
+			return false;
+		}
+		if (!tokenize_ident_json(documents, &ident_lines, LOG, &err))
+		{
+			/* error already logged */
+			MemoryContextSwitchTo(oldcxt);
+			free_json_section_tokens();
+			MemoryContextDelete(jsoncxt);
+			return false;
+		}
+		MemoryContextSwitchTo(oldcxt);
+	}
+	else
+	{
+		file = open_auth_file(IdentFileName, LOG, 0, NULL);
+		if (file == NULL)
+		{
+			/* error already logged */
+			return false;
+		}
+
+		tokenize_auth_file(IdentFileName, file, &ident_lines, LOG, 0);
+	}
 
 	/* Now parse all the lines */
 	Assert(PostmasterContext);
@@ -2995,7 +3028,13 @@ load_ident(void)
 	}
 
 	/* Free tokenizer memory */
-	free_auth_file(file, 0);
+	if (use_json)
+	{
+		free_json_section_tokens();
+		MemoryContextDelete(jsoncxt);
+	}
+	else
+		free_auth_file(file, 0);
 	MemoryContextSwitchTo(oldcxt);
 
 	if (!ok)

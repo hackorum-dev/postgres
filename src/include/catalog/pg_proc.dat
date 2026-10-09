@@ -6677,7 +6677,7 @@
   proargmodes => '{o,o,o,o,o,o,o,o,o,o,o,o}',
   proargnames => '{rule_number,file_name,line_number,type,database,user_name,address,netmask,auth_method,options,node_path,error}',
   prosrc => 'pg_hba_file_rules', proacl => '{POSTGRES=X}' },
-{ oid => '6250', descr => 'show pg_ident.conf mappings',
+{ oid => '6250', descr => 'show user name mappings',
   proname => 'pg_ident_file_mappings', prorows => '1000', proretset => 't',
   provolatile => 'v', prorettype => 'record', proargtypes => '',
   proallargtypes => '{int4,text,int4,text,text,text,text}',
