@@ -3,13 +3,19 @@
  * config_json.c
  *	  Loader for JSON-format configuration files.
  *
- * A JSON client authentication file, named by hba_file, ident_file or
- * hosts_file in place of the legacy file, is one object holding a single
- * section ("hba", "ident" or "hosts") and, optionally, an "include" key
- * naming further files like it.  We parse the document with the common
- * JSON parser into a small tree that keeps key order and source
- * positions, resolve includes, and hand back the documents in load order,
- * so that the loader of the section can pick out its parts.
+ * A JSON configuration root is one object.  The keys "include", "hba",
+ * "ident" and "hosts" are reserved; every other key is a GUC.  We parse
+ * the document with the common JSON parser into a small tree that keeps
+ * key order and source positions, resolve includes, and hand back two
+ * things: the GUC settings as a ConfigVariable list (the same shape the
+ * postgresql.conf parser produces) and, separately, the documents in load
+ * order, so that the loaders of the reserved sections can pick out their
+ * parts.
+ *
+ * The reserved sections can also live in JSON files of their own, named
+ * by hba_file, ident_file and hosts_file in place of the legacy files.
+ * Such a file holds one section and includes of files like it, nothing
+ * else; the section loaders get its documents the same way.
  *
  * Errors about a value carry the value's location as error context: its
  * path in the document, such as $.include[1] or $["pg_stat_statements.max"],
@@ -52,8 +58,21 @@ typedef struct JsonConfParseState
 	char	   *err_path;		/* where, for a semantic failure */
 } JsonConfParseState;
 
+/* reserved top-level keys, which are not settings */
+static const char *const reserved_keys[] = {
+	"include", "hba", "ident", "hosts", NULL
+};
+
+/*
+ * Settings that name a client authentication file.  With a JSON root the
+ * reserved sections take their place, so these cannot be set at all.
+ */
+static const char *const rejected_settings[] = {
+	"hba_file", "ident_file", "hosts_file", NULL
+};
+
 static bool load_document(const char *path, const char *calling_file,
-						  bool strict, int depth, int elevel,
+						  bool strict, int depth, int elevel, bool settings,
 						  const char *section,
 						  ConfigVariable **head_p, ConfigVariable **tail_p,
 						  List **documents_p, JsonConfNode *directive);
@@ -368,6 +387,22 @@ config_is_json(const char *filename)
 	return dot != NULL && strcmp(dot, ".json") == 0;
 }
 
+/*
+ * Is this a setting that cannot be set at all when the configuration file
+ * is JSON?  Those that name a client authentication file are replaced by
+ * the reserved sections.
+ */
+bool
+config_json_rejected_setting(const char *name)
+{
+	for (int i = 0; rejected_settings[i] != NULL; i++)
+	{
+		if (guc_name_compare(name, rejected_settings[i]) == 0)
+			return true;
+	}
+	return false;
+}
+
 /* Look up a key in an object node; NULL if absent or not an object. */
 JsonConfNode *
 config_json_get(JsonConfNode *obj, const char *key)
@@ -499,17 +534,48 @@ config_json_scalar_text(JsonConfNode *node)
 
 
 /*
- * Error reporting.
- *
- * Problems are reported at elevel, and recorded as ConfigVariable error
- * items in the shape ParseConfigFp produces for a broken file, so that
- * the caller can take the first message out of the list.
+ * Conversion of a document tree into ConfigVariable items.
  */
+
+static bool
+is_reserved_key(const char *key)
+{
+	for (int i = 0; reserved_keys[i]; i++)
+		if (strcmp(key, reserved_keys[i]) == 0)
+			return true;
+	return false;
+}
+
+/*
+ * Append one setting to the list, in the shape ParseConfigFp produces.
+ * The item owns copies of all its strings, since FreeConfigVariables
+ * frees them while the document tree may live on.
+ */
+static void
+append_item(ConfigVariable **head_p, ConfigVariable **tail_p,
+			const char *name, const char *value, const char *file, int line)
+{
+	ConfigVariable *item = palloc_object(ConfigVariable);
+
+	item->name = pstrdup(name);
+	item->value = pstrdup(value);
+	item->errmsg = NULL;
+	item->filename = pstrdup(file);
+	item->sourceline = line;
+	item->ignore = false;
+	item->applied = false;
+	item->next = NULL;
+	if (*head_p == NULL)
+		*head_p = item;
+	else
+		(*tail_p)->next = item;
+	*tail_p = item;
+}
 
 /*
  * Report a problem with a node at elevel, with the node's location as
- * context, and record it with the location appended.  The message is
- * translated here.
+ * context, and record it in the list with the location appended, so that
+ * pg_file_settings can show it.  The message is translated here.
  */
 static void json_setting_error(JsonConfNode *node, int elevel,
 							   ConfigVariable **head_p,
@@ -679,11 +745,12 @@ config_json_setting_text(const char *name, JsonConfNode *node,
  * Process one include entry: a string, or an object with "file" and an
  * optional "optional" flag.  The file name may carry wildcards in its last
  * component, in which case all matching files are loaded in name order and
- * no match at all is fine.
+ * no match at all is fine.  "settings" is as for load_document().
  */
 static bool
 process_include_entry(JsonConfNode *entry, const char *calling_file,
-					  int depth, int elevel, const char *section,
+					  int depth, int elevel, bool settings,
+					  const char *section,
 					  ConfigVariable **head_p, ConfigVariable **tail_p,
 					  List **documents_p)
 {
@@ -827,7 +894,8 @@ process_include_entry(JsonConfNode *entry, const char *calling_file,
 		for (int i = 0; i < nnames; i++)
 		{
 			if (!load_document(names[i], calling_file, true, depth + 1, elevel,
-							   section, head_p, tail_p, documents_p, entry))
+							   settings, section, head_p, tail_p, documents_p,
+							   entry))
 				ok = false;
 		}
 		return ok;
@@ -835,18 +903,26 @@ process_include_entry(JsonConfNode *entry, const char *calling_file,
 
 	abs = AbsoluteConfigLocation(spec, calling_file);
 	return load_document(abs, calling_file, !optional, depth + 1, elevel,
-						 section, head_p, tail_p, documents_p, entry);
+						 settings, section, head_p, tail_p, documents_p, entry);
 }
 
 /*
- * Load one document and everything it includes, appending them to
- * *documents_p in that order: the document first, then its includes.
- * The document may hold the given section and an "include" key, nothing
- * else.
+ * Load one document and everything it includes.
+ *
+ * The document's own settings are appended first and its includes after
+ * them.  Since the last occurrence of a setting wins when the list is
+ * applied, this makes an included file override the file that includes
+ * it, and later includes override earlier ones, matching the behavior of
+ * an include directive at the end of postgresql.conf.
+ *
+ * Without "settings", only the documents are wanted: the settings are not
+ * converted, so their errors are neither reported nor counted, and a
+ * legacy include, which can only hold settings, is only checked to exist.
+ * The result then says whether the document set itself could be read.
  */
 static bool
 load_document(const char *path, const char *calling_file, bool strict,
-			  int depth, int elevel, const char *section,
+			  int depth, int elevel, bool settings, const char *section,
 			  ConfigVariable **head_p, ConfigVariable **tail_p,
 			  List **documents_p, JsonConfNode *directive)
 {
@@ -903,11 +979,40 @@ load_document(const char *path, const char *calling_file, bool strict,
 		FreeFile(fp);
 	}
 
-	/* Only documents can be included; the root is known to be one. */
+	/* A legacy file can only carry settings; hand it to the old parser. */
 	if (!config_is_json(path))
 	{
-		json_setting_error(directive, elevel, head_p, tail_p,
-						   "included file \"%s\" is not a JSON file", path);
+		FILE	   *fp;
+
+		if (section != NULL)
+		{
+			/* a client authentication document has no use for one */
+			json_setting_error(directive, elevel, head_p, tail_p,
+							   "included file \"%s\" is not a JSON file",
+							   path);
+			return false;
+		}
+
+		if (settings)
+			return ParseConfigFile(path, strict, calling_file,
+								   directive ? directive->line : 0,
+								   depth, elevel, head_p, tail_p);
+
+		/* as ParseConfigFile() does for a file it cannot open */
+		fp = AllocateFile(path, "r");
+		if (fp != NULL)
+		{
+			FreeFile(fp);
+			return true;
+		}
+		ereport(elevel,
+				(errcode_for_file_access(),
+				 errmsg("could not open configuration file \"%s\": %m",
+						path)));
+		record_config_file_error(psprintf("could not open file \"%s\"", path),
+								 calling_file,
+								 directive ? directive->line : 0,
+								 head_p, tail_p);
 		return false;
 	}
 
@@ -964,14 +1069,73 @@ load_document(const char *path, const char *calling_file, bool strict,
 	forboth(k, doc->keys, v, doc->values)
 	{
 		const char *key = lfirst(k);
+		JsonConfNode *val = lfirst(v);
+		char	   *text;
+		char	   *msg;
+		JsonConfNode *at;
+		ListCell   *pk;
+		bool		dup = false;
 
-		/* a client authentication document holds one section */
-		if (strcmp(key, "include") != 0 && strcmp(key, section) != 0)
+		if (section != NULL)
 		{
-			json_setting_error(lfirst(v), elevel, head_p, tail_p,
+			/* a client authentication document holds one section */
+			if (strcmp(key, "include") == 0 || strcmp(key, section) == 0)
+				continue;
+			json_setting_error(val, elevel, head_p, tail_p,
 							   "unrecognized key \"%s\"", key);
 			ok = false;
+			continue;
 		}
+
+		if (is_reserved_key(key) || !settings)
+			continue;
+
+		/*
+		 * The parser only catches a key repeated exactly, but parameter names
+		 * are case-insensitive, and either occurrence winning silently would
+		 * hide a mistake just the same.
+		 */
+		foreach(pk, doc->keys)
+		{
+			if (pk == k)
+				break;
+			if (!is_reserved_key(lfirst(pk)) &&
+				guc_name_compare(lfirst(pk), key) == 0)
+				dup = true;
+		}
+		if (dup)
+		{
+			json_setting_error(val, elevel, head_p, tail_p,
+							   "duplicate key \"%s\"", key);
+			ok = false;
+			continue;
+		}
+
+		if (config_json_rejected_setting(key))
+		{
+			ereport(elevel,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("parameter \"%s\" cannot be set with a JSON configuration file",
+							key),
+					 errhint("With a JSON configuration file, client authentication is configured in its \"hba\", \"ident\" and \"hosts\" sections."),
+					 config_json_errcontext(val)));
+			msg = psprintf(_("parameter \"%s\" cannot be set with a JSON configuration file"),
+						   key);
+			record_config_file_error(config_json_error_text(val, msg),
+									 val->file, val->line, head_p, tail_p);
+			ok = false;
+			continue;
+		}
+
+		text = config_json_setting_text(key, val, &at, &msg);
+
+		if (text == NULL)
+		{
+			json_setting_error(at, elevel, head_p, tail_p, "%s", msg);
+			ok = false;
+			continue;
+		}
+		append_item(head_p, tail_p, key, text, val->file, val->line);
 	}
 
 	include = config_json_get(doc, "include");
@@ -979,8 +1143,8 @@ load_document(const char *path, const char *calling_file, bool strict,
 	{
 		if (include->type == JCN_STRING || include->type == JCN_OBJECT)
 		{
-			if (!process_include_entry(include, path, depth, elevel, section,
-									   head_p, tail_p, documents_p))
+			if (!process_include_entry(include, path, depth, elevel, settings,
+									   section, head_p, tail_p, documents_p))
 				ok = false;
 		}
 		else if (include->type == JCN_ARRAY)
@@ -990,7 +1154,7 @@ load_document(const char *path, const char *calling_file, bool strict,
 			foreach(lc, include->values)
 			{
 				if (!process_include_entry(lfirst(lc), path, depth, elevel,
-										   section, head_p, tail_p,
+										   settings, section, head_p, tail_p,
 										   documents_p))
 					ok = false;
 			}
@@ -1007,14 +1171,40 @@ load_document(const char *path, const char *calling_file, bool strict,
 }
 
 /*
- * Load the documents of a client authentication file, the file first and
- * then its includes in load order, for the loader of the section, which
- * picks out its parts.  On failure *err_msg carries the first recorded
- * error text.
+ * Load a JSON configuration root.
+ *
+ * Settings are appended to the ConfigVariable list at *head_p and *tail_p,
+ * in the same form ParseConfigFile produces, including error records.
+ * Returns false if anything went wrong; with elevel below ERROR, all
+ * problems are reported rather than just the first.
  */
 bool
-config_json_load_section(const char *section, const char *filename,
-						 int elevel, List **documents_p, char **err_msg)
+config_json_load(const char *filename, int elevel,
+				 ConfigVariable **head_p, ConfigVariable **tail_p)
+{
+	char	   *abs = AbsoluteConfigLocation(filename, NULL);
+	List	   *documents = NIL;
+
+	return load_document(abs, NULL, true, CONF_FILE_START_DEPTH, elevel,
+						 true, NULL, head_p, tail_p, &documents, NULL);
+}
+
+/*
+ * Load the documents only, root first and then includes in load order, for
+ * the loaders of the reserved sections, which pick out their parts.  On
+ * failure *err_msg carries the first recorded error text.
+ *
+ * Only errors that make the document set itself unreliable count: a file
+ * that cannot be read or parsed, or a failed include.  With a NULL
+ * "section" the settings are not even looked at, so a bad one fails the
+ * settings reload and shows in pg_file_settings, but does not take the
+ * other sections down with it.  With a section name, the documents are a
+ * client authentication file and its includes, which may hold nothing but
+ * that section, so any other key is an error.
+ */
+static bool
+load_documents(const char *filename, const char *section, int elevel,
+			   List **documents_p, char **err_msg)
 {
 	ConfigVariable *head = NULL,
 			   *tail = NULL;
@@ -1024,7 +1214,7 @@ config_json_load_section(const char *section, const char *filename,
 	*err_msg = NULL;
 	*documents_p = NIL;
 	ok = load_document(abs, NULL, true, CONF_FILE_START_DEPTH, elevel,
-					   section, &head, &tail, documents_p, NULL);
+					   false, section, &head, &tail, documents_p, NULL);
 	if (!ok)
 	{
 		for (ConfigVariable *item = head; item; item = item->next)
@@ -1043,13 +1233,33 @@ config_json_load_section(const char *section, const char *filename,
 
 /*
  * Which JSON document holds a client authentication section, given the
- * section's file parameter: the file itself when its name says it is
- * JSON, or NULL for the legacy format.
+ * section's file parameter: the server configuration file when that is
+ * JSON, since its sections replace the files then; the file itself when
+ * its name says it is JSON; or NULL for the legacy format.
  */
 const char *
 config_json_auth_source(const char *filename)
 {
+	if (ConfigFileName != NULL && config_is_json(ConfigFileName))
+		return ConfigFileName;
 	if (filename != NULL && config_is_json(filename))
 		return filename;
 	return NULL;
+}
+
+/*
+ * Load the documents holding a client authentication section, for its
+ * loader: those of the server configuration file when that is JSON, else
+ * the JSON file named by the section's file parameter and its includes.
+ * The caller has checked with config_json_auth_source() that there is a
+ * JSON document to load.
+ */
+bool
+config_json_load_section(const char *section, const char *filename,
+						 int elevel, List **documents_p, char **err_msg)
+{
+	if (ConfigFileName != NULL && config_is_json(ConfigFileName))
+		return load_documents(ConfigFileName, NULL, elevel, documents_p,
+							  err_msg);
+	return load_documents(filename, section, elevel, documents_p, err_msg);
 }

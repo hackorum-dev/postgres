@@ -2714,7 +2714,10 @@ openssl x509 -req -in server.csr -text -days 365 \
     names a file whose name ends in <literal>.json</literal> (customarily
     <filename>pg_hosts.json</filename>), it is read as a document whose
     <literal>hosts</literal> key holds the entries, with an optional
-    <literal>include</literal> key as described there:
+    <literal>include</literal> key as described there.  When the server
+    configuration is a JSON document (see <xref linkend="config-json"/>),
+    <varname>hosts_file</varname> cannot be set, and the entries come from
+    the <literal>hosts</literal> section of that document instead:
 <programlisting>
 "hosts": {
   "import": ["pg_hosts.conf"],

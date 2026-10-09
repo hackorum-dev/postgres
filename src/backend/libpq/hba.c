@@ -2502,6 +2502,31 @@ check_hba(Port *port)
 }
 
 /*
+ * hba_source_name
+ *		Name of the file the hba rules come from, for messages: the server
+ *		configuration file when its "hba" section replaces hba_file.
+ */
+const char *
+hba_source_name(void)
+{
+	const char *source = config_json_auth_source(HbaFileName);
+
+	return source != NULL ? source : HbaFileName;
+}
+
+/*
+ * ident_source_name
+ *		Name of the file the user name maps come from, for messages.
+ */
+const char *
+ident_source_name(void)
+{
+	const char *source = config_json_auth_source(IdentFileName);
+
+	return source != NULL ? source : IdentFileName;
+}
+
+/*
  * Read the config file and create a List of HbaLine records for the contents.
  *
  * The configuration is read into a temporary list, and if any parse error
@@ -2612,7 +2637,7 @@ load_hba(void)
 		ereport(LOG,
 				(errcode(ERRCODE_CONFIG_FILE_ERROR),
 				 errmsg("configuration file \"%s\" contains no entries",
-						HbaFileName)));
+						hba_source_name())));
 		ok = false;
 	}
 

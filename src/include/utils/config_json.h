@@ -47,7 +47,10 @@ typedef struct JsonConfNode
 } JsonConfNode;
 
 extern bool config_is_json(const char *filename);
+extern bool config_json_rejected_setting(const char *name);
 
+extern bool config_json_load(const char *filename, int elevel,
+							 ConfigVariable **head_p, ConfigVariable **tail_p);
 extern const char *config_json_auth_source(const char *filename);
 extern bool config_json_load_section(const char *section,
 									 const char *filename, int elevel,

@@ -48,12 +48,14 @@
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/conffiles.h"
+#include "utils/config_json.h"
 #include "utils/guc_tables.h"
 #include "utils/memutils.h"
 #include "utils/timestamp.h"
 
 
 #define CONFIG_FILENAME "postgresql.conf"
+#define CONFIG_JSON_FILENAME "postgresql.json"
 #define HBA_FILENAME	"pg_hba.conf"
 #define IDENT_FILENAME	"pg_ident.conf"
 #define HOSTS_FILENAME	"pg_hosts.conf"
@@ -296,9 +298,17 @@ ProcessConfigFileInternal(GucContext context, bool applySettings, int elevel)
 	ConfFileWithError = ConfigFileName;
 	head = tail = NULL;
 
-	if (!ParseConfigFile(ConfigFileName, true,
-						 NULL, 0, CONF_FILE_START_DEPTH, elevel,
-						 &head, &tail))
+	if (config_is_json(ConfigFileName))
+	{
+		if (!config_json_load(ConfigFileName, elevel, &head, &tail))
+		{
+			error = true;
+			goto bail_out;
+		}
+	}
+	else if (!ParseConfigFile(ConfigFileName, true,
+							  NULL, 0, CONF_FILE_START_DEPTH, elevel,
+							  &head, &tail))
 	{
 		/* Syntax error(s) detected in the file, so bail out */
 		error = true;
@@ -393,6 +403,29 @@ ProcessConfigFileInternal(GucContext context, bool applySettings, int elevel)
 		/* Ignore anything already marked as ignorable */
 		if (item->ignore)
 			continue;
+
+		/*
+		 * With a JSON root, the settings naming client authentication files
+		 * are rejected wherever they come from, an included legacy file or
+		 * PG_AUTOCONF_FILENAME included; the JSON loader has already refused
+		 * them in the documents themselves.
+		 */
+		if (config_is_json(ConfigFileName) &&
+			config_json_rejected_setting(item->name))
+		{
+			ereport(elevel,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("parameter \"%s\" cannot be set with a JSON configuration file",
+							item->name),
+					 errhint("With a JSON configuration file, client authentication is configured in its \"hba\", \"ident\" and \"hosts\" sections."),
+					 errcontext("line %d of configuration file \"%s\"",
+								item->sourceline, item->filename)));
+			item->errmsg = psprintf(_("parameter \"%s\" cannot be set with a JSON configuration file"),
+									item->name);
+			error = true;
+			ConfFileWithError = item->filename;
+			continue;
+		}
 
 		/*
 		 * Try to find the variable; but do not create a custom placeholder if
@@ -1679,9 +1712,10 @@ SelectConfigFiles(const char *userDoption, const char *progname)
 
 	/*
 	 * Find the configuration file: if config_file was specified on the
-	 * command line, use it, else use configdir/postgresql.conf.  In any case
-	 * ensure the result is an absolute path, so that it will be interpreted
-	 * the same way by future backends.
+	 * command line, use it, else look in configdir for postgresql.json or
+	 * postgresql.conf, whichever exists.  Having both is ambiguous, so we
+	 * refuse to guess.  In any case ensure the result is an absolute path, so
+	 * that it will be interpreted the same way by future backends.
 	 */
 	if (ConfigFileName)
 	{
@@ -1690,9 +1724,39 @@ SelectConfigFiles(const char *userDoption, const char *progname)
 	}
 	else if (configdir)
 	{
-		fname = guc_malloc(FATAL,
-						   strlen(configdir) + strlen(CONFIG_FILENAME) + 2);
-		sprintf(fname, "%s/%s", configdir, CONFIG_FILENAME);
+		char	   *jsonname;
+		char	   *confname;
+		bool		have_json;
+		bool		have_conf;
+
+		jsonname = guc_malloc(FATAL,
+							  strlen(configdir) + strlen(CONFIG_JSON_FILENAME) + 2);
+		sprintf(jsonname, "%s/%s", configdir, CONFIG_JSON_FILENAME);
+		confname = guc_malloc(FATAL,
+							  strlen(configdir) + strlen(CONFIG_FILENAME) + 2);
+		sprintf(confname, "%s/%s", configdir, CONFIG_FILENAME);
+
+		have_json = (stat(jsonname, &stat_buf) == 0);
+		have_conf = (stat(confname, &stat_buf) == 0);
+		if (have_json && have_conf)
+		{
+			write_stderr("%s: both \"%s\" and \"%s\" exist in \"%s\"\n"
+						 "Remove one of them, or specify the configuration file with --config-file.\n",
+						 progname, CONFIG_JSON_FILENAME, CONFIG_FILENAME,
+						 configdir);
+			goto fail;
+		}
+
+		if (have_json)
+		{
+			fname = jsonname;
+			guc_free(confname);
+		}
+		else
+		{
+			fname = confname;
+			guc_free(jsonname);
+		}
 		fname_is_malloced = false;
 	}
 	else
@@ -1772,6 +1836,27 @@ SelectConfigFiles(const char *userDoption, const char *progname)
 	 * file, the alternatives seem worse.)
 	 */
 	ProcessConfigFile(PGC_POSTMASTER);
+
+	/*
+	 * With a JSON root, the files the client authentication sections replace
+	 * cannot be named.  The configuration files have been checked; this
+	 * catches the command line.
+	 */
+	if (config_is_json(ConfigFileName))
+	{
+		const char *const names[] = {"hba_file", "ident_file", "hosts_file"};
+		char	  **vars[] = {&HbaFileName, &IdentFileName, &HostsFileName};
+
+		for (int i = 0; i < lengthof(names); i++)
+		{
+			if (*vars[i] == NULL)
+				continue;
+			write_stderr("%s: parameter \"%s\" cannot be set with a JSON configuration file\n"
+						 "With a JSON configuration file, client authentication is configured in its \"hba\", \"ident\" and \"hosts\" sections.\n",
+						 progname, names[i]);
+			goto fail;
+		}
+	}
 
 	/*
 	 * If timezone_abbreviations wasn't set in the configuration file, install
@@ -4712,6 +4797,18 @@ AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt)
 						(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
 						 errmsg("parameter \"%s\" cannot be changed",
 								name)));
+
+			/*
+			 * With a JSON root, the server would refuse the value at the next
+			 * reload; refuse it now instead.
+			 */
+			if (value && config_is_json(ConfigFileName) &&
+				config_json_rejected_setting(record->name))
+				ereport(ERROR,
+						(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
+						 errmsg("parameter \"%s\" cannot be set with a JSON configuration file",
+								record->name),
+						 errhint("With a JSON configuration file, client authentication is configured in its \"hba\", \"ident\" and \"hosts\" sections.")));
 
 			/*
 			 * If a value is specified, verify that it's sane.

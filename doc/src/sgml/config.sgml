@@ -160,6 +160,13 @@ shared_buffers = 128MB
     </para>
 
     <para>
+     The configuration file can alternatively be a JSON document named
+     <filename>postgresql.json</filename>; see <xref linkend="config-json"/>.
+     Everything said about <filename>postgresql.conf</filename> in this
+     chapter applies to it as well, except for the syntax.
+    </para>
+
+    <para>
      Parameters set in this way provide default values for the cluster.
      The settings seen by active sessions will be these values unless they
      are overridden.  The following sections describe ways in which the
@@ -499,6 +506,136 @@ include_dir 'conf.d'
       control is another good practice to consider.)
      </para>
     </sect2>
+
+   <sect2 id="config-json">
+    <title>JSON Configuration File</title>
+
+     <para>
+      <indexterm>
+       <primary>postgresql.json</primary>
+      </indexterm>
+      Instead of <filename>postgresql.conf</filename>, the main server
+      configuration file can be a JSON document.  Any file whose name ends
+      in <literal>.json</literal> is read as JSON, and a file named
+      <filename>postgresql.json</filename> in the data directory is found
+      automatically where <filename>postgresql.conf</filename> would be.
+      If both <filename>postgresql.json</filename> and
+      <filename>postgresql.conf</filename> exist and no configuration file
+      is named explicitly, the server refuses to start rather than guess;
+      pass <option>--config-file</option> (or <literal>-c config_file=</literal>)
+      to select one.
+     </para>
+
+     <para>
+      The document is a single object.  Its keys are parameter names, with
+      four exceptions: <literal>include</literal>, described below, and
+      <literal>hba</literal>, <literal>ident</literal> and
+      <literal>hosts</literal>, which are reserved for sections holding the
+      client authentication configuration.  The <literal>hba</literal>
+      section is described in <xref linkend="auth-pg-hba-json"/>, the
+      <literal>ident</literal> section in <xref
+      linkend="auth-username-maps-json"/>, and the <literal>hosts</literal>
+      section, which configures SSL per host name, in <xref
+      linkend="ssl-sni"/>.  Key order does not matter.
+      A parameter value is a string, a number, a boolean, or an array of
+      those.  Numbers and booleans are written as they would be in
+      <filename>postgresql.conf</filename>, so <literal>1500</literal> and
+      <literal>"1500"</literal> mean the same, and units still go in a
+      string (<literal>"7MB"</literal>).  An array becomes a comma-separated
+      list, which is how list parameters such as
+      <varname>search_path</varname> are written; elements of parameters
+      that quote their list members, such as <varname>search_path</varname>,
+      are quoted as needed, while for other list parameters an element may
+      not contain a comma.  Objects and <literal>null</literal> are not
+      valid parameter values, and a key that appears twice in the same
+      object is an error, since JSON leaves its meaning undefined.  The file
+      is read as UTF-8; non-ASCII text is written directly, as
+      <literal>\u</literal> escapes are accepted only for characters up to
+      U+007F.  Parameter values are passed on as the bytes written, without
+      conversion, exactly as values from <filename>postgresql.conf</filename>
+      are, so a non-ASCII value is only meaningful in databases whose
+      encoding is UTF-8.
+     </para>
+
+     <para>
+      The <literal>include</literal> key names further files to read.  It
+      is a string, an object with a <literal>file</literal> key and an
+      optional boolean <literal>optional</literal> key, or an array of
+      either.  A file name that is not absolute is taken relative to the
+      directory of the including file.  The last component of the name may
+      contain the wildcards <literal>*</literal> and <literal>?</literal>,
+      in which case all matching files are read in file name order (by C
+      locale rules).  A file marked <literal>optional</literal> may be
+      missing, and an optional pattern may match nothing; otherwise either
+      is an error.  Files whose
+      names end in <literal>.json</literal> are JSON documents of the same
+      form as the root, and can themselves include files; any other file
+      is read with the <filename>postgresql.conf</filename> syntax and can
+      only set parameters.
+     </para>
+
+     <para>
+      Included files are processed after the parameters of the document
+      that includes them, and in the order listed, so a setting in an
+      included file overrides the same setting in the including file, and a
+      later include overrides an earlier one.  This is the same as placing
+      the include directives at the end of a
+      <filename>postgresql.conf</filename>.
+     </para>
+
+     <para>
+      The parameters <xref linkend="guc-hba-file"/>,
+      <xref linkend="guc-ident-file"/> and <xref linkend="guc-hosts-file"/>
+      cannot be set when the configuration file is JSON, neither in the
+      document nor in an included file, in
+      <filename>postgresql.auto.conf</filename> or on the command line,
+      since the client authentication configuration is given in the
+      reserved sections of the document instead.  An existing
+      <filename>pg_hba.conf</filename>, <filename>pg_ident.conf</filename>
+      or <filename>pg_hosts.conf</filename> can be imported into the
+      corresponding section.
+      <filename>postgresql.auto.conf</filename> is read after a JSON root
+      exactly as it is after <filename>postgresql.conf</filename>, so
+      <command>ALTER SYSTEM</command> works unchanged.
+     </para>
+
+     <para>
+      A short example:
+<programlisting>
+{
+  "include": [
+    "shared.conf",
+    {"file": "conf.d/*.json", "optional": true}
+  ],
+  "listen_addresses": ["localhost", "10.0.0.5"],
+  "port": 5433,
+  "shared_buffers": "4GB",
+  "work_mem": "64MB",
+  "log_connections": "all",
+  "enable_seqscan": false,
+  "hba": {"children": [{"import": "pg_hba.conf"}]}
+}
+</programlisting>
+      Errors found in a JSON configuration file name the file and line, and
+      the location within the document in a path notation such as
+      <literal>$.work_mem</literal>, <literal>$.include[1]</literal> or
+      <literal>$["pg_stat_statements.max"]</literal>.
+      The message, followed by the location, appears in the
+      <structfield>error</structfield> column of <link linkend="view-pg-file-settings"><structname>pg_file_settings</structname></link>,
+      whose <structfield>sourcefile</structfield> and
+      <structfield>sourceline</structfield> columns point at the JSON file
+      for each setting.  As with <filename>postgresql.conf</filename>, a
+      file with errors stops the server from starting, and during a reload
+      it is logged and the previous settings are kept; a bad setting does
+      not stop the authentication sections from being reloaded, though.
+      On platforms where each new session reads the authentication
+      configuration again when it starts (Windows), an invalid
+      authentication section, or a file that cannot be read as a whole,
+      such as one with a JSON syntax error or a missing include, also makes
+      new connections fail until it is fixed, as an invalid
+      <filename>pg_hba.conf</filename> does; a bad setting does not.
+     </para>
+    </sect2>
    </sect1>
 
    <sect1 id="runtime-config-file-locations">
@@ -543,7 +680,11 @@ include_dir 'conf.d'
       <listitem>
        <para>
          Specifies the main server configuration file
-         (customarily called <filename>postgresql.conf</filename>).
+         (customarily called <filename>postgresql.conf</filename>, or
+         <filename>postgresql.json</filename> for the JSON format described
+         in <xref linkend="config-json"/>).  When not set, the server looks
+         for either file in the data directory and fails to start if both
+         are present.
          This parameter can only be set on the <command>postgres</command> command line.
        </para>
       </listitem>
@@ -562,7 +703,8 @@ include_dir 'conf.d'
          <filename>pg_hba.json</filename> for the JSON format described in
          <xref linkend="auth-pg-hba-json"/>; a file whose name ends in
          <literal>.json</literal> is read as JSON).
-         This parameter can only be set at server start.
+         This parameter can only be set at server start, and cannot be set
+         when the main configuration file is a JSON document.
        </para>
       </listitem>
      </varlistentry>
@@ -579,7 +721,8 @@ include_dir 'conf.d'
          (customarily called <filename>pg_ident.conf</filename>, or
          <filename>pg_ident.json</filename> for the JSON format; a file
          whose name ends in <literal>.json</literal> is read as JSON).
-         This parameter can only be set at server start.
+         This parameter can only be set at server start, and cannot be set
+         when the main configuration file is a JSON document.
          See also <xref linkend="auth-username-maps"/>.
        </para>
       </listitem>
@@ -597,7 +740,8 @@ include_dir 'conf.d'
          (customarily called <filename>pg_hosts.conf</filename>, or
          <filename>pg_hosts.json</filename> for the JSON format; a file
          whose name ends in <literal>.json</literal> is read as JSON).
-         This parameter can only be set at server start. See also
+         This parameter can only be set at server start, and cannot be set
+         when the main configuration file is a JSON document.  See also
          <xref linkend="ssl-sni"/>.
        </para>
       </listitem>

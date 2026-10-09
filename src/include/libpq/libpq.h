@@ -174,6 +174,7 @@ extern int	run_ssl_passphrase_command(const char *cmd, const char *prompt,
 extern bool check_ssl_key_file_permissions(const char *ssl_key_file,
 										   bool isServerStart);
 extern HostsFileLoadResult load_hosts(List **hosts, char **err_msg);
+extern const char *hosts_source_name(void);
 extern void apply_hosts_settings(HostsLine *host);
 
 #endif							/* LIBPQ_H */

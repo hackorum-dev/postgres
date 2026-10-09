@@ -1,7 +1,8 @@
 # Copyright (c) 2026, PostgreSQL Global Development Group
 
-# Test the JSON format of the SNI hosts configuration in the file named
-# by hosts_file, and the pg_hosts_file_entries view for both formats.
+# Test the JSON format of the SNI hosts configuration, as a file of its
+# own named by hosts_file and as a section of a JSON server configuration
+# file, and the pg_hosts_file_entries view for both formats.
 
 use strict;
 use warnings FATAL => 'all';
@@ -86,6 +87,7 @@ sub session_query
 my $datadir = $node->data_dir;
 my $hosts_json = "$datadir/pg_hosts.json";
 my $hba_json = "$datadir/pg_hba.json";
+my $root = "$datadir/postgresql.json";
 
 sub write_file
 {
@@ -376,5 +378,42 @@ $node->connect_ok(
 	'no hosts section falls back to the ssl_* parameters');
 $res = view_query('SELECT count(*) FROM pg_hosts_file_entries');
 is($res, '0', 'view is empty without a hosts section');
+
+##############################################################################
+# Section of a JSON server configuration file
+##############################################################################
+
+# The same entries as the "hosts" section of postgresql.json, which pulls
+# in the postgresql.conf written so far, except for the file parameters
+# it replaces.
+$node->stop;
+my $conf = PostgreSQL::Test::Utils::slurp_file("$datadir/postgresql.conf");
+$conf =~ s/^(hba_file|hosts_file) = .*\n//mg;
+write_file("$datadir/postgresql.conf", $conf);
+unlink $hosts_json, $hba_json;
+chomp($hosts);
+write_file(
+	$root,
+	qq({"include": ["postgresql.conf"],\n)
+	  . qq( "hba": {"children": [{"import": "pg_hba.conf"}]},\n)
+	  . qq( "hosts": $hosts}\n));
+$node->start(options => "-c config_file=$root");
+
+$node->connect_ok(
+	"$connstr host=example.org sslrootcert=ssl/root_ca.crt sslmode=verify-ca",
+	'per-host certificate selected from the configuration file',
+	sql => q{SELECT setting, source FROM pg_settings WHERE name = 'work_mem'},
+	expected_stdout => qr/^11264\|hosts$/m);
+$res = view_query(
+	q{
+	SELECT entry_number, regexp_replace(file_name, '.*/', ''), hostname
+	FROM pg_hosts_file_entries ORDER BY entry_number, hostname});
+is( $res,
+	qq{1|hosts_extra.conf|example.com\n}
+	  . qq{1|hosts_extra.conf|example.net\n}
+	  . qq{2|postgresql.json|example.org\n}
+	  . qq{3|postgresql.json|*\n}
+	  . qq{4|postgresql.json|/no_sni/},
+	'pg_hosts_file_entries lists the entries of the configuration file');
 
 done_testing();

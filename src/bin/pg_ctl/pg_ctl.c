@@ -2137,10 +2137,17 @@ adjust_data_dir(void)
 	if (pg_config == NULL)
 		return;
 
-	/* If there is no postgresql.conf, it can't be a config-only dir */
+	/*
+	 * If there is neither postgresql.conf nor postgresql.json, it can't be a
+	 * config-only dir
+	 */
 	snprintf(filename, sizeof(filename), "%s/postgresql.conf", pg_config);
 	if ((fd = fopen(filename, "r")) == NULL)
-		return;
+	{
+		snprintf(filename, sizeof(filename), "%s/postgresql.json", pg_config);
+		if ((fd = fopen(filename, "r")) == NULL)
+			return;
+	}
 	fclose(fd);
 
 	/* If PG_VERSION exists, it can't be a config-only dir */

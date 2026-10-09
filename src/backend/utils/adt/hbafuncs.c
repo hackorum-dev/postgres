@@ -427,7 +427,8 @@ fill_hba_line(Tuplestorestate *tuple_store, TupleDesc tupdesc,
  * fill_hba_view
  *		Read the hba configuration and fill the tuplestore with view records.
  *
- * The rules come from hba_file, in either format.
+ * The rules come from hba_file, in either format, or from the "hba"
+ * section of the configuration file when that is a JSON document.
  */
 static void
 fill_hba_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
@@ -463,7 +464,7 @@ fill_hba_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 			ereport(ERROR,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("could not load configuration file \"%s\"",
-							HbaFileName),
+							hba_source_name()),
 					 errdetail_internal("%s", file_err)));
 		if (!tokenize_hba_json(documents, &hba_lines, DEBUG3, &file_err))
 		{
@@ -471,7 +472,7 @@ fill_hba_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 			ereport(ERROR,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("could not load configuration file \"%s\"",
-							HbaFileName),
+							hba_source_name()),
 					 errdetail_internal("%s", file_err)));
 		}
 	}
@@ -613,7 +614,8 @@ fill_ident_line(Tuplestorestate *tuple_store, TupleDesc tupdesc,
  * fill_ident_view
  *		Read the user name maps and fill the tuplestore with view records.
  *
- * The maps come from ident_file, in either format.
+ * The maps come from ident_file, in either format, or from the "ident"
+ * section of the configuration file when that is a JSON document.
  */
 static void
 fill_ident_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
@@ -643,7 +645,7 @@ fill_ident_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 			ereport(ERROR,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("could not load configuration file \"%s\"",
-							IdentFileName),
+							ident_source_name()),
 					 errdetail_internal("%s", file_err)));
 		if (!tokenize_ident_json(documents, &ident_lines, DEBUG3, &file_err))
 		{
@@ -651,7 +653,7 @@ fill_ident_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 			ereport(ERROR,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("could not load configuration file \"%s\"",
-							IdentFileName),
+							ident_source_name()),
 					 errdetail_internal("%s", file_err)));
 		}
 	}
@@ -839,7 +841,8 @@ fill_hosts_entry_rows(Tuplestorestate *tuple_store, TupleDesc tupdesc,
  *		Read the SNI hosts configuration and fill the tuplestore with view
  *		records.
  *
- * The entries come from hosts_file, in either format.
+ * The entries come from hosts_file, in either format, or from the "hosts"
+ * section of the configuration file when that is a JSON document.
  */
 static void
 fill_hosts_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
@@ -871,14 +874,14 @@ fill_hosts_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 			ereport(ERROR,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("could not load configuration file \"%s\"",
-							HostsFileName),
+							hosts_source_name()),
 					 errdetail_internal("%s", file_err)));
 		entries = parse_hosts_json(documents, DEBUG3, &found, &file_err);
 		if (file_err != NULL)
 			ereport(ERROR,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("could not load configuration file \"%s\"",
-							HostsFileName),
+							hosts_source_name()),
 					 errdetail_internal("%s", file_err)));
 
 		foreach(lc, entries)

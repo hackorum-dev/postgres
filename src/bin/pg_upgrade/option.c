@@ -440,10 +440,18 @@ adjust_data_dir(ClusterInfo *cluster)
 	/* Initially assume config dir and data dir are the same */
 	cluster->pgconfig = pg_strdup(cluster->pgdata);
 
-	/* If there is no postgresql.conf, it can't be a config-only dir */
+	/*
+	 * If there is neither postgresql.conf nor postgresql.json, it can't be a
+	 * config-only dir
+	 */
 	snprintf(filename, sizeof(filename), "%s/postgresql.conf", cluster->pgconfig);
 	if ((fp = fopen(filename, "r")) == NULL)
-		return;
+	{
+		snprintf(filename, sizeof(filename), "%s/postgresql.json",
+				 cluster->pgconfig);
+		if ((fp = fopen(filename, "r")) == NULL)
+			return;
+	}
 	fclose(fp);
 
 	/* If PG_VERSION exists, it can't be a config-only dir */

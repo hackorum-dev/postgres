@@ -202,6 +202,8 @@ typedef struct Port Port;
 
 extern bool load_hba(void);
 extern bool load_ident(void);
+extern const char *hba_source_name(void);
+extern const char *ident_source_name(void);
 extern const char *hba_authname(UserAuth auth_method);
 extern void hba_getauthmethod(Port *port);
 extern int	check_usermap(const char *usermap_name,
