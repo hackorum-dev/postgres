@@ -18,7 +18,7 @@ GETTEXT_TRIGGERS = $(BACKEND_COMMON_GETTEXT_TRIGGERS) \
                    json_manifest_parse_failure:2 \
                    error_cb:2 \
                    json_setting_error:5 \
-                   hba_node_error:5 \
+                   hba_node_error:6 \
                    section_shape_error:4 \
                    hosts_entry_error:4 \
                    hosts_line_error:3
@@ -32,7 +32,7 @@ GETTEXT_FLAGS    = $(BACKEND_COMMON_GETTEXT_FLAGS) \
                    json_token_error:2:c-format \
                    error_cb:2:c-format \
                    json_setting_error:5:c-format \
-                   hba_node_error:5:c-format \
+                   hba_node_error:6:c-format \
                    section_shape_error:4:c-format \
                    hosts_entry_error:4:c-format \
                    hosts_line_error:3:c-format

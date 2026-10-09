@@ -579,6 +579,103 @@ json_file_error(const char *file, int line, int elevel, const char *msg,
 }
 
 /*
+ * Does this element of a GUC_LIST_QUOTE list need double quotes?  Anything
+ * but lowercase ASCII letters, digits and underscores gets them, so that
+ * the element survives SplitGUCList unchanged.
+ */
+static bool
+list_element_needs_quotes(const char *elem)
+{
+	if (elem[0] == '\0')
+		return true;
+	for (const char *p = elem; *p != '\0'; p++)
+	{
+		if (!((*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9') ||
+			  *p == '_'))
+			return true;
+	}
+	return false;
+}
+
+/*
+ * config_json_setting_text
+ *		The text of a setting given as JSON, as postgresql.conf would have it.
+ *
+ * A scalar is its text (config_json_scalar_text()).  An array becomes a
+ * comma-separated list, which is how list parameters are written in
+ * postgresql.conf.  For a GUC_LIST_QUOTE parameter the elements are quoted
+ * as needed, so that an element may contain any character.  Other lists
+ * have no quoting convention, so an element containing a comma would
+ * silently turn into two; refuse it instead.
+ *
+ * Returns NULL for a value of the wrong shape, with *err_msg set to a
+ * translated message and *err_at to the offending node.
+ */
+char *
+config_json_setting_text(const char *name, JsonConfNode *node,
+						 JsonConfNode **err_at, char **err_msg)
+{
+	*err_at = NULL;
+	*err_msg = NULL;
+	if (node->type == JCN_ARRAY)
+	{
+		StringInfoData buf;
+		ListCell   *lc;
+		struct config_generic *record;
+		bool		quote;
+
+		record = find_option(name, false, true, DEBUG5);
+		quote = (record != NULL && (record->flags & GUC_LIST_QUOTE) != 0);
+
+		initStringInfo(&buf);
+		foreach(lc, node->values)
+		{
+			JsonConfNode *el = lfirst(lc);
+			char	   *t = config_json_scalar_text(el);
+
+			if (t == NULL)
+			{
+				*err_at = el;
+				*err_msg = psprintf(_("\"%s\" must be a string, number, boolean, or array of these"),
+									name);
+				return NULL;
+			}
+			if (buf.len > 0)
+				appendStringInfoString(&buf, ", ");
+			if (quote && list_element_needs_quotes(t))
+			{
+				appendStringInfoChar(&buf, '"');
+				for (const char *p = t; *p != '\0'; p++)
+				{
+					if (*p == '"')
+						appendStringInfoChar(&buf, '"');
+					appendStringInfoChar(&buf, *p);
+				}
+				appendStringInfoChar(&buf, '"');
+			}
+			else if (!quote && strchr(t, ',') != NULL)
+			{
+				*err_at = el;
+				*err_msg = psprintf(_("elements of \"%s\" must not contain commas"),
+									name);
+				return NULL;
+			}
+			else
+				appendStringInfoString(&buf, t);
+		}
+		return buf.data;
+	}
+	if (node->type == JCN_OBJECT || node->type == JCN_NULL)
+	{
+		*err_at = node;
+		*err_msg = psprintf(_("\"%s\" must be a string, number, boolean, or array of these"),
+							name);
+		return NULL;
+	}
+	return config_json_scalar_text(node);
+}
+
+/*
  * Process one include entry: a string, or an object with "file" and an
  * optional "optional" flag.  The file name may carry wildcards in its last
  * component, in which case all matching files are loaded in name order and

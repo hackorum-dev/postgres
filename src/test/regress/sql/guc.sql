@@ -406,3 +406,6 @@ SELECT name FROM tab_settings_flags
   WHERE no_reset AND NOT no_reset_all
   ORDER BY 1;
 DROP TABLE tab_settings_flags;
+-- hba-level parameter: settable at startup/reload and from hba, not later
+SELECT context FROM pg_settings WHERE name = 'authentication_timeout';
+SET authentication_timeout = 10;

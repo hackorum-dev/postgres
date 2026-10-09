@@ -917,10 +917,10 @@ local   db1,db2,@demodbs  all                                   scram-sha-256
    The value of <literal>hba</literal> is an object with a single key,
    <literal>children</literal>, whose value is an array of
    <firstterm>nodes</firstterm>.  Rather than a flat list of records, the
-   nodes form a tree: a node carries match conditions and authentication
-   options that the nodes below it inherit and can override, and a node is
-   tried before its parent.  A node is an object with these keys, all
-   optional:
+   nodes form a tree: a node carries match conditions, authentication
+   options and settings that the nodes below it inherit and can override,
+   and a node is tried before its parent.  A node is an object with these
+   keys, all optional:
   </para>
 
   <table id="auth-pg-hba-json-keys">
@@ -989,6 +989,14 @@ local   db1,db2,@demodbs  all                                   scram-sha-256
       </entry>
      </row>
      <row>
+      <entry><literal>settings</literal></entry>
+      <entry>
+       An object mapping configuration parameter names to values.  The
+       values are applied to every connection the node's rule matches, as
+       described below.
+      </entry>
+     </row>
+     <row>
       <entry><literal>children</literal></entry>
       <entry>
        An array of nodes below this one.
@@ -1025,6 +1033,12 @@ local   db1,db2,@demodbs  all                                   scram-sha-256
       <literal>"users": "alice"</literal> matches every user, and does so
       before the parent's own record is tried.  Match a smaller set in a
       child, or omit the key to keep the parent's.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <literal>settings</literal> are merged key by key; a key set in the
+      child replaces the inherited value for that key only.
      </para>
     </listitem>
     <listitem>
@@ -1171,8 +1185,11 @@ local   db1,db2,@demodbs  all                                   scram-sha-256
    An <literal>import</literal> node splices an existing file in
    <filename>pg_hba.conf</filename> format into the list at its position,
    which allows a gradual move to the tree format.  The imported records
-   are complete rules and do not inherit anything from the nodes above
-   the import node.
+   are complete rules and do not inherit match keys or
+   <literal>auth</literal> from the nodes above the import node, but they
+   do inherit its effective <literal>settings</literal>, so a group of
+   legacy rules can be given settings by wrapping the import node in a
+   node that carries them.
   </para>
 
   <para>
@@ -1191,13 +1208,40 @@ local   db1,db2,@demodbs  all                                   scram-sha-256
   </para>
 
   <para>
+   When a record produced by a node matches a connection, the node's
+   effective <literal>settings</literal> are applied to the session before
+   authentication begins, in the <literal>hba</literal> context (see
+   <xref linkend="view-pg-settings"/>).  Settings made this way take
+   precedence over the server-wide configuration and are in turn
+   overridden by per-database and per-role settings.  Parameters that can
+   only be set at server start, or only at server start and reload, are
+   not accepted; <xref linkend="guc-authentication-timeout"/> is, and a
+   value set on a node applies to the authentication of the connections
+   that node matches.  A value is written as in the top level of the
+   document, so an array is a list.  Settings are validated when the
+   configuration is loaded, and a node with an unknown parameter or an
+   invalid value is reported as an error like any other faulty rule.  As
+   with <command>ALTER ROLE ... SET</command>, a value that names a
+   database object, such as a tablespace, is accepted whether or not the
+   object exists: the settings are applied before a database is selected,
+   so the name cannot be checked then either, and a parameter whose
+   object is missing behaves as it does for any other such setting.
+   Since they are applied before the parameters the client sends in its
+   connection request, such as those set with
+   <envar>PGOPTIONS</envar>, a client can override them where the
+   parameter allows that; they are defaults for the connection, not
+   restrictions.
+  </para>
+
+  <para>
    Errors in a node, including those a <filename>pg_hba.conf</filename>
    record would also have, are reported with the file, the line of the
    node, and its location in the document in a path notation such as
    <literal>$.hba.children[1].children[0]</literal>.  The <link
    linkend="view-pg-hba-file-rules"><structname>pg_hba_file_rules</structname></link>
    view shows the derived records in evaluation order, with that path in
-   its <structfield>node_path</structfield> column.
+   its <structfield>node_path</structfield> column and the effective
+   settings in <structfield>settings</structfield>.
   </para>
  </sect1>
 

@@ -59,5 +59,7 @@ extern int	config_json_errcontext(JsonConfNode *node);
 extern char *config_json_error_text(JsonConfNode *node, const char *msg);
 extern const char *config_json_type_name(JsonConfNodeType type);
 extern char *config_json_scalar_text(JsonConfNode *node);
+extern char *config_json_setting_text(const char *name, JsonConfNode *node,
+									  JsonConfNode **err_at, char **err_msg);
 
 #endif							/* CONFIG_JSON_H */

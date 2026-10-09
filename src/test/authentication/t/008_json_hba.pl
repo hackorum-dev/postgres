@@ -69,16 +69,16 @@ $node->safe_psql(
 
 # The three-level example from the proposal, with scram standing in for
 # LDAP so it can be tested without an LDAP server: everyone scram,
-# admins additionally need a client certificate, jacob is rejected.
-# clientcert needs an SSL rule, which this cluster cannot match, so the
-# admins get a different method instead.
+# admins additionally get a per-rule setting, jacob is rejected.
 set_hba(<<'EOF');
 {"children": [
   {"transport": "local", "auth": {"method": "trust"}},
   {"address": "127.0.0.1/32",
    "auth": {"method": "scram-sha-256"},
+   "settings": {"work_mem": "11MB"},
    "children": [
-     {"users": "+admins", "auth": {"method": "trust"}},
+     {"users": "+admins",
+      "settings": {"work_mem": "12MB", "log_connections": "all"}},
      {"users": "jacob", "auth": {"method": "reject"}}
    ]}
 ]}
@@ -88,26 +88,95 @@ $node->reload;
 my $res = $node->safe_psql(
 	'postgres', q{
 	SELECT rule_number, type, user_name, auth_method, node_path,
-	       error IS NULL
+	       settings::text, error IS NULL
 	FROM pg_hba_file_rules ORDER BY rule_number});
 is( $res,
 	join(
 		"\n",
-		'1|local|{all}|trust|$.hba.children[0]|t',
-		'2|host|{+admins}|trust|$.hba.children[1].children[0]|t',
-		'3|host|{jacob}|reject|$.hba.children[1].children[1]|t',
-		'4|host|{all}|scram-sha-256|$.hba.children[1]|t'),
-	'tree compiled depth-first, children before own rule');
+		'1|local|{all}|trust|$.hba.children[0]||t',
+		'2|host|{+admins}|scram-sha-256|$.hba.children[1].children[0]|'
+		  . '{"work_mem": "12MB", "log_connections": "all"}|t',
+		'3|host|{jacob}|reject|$.hba.children[1].children[1]|'
+		  . '{"work_mem": "11MB"}|t',
+		'4|host|{all}|scram-sha-256|$.hba.children[1]|'
+		  . '{"work_mem": "11MB"}|t'),
+	'tree compiled depth-first, children before own rule, settings merged');
 
 $ENV{PGPASSWORD} = 'pass';
-$node->connect_ok('host=127.0.0.1 dbname=postgres user=alice',
-	'everyone else authenticates with scram');
-$node->connect_ok('host=127.0.0.1 dbname=postgres user=bob',
-	'admin matched by the more specific child');
+$node->connect_ok(
+	'host=127.0.0.1 dbname=postgres user=alice',
+	'everyone else authenticates with scram',
+	sql => 'SHOW work_mem',
+	expected_stdout => qr/^11MB$/m);
+$node->connect_ok(
+	'host=127.0.0.1 dbname=postgres user=bob',
+	'admin inherits method, overrides setting',
+	sql => 'SHOW work_mem',
+	expected_stdout => qr/^12MB$/m);
 $node->connect_fails(
 	'host=127.0.0.1 dbname=postgres user=jacob',
 	'jacob is rejected by the more specific child',
 	expected_stderr => qr/rejects connection/);
+$node->connect_ok(
+	'host=127.0.0.1 dbname=postgres user=alice',
+	'hba settings show source hba',
+	sql => q{SELECT source FROM pg_settings WHERE name = 'work_mem'},
+	expected_stdout => qr/^hba$/m);
+
+# per-role settings rank above hba settings
+$node->safe_psql('postgres', "ALTER ROLE alice SET work_mem = '21MB'");
+$node->connect_ok(
+	'host=127.0.0.1 dbname=postgres user=alice',
+	'role setting overrides hba setting',
+	sql => 'SHOW work_mem',
+	expected_stdout => qr/^21MB$/m);
+$node->safe_psql('postgres', 'ALTER ROLE alice RESET work_mem');
+
+# setting names match regardless of case when merged, as parameters do
+set_hba(<<'EOF');
+{"children": [
+  {"transport": "local", "auth": {"method": "trust"}},
+  {"address": "127.0.0.1/32", "auth": {"method": "scram-sha-256"},
+   "settings": {"work_mem": "1MB"},
+   "children": [
+     {"settings": {"Work_Mem": "2MB"}, "children": [
+        {"users": "alice", "settings": {"work_mem": "3MB"}}
+     ]}
+   ]}
+]}
+EOF
+$node->reload;
+$res = $node->safe_psql(
+	'postgres', q{
+	SELECT settings::text FROM pg_hba_file_rules WHERE rule_number = 2});
+is($res, '{"work_mem": "3MB"}', 'setting overridden regardless of case');
+$node->connect_ok(
+	'host=127.0.0.1 dbname=postgres user=alice',
+	'deepest override of a setting wins',
+	sql => 'SHOW work_mem',
+	expected_stdout => qr/^3MB$/m);
+
+# a value naming a database object that does not exist is accepted, as it
+# is for ALTER ROLE SET; the view, loading the file in a connected backend,
+# agrees with the postmaster, which cannot look the name up
+set_hba(<<'EOF');
+{"children": [
+  {"transport": "local", "auth": {"method": "trust"}},
+  {"address": "127.0.0.1/32", "auth": {"method": "scram-sha-256"},
+   "settings": {"default_tablespace": "no_such_space"}}
+]}
+EOF
+$node->reload;
+$res = $node->safe_psql(
+	'postgres', q{
+	SET client_min_messages = warning;
+	SELECT error IS NULL FROM pg_hba_file_rules WHERE rule_number = 2});
+is($res, 't', 'missing tablespace accepted by the view as by the load');
+$node->connect_ok(
+	'host=127.0.0.1 dbname=postgres user=alice',
+	'missing tablespace applied on faith',
+	sql => 'SHOW default_tablespace',
+	expected_stdout => qr/^no_such_space$/m);
 
 # The example of the documentation, with scram for LDAP: everyone over
 # SSL, admins additionally need a client certificate, jacob is rejected.
@@ -170,14 +239,14 @@ $res = $node->safe_psql(
 is($res, qq{2|127.0.0.1|\$.hba.children[1]\n3|::1|\$.hba.children[1]},
 	'address array expands to one rule per element');
 
-# positional import of a legacy file, inside a grouping node; a missing
+# positional import of a legacy file, inheriting settings only; a missing
 # optional import is skipped
 write_file("$datadir/legacy_hba.conf",
 	"host all alice 127.0.0.1/32 trust\n");
 set_hba(<<'EOF');
 {"children": [
   {"transport": "local", "auth": {"method": "trust"}},
-  {"children": [
+  {"settings": {"work_mem": "13MB"}, "children": [
      {"import": "missing.conf", "optional": true},
      {"import": "legacy_hba.conf"},
      {"address": "127.0.0.1/32", "auth": {"method": "reject"}}
@@ -188,16 +257,24 @@ $node->reload;
 $res = $node->safe_psql(
 	'postgres', q{
 	SELECT rule_number, regexp_replace(file_name, '.*/', ''), line_number,
-	       user_name, auth_method, node_path IS NULL
+	       user_name, auth_method, node_path IS NULL, settings::text
 	FROM pg_hba_file_rules WHERE rule_number > 1 ORDER BY rule_number});
 is( $res,
 	join(
 		"\n",
-		'2|legacy_hba.conf|1|{alice}|trust|t',
-		'3|pg_hba.json|6|{all}|reject|f'),
-	'import inserts legacy rules at its position');
-$node->connect_ok('host=127.0.0.1 dbname=postgres user=alice',
-	'legacy rule matched before the sibling after it');
+		'2|legacy_hba.conf|1|{alice}|trust|t|{"work_mem": "13MB"}',
+		'3|pg_hba.json|6|{all}|reject|f|{"work_mem": "13MB"}'),
+	'import inserts legacy rules at its position with inherited settings');
+$node->connect_ok(
+	'host=127.0.0.1 dbname=postgres user=alice',
+	'legacy rule matched before the sibling after it',
+	sql => 'SHOW work_mem',
+	expected_stdout => qr/^13MB$/m);
+$node->connect_ok(
+	'host=127.0.0.1 dbname=postgres user=alice',
+	'setting inherited by a legacy rule shows source hba',
+	sql => q{SELECT source FROM pg_settings WHERE name = 'work_mem'},
+	expected_stdout => qr/^hba$/m);
 
 # an included document adds its rules after the including one; the
 # include is relative to the document
@@ -331,6 +408,36 @@ $node->connect_fails(
 	'quoted user token is not the keyword',
 	expected_stderr => qr/rejects connection/);
 
+# per-rule authentication_timeout re-arms the timer
+set_hba(<<'EOF');
+{"children": [
+  {"transport": "local", "auth": {"method": "trust"}},
+  {"address": "127.0.0.1/32", "auth": {"method": "scram-sha-256"},
+   "settings": {"authentication_timeout": "7"}}
+]}
+EOF
+$node->reload;
+$node->connect_ok(
+	'host=127.0.0.1 dbname=postgres user=alice',
+	'per-rule authentication_timeout applied',
+	sql => 'SHOW authentication_timeout',
+	expected_stdout => qr/^7s$/m);
+
+# a list setting as an array, quoted as the parameter needs
+set_hba(<<'EOF');
+{"children": [
+  {"transport": "local", "auth": {"method": "trust"}},
+  {"address": "127.0.0.1/32", "auth": {"method": "trust"},
+   "settings": {"search_path": ["My Schema", "public"]}}
+]}
+EOF
+$node->reload;
+$node->connect_ok(
+	'host=127.0.0.1 dbname=postgres user=alice',
+	'array setting joined into a list',
+	sql => 'SHOW search_path',
+	expected_stdout => qr/^"My Schema", public$/m);
+
 # rejected shapes, one per rule, visible in the view; queried from a
 # session opened beforehand, since a backend that loads the rules itself
 # cannot start on them
@@ -346,7 +453,10 @@ set_hba(<<'EOF');
   {"users": 42, "auth": {"method": "trust"}},
   {"import": "legacy_hba.conf", "children": []},
   {"users": "alice"},
-  {"databases": "postgres", "children": []},
+  {"settings": {"work_mem": "1MB"}, "children": []},
+  {"auth": {"method": "trust"}, "settings": {"no_such_guc": "1"}},
+  {"auth": {"method": "trust"}, "settings": {"shared_buffers": "1GB"}},
+  {"auth": {"method": "trust"}, "settings": {"work_mem": "lots"}},
   {"auth": {"method": "scrim"}},
   {"users": "@missing.txt", "auth": {"method": "trust"}},
   {"users": "@empty.txt", "auth": {"method": "trust"}},
@@ -377,6 +487,12 @@ like($res, qr/import node cannot have "children"/,
 	'children on import rejected');
 is(scalar(() = $res =~ /leaf node has no authentication method/g),
 	2, 'leaf without method rejected, empty children array is a leaf');
+like($res, qr/unrecognized configuration parameter "no_such_guc"/,
+	'unknown GUC rejected');
+like($res, qr/"shared_buffers" cannot be changed without restarting/,
+	'postmaster GUC rejected');
+like($res, qr/invalid value for parameter "work_mem"/,
+	'bad GUC value rejected');
 like($res, qr/invalid authentication method "scrim"/,
 	'parse_hba_line errors pass through');
 like($res, qr/could not open file ".*missing\.txt"/,
@@ -389,22 +505,21 @@ like($res, qr/inherited "ssl" cannot be used with transport "local"/,
 	'inherited constraint on local child rejected');
 like($res, qr/address "10\.0\.0\.1" must be in CIDR notation/,
 	'address without prefix length rejected');
-is(scalar(() = $res =~ /\n/g) + 1, 13, 'one error per bad rule');
+is(scalar(() = $res =~ /\n/g) + 1, 16, 'one error per bad rule');
 
 # a rejected reload keeps the rules loaded before
 $node->reload;
 $node->wait_for_log(qr/pg_hba\.json was not reloaded/);
 SKIP:
 {
-	skip 'new backends load the rules themselves with EXEC_BACKEND', 2
+	skip 'new backends load the rules themselves with EXEC_BACKEND', 3
 	  if $exec_backend eq 'on';
 
-	$node->connect_ok('host=127.0.0.1 dbname=postgres user=all',
-		'old rules still in effect after a rejected reload');
-	$node->connect_fails(
+	$node->connect_ok(
 		'host=127.0.0.1 dbname=postgres user=alice',
-		'old rules still reject what they rejected',
-		expected_stderr => qr/rejects connection/);
+		'old rules still in effect after a rejected reload',
+		sql => 'SHOW search_path',
+		expected_stdout => qr/^"My Schema", public$/m);
 }
 
 # problems with the document itself fail the load as a whole, and the

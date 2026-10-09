@@ -135,6 +135,8 @@ typedef struct HbaLine
 	List	   *oauth_opt_vals;
 	char	   *node_path;		/* JSON node this rule was compiled from, or
 								 * NULL for a legacy line */
+	List	   *settings_keys;	/* parameters applied when the rule matches */
+	List	   *settings_vals;
 } HbaLine;
 
 typedef struct IdentLine
@@ -165,6 +167,8 @@ typedef struct HostsLine
 
 	char	   *node_path;		/* JSON node this entry was compiled from, or
 								 * NULL for a legacy line */
+	List	   *settings_keys;	/* parameters applied when the entry matches */
+	List	   *settings_vals;
 	char	   *err_msg;		/* why the entry is unusable, or NULL */
 
 	/* Internal bookkeeping */
@@ -189,6 +193,8 @@ typedef struct TokenizedAuthLine
 	char	   *err_msg;		/* Error message if any */
 	char	   *node_path;		/* JSON node this rule was compiled from, or
 								 * NULL for a legacy line */
+	List	   *settings_keys;	/* per-rule settings from the JSON node */
+	List	   *settings_vals;
 } TokenizedAuthLine;
 
 /* avoid including libpq/libpq-be.h here */

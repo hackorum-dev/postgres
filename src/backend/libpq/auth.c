@@ -40,6 +40,8 @@
 #include "storage/ipc.h"
 #include "tcop/backend_startup.h"
 #include "utils/memutils.h"
+#include "utils/timeout.h"
+#include "utils/timestamp.h"
 
 /*----------------------------------------------------------------
  * Global authentication functions
@@ -386,6 +388,7 @@ ClientAuthentication(Port *port)
 	 * STATUS_EOF.
 	 */
 	bool		abandoned = false;
+	int			global_timeout = AuthenticationTimeout;
 
 	/*
 	 * Get the authentication method to use for this frontend/database
@@ -394,6 +397,17 @@ ClientAuthentication(Port *port)
 	 * server logfile if parsing the hba config file failed.
 	 */
 	hba_getauthmethod(port);
+
+	/*
+	 * The matched rule may have changed authentication_timeout.  The timer
+	 * our caller armed used the global value; move its deadline, measured
+	 * from the original start so that a per-rule value does not grant a fresh
+	 * window.
+	 */
+	if (AuthenticationTimeout != global_timeout)
+		enable_timeout_at(STATEMENT_TIMEOUT,
+						  TimestampTzPlusMilliseconds(get_timeout_start_time(STATEMENT_TIMEOUT),
+													  AuthenticationTimeout * 1000));
 
 	CHECK_FOR_INTERRUPTS();
 

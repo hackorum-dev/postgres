@@ -1006,3 +1006,12 @@ SELECT name FROM tab_settings_flags
 (0 rows)
 
 DROP TABLE tab_settings_flags;
+-- hba-level parameter: settable at startup/reload and from hba, not later
+SELECT context FROM pg_settings WHERE name = 'authentication_timeout';
+ context 
+---------
+ hba
+(1 row)
+
+SET authentication_timeout = 10;
+ERROR:  parameter "authentication_timeout" cannot be changed now
