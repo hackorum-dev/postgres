@@ -591,6 +591,7 @@ extract_jsp_bool_expr(JsonPathGinContext *cxt, JsonPathGinPath path,
 		case jpiAnd:			/* expr && expr */
 		case jpiOr:				/* expr || expr */
 			{
+				bool		is_and = (not ^ (jsp->type == jpiAnd));
 				JsonPathItem arg;
 				JsonPathGinNode *larg;
 				JsonPathGinNode *rarg;
@@ -604,13 +605,18 @@ extract_jsp_bool_expr(JsonPathGinContext *cxt, JsonPathGinPath path,
 
 				if (!larg || !rarg)
 				{
-					if (jsp->type == jpiOr)
+					/*
+					 * For OR, we have to fail if either arm is unsupported.
+					 * For AND, we can just ignore the unsupported arm and
+					 * apply the supported one.
+					 */
+					if (!is_and)
 						return NULL;
 
 					return larg ? larg : rarg;
 				}
 
-				type = not ^ (jsp->type == jpiAnd) ? JSP_GIN_AND : JSP_GIN_OR;
+				type = is_and ? JSP_GIN_AND : JSP_GIN_OR;
 
 				return make_jsp_expr_node_binary(type, larg, rarg);
 			}
