@@ -58,6 +58,10 @@ select count(*) > 0 as ok, count(*) FILTER (WHERE error IS NOT NULL) = 0 AS no_e
 select count(*) >= 0 as ok, count(*) FILTER (WHERE error IS NOT NULL) = 0 AS no_err
   from pg_ident_file_mappings;
 
+-- There may be no entries, and there should be no errors.
+select count(*) >= 0 as ok, count(*) FILTER (WHERE error IS NOT NULL) = 0 AS no_err
+  from pg_hosts_file_entries;
+
 -- There will surely be at least one active lock
 select count(*) > 0 as ok from pg_locks;
 

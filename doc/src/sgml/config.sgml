@@ -594,7 +594,9 @@ include_dir 'conf.d'
       <listitem>
        <para>
          Specifies the configuration file for host-based SSL configuration
-         (customarily called <filename>pg_hosts.conf</filename>).
+         (customarily called <filename>pg_hosts.conf</filename>, or
+         <filename>pg_hosts.json</filename> for the JSON format; a file
+         whose name ends in <literal>.json</literal> is read as JSON).
          This parameter can only be set at server start. See also
          <xref linkend="ssl-sni"/>.
        </para>

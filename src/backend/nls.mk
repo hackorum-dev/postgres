@@ -19,7 +19,9 @@ GETTEXT_TRIGGERS = $(BACKEND_COMMON_GETTEXT_TRIGGERS) \
                    error_cb:2 \
                    json_setting_error:5 \
                    hba_node_error:5 \
-                   section_shape_error:4
+                   section_shape_error:4 \
+                   hosts_entry_error:4 \
+                   hosts_line_error:3
 GETTEXT_FLAGS    = $(BACKEND_COMMON_GETTEXT_FLAGS) \
                    GUC_check_errmsg:1:c-format \
                    GUC_check_errdetail:1:c-format \
@@ -31,7 +33,9 @@ GETTEXT_FLAGS    = $(BACKEND_COMMON_GETTEXT_FLAGS) \
                    error_cb:2:c-format \
                    json_setting_error:5:c-format \
                    hba_node_error:5:c-format \
-                   section_shape_error:4:c-format
+                   section_shape_error:4:c-format \
+                   hosts_entry_error:4:c-format \
+                   hosts_line_error:3:c-format
 
 gettext-files: generated-parser-sources generated-headers
 	find $(srcdir) $(srcdir)/../common $(srcdir)/../port $(srcdir)/../include/ \( -name '*.c' -o -name "proctypelist.h" \) -print | LC_ALL=C sort >$@
