@@ -18,6 +18,9 @@
  * and then planning is performed as normal.  We also force re-analysis and
  * re-planning if the active search_path is different from the previous time
  * or, if RLS is involved, if the user changes or the RLS environment changes.
+ * Queries with a raw parse tree that reference ENRs are also re-analyzed on
+ * each use, because their metadata comes from the current query environment
+ * rather than the catalogs.
  *
  * Note that if the sinval was a result of user DDL actions, parse analysis
  * could throw an error, for example if a column referenced by the query is
@@ -95,6 +98,7 @@ static dlist_head cached_expression_list = DLIST_STATIC_INIT(cached_expression_l
 static void ReleaseGenericPlan(CachedPlanSource *plansource);
 static bool StmtPlanRequiresRevalidation(CachedPlanSource *plansource);
 static bool BuildingPlanRequiresSnapshot(CachedPlanSource *plansource);
+static bool QueryHasENRWalker(Node *node, void *context);
 static List *RevalidateCachedQuery(CachedPlanSource *plansource,
 								   QueryEnvironment *queryEnv);
 static bool CheckCachedPlan(CachedPlanSource *plansource);
@@ -243,6 +247,7 @@ CreateCachedPlan(const RawStmt *raw_parse_tree,
 	plansource->rewriteRoleId = InvalidOid;
 	plansource->rewriteRowSecurity = false;
 	plansource->dependsOnRLS = false;
+	plansource->requiresENRReanalysis = false;
 	plansource->gplan = NULL;
 	plansource->is_oneshot = false;
 	plansource->is_complete = false;
@@ -342,6 +347,7 @@ CreateOneShotCachedPlan(RawStmt *raw_parse_tree,
 	plansource->rewriteRoleId = InvalidOid;
 	plansource->rewriteRowSecurity = false;
 	plansource->dependsOnRLS = false;
+	plansource->requiresENRReanalysis = false;
 	plansource->gplan = NULL;
 	plansource->is_oneshot = true;
 	plansource->is_complete = false;
@@ -457,6 +463,10 @@ CompleteCachedPlan(CachedPlanSource *plansource,
 								   &plansource->relationOids,
 								   &plansource->invalItems,
 								   &plansource->dependsOnRLS);
+		/* Only raw parse sources can refresh ENR metadata by re-analysis. */
+		if (plansource->raw_parse_tree != NULL)
+			plansource->requiresENRReanalysis =
+				QueryHasENRWalker((Node *) querytree_list, NULL);
 
 		/* Update RLS info as well. */
 		plansource->rewriteRoleId = GetUserId();
@@ -676,6 +686,46 @@ BuildingPlanRequiresSnapshot(CachedPlanSource *plansource)
 }
 
 /*
+ * ENR metadata is specific to the current query environment, so queries that
+ * reference ENRs need re-analysis before reuse.  Cache this property when
+ * each analyzed query tree is built to avoid another tree walk when executing
+ * ordinary queries.
+ */
+static bool
+QueryHasENRWalker(Node *node, void *context)
+{
+	if (node == NULL)
+		return false;
+	if (IsA(node, Query))
+	{
+		Query	   *query = (Query *) node;
+
+		/*
+		 * EXPLAIN, DECLARE CURSOR, and CREATE TABLE AS can wrap ENR queries
+		 * in utilityStmt, which query_tree_walker does not visit.
+		 */
+		if (query->commandType == CMD_UTILITY)
+		{
+			query = UtilityContainsQuery(query->utilityStmt);
+			return QueryHasENRWalker((Node *) query, context);
+		}
+		return query_tree_walker(query, QueryHasENRWalker,
+								 context, QTW_EXAMINE_RTES_BEFORE);
+	}
+	if (IsA(node, RangeTblEntry))
+	{
+		RangeTblEntry *rte = (RangeTblEntry *) node;
+
+		/*
+		 * Leave recursion into RTE contents to query_tree_walker to avoid
+		 * visiting subqueries twice.
+		 */
+		return rte->rtekind == RTE_NAMEDTUPLESTORE;
+	}
+	return expression_tree_walker(node, QueryHasENRWalker, context);
+}
+
+/*
  * RevalidateCachedQuery: ensure validity of analyzed-and-rewritten query tree.
  *
  * What we do here is re-acquire locks and redo parse analysis if necessary.
@@ -743,6 +793,22 @@ RevalidateCachedQuery(CachedPlanSource *plansource,
 		plansource->is_valid = false;
 
 	/*
+	 * ENR metadata can change between executions without catalog invalidation
+	 * messages.  For example, a trigger's transition table contains the rows
+	 * affected by the current statement.  Re-analysis is needed to obtain
+	 * this metadata from queryEnv: discarding just the execution plan would
+	 * still use the old row estimate stored in the cached RTE. The same
+	 * query-environment dependency applies to named tuplestores registered by
+	 * other SPI callers.
+	 */
+	if (plansource->is_valid && plansource->requiresENRReanalysis)
+	{
+		plansource->is_valid = false;
+		if (plansource->gplan)
+			plansource->gplan->is_valid = false;
+	}
+
+	/*
 	 * If the query is currently valid, acquire locks on the referenced
 	 * objects; then check again.  We need to do it this way to cover the race
 	 * condition that an invalidation message arrives before we get the locks.
@@ -774,6 +840,7 @@ RevalidateCachedQuery(CachedPlanSource *plansource,
 	plansource->query_list = NIL;
 	plansource->relationOids = NIL;
 	plansource->invalItems = NIL;
+	plansource->requiresENRReanalysis = false;
 	plansource->search_path = NULL;
 
 	/*
@@ -913,6 +980,9 @@ RevalidateCachedQuery(CachedPlanSource *plansource,
 							   &plansource->relationOids,
 							   &plansource->invalItems,
 							   &plansource->dependsOnRLS);
+	if (plansource->raw_parse_tree != NULL)
+		plansource->requiresENRReanalysis =
+			QueryHasENRWalker((Node *) qlist, NULL);
 
 	/* Update RLS info as well. */
 	plansource->rewriteRoleId = GetUserId();
@@ -1743,6 +1813,7 @@ CopyCachedPlan(CachedPlanSource *plansource)
 	newsource->rewriteRoleId = plansource->rewriteRoleId;
 	newsource->rewriteRowSecurity = plansource->rewriteRowSecurity;
 	newsource->dependsOnRLS = plansource->dependsOnRLS;
+	newsource->requiresENRReanalysis = plansource->requiresENRReanalysis;
 
 	newsource->gplan = NULL;
 
