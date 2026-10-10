@@ -104,6 +104,7 @@ tests += {
       't/005_pg_dump_filterfile.pl',
       't/006_pg_dump_compress.pl',
       't/007_pg_dump_partition_clean.pl',
+      't/008_pg_dump_partition_index_clean.pl',
       't/010_dump_connstr.pl',
     ],
   },
