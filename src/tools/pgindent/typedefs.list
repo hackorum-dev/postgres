@@ -439,6 +439,8 @@ ChecksumStateType
 Chromosome
 CkptSortItem
 CkptTsStatus
+CleanupFrame
+CleanupKind
 ClientAuthentication_hook_type
 ClientCertMode
 ClientCertName
