@@ -1339,6 +1339,7 @@ InferenceElem
 InfoItem
 InhInfo
 InheritableSocket
+InheritanceCleanupVisit
 InitSampleScan_function
 InitializeDSMForeignScan_function
 InitializeWorkerForeignScan_function
@@ -1828,6 +1829,7 @@ NodeInstrumentation
 NodeTag
 NonEmptyRange
 NoneCompressorState
+NotNullConstraintInfo
 NotNullSource
 Notification
 NotificationList
@@ -3861,6 +3863,7 @@ indexed_tlist
 inet
 inetKEY
 inet_struct
+inheritcleanup_hash
 initRowMethod
 init_function
 inline_cte_walker_context
