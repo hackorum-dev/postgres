@@ -36,11 +36,14 @@ typedef struct CookedConstraint
 {
 	ConstrType	contype;		/* CONSTR_DEFAULT, CONSTR_CHECK,
 								 * CONSTR_NOTNULL */
-	Oid			conoid;			/* constr OID if created, otherwise Invalid */
+	Oid			conoid;			/* OID of created or merged constraint, or
+								 * Invalid */
 	char	   *name;			/* name, or NULL if none */
 	AttrNumber	attnum;			/* which attr (only for NOTNULL, DEFAULT) */
 	Node	   *expr;			/* transformed default or check expr */
 	bool		is_enforced;	/* is enforced? (only for CHECK) */
+	bool		is_enforcement_merge;	/* existing CHECK newly requiring
+										 * enforcement */
 	bool		skip_validation;	/* skip validation? (only for CHECK) */
 	bool		is_local;		/* constraint has local (non-inherited) def */
 	int16		inhcount;		/* number of times constraint is inherited */
