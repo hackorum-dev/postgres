@@ -3773,6 +3773,34 @@ include_dir 'conf.d'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-wal-insert-locks" xreflabel="wal_insert_locks">
+      <term><varname>wal_insert_locks</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>wal_insert_locks</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Sets the number of lightweight locks used for inserting records into
+        the WAL buffers.  Each inserting backend holds one lock while copying
+        its record.  More locks allow more concurrent insertions, which can
+        improve throughput on systems with many CPU cores.  The default is 8.
+        The value must be a power of two between 4 and 128.  This parameter can
+        only be set at server start.
+       </para>
+
+       <para>
+        Waiting for WAL insertions to finish, for example before flushing WAL,
+        requires checking all insertion locks.  More locks increase this cost
+        and can also increase contention during WAL space reservation,
+        especially on builds that use a spinlock for reservation.  Increasing
+        this setting can reduce throughput; test it with a representative
+        workload.
+       </para>
+
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-wal-writer-delay" xreflabel="wal_writer_delay">
       <term><varname>wal_writer_delay</varname> (<type>integer</type>)
       <indexterm>

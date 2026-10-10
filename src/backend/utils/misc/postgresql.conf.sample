@@ -268,6 +268,8 @@
 #wal_recycle = on                       # recycle WAL files
 #wal_buffers = -1                       # min 32kB, -1 sets based on shared_buffers
                                         # (change requires restart)
+#wal_insert_locks = 8                   # power of 2, between 4 and 128
+                                        # (change requires restart)
 #wal_writer_delay = 200ms               # 1-10000 milliseconds
 #wal_writer_flush_after = 1MB           # measured in pages, 0 disables
 #wal_skip_threshold = 2MB

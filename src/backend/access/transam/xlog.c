@@ -150,11 +150,11 @@ bool		XLOG_DEBUG = false;
 int			wal_segment_size = DEFAULT_XLOG_SEG_SIZE;
 
 /*
- * Number of WAL insertion locks to use. A higher value allows more insertions
- * to happen concurrently, but adds some CPU overhead to flushing the WAL,
- * which needs to iterate all the locks.
+ * Number of WAL insertion locks, set at startup by wal_insert_locks.  More
+ * locks allow more concurrent insertions, but make flushing WAL more costly
+ * since it must scan all locks.  Require a power of two for bitmask selection.
  */
-#define NUM_XLOGINSERT_LOCKS  8
+int			num_xloginsert_locks = 8;
 
 /*
  * Max distance from last checkpoint, before triggering a new xlog-based
@@ -893,7 +893,7 @@ XLogInsertRecord(XLogRecData *rdata,
 	 * inserter acquires an insertion lock. In addition to just indicating that
 	 * an insertion is in progress, the lock tells others how far the inserter
 	 * has progressed. There is a small fixed number of insertion locks,
-	 * determined by NUM_XLOGINSERT_LOCKS. When an inserter crosses a page
+	 * determined by num_xloginsert_locks. When an inserter crosses a page
 	 * boundary, it updates the value stored in the lock to the how far it has
 	 * inserted, to allow the previous buffer to be flushed.
 	 *
@@ -1483,8 +1483,9 @@ WALInsertLockAcquire(void)
 	 */
 	static int	lockToTry = -1;
 
+	/* num_xloginsert_locks is a power of two, so modulo is a bitmask */
 	if (lockToTry == -1)
-		lockToTry = MyProcNumber % NUM_XLOGINSERT_LOCKS;
+		lockToTry = MyProcNumber & (num_xloginsert_locks - 1);
 	MyLockNo = lockToTry;
 
 	/*
@@ -1502,7 +1503,7 @@ WALInsertLockAcquire(void)
 		 * than locks, it still helps to distribute the inserters evenly
 		 * across the locks.
 		 */
-		lockToTry = (lockToTry + 1) % NUM_XLOGINSERT_LOCKS;
+		lockToTry = (lockToTry + 1) & (num_xloginsert_locks - 1);
 	}
 }
 
@@ -1520,7 +1521,7 @@ WALInsertLockAcquireExclusive(void)
 	 * indicator is set to 0xFFFFFFFFFFFFFFFF, which is higher than any real
 	 * XLogRecPtr value, to make sure that no-one blocks waiting on those.
 	 */
-	for (i = 0; i < NUM_XLOGINSERT_LOCKS - 1; i++)
+	for (i = 0; i < num_xloginsert_locks - 1; i++)
 	{
 		LWLockAcquire(&WALInsertLocks[i].l.lock, LW_EXCLUSIVE);
 		LWLockUpdateVar(&WALInsertLocks[i].l.lock,
@@ -1546,7 +1547,11 @@ WALInsertLockRelease(void)
 	{
 		int			i;
 
-		for (i = 0; i < NUM_XLOGINSERT_LOCKS; i++)
+		/*
+		 * Release in reverse acquisition order to avoid searches through
+		 * held_lwlocks in LWLockRelease.
+		 */
+		for (i = num_xloginsert_locks - 1; i >= 0; i--)
 			LWLockReleaseClearVar(&WALInsertLocks[i].l.lock,
 								  &WALInsertLocks[i].l.insertingAt,
 								  0);
@@ -1574,8 +1579,8 @@ WALInsertLockUpdateInsertingAt(XLogRecPtr insertingAt)
 		 * We use the last lock to mark our actual position, see comments in
 		 * WALInsertLockAcquireExclusive.
 		 */
-		LWLockUpdateVar(&WALInsertLocks[NUM_XLOGINSERT_LOCKS - 1].l.lock,
-						&WALInsertLocks[NUM_XLOGINSERT_LOCKS - 1].l.insertingAt,
+		LWLockUpdateVar(&WALInsertLocks[num_xloginsert_locks - 1].l.lock,
+						&WALInsertLocks[num_xloginsert_locks - 1].l.insertingAt,
 						insertingAt);
 	}
 	else
@@ -1651,7 +1656,7 @@ WaitXLogInsertionsToFinish(XLogRecPtr upto)
 	 * out for any insertion that's still in progress.
 	 */
 	finishedUpto = reservedUpto;
-	for (i = 0; i < NUM_XLOGINSERT_LOCKS; i++)
+	for (i = 0; i < num_xloginsert_locks; i++)
 	{
 		XLogRecPtr	insertingat = InvalidXLogRecPtr;
 
@@ -5295,6 +5300,21 @@ check_wal_buffers(int *newval, void **extra, GucSource source)
 }
 
 /*
+ * GUC check_hook for wal_insert_locks.  The range is checked by the GUC code;
+ * require a power of two here so lock selection can use a bitmask.
+ */
+bool
+check_wal_insert_locks(int *newval, void **extra, GucSource source)
+{
+	if ((*newval & (*newval - 1)) != 0)
+	{
+		GUC_check_errdetail("\"wal_insert_locks\" must be a power of two.");
+		return false;
+	}
+	return true;
+}
+
+/*
  * GUC check_hook for wal_consistency_checking
  */
 bool
@@ -5549,7 +5569,7 @@ XLOGShmemRequest(void *arg)
 	size = sizeof(XLogCtlData);
 
 	/* WAL insertion locks, plus alignment */
-	size = add_size(size, mul_size(sizeof(WALInsertLockPadded), NUM_XLOGINSERT_LOCKS + 1));
+	size = add_size(size, mul_size(sizeof(WALInsertLockPadded), num_xloginsert_locks + 1));
 	/* xlblocks array */
 	size = add_size(size, mul_size(sizeof(pg_atomic_uint64), XLOGbuffers));
 	/* extra alignment padding for XLOG I/O buffers */
@@ -5608,9 +5628,9 @@ XLOGShmemInit(void *arg)
 		((uintptr_t) allocptr) % sizeof(WALInsertLockPadded);
 	WALInsertLocks = XLogCtl->Insert.WALInsertLocks =
 		(WALInsertLockPadded *) allocptr;
-	allocptr += sizeof(WALInsertLockPadded) * NUM_XLOGINSERT_LOCKS;
+	allocptr += sizeof(WALInsertLockPadded) * num_xloginsert_locks;
 
-	for (i = 0; i < NUM_XLOGINSERT_LOCKS; i++)
+	for (i = 0; i < num_xloginsert_locks; i++)
 	{
 		LWLockInitialize(&WALInsertLocks[i].l.lock, LWTRANCHE_WAL_INSERT);
 		pg_atomic_init_u64(&WALInsertLocks[i].l.insertingAt, InvalidXLogRecPtr);
@@ -7351,7 +7371,7 @@ GetLastImportantRecPtr(void)
 	XLogRecPtr	res = InvalidXLogRecPtr;
 	int			i;
 
-	for (i = 0; i < NUM_XLOGINSERT_LOCKS; i++)
+	for (i = 0; i < num_xloginsert_locks; i++)
 	{
 		XLogRecPtr	last_important;
 
