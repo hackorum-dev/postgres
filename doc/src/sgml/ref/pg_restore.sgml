@@ -130,6 +130,29 @@ PostgreSQL documentation
         ignorable error messages will be reported,
         unless <option>--if-exists</option> is also specified.
        </para>
+
+       <para>
+        For archives containing cleanup rules, <application>pg_restore</application>
+        checks the restore selection before connecting to the destination or
+        emitting restoration SQL. An attached partition index or its constraint
+        must be covered by a selected table or ancestor cleanup operation.
+        A separately dumped, locally defined inherited constraint requires
+        cleanup of its table or all necessary parent definitions.
+       </para>
+
+       <para>
+        These checks use the source archive's metadata, not the destination's
+        catalogs. An incomplete selection is rejected even if the destination
+        is empty, <option>--if-exists</option> is specified, or
+        <option>--exit-on-error</option> is not specified. Include the required
+        parent or table entries in a <option>--use-list</option> selection and
+        adjust other selection filters as needed. If the required objects are
+        absent from the archive, make a new dump that includes them.
+        Omitting <option>--clean</option> avoids these cleanup checks when
+        restoration does not require removing existing objects. The checks
+        do not guarantee that the destination has no additional dependencies
+        or that the specified creation order will succeed.
+       </para>
       </listitem>
      </varlistentry>
 

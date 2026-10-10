@@ -71,10 +71,12 @@
 #define K_VERS_1_16 MAKE_ARCHIVE_VERSION(1, 16, 0)	/* BLOB METADATA entries
 													 * and multiple BLOBS,
 													 * relkind */
+#define K_VERS_1_17 MAKE_ARCHIVE_VERSION(1, 17, 0)	/* independent cleanup
+													 * rules */
 
 /* Current archive version number (the format we can output) */
 #define K_VERS_MAJOR 1
-#define K_VERS_MINOR 16
+#define K_VERS_MINOR 17
 #define K_VERS_REV 0
 #define K_VERS_SELF MAKE_ARCHIVE_VERSION(K_VERS_MAJOR, K_VERS_MINOR, K_VERS_REV)
 
@@ -345,6 +347,20 @@ struct _archiveHandle
 typedef char *(*DefnDumperPtr) (Archive *AH, const void *userArg, const TocEntry *te);
 typedef int (*DataDumperPtr) (Archive *AH, const void *userArg);
 
+/*
+ * Cleanup rules describe destruction, independently of creation dependencies.
+ * WITH_OWNER entries need their table or a cleanup alternative to be dropped.
+ * AFTER_PARENTS entries can be dropped only after their cleanup prerequisites,
+ * or omitted if their table itself is selected for cleanup.  A selected
+ * database DROP in --create mode covers both kinds without individual DROPs.
+ */
+typedef enum CleanupKind
+{
+	CLEANUP_DIRECT = 0,
+	CLEANUP_WITH_OWNER,
+	CLEANUP_AFTER_PARENTS
+} CleanupKind;
+
 struct _tocEntry
 {
 	struct _tocEntry *prev;
@@ -367,6 +383,13 @@ struct _tocEntry
 	char	   *copyStmt;
 	DumpId	   *dependencies;	/* dumpIds of objects this one depends on */
 	int			nDeps;			/* number of dependencies */
+	CleanupKind cleanupKind;
+	DumpId		cleanupOwner;	/* table whose DROP covers this object */
+	DumpId	   *cleanupAlternatives;	/* any one DROP suffices */
+	int			nCleanupAlternatives;
+	/* All prerequisite DROP IDs; zero records an unresolved prerequisite. */
+	DumpId	   *cleanupDeps;
+	int			nCleanupDeps;
 
 	DataDumperPtr dataDumper;	/* Routine to dump data for object */
 	const void *dataDumperArg;	/* Arg for above routine */
@@ -413,6 +436,12 @@ typedef struct _archiveOpts
 	const char *copyStmt;
 	const DumpId *deps;
 	int			nDeps;
+	CleanupKind cleanupKind;
+	DumpId		cleanupOwner;
+	const DumpId *cleanupAlternatives;
+	int			nCleanupAlternatives;
+	const DumpId *cleanupDeps;
+	int			nCleanupDeps;
 	DataDumperPtr dumpFn;
 	const void *dumpArg;
 	DefnDumperPtr defnFn;

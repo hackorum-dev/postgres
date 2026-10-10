@@ -106,6 +106,7 @@ tests += {
       't/007_pg_dump_partition_clean.pl',
       't/008_pg_dump_partition_index_clean.pl',
       't/010_dump_connstr.pl',
+      't/011_cleanup_metadata.pl',
     ],
   },
 }
