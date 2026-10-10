@@ -430,6 +430,8 @@ typedef struct _indxInfo
 	bool		indisreplident;
 	bool		indnullsnotdistinct;
 	Oid			parentidx;		/* if a partition, parent index OID */
+	/* if a plain root index, whether it has constraint-backed descendants: */
+	bool		hasconstraintdescendants;
 	SimplePtrList partattaches; /* if partitioned, partition attach objects */
 
 	/* if there is an associated constraint object, its dumpId: */
