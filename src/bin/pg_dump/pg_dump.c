@@ -7787,6 +7787,7 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 				i_relallvisible,
 				i_relallfrozen,
 				i_parentidx,
+				i_hasconstraintdescendants,
 				i_indexdef,
 				i_indnkeyatts,
 				i_indnatts,
@@ -7868,6 +7869,7 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 						 "i.indisreplident, ");
 
 	if (fout->remoteVersion >= 110000)
+	{
 		appendPQExpBufferStr(query,
 							 "inh.inhparent AS parentidx, "
 							 "i.indnkeyatts AS indnkeyatts, "
@@ -7880,9 +7882,32 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 							 "  FROM pg_catalog.pg_attribute "
 							 "  WHERE attrelid = i.indexrelid AND "
 							 "    attstattarget >= 0) AS indstatvals, ");
+
+		/*
+		 * A plain partitioned index cannot be dropped without CASCADE if any
+		 * of its index partitions belong to constraints.  Look through all
+		 * descendants, including those not selected for dumping.
+		 */
+		appendPQExpBufferStr(query,
+							 "CASE WHEN t.relkind = 'I' AND c.oid IS NULL "
+							 "AND inh.inhparent IS NULL THEN EXISTS ("
+							 "WITH RECURSIVE child_indexes(indexrelid) AS ("
+							 "SELECT inhrelid FROM pg_catalog.pg_inherits "
+							 "WHERE inhparent = i.indexrelid "
+							 "UNION ALL "
+							 "SELECT inh.inhrelid FROM pg_catalog.pg_inherits inh "
+							 "JOIN child_indexes ci ON inh.inhparent = ci.indexrelid) "
+							 "SELECT 1 FROM child_indexes ci "
+							 "JOIN pg_catalog.pg_index pi ON pi.indexrelid = ci.indexrelid "
+							 "JOIN pg_catalog.pg_constraint pc "
+							 "ON pc.conrelid = pi.indrelid AND pc.conindid = pi.indexrelid "
+							 "WHERE pc.contype IN ('p','u','x')) "
+							 "ELSE false END AS hasconstraintdescendants, ");
+	}
 	else
 		appendPQExpBufferStr(query,
 							 "0 AS parentidx, "
+							 "false AS hasconstraintdescendants, "
 							 "i.indnatts AS indnkeyatts, "
 							 "i.indnatts AS indnatts, "
 							 "'' AS indstatcols, "
@@ -7961,6 +7986,7 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 	i_relallvisible = PQfnumber(res, "relallvisible");
 	i_relallfrozen = PQfnumber(res, "relallfrozen");
 	i_parentidx = PQfnumber(res, "parentidx");
+	i_hasconstraintdescendants = PQfnumber(res, "hasconstraintdescendants");
 	i_indexdef = PQfnumber(res, "indexdef");
 	i_indnkeyatts = PQfnumber(res, "indnkeyatts");
 	i_indnatts = PQfnumber(res, "indnatts");
@@ -8054,6 +8080,8 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 			indxinfo[j].indisreplident = (PQgetvalue(res, j, i_indisreplident)[0] == 't');
 			indxinfo[j].indnullsnotdistinct = (PQgetvalue(res, j, i_indnullsnotdistinct)[0] == 't');
 			indxinfo[j].parentidx = atooid(PQgetvalue(res, j, i_parentidx));
+			indxinfo[j].hasconstraintdescendants =
+				(PQgetvalue(res, j, i_hasconstraintdescendants)[0] == 't');
 			indxinfo[j].partattaches = (SimplePtrList)
 			{
 				NULL, NULL
@@ -18302,15 +18330,15 @@ dumpIndex(Archive *fout, const IndxInfo *indxinfo)
 		}
 
 		/*
-		 * If this index is a member of a partitioned index, the backend will
-		 * not allow us to drop it separately, so don't try.  It will go away
-		 * automatically when we drop either the index's table or the
-		 * partitioned index.  (If, in a selective restore with --clean, we
-		 * drop neither of those, then this index will not be dropped either.
-		 * But that's fine, and even if you think it's not, the backend won't
-		 * let us do differently.)
+		 * An index partition cannot be dropped separately.  A partitioned
+		 * index with constraint-backed partitions cannot be dropped without
+		 * CASCADE, which might remove objects not selected for restore.
+		 *
+		 * Omit these DROP commands and let the indexes go away when we drop
+		 * their tables (or, for an index partition, its parent index).  In a
+		 * selective restore, this can leave such indexes in place.
 		 */
-		if (indxinfo->parentidx == 0)
+		if (indxinfo->parentidx == 0 && !indxinfo->hasconstraintdescendants)
 			appendPQExpBuffer(delq, "DROP INDEX %s;\n", qqindxname);
 
 		if (indxinfo->dobj.dump & DUMP_COMPONENT_DEFINITION)
