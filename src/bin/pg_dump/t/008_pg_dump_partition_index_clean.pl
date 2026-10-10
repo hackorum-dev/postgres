@@ -45,6 +45,17 @@ INSERT INTO b VALUES (3, 1);
 CREATE TABLE c (id integer, k integer) PARTITION BY LIST (k);
 CREATE TABLE c1 PARTITION OF c FOR VALUES IN (1);
 CREATE UNIQUE INDEX c_idx ON c (id, k);
+
+-- Coverage can come from a root index above a non-droppable intermediate one.
+CREATE TABLE d (id integer, k integer) PARTITION BY LIST (k);
+CREATE TABLE d1 PARTITION OF d FOR VALUES IN (1) PARTITION BY RANGE (id);
+CREATE TABLE d11 PARTITION OF d1 FOR VALUES FROM (0) TO (10);
+CREATE UNIQUE INDEX d_idx ON ONLY d (id, k);
+CREATE UNIQUE INDEX d1_idx ON ONLY d1 (id, k);
+CREATE UNIQUE INDEX d11_idx ON d11 (id, k);
+ALTER INDEX d1_idx ATTACH PARTITION d11_idx;
+ALTER INDEX d_idx ATTACH PARTITION d1_idx;
+INSERT INTO d VALUES (4, 1);
 });
 
 $node->command_ok(
@@ -156,44 +167,83 @@ my @toc = split /\n/, slurp_file("$tempdir/toc.list");
 my @indexes = grep { / INDEX public [ac]_idx / } @toc;
 is(scalar @indexes, 2, 'parent indexes have archive entries');
 append_to_file("$tempdir/indexes.list", join("\n", @indexes) . "\n");
-$node->command_ok(
+$node->command_fails_like(
 	[
 		'pg_restore', '--clean',
 		'--use-list' => "$tempdir/indexes.list",
 		'--file' => "$tempdir/indexes.sql",
 		"$tempdir/partition.dump",
 	],
-	'generate selective clean restore of parent indexes');
-my $selective = slurp_file("$tempdir/indexes.sql");
-unlike(
-	$selective,
-	qr/DROP INDEX public\.a_idx/,
-	'selective restore omits blocked parent index DROP');
-like(
-	$selective,
-	qr/DROP INDEX public\.c_idx;/,
-	'selective restore retains independently droppable parent index DROP');
-unlike($selective, qr/\bCASCADE\b/,
-	'selective restore does not introduce CASCADE');
+	qr/cannot clean "a_idx" without cleaning its table or a covering parent index or constraint/,
+	'reject uncovered parent index when generating SQL');
 
-# Without dropping its table, the protected index remains in place.  Its
-# recreation fails, but cleanup must leave unselected dependencies intact.
-my @protected = grep { / INDEX public a_idx / } @indexes;
-append_to_file("$tempdir/protected.list", join("\n", @protected) . "\n");
+# Include an independent index to prove that failure precedes every DROP.
+my $index_oids = $node->safe_psql('dump_dst',
+	q{SELECT oid, relname FROM pg_class WHERE relname IN ('a_idx', 'c_idx') ORDER BY oid}
+);
 $node->command_fails_like(
 	[
-		'pg_restore', '--clean', '--exit-on-error',
-		'--use-list' => "$tempdir/protected.list",
+		'pg_restore', '--clean', '--if-exists',
+		'--use-list' => "$tempdir/indexes.list",
 		'--dbname' => $node->connstr('dump_dst'),
 		"$tempdir/partition.dump",
 	],
-	qr/relation "a_idx" already exists/,
-	'selective restore cannot recreate existing protected index');
+	qr/cannot clean "a_idx" without cleaning its table or a covering parent index or constraint/,
+	'reject uncovered parent index before executing SQL');
+is( $node->safe_psql(
+		'dump_dst',
+		q{SELECT oid, relname FROM pg_class WHERE relname IN ('a_idx', 'c_idx') ORDER BY oid}
+	),
+	$index_oids,
+	'failed planning leaves both selected indexes intact');
 is( $node->safe_psql(
 		'dump_dst',
 		q{SELECT count(*) FROM pg_constraint
           WHERE conrelid = 'refs'::regclass AND contype = 'f'}),
 	'1',
 	'unselected foreign key is preserved');
+
+my @hierarchy =
+  grep { / (?:INDEX|INDEX ATTACH) public d(?:1|11)?_idx / } @toc;
+append_to_file("$tempdir/hierarchy.list", join("\n", @hierarchy) . "\n");
+for my $option ('--exit-on-error', '--jobs=2')
+{
+	$node->command_ok(
+		[
+			'pg_restore', '--clean', $option,
+			'--use-list' => "$tempdir/hierarchy.list",
+			'--dbname' => $node->connstr('dump_dst'),
+			"$tempdir/partition.dump",
+		],
+		"root index covers multilevel selective cleanup with $option");
+}
+is( $node->safe_psql(
+		'dump_dst',
+		q{SELECT inhrelid::regclass, inhparent::regclass FROM pg_inherits
+	  WHERE inhrelid IN ('d1_idx'::regclass, 'd11_idx'::regclass)
+	  ORDER BY inhrelid::regclass::text}),
+	"d11_idx|d1_idx\nd1_idx|d_idx",
+	'selective index restore preserves both attachment levels');
+is($node->safe_psql('dump_dst', 'SELECT * FROM d'),
+	'4|1', 'selective index cleanup preserves table data');
+
+# Selecting two forbidden DROP entries does not provide coverage for either.
+my @uncovered = grep { / INDEX public (?:d1_idx|d11_idx|c_idx) / } @toc;
+append_to_file("$tempdir/uncovered.list", join("\n", @uncovered) . "\n");
+$node->command_fails_like(
+	[
+		'pg_restore', '--clean',
+		'--use-list' => "$tempdir/uncovered.list",
+		'--dbname' => $node->connstr('dump_dst'),
+		"$tempdir/partition.dump",
+	],
+	qr/cannot clean "d(?:1|11)_idx" without cleaning its table or a covering parent index or constraint/,
+	'an uncleaned intermediate index cannot cover its child');
+is( $node->safe_psql(
+		'dump_dst',
+		q{SELECT oid, relname FROM pg_class WHERE relname IN ('a_idx', 'c_idx') ORDER BY oid}
+	),
+	$index_oids,
+	'uncovered multilevel selection leaves independent index intact');
 
 done_testing();
