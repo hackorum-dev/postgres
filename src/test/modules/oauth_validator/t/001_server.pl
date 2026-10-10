@@ -143,6 +143,14 @@ $log_start = $node->wait_for_log(
 	$log_start);
 $bgconn->query_safe('SELECT 1');
 
+# A quoted empty name survives list parsing; it must be rejected as well.
+$node->append_conf('postgresql.conf', "oauth_validator_libraries = '\"\"'");
+$node->reload;
+$log_start = $node->wait_for_log(
+	qr/invalid list syntax in parameter "oauth_validator_libraries"/,
+	$log_start);
+$bgconn->query_safe('SELECT 1');
+
 $node->append_conf('postgresql.conf',
 	"oauth_validator_libraries = 'validator'");
 $node->reload;
