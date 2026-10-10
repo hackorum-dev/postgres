@@ -112,7 +112,8 @@ static bool MergeWithExistingConstraint(Relation rel, const char *ccname, Node *
 										bool allow_merge, bool is_local,
 										bool is_enforced,
 										bool is_initially_valid,
-										bool is_no_inherit);
+										bool is_no_inherit,
+										CookedConstraint **merged);
 static void SetRelationNumChecks(Relation rel, int numchecks);
 static Node *cookConstraint(ParseState *pstate,
 							Node *raw_constraint,
@@ -2410,7 +2411,9 @@ StoreConstraints(Relation rel, List *cooked_constraints, bool is_internal)
  * will be processed only if they are CONSTR_CHECK or CONSTR_NOTNULL types.
  *
  * Returns a list of CookedConstraint nodes that shows the cooked form of
- * the default and constraint expressions added to the relation.
+ * the default and constraint expressions added to the relation.  Also return
+ * merged CHECKs that become enforced, so the caller can propagate enforcement
+ * and arrange validation when requested.  Other merged constraints are omitted.
  *
  * NB: caller should have opened rel with some self-conflicting lock mode,
  * and should hold that lock till end of transaction; for normal cases that'll
@@ -2511,6 +2514,7 @@ AddRelationNewConstraints(Relation rel,
 		cooked->attnum = colDef->attnum;
 		cooked->expr = expr;
 		cooked->is_enforced = true;
+		cooked->is_enforcement_merge = false;
 		cooked->skip_validation = false;
 		cooked->is_local = is_local;
 		cooked->inhcount = is_local ? 0 : 1;
@@ -2567,6 +2571,8 @@ AddRelationNewConstraints(Relation rel,
 			 */
 			if (cdef->conname != NULL)
 			{
+				CookedConstraint *merged;
+
 				ccname = cdef->conname;
 				/* Check against other new constraints */
 				/* Needed because we don't do CommandCounterIncrement in loop */
@@ -2584,16 +2590,21 @@ AddRelationNewConstraints(Relation rel,
 
 				/*
 				 * Check against pre-existing constraints.  If we are allowed
-				 * to merge with an existing constraint, there's no more to do
-				 * here. (We omit the duplicate constraint from the result,
-				 * which is what ATAddCheckNNConstraint wants.)
+				 * to merge, do not store another constraint.  A merge that
+				 * starts enforcing a CHECK must still be returned so the
+				 * caller can propagate enforcement and validate existing rows
+				 * when requested.
 				 */
 				if (MergeWithExistingConstraint(rel, ccname, expr,
 												allow_merge, is_local,
 												cdef->is_enforced,
 												cdef->initially_valid,
-												cdef->is_no_inherit))
+												cdef->is_no_inherit, &merged))
+				{
+					if (merged != NULL)
+						cookedConstraints = lappend(cookedConstraints, merged);
 					continue;
+				}
 			}
 			else
 			{
@@ -2661,6 +2672,7 @@ AddRelationNewConstraints(Relation rel,
 			cooked->attnum = 0;
 			cooked->expr = expr;
 			cooked->is_enforced = cdef->is_enforced;
+			cooked->is_enforcement_merge = false;
 			cooked->skip_validation = cdef->skip_validation;
 			cooked->is_local = is_local;
 			cooked->inhcount = is_local ? 0 : 1;
@@ -2738,6 +2750,7 @@ AddRelationNewConstraints(Relation rel,
 			nncooked->attnum = colnum;
 			nncooked->expr = NULL;
 			nncooked->is_enforced = true;
+			nncooked->is_enforcement_merge = false;
 			nncooked->skip_validation = cdef->skip_validation;
 			nncooked->is_local = is_local;
 			nncooked->inhcount = inhcount;
@@ -2761,11 +2774,14 @@ AddRelationNewConstraints(Relation rel,
 
 /*
  * Check for a pre-existing check constraint that conflicts with a proposed
- * new one, and either adjust its conislocal/coninhcount settings or throw
- * error as needed.
+ * new one, and adjust its locality, inheritance count and enforcement state
+ * or throw an error as needed.
  *
  * Returns true if merged (constraint is a duplicate), or false if it's
- * got a so-far-unique name, or throws error if conflict.
+ * got a so-far-unique name, or throws error if conflict.  If the merge changes
+ * a CHECK from NOT ENFORCED to ENFORCED, set *merged to its cooked form with
+ * the requested validity state; otherwise set *merged to NULL.  The caller
+ * must propagate enforcement and validate existing rows when requested.
  *
  * XXX See MergeConstraintsIntoExisting too if you change this code.
  */
@@ -2774,13 +2790,16 @@ MergeWithExistingConstraint(Relation rel, const char *ccname, Node *expr,
 							bool allow_merge, bool is_local,
 							bool is_enforced,
 							bool is_initially_valid,
-							bool is_no_inherit)
+							bool is_no_inherit,
+							CookedConstraint **merged)
 {
 	bool		found;
 	Relation	conDesc;
 	SysScanDesc conscan;
 	ScanKeyData skey[3];
 	HeapTuple	tup;
+
+	*merged = NULL;
 
 	/* Search for a pg_constraint entry with same name and relation */
 	conDesc = table_open(ConstraintRelationId, RowExclusiveLock);
@@ -2924,9 +2943,29 @@ MergeWithExistingConstraint(Relation rel, const char *ccname, Node *expr,
 		 */
 		if (is_enforced && !con->conenforced)
 		{
+			CookedConstraint *cooked;
+
 			Assert(is_local);
 			con->conenforced = true;
-			con->convalidated = true;
+			con->convalidated = is_initially_valid;
+
+			/*
+			 * Return the merge so the caller can propagate enforceability and
+			 * arrange validation without adding inheritance links again.
+			 */
+			cooked = palloc0_object(CookedConstraint);
+
+			cooked->contype = CONSTR_CHECK;
+			cooked->conoid = con->oid;
+			cooked->name = pstrdup(ccname);
+			cooked->expr = expr;
+			cooked->is_enforced = true;
+			cooked->skip_validation = !is_initially_valid;
+			cooked->is_enforcement_merge = true;
+			cooked->is_local = is_local;
+			cooked->inhcount = con->coninhcount;
+			cooked->is_no_inherit = is_no_inherit;
+			*merged = cooked;
 		}
 
 		CatalogTupleUpdate(conDesc, &tup->t_self, tup);
