@@ -57,6 +57,7 @@
 #include "catalog/pg_subscription_d.h"
 #include "catalog/pg_type_d.h"
 #include "common/connect.h"
+#include "common/hashfn.h"
 #include "common/int.h"
 #include "common/relpath.h"
 #include "common/shortest_dec.h"
@@ -73,6 +74,25 @@
 #include "pg_dump.h"
 #include "statistics/statistics_format.h"
 #include "storage/block.h"
+
+/* Visited objects for one inherited CHECK or NOT NULL cleanup traversal. */
+typedef struct
+{
+	DumpId		dumpId;
+	uint32		status;
+} InheritanceCleanupVisit;
+
+#define SH_PREFIX	inheritcleanup
+#define SH_ELEMENT_TYPE	InheritanceCleanupVisit
+#define SH_KEY_TYPE	DumpId
+#define SH_KEY		dumpId
+#define SH_HASH_KEY(tb, key)	hash_bytes_uint32(key)
+#define SH_EQUAL(tb, a, b)	((a) == (b))
+#define SH_SCOPE	static inline
+#define SH_RAW_ALLOCATOR	pg_malloc0
+#define SH_DECLARE
+#define SH_DEFINE
+#include "lib/simplehash.h"
 
 typedef struct
 {
@@ -325,6 +345,10 @@ static void dumpStatisticsExtStats(Archive *fout, const StatsExtInfo *statsextin
 static CleanupKind getIndexCleanupKind(const IndxInfo *indxinfo);
 static void collectIndexCleanupAlternatives(const IndxInfo *indxinfo,
 											DumpId **alternatives, int *nAlternatives);
+static void collectCheckCleanupDependencies(const ConstraintInfo *coninfo,
+											DumpId **deps, int *nDeps);
+static void collectNotNullCleanupDependencies(const ConstraintInfo *coninfo,
+											  DumpId **deps, int *nDeps);
 static void dumpConstraint(Archive *fout, const ConstraintInfo *coninfo);
 static void dumpTableConstraintComment(Archive *fout, const ConstraintInfo *coninfo);
 static void dumpTSParser(Archive *fout, const TSParserInfo *prsinfo);
@@ -9202,6 +9226,7 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 	int			i_notnull_comment;
 	int			i_notnull_noinherit;
 	int			i_notnull_islocal;
+	int			i_notnull_inhcount;
 	int			i_notnull_invalidoid;
 	int			i_attoptions;
 	int			i_attcollation;
@@ -9317,7 +9342,8 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 							 "CASE WHEN NOT co.convalidated THEN co.oid "
 							 "ELSE NULL END AS notnull_invalidoid,\n"
 							 "co.connoinherit AS notnull_noinherit,\n"
-							 "co.conislocal AS notnull_islocal,\n");
+							 "co.conislocal AS notnull_islocal,\n"
+							 "co.coninhcount AS notnull_inhcount,\n");
 	else
 		appendPQExpBufferStr(q,
 							 "CASE WHEN a.attnotnull THEN '' ELSE NULL END AS notnull_name,\n"
@@ -9327,7 +9353,8 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 							 "CASE WHEN a.attislocal THEN true\n"
 							 "     WHEN a.attnotnull AND NOT a.attislocal THEN true\n"
 							 "     ELSE false\n"
-							 "END AS notnull_islocal,\n");
+							 "END AS notnull_islocal,\n"
+							 "0 AS notnull_inhcount,\n");
 
 	if (fout->remoteVersion >= 140000)
 		appendPQExpBufferStr(q,
@@ -9412,6 +9439,7 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 	i_notnull_invalidoid = PQfnumber(res, "notnull_invalidoid");
 	i_notnull_noinherit = PQfnumber(res, "notnull_noinherit");
 	i_notnull_islocal = PQfnumber(res, "notnull_islocal");
+	i_notnull_inhcount = PQfnumber(res, "notnull_inhcount");
 	i_attoptions = PQfnumber(res, "attoptions");
 	i_attcollation = PQfnumber(res, "attcollation");
 	i_attcompression = PQfnumber(res, "attcompression");
@@ -9482,6 +9510,7 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 		tbinfo->notnull_constrs = pg_malloc_array(char *, numatts);
 		tbinfo->notnull_comment = pg_malloc_array(char *, numatts);
 		tbinfo->notnull_invalid = pg_malloc_array(bool, numatts);
+		tbinfo->notnullinfo = pg_malloc0_array(NotNullConstraintInfo, numatts);
 		tbinfo->notnull_noinh = pg_malloc_array(bool, numatts);
 		tbinfo->notnull_islocal = pg_malloc_array(bool, numatts);
 		tbinfo->attrdefs = pg_malloc_array(AttrDefInfo *, numatts);
@@ -9519,7 +9548,15 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 			tbinfo->attalign[j] = *(PQgetvalue(res, r, i_attalign));
 			tbinfo->attislocal[j] = (PQgetvalue(res, r, i_attislocal)[0] == 't');
 
-			/* Handle not-null constraint name and flags */
+			/*
+			 * Preserve catalog facts before formatting/suppressing CREATE
+			 * flags.
+			 */
+			tbinfo->notnullinfo[j].present = !PQgetisnull(res, r, i_notnull_name);
+			tbinfo->notnullinfo[j].islocal = PQgetvalue(res, r, i_notnull_islocal)[0] == 't';
+			tbinfo->notnullinfo[j].noinherit = PQgetvalue(res, r, i_notnull_noinherit)[0] == 't';
+			tbinfo->notnullinfo[j].inhcount = atoi(PQgetvalue(res, r, i_notnull_inhcount));
+
 			determineNotNullFlags(fout, res, r,
 								  tbinfo, j,
 								  i_notnull_name,
@@ -9700,6 +9737,7 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 		int			i_conname;
 		int			i_consrc;
 		int			i_conislocal;
+		int			i_conattnum;
 
 		pg_log_info("finding invalid not-null constraints");
 
@@ -9707,7 +9745,7 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 		appendPQExpBuffer(q,
 						  "SELECT c.tableoid, c.oid, conrelid, conname, "
 						  "pg_catalog.pg_get_constraintdef(c.oid) AS consrc, "
-						  "conislocal, convalidated "
+						  "conislocal, convalidated, conkey[1] AS conattnum "
 						  "FROM unnest('%s'::pg_catalog.oid[]) AS src(conoid)\n"
 						  "JOIN pg_catalog.pg_constraint c ON (src.conoid = c.oid)\n"
 						  "ORDER BY c.conrelid, c.conname",
@@ -9724,6 +9762,7 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 		i_conname = PQfnumber(res, "conname");
 		i_consrc = PQfnumber(res, "consrc");
 		i_conislocal = PQfnumber(res, "conislocal");
+		i_conattnum = PQfnumber(res, "conattnum");
 
 		/* As above, this loop iterates once per table, not once per row */
 		curtblindx = -1;
@@ -9768,6 +9807,10 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 				constrs[j].condeferrable = false;
 				constrs[j].condeferred = false;
 				constrs[j].conislocal = (PQgetvalue(res, j, i_conislocal)[0] == 't');
+				constrs[j].conattnum = atoi(PQgetvalue(res, j, i_conattnum));
+				constrs[j].coninhcount = tbinfo->notnullinfo[constrs[j].conattnum - 1].inhcount;
+				constrs[j].connoinherit = tbinfo->notnullinfo[constrs[j].conattnum - 1].noinherit;
+				tbinfo->notnullinfo[constrs[j].conattnum - 1].constraint = &constrs[j];
 
 				/*
 				 * All invalid not-null constraints must be dumped separately,
@@ -9798,6 +9841,8 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 		int			i_consrc;
 		int			i_conislocal;
 		int			i_convalidated;
+		int			i_coninhcount;
+		int			i_connoinherit;
 
 		pg_log_info("finding table check constraints");
 
@@ -9805,7 +9850,7 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 		appendPQExpBuffer(q,
 						  "SELECT c.tableoid, c.oid, conrelid, conname, "
 						  "pg_catalog.pg_get_constraintdef(c.oid) AS consrc, "
-						  "conislocal, convalidated "
+						  "conislocal, convalidated, coninhcount, connoinherit "
 						  "FROM unnest('%s'::pg_catalog.oid[]) AS src(tbloid)\n"
 						  "JOIN pg_catalog.pg_constraint c ON (src.tbloid = c.conrelid)\n"
 						  "WHERE contype = 'c' "
@@ -9824,6 +9869,8 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 		i_consrc = PQfnumber(res, "consrc");
 		i_conislocal = PQfnumber(res, "conislocal");
 		i_convalidated = PQfnumber(res, "convalidated");
+		i_coninhcount = PQfnumber(res, "coninhcount");
+		i_connoinherit = PQfnumber(res, "connoinherit");
 
 		/* As above, this loop iterates once per table, not once per row */
 		curtblindx = -1;
@@ -9882,6 +9929,8 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 				constrs[j].condeferrable = false;
 				constrs[j].condeferred = false;
 				constrs[j].conislocal = (PQgetvalue(res, j, i_conislocal)[0] == 't');
+				constrs[j].coninhcount = atoi(PQgetvalue(res, j, i_coninhcount));
+				constrs[j].connoinherit = PQgetvalue(res, j, i_connoinherit)[0] == 't';
 
 				/*
 				 * An unvalidated constraint needs to be dumped separately, so
@@ -18311,6 +18360,153 @@ collectIndexCleanupAlternatives(const IndxInfo *indxinfo,
 }
 
 /*
+ * Ordinary inherited CHECKs have no conparentid relationship.  Follow the
+ * table inheritance graph to local definitions.  Dropping a purely inherited
+ * definition is the responsibility of its ancestors; a local definition
+ * remains after those ancestors are removed and needs its own DROP.
+ *
+ * Visit each constraint once per traversal.  Multiple inheritance can share
+ * ancestors along exponentially many paths; output deduplication alone does
+ * not prevent repeated traversal.  An explicit work list also avoids consuming
+ * the C call stack for a deep inheritance chain.
+ *
+ * A zero dependency denotes metadata we could not resolve.  Keep that fact
+ * rather than silently treating the constraint as independently droppable.
+ */
+static void
+collectCheckCleanupDependencies(const ConstraintInfo *coninfo,
+								DumpId **deps, int *nDeps)
+{
+	inheritcleanup_hash *visited = inheritcleanup_create(32, NULL);
+	int			capacity = 32;
+	const ConstraintInfo **pending = pg_malloc_array(const ConstraintInfo *, capacity);
+	int			nPending = 1;
+	bool		found;
+
+	pending[0] = coninfo;
+	inheritcleanup_insert(visited, coninfo->dobj.dumpId, &found);
+	while (nPending > 0)
+	{
+		const ConstraintInfo *current = pending[--nPending];
+		const TableInfo *tbinfo = current->contable;
+		int			matched = 0;
+
+		for (int i = 0; i < tbinfo->numParents; i++)
+		{
+			const TableInfo *parent = tbinfo->parents[i];
+
+			if (parent->checkexprs == NULL)
+				continue;
+
+			for (int j = 0; j < parent->ncheck; j++)
+			{
+				const ConstraintInfo *parentcon = &parent->checkexprs[j];
+
+				if (parentcon->connoinherit ||
+					strcmp(parentcon->dobj.name, current->dobj.name) != 0)
+					continue;
+				/* Count every matching parent edge, even if already visited. */
+				matched++;
+				inheritcleanup_insert(visited, parentcon->dobj.dumpId, &found);
+				if (found)
+					break;
+				if (parentcon->conislocal)
+					appendUniqueDumpId(deps, nDeps, parentcon->dobj.dumpId);
+				else
+				{
+					if (nPending == capacity)
+					{
+						capacity *= 2;
+						pending = pg_realloc_array(pending, const ConstraintInfo *, capacity);
+					}
+					pending[nPending++] = parentcon;
+				}
+				break;
+			}
+		}
+		if (matched != current->coninhcount)
+			appendUniqueDumpId(deps, nDeps, 0);
+	}
+	pg_free(pending);
+	inheritcleanup_destroy(visited);
+}
+
+/*
+ * NOT NULL inheritance follows column names, not constraint names or attnums.
+ * Retain raw catalog facts: flags used to print CREATE TABLE may be suppressed
+ * or changed later.  A valid local definition is inline and has no independent
+ * cleanup entry; record an unresolved prerequisite instead of inventing a DROP.
+ */
+static void
+collectNotNullCleanupDependencies(const ConstraintInfo *coninfo,
+								  DumpId **deps, int *nDeps)
+{
+	inheritcleanup_hash *visited = inheritcleanup_create(32, NULL);
+	int			capacity = 32;
+	const TableInfo **pending = pg_malloc_array(const TableInfo *, capacity);
+	int			nPending = 1;
+	const char *column = getAttrName(coninfo->conattnum, coninfo->contable);
+	bool		found;
+
+	pending[0] = coninfo->contable;
+	inheritcleanup_insert(visited, coninfo->contable->dobj.dumpId, &found);
+	while (nPending > 0)
+	{
+		const TableInfo *current = pending[--nPending];
+		const NotNullConstraintInfo *currentnn = NULL;
+		int			matched = 0;
+
+		for (int j = 0; j < current->numatts; j++)
+			if (!current->attisdropped[j] && strcmp(current->attnames[j], column) == 0)
+			{
+				currentnn = &current->notnullinfo[j];
+				break;
+			}
+		if (currentnn == NULL)
+		{
+			appendUniqueDumpId(deps, nDeps, 0);
+			continue;
+		}
+		for (int i = 0; i < current->numParents; i++)
+		{
+			const TableInfo *parent = current->parents[i];
+
+			if (parent->notnullinfo == NULL)
+				continue;
+			for (int j = 0; j < parent->numatts; j++)
+			{
+				const NotNullConstraintInfo *parentnn = &parent->notnullinfo[j];
+
+				if (parent->attisdropped[j] || strcmp(parent->attnames[j], column) != 0 ||
+					!parentnn->present || parentnn->noinherit)
+					continue;
+				matched++;
+				inheritcleanup_insert(visited, parent->dobj.dumpId, &found);
+				if (found)
+					break;
+				if (parentnn->islocal)
+					appendUniqueDumpId(deps, nDeps, parentnn->constraint ?
+									   parentnn->constraint->dobj.dumpId : 0);
+				else
+				{
+					if (nPending == capacity)
+					{
+						capacity *= 2;
+						pending = pg_realloc_array(pending, const TableInfo *, capacity);
+					}
+					pending[nPending++] = parent;
+				}
+				break;
+			}
+		}
+		if (matched != currentnn->inhcount)
+			appendUniqueDumpId(deps, nDeps, 0);
+	}
+	pg_free(pending);
+	inheritcleanup_destroy(visited);
+}
+
+/*
  * dumpIndex
  *	  write out to fout a user-defined index
  */
@@ -19055,6 +19251,20 @@ dumpConstraint(Archive *fout, const ConstraintInfo *coninfo)
 		if (coninfo->separate && coninfo->conislocal)
 		{
 			const char *keyword;
+			DumpId	   *cleanupDeps = NULL;
+			int			nCleanupDeps = 0;
+			CleanupKind cleanupKind = CLEANUP_DIRECT;
+
+			if (coninfo->coninhcount > 0)
+			{
+				cleanupKind = CLEANUP_AFTER_PARENTS;
+				if (coninfo->contype == 'c')
+					collectCheckCleanupDependencies(coninfo, &cleanupDeps,
+													&nCleanupDeps);
+				else
+					collectNotNullCleanupDependencies(coninfo, &cleanupDeps,
+													  &nCleanupDeps);
+			}
 
 			if (coninfo->contype == 'c')
 				keyword = "CHECK CONSTRAINT";
@@ -19083,7 +19293,12 @@ dumpConstraint(Archive *fout, const ConstraintInfo *coninfo)
 										  .description = keyword,
 										  .section = SECTION_POST_DATA,
 										  .createStmt = q->data,
-										  .dropStmt = delq->data));
+										  .dropStmt = delq->data,
+										  .cleanupKind = cleanupKind,
+										  .cleanupOwner = tbinfo->dobj.dumpId,
+										  .cleanupDeps = cleanupDeps,
+										  .nCleanupDeps = nCleanupDeps));
+			pg_free(cleanupDeps);
 		}
 	}
 	else if (tbinfo == NULL)
