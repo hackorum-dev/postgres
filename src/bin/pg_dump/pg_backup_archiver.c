@@ -80,6 +80,7 @@ static void _disableTriggersIfNecessary(ArchiveHandle *AH, TocEntry *te);
 static void _enableTriggersIfNecessary(ArchiveHandle *AH, TocEntry *te);
 static bool is_load_via_partition_root(TocEntry *te);
 static void buildTocEntryArrays(ArchiveHandle *AH);
+static TocEntry **buildCleanupPlan(ArchiveHandle *AH, int *nEntries);
 static void _moveBefore(TocEntry *pos, TocEntry *te);
 static int	_discoverArchiveFormat(ArchiveHandle *AH);
 
@@ -348,6 +349,8 @@ RestoreArchive(Archive *AHX)
 	RestoreOptions *ropt = AH->public.ropt;
 	bool		parallel_mode;
 	TocEntry   *te;
+	TocEntry  **cleanupPlan = NULL;
+	int			nCleanupEntries = 0;
 	CompressFileHandle *sav;
 
 	AH->stage = STAGE_INITIALIZING;
@@ -399,6 +402,10 @@ RestoreArchive(Archive *AHX)
 	 */
 	if (AH->tocsByDumpId == NULL)
 		buildTocEntryArrays(AH);
+
+	/* Validate the whole cleanup selection before executing any SQL. */
+	if (ropt->dropSchema)
+		cleanupPlan = buildCleanupPlan(AH, &nCleanupEntries);
 
 	/*
 	 * If we're using a DB connection, then connect it.
@@ -502,12 +509,13 @@ RestoreArchive(Archive *AHX)
 	AH->stage = STAGE_PROCESSING;
 
 	/*
-	 * Drop the items at the start, in reverse order
+	 * Drop the items in their independently planned cleanup order
 	 */
 	if (ropt->dropSchema)
 	{
-		for (te = AH->toc->prev; te != AH->toc; te = te->prev)
+		for (int i = 0; i < nCleanupEntries; i++)
 		{
+			te = cleanupPlan[i];
 			AH->currentTE = te;
 
 			/*
@@ -719,6 +727,8 @@ RestoreArchive(Archive *AHX)
 		free(AH->currSchema);
 		AH->currSchema = NULL;
 	}
+
+	pg_free(cleanupPlan);
 
 	if (parallel_mode)
 	{
@@ -1270,6 +1280,22 @@ ArchiveEntry(Archive *AHX, CatalogId catalogId, DumpId dumpId,
 	newToc->defn = opts->createStmt ? pg_strdup(opts->createStmt) : NULL;
 	newToc->dropStmt = opts->dropStmt ? pg_strdup(opts->dropStmt) : NULL;
 	newToc->copyStmt = opts->copyStmt ? pg_strdup(opts->copyStmt) : NULL;
+	newToc->cleanupKind = opts->cleanupKind;
+	newToc->cleanupOwner = opts->cleanupOwner;
+	if (opts->nCleanupAlternatives > 0)
+	{
+		newToc->cleanupAlternatives = pg_malloc_array(DumpId, opts->nCleanupAlternatives);
+		memcpy(newToc->cleanupAlternatives, opts->cleanupAlternatives,
+			   opts->nCleanupAlternatives * sizeof(DumpId));
+		newToc->nCleanupAlternatives = opts->nCleanupAlternatives;
+	}
+	if (opts->nCleanupDeps > 0)
+	{
+		newToc->cleanupDeps = pg_malloc_array(DumpId, opts->nCleanupDeps);
+		memcpy(newToc->cleanupDeps, opts->cleanupDeps,
+			   opts->nCleanupDeps * sizeof(DumpId));
+		newToc->nCleanupDeps = opts->nCleanupDeps;
+	}
 
 	if (opts->nDeps > 0)
 	{
@@ -1977,6 +2003,187 @@ _moveBefore(TocEntry *pos, TocEntry *te)
 	te->next = pos;
 	pos->prev->next = te;
 	pos->prev = te;
+}
+
+/*
+ * A selected entry with nonempty DROP text.  This is only a cleanup candidate;
+ * the cleanup plan decides whether its DROP can actually be executed.
+ */
+static bool
+hasSelectedDropStatement(const TocEntry *te)
+{
+	return te != NULL &&
+		(te->reqs & (REQ_SCHEMA | REQ_DATA)) != 0 &&
+		te->dropStmt != NULL && te->dropStmt[0] != '\0';
+}
+
+/* Explain why a referenced cleanup entry cannot supply a required DROP. */
+static void
+reportUnavailableCleanupEntry(ArchiveHandle *AH, DumpId id)
+{
+	TocEntry   *entry = getTocEntryByDumpId(AH, id);
+
+	if (id == 0)
+		pg_log_error_detail("Required cleanup metadata could not be resolved (DumpId 0).");
+	else if (entry == NULL)
+		pg_log_error_detail("Cleanup entry with DumpId %d is not present in the archive.", id);
+	else if (!hasSelectedDropStatement(entry))
+		pg_log_error_detail("Cleanup entry \"%s\" (DumpId %d) is not selected for cleanup.",
+							entry->tag, id);
+	else
+		pg_log_error_detail("Cleanup entry \"%s\" (DumpId %d) has no independent DROP action in the cleanup selection.",
+							entry->tag, id);
+}
+
+/*
+ * Keep the historical reverse TOC order where no cleanup rule changes it.
+ * Locally defined inherited constraints are covered by their table's DROP or
+ * require all local parent definitions to be cleaned first.  These are destruction
+ * dependencies: never add them to the creation graph or change TOC order.
+ *
+ * Owner-managed entries require a selected table DROP or one alternative
+ * covering action.  Alternatives are different from prerequisites: any one
+ * suffices, and coverage alone never adds a DROP to the plan.  In --create mode,
+ * a selected database DROP covers these entries without individual DROPs.
+ *
+ * Validate every prerequisite before emitting any DROP.  Do not enlarge a
+ * --use-list selection, introduce CASCADE, or silently discard a prerequisite
+ * that was not included in the archive.  A zero prerequisite records unresolved
+ * source metadata and must also fail validation.  Older archives have DIRECT
+ * defaults.
+ *
+ * The traversal uses an explicit stack, so a long or corrupt dependency chain
+ * cannot exhaust the C call stack.  States also detect cleanup cycles.
+ */
+static TocEntry **
+buildCleanupPlan(ArchiveHandle *AH, int *nEntries)
+{
+	typedef struct CleanupFrame
+	{
+		TocEntry   *entry;
+		int			nextDep;
+	} CleanupFrame;
+	RestoreOptions *ropt = AH->public.ropt;
+	TocEntry  **plan = pg_malloc_array(TocEntry *, AH->tocCount);
+	bool	   *cleanupActions = pg_malloc0_array(bool, AH->maxDumpId + 1);
+	unsigned char *states = pg_malloc0_array(unsigned char, AH->maxDumpId + 1);
+	CleanupFrame *stack = pg_malloc_array(CleanupFrame, AH->tocCount);
+	TocEntry   *te;
+	bool		databaseCleanup = false;
+
+	*nEntries = 0;
+
+	/* Collect actual DROP actions, omitting entries covered by other DROPs. */
+	for (te = AH->toc->prev; te != AH->toc; te = te->prev)
+	{
+		TocEntry   *owner;
+
+		if (!hasSelectedDropStatement(te))
+			continue;
+		if (ropt->createDB && strcmp(te->desc, "DATABASE") != 0 &&
+			strcmp(te->desc, "DATABASE PROPERTIES") != 0)
+			continue;
+		if (te->cleanupKind == CLEANUP_WITH_OWNER)
+			continue;
+		owner = getTocEntryByDumpId(AH, te->cleanupOwner);
+		if (te->cleanupKind == CLEANUP_AFTER_PARENTS &&
+			hasSelectedDropStatement(owner))
+			continue;
+		cleanupActions[te->dumpId] = true;
+		if (ropt->createDB && strcmp(te->desc, "DATABASE") == 0)
+			databaseCleanup = true;
+	}
+
+	/* Validate coverage and every prerequisite before ordering any action. */
+	for (te = AH->toc->next; te != AH->toc; te = te->next)
+	{
+		if (!databaseCleanup && hasSelectedDropStatement(te) &&
+			te->cleanupKind == CLEANUP_WITH_OWNER)
+		{
+			TocEntry   *owner = getTocEntryByDumpId(AH, te->cleanupOwner);
+			bool		covered = owner != NULL && cleanupActions[owner->dumpId];
+
+			for (int i = 0; !covered && i < te->nCleanupAlternatives; i++)
+			{
+				TocEntry   *alternative = getTocEntryByDumpId(AH,
+															  te->cleanupAlternatives[i]);
+
+				covered = alternative != NULL && cleanupActions[alternative->dumpId];
+			}
+			if (!covered)
+			{
+				pg_log_error("cannot clean \"%s\" without cleaning its table or a covering parent index or constraint",
+							 te->tag);
+				reportUnavailableCleanupEntry(AH, te->cleanupOwner);
+				for (int i = 0; i < te->nCleanupAlternatives; i++)
+					reportUnavailableCleanupEntry(AH, te->cleanupAlternatives[i]);
+				pg_log_error_hint("Include the object's table or a covering ancestor in the restore selection.");
+				exit(1);
+			}
+		}
+		if (!cleanupActions[te->dumpId])
+			continue;
+		for (int i = 0; i < te->nCleanupDeps; i++)
+		{
+			TocEntry   *parent = getTocEntryByDumpId(AH, te->cleanupDeps[i]);
+
+			if (parent == NULL || !cleanupActions[parent->dumpId])
+			{
+				pg_log_error("cannot clean \"%s\" without cleaning its inherited parent constraints or table",
+							 te->tag);
+				reportUnavailableCleanupEntry(AH, te->cleanupDeps[i]);
+				pg_log_error_hint("Include the object's table or all required parent cleanup actions in the restore selection. "
+								  "If an entry is absent or unresolved, make a new archive including the required objects.");
+				exit(1);
+			}
+		}
+	}
+
+	/* Order prerequisites first, retaining reverse TOC order where possible. */
+	for (te = AH->toc->prev; te != AH->toc; te = te->prev)
+	{
+		int			depth = 0;
+
+		if (!cleanupActions[te->dumpId] || states[te->dumpId] == 2)
+			continue;
+		stack[depth++] = (CleanupFrame)
+		{
+			te, 0
+		};
+		states[te->dumpId] = 1;
+		while (depth > 0)
+		{
+			CleanupFrame *frame = &stack[depth - 1];
+			TocEntry   *entry = frame->entry;
+
+			if (frame->nextDep < entry->nCleanupDeps)
+			{
+				TocEntry   *parent = getTocEntryByDumpId(AH,
+														 entry->cleanupDeps[frame->nextDep++]);
+
+				if (states[parent->dumpId] == 1)
+					pg_fatal("cycle in cleanup dependencies for \"%s\"", entry->tag);
+				if (states[parent->dumpId] == 0)
+				{
+					stack[depth++] = (CleanupFrame)
+					{
+						parent, 0
+					};
+					states[parent->dumpId] = 1;
+				}
+			}
+			else
+			{
+				states[entry->dumpId] = 2;
+				plan[(*nEntries)++] = entry;
+				depth--;
+			}
+		}
+	}
+	pg_free(stack);
+	pg_free(states);
+	pg_free(cleanupActions);
+	return plan;
 }
 
 /*
@@ -2700,6 +2907,15 @@ WriteToc(ArchiveHandle *AH)
 		}
 		WriteStr(AH, NULL);		/* Terminate List */
 
+		WriteInt(AH, te->cleanupKind);
+		WriteInt(AH, te->cleanupOwner);
+		WriteInt(AH, te->nCleanupAlternatives);
+		for (i = 0; i < te->nCleanupAlternatives; i++)
+			WriteInt(AH, te->cleanupAlternatives[i]);
+		WriteInt(AH, te->nCleanupDeps);
+		for (i = 0; i < te->nCleanupDeps; i++)
+			WriteInt(AH, te->cleanupDeps[i]);
+
 		if (AH->WriteExtraTocPtr)
 			AH->WriteExtraTocPtr(AH, te);
 	}
@@ -2852,6 +3068,42 @@ ReadToc(ArchiveHandle *AH)
 		{
 			te->dependencies = NULL;
 			te->nDeps = 0;
+		}
+		if (AH->version >= K_VERS_1_17)
+		{
+			te->cleanupKind = ReadInt(AH);
+			te->cleanupOwner = ReadInt(AH);
+			te->nCleanupAlternatives = ReadInt(AH);
+			if (te->cleanupKind < CLEANUP_DIRECT ||
+				te->cleanupKind > CLEANUP_AFTER_PARENTS ||
+				te->cleanupOwner < 0 || te->nCleanupAlternatives < 0)
+				pg_fatal("invalid cleanup metadata for TOC entry %d", te->dumpId);
+			if (te->nCleanupAlternatives > 0)
+			{
+				te->cleanupAlternatives = pg_malloc_array(DumpId, te->nCleanupAlternatives);
+				for (int j = 0; j < te->nCleanupAlternatives; j++)
+				{
+					te->cleanupAlternatives[j] = ReadInt(AH);
+					if (te->cleanupAlternatives[j] <= 0)
+						pg_fatal("invalid cleanup alternative for TOC entry %d",
+								 te->dumpId);
+				}
+			}
+			te->nCleanupDeps = ReadInt(AH);
+			if (te->nCleanupDeps < 0)
+				pg_fatal("invalid cleanup metadata for TOC entry %d", te->dumpId);
+			if (te->nCleanupDeps > 0)
+			{
+				te->cleanupDeps = pg_malloc_array(DumpId, te->nCleanupDeps);
+				for (int j = 0; j < te->nCleanupDeps; j++)
+				{
+					te->cleanupDeps[j] = ReadInt(AH);
+					/* Zero denotes an unresolved source prerequisite. */
+					if (te->cleanupDeps[j] < 0)
+						pg_fatal("invalid cleanup dependency for TOC entry %d",
+								 te->dumpId);
+				}
+			}
 		}
 		te->dataLength = 0;
 

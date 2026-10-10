@@ -372,6 +372,25 @@ PostgreSQL documentation
          </listitem>
         </varlistentry>
        </variablelist></para>
+
+       <para>
+        All custom, directory, and tar archives use archive format version
+        1.17, including dumps made without <option>--clean</option> and dumps
+        containing no partitioned or inherited objects. This archive format
+        version is distinct from the <productname>PostgreSQL</productname>
+        release version. Readers supporting only earlier archive formats
+        cannot read these archives. Use a version of
+        <application>pg_restore</application> that supports format 1.17.
+        Plain-text output is not subject to this archive format restriction.
+       </para>
+
+       <para>
+        <application>pg_restore</application> can still read older archives,
+        but retains their saved cleanup commands: it does not reconstruct
+        missing cleanup rules or repair invalid <command>DROP</command>
+        commands. To use the new cleanup rules, create a new archive with
+        this version of <application>pg_dump</application>.
+       </para>
       </listitem>
      </varlistentry>
 

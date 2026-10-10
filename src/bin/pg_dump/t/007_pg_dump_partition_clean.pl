@@ -120,27 +120,82 @@ $node->command_ok(
 	],
 	'selective clean restore of local partition constraint');
 
-# Inherited constraints cannot be dropped if their parent is not selected.
-# Check the SQL, since recreating one on an existing table would fail.
+# Inherited constraints need a covering cleanup action.  Reject an incomplete
+# selection before cleaning an unrelated, independently droppable constraint.
 my @inherited = grep { / CONSTRAINT public p2 p2_pkey / } @toc;
 is(scalar @inherited, 1, 'inherited constraint has an archive entry');
-append_to_file("$tempdir/inherited.list", join("\n", @inherited) . "\n");
-$node->command_ok(
+append_to_file("$tempdir/inherited.list",
+	join("\n", @inherited, @local) . "\n");
+$node->command_fails_like(
 	[
 		'pg_restore', '--clean',
 		'--use-list' => "$tempdir/inherited.list",
 		'--file' => "$tempdir/inherited.sql",
 		"$tempdir/partition.dump",
 	],
-	'generate selective clean restore of inherited partition constraint');
-my $selective = slurp_file("$tempdir/inherited.sql");
-unlike(
-	$selective,
-	qr/DROP CONSTRAINT/,
-	'selective restore omits inherited DROP');
+	qr/cannot clean "p2 p2_pkey" without cleaning its table or a covering parent index or constraint/,
+	'reject uncovered inherited constraint when generating SQL');
+my $constraints = $node->safe_psql(
+	'dump_dst',
+	q{SELECT oid, conname FROM pg_constraint WHERE conrelid IN
+	  ('p'::regclass, 'p1'::regclass, 'p2'::regclass) ORDER BY oid});
+$node->command_fails_like(
+	[
+		'pg_restore', '--clean', '--if-exists',
+		'--use-list' => "$tempdir/inherited.list",
+		'--dbname' => $node->connstr('dump_dst'),
+		"$tempdir/partition.dump",
+	],
+	qr/cannot clean "p2 p2_pkey" without cleaning its table or a covering parent index or constraint/,
+	'reject uncovered inherited constraint before executing SQL');
+is( $node->safe_psql(
+		'dump_dst',
+		q{SELECT oid, conname FROM pg_constraint WHERE conrelid IN
+	  ('p'::regclass, 'p1'::regclass, 'p2'::regclass) ORDER BY oid}),
+	$constraints,
+	'failed planning leaves selected and unselected constraints intact');
+
+# The parent constraint supplies coverage even when no table is cleaned.
+my @pkeys = grep {
+		 / CONSTRAINT public p(?:[12])? p(?:[12])?_pkey /
+	  || / INDEX ATTACH public p[12]_pkey /
+} @toc;
+append_to_file("$tempdir/pkeys.list", join("\n", @pkeys) . "\n");
+$node->command_ok(
+	[
+		'pg_restore', '--clean', '--exit-on-error',
+		'--use-list' => "$tempdir/pkeys.list",
+		'--dbname' => $node->connstr('dump_dst'),
+		"$tempdir/partition.dump",
+	],
+	'parent constraint covers selective cleanup of inherited constraints');
+is( $node->safe_psql(
+		'dump_dst',
+		q{SELECT count(*) FROM pg_constraint WHERE contype = 'p'
+	  AND conrelid IN ('p1'::regclass, 'p2'::regclass) AND conparentid <> 0}),
+	'2',
+	'selective primary key restore preserves partition attachments');
+
+$node->command_ok(
+	[
+		'pg_restore', '--clean', '--create',
+		'--use-list' => "$tempdir/inherited.list",
+		'--file' => "$tempdir/create-selection.sql",
+		"$tempdir/partition.dump",
+	],
+	'database cleanup covers entries even when omitted from the use-list');
 like(
-	$selective,
-	qr/ADD CONSTRAINT p2_pkey PRIMARY KEY/,
-	'selective restore retains inherited constraint creation');
+	slurp_file("$tempdir/create-selection.sql"),
+	qr/DROP DATABASE dump_src;/,
+	'create mode selects database cleanup independently of the use-list');
+$node->command_ok(
+	[
+		'pg_restore', '--clean', '--create', '--exit-on-error',
+		'--dbname' => $node->connstr('postgres'),
+		"$tempdir/partition.dump",
+	],
+	'database cleanup covers partition constraints');
+is($node->safe_psql('dump_src', 'SELECT * FROM p ORDER BY id'),
+	"1|1|one\n2|2|two", 'database recreation restores partition data');
 
 done_testing();

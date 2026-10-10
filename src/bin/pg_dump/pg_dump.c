@@ -322,6 +322,9 @@ static void dumpIndex(Archive *fout, const IndxInfo *indxinfo);
 static void dumpIndexAttach(Archive *fout, const IndexAttachInfo *attachinfo);
 static void dumpStatisticsExt(Archive *fout, const StatsExtInfo *statsextinfo);
 static void dumpStatisticsExtStats(Archive *fout, const StatsExtInfo *statsextinfo);
+static CleanupKind getIndexCleanupKind(const IndxInfo *indxinfo);
+static void collectIndexCleanupAlternatives(const IndxInfo *indxinfo,
+											DumpId **alternatives, int *nAlternatives);
 static void dumpConstraint(Archive *fout, const ConstraintInfo *coninfo);
 static void dumpTableConstraintComment(Archive *fout, const ConstraintInfo *coninfo);
 static void dumpTSParser(Archive *fout, const TSParserInfo *prsinfo);
@@ -18255,15 +18258,71 @@ appendIndexStatTargets(PQExpBuffer q, const IndxInfo *indxinfo)
 }
 
 /*
+ * Index cleanup rules are shared by index and constraint-backed index paths.
+ * Partition dependencies prohibit direct deletion; constraint-backed
+ * descendants also prevent independently dropping a plain root index.
+ */
+static CleanupKind
+getIndexCleanupKind(const IndxInfo *indxinfo)
+{
+	if (indxinfo->parentidx != 0 || indxinfo->hasconstraintdescendants)
+		return CLEANUP_WITH_OWNER;
+	return CLEANUP_DIRECT;
+}
+
+/* Append a unique ID to a prerequisite or alternative-action list. */
+static void
+appendUniqueDumpId(DumpId **ids, int *nIds, DumpId id)
+{
+	for (int i = 0; i < *nIds; i++)
+		if ((*ids)[i] == id)
+			return;
+	*ids = pg_realloc_array(*ids, DumpId, *nIds + 1);
+	(*ids)[(*nIds)++] = id;
+}
+
+/*
+ * An attached index can disappear with an ancestor index (or its constraint)
+ * or any ancestor's table.  Record each possible covering DROP, including
+ * ancestors above an unselected intermediate index.  Only actual cleanup
+ * actions can provide coverage; an ancestor whose own DROP is forbidden does
+ * not suffice merely because it is selected for creation.
+ */
+static void
+collectIndexCleanupAlternatives(const IndxInfo *indxinfo,
+								DumpId **alternatives, int *nAlternatives)
+{
+	while (indxinfo->parentidx != 0)
+	{
+		CatalogId	catId = {RelationRelationId, indxinfo->parentidx};
+		DumpableObject *parent = findObjectByCatalogId(catId);
+
+		if (parent == NULL)
+			break;
+		Assert(parent->objType == DO_INDEX);
+		indxinfo = (IndxInfo *) parent;
+		if (getIndexCleanupKind(indxinfo) == CLEANUP_DIRECT)
+			appendUniqueDumpId(alternatives, nAlternatives,
+							   indxinfo->indexconstraint ? indxinfo->indexconstraint :
+							   indxinfo->dobj.dumpId);
+		appendUniqueDumpId(alternatives, nAlternatives,
+						   indxinfo->indextable->dobj.dumpId);
+	}
+}
+
+/*
  * dumpIndex
  *	  write out to fout a user-defined index
  */
+
 static void
 dumpIndex(Archive *fout, const IndxInfo *indxinfo)
 {
 	DumpOptions *dopt = fout->dopt;
 	TableInfo  *tbinfo = indxinfo->indextable;
 	bool		is_constraint = (indxinfo->indexconstraint != 0);
+	DumpId	   *cleanupAlternatives = NULL;
+	int			nCleanupAlternatives = 0;
 	PQExpBuffer q;
 	PQExpBuffer delq;
 	char	   *qindxname;
@@ -18272,6 +18331,10 @@ dumpIndex(Archive *fout, const IndxInfo *indxinfo)
 	/* Do nothing if not dumping schema */
 	if (!dopt->dumpSchema)
 		return;
+
+	if (getIndexCleanupKind(indxinfo) == CLEANUP_WITH_OWNER)
+		collectIndexCleanupAlternatives(indxinfo, &cleanupAlternatives,
+										&nCleanupAlternatives);
 
 	q = createPQExpBuffer();
 	delq = createPQExpBuffer();
@@ -18329,17 +18392,8 @@ dumpIndex(Archive *fout, const IndxInfo *indxinfo)
 							  qindxname);
 		}
 
-		/*
-		 * An index partition cannot be dropped separately.  A partitioned
-		 * index with constraint-backed partitions cannot be dropped without
-		 * CASCADE, which might remove objects not selected for restore.
-		 *
-		 * Omit these DROP commands and let the indexes go away when we drop
-		 * their tables (or, for an index partition, its parent index).  In a
-		 * selective restore, this can leave such indexes in place.
-		 */
-		if (indxinfo->parentidx == 0 && !indxinfo->hasconstraintdescendants)
-			appendPQExpBuffer(delq, "DROP INDEX %s;\n", qqindxname);
+		/* Cleanup legality is recorded separately from the SQL spelling. */
+		appendPQExpBuffer(delq, "DROP INDEX %s;\n", qqindxname);
 
 		if (indxinfo->dobj.dump & DUMP_COMPONENT_DEFINITION)
 			ArchiveEntry(fout, indxinfo->dobj.catId, indxinfo->dobj.dumpId,
@@ -18350,7 +18404,11 @@ dumpIndex(Archive *fout, const IndxInfo *indxinfo)
 									  .description = "INDEX",
 									  .section = SECTION_POST_DATA,
 									  .createStmt = q->data,
-									  .dropStmt = delq->data));
+									  .dropStmt = delq->data,
+									  .cleanupKind = getIndexCleanupKind(indxinfo),
+									  .cleanupAlternatives = cleanupAlternatives,
+									  .nCleanupAlternatives = nCleanupAlternatives,
+									  .cleanupOwner = tbinfo->dobj.dumpId));
 	}
 
 	/* Dump Index Comments */
@@ -18362,6 +18420,7 @@ dumpIndex(Archive *fout, const IndxInfo *indxinfo)
 					is_constraint ? indxinfo->indexconstraint :
 					indxinfo->dobj.dumpId);
 
+	pg_free(cleanupAlternatives);
 	destroyPQExpBuffer(q);
 	destroyPQExpBuffer(delq);
 	pg_free(qindxname);
@@ -18799,12 +18858,18 @@ dumpConstraint(Archive *fout, const ConstraintInfo *coninfo)
 		/* Index-related constraint */
 		IndxInfo   *indxinfo;
 		int			k;
+		DumpId	   *cleanupAlternatives = NULL;
+		int			nCleanupAlternatives = 0;
 
 		indxinfo = (IndxInfo *) findObjectByDumpId(coninfo->conindex);
 
 		if (indxinfo == NULL)
 			pg_fatal("missing index for constraint \"%s\"",
 					 coninfo->dobj.name);
+
+		if (getIndexCleanupKind(indxinfo) == CLEANUP_WITH_OWNER)
+			collectIndexCleanupAlternatives(indxinfo, &cleanupAlternatives,
+											&nCleanupAlternatives);
 
 		if (dopt->binary_upgrade)
 			binary_upgrade_set_pg_class_oids(fout, q,
@@ -18920,19 +18985,10 @@ dumpConstraint(Archive *fout, const ConstraintInfo *coninfo)
 									"pg_catalog.pg_class", "INDEX",
 									fmtQualifiedDumpable(indxinfo));
 
-		/*
-		 * If the index is attached to a partitioned index, the backend will
-		 * not allow us to drop the constraint separately.  It will go away
-		 * when we drop the parent constraint or the partition's table.  See
-		 * dumpIndex() for the implications for selective restores.
-		 */
-		if (indxinfo->parentidx == 0)
-		{
-			appendPQExpBuffer(delq, "ALTER %sTABLE ONLY %s ", foreign,
-							  fmtQualifiedDumpable(tbinfo));
-			appendPQExpBuffer(delq, "DROP CONSTRAINT %s;\n",
-							  fmtId(coninfo->dobj.name));
-		}
+		appendPQExpBuffer(delq, "ALTER %sTABLE ONLY %s ", foreign,
+						  fmtQualifiedDumpable(tbinfo));
+		appendPQExpBuffer(delq, "DROP CONSTRAINT %s;\n",
+						  fmtId(coninfo->dobj.name));
 
 		tag = psprintf("%s %s", tbinfo->dobj.name, coninfo->dobj.name);
 
@@ -18945,7 +19001,12 @@ dumpConstraint(Archive *fout, const ConstraintInfo *coninfo)
 									  .description = "CONSTRAINT",
 									  .section = SECTION_POST_DATA,
 									  .createStmt = q->data,
-									  .dropStmt = delq->data));
+									  .dropStmt = delq->data,
+									  .cleanupKind = getIndexCleanupKind(indxinfo),
+									  .cleanupAlternatives = cleanupAlternatives,
+									  .nCleanupAlternatives = nCleanupAlternatives,
+									  .cleanupOwner = tbinfo->dobj.dumpId));
+		pg_free(cleanupAlternatives);
 	}
 	else if (coninfo->contype == 'f')
 	{
