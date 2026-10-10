@@ -107,6 +107,47 @@ typedef struct pg_atomic_uint64
 
 #endif /* defined(HAVE_GCC__ATOMIC_INT64_CAS) || defined(HAVE_GCC__SYNC_INT64_CAS) */
 
+/* Optional native 128-bit atomics, with independently readable 64-bit halves. */
+#if !defined(PG_HAVE_ATOMIC_U128_SUPPORT) && defined(HAVE_INT128) && \
+	defined(HAVE_GCC__SYNC_INT128_CAS) && \
+	defined(PG_HAVE_ATOMIC_U64_SUPPORT) && !defined(PG_DISABLE_64_BIT_ATOMICS)
+#define PG_HAVE_ATOMIC_U128_SUPPORT
+typedef union pg_atomic_uint128
+{
+	alignas(16) volatile uint128 value;
+	struct
+	{
+#ifdef WORDS_BIGENDIAN
+		pg_atomic_uint64 high;
+		pg_atomic_uint64 low;
+#else
+		pg_atomic_uint64 low;
+		pg_atomic_uint64 high;
+#endif
+	}			parts;
+} pg_atomic_uint128;
+
+StaticAssertDecl(sizeof(pg_atomic_uint64) == sizeof(uint64),
+				 "native 64-bit atomics must fit in a 128-bit atomic");
+#endif
+
+#if !defined(PG_HAVE_ATOMIC_COMPARE_EXCHANGE_U128) && \
+	defined(PG_HAVE_ATOMIC_U128_SUPPORT) && defined(HAVE_GCC__SYNC_INT128_CAS)
+#define PG_HAVE_ATOMIC_COMPARE_EXCHANGE_U128
+static inline bool
+pg_atomic_compare_exchange_u128_impl(volatile pg_atomic_uint128 *ptr,
+									uint128 *expected, uint128 newval)
+{
+	bool		ret;
+	uint128		current;
+
+	current = __sync_val_compare_and_swap(&ptr->value, *expected, newval);
+	ret = current == *expected;
+	*expected = current;
+	return ret;
+}
+#endif
+
 #ifdef PG_HAVE_ATOMIC_FLAG_SUPPORT
 
 #if defined(HAVE_GCC__SYNC_CHAR_TAS) || defined(HAVE_GCC__SYNC_INT32_TAS)

@@ -398,28 +398,39 @@ typedef union WALInsertLockPadded
 static SessionBackupState sessionBackupState = SESSION_BACKUP_NONE;
 
 /*
- * Shared state data for WAL insertion.
+ * WAL insert reservation positions, updated together by 128-bit CAS.
+ *
+ * CurrBytePos is the end of reserved WAL, where the next record will be
+ * inserted.  PrevBytePos is the start of the previously reserved record,
+ * copied to the next record's prev-link.  Both are "usable byte positions"
+ * rather than XLogRecPtrs (see XLogBytePosToRecPtr()).
+ *
+ * Store CurrBytePos in the low 64 bits and PrevBytePos in the high 64 bits,
+ * regardless of byte order.  Without native 128-bit CAS, or when
+ * XL_FORCE_SPINLOCK_RESERVATION is defined, use insertpos_lck instead.
  */
+#if defined(PG_HAVE_ATOMIC_U128_SUPPORT) && !defined(XL_FORCE_SPINLOCK_RESERVATION)
+#define XL_LOCKFREE_RESERVATION 1
+#endif							/* lock-free reservation available */
+
+/* Shared state data for WAL insertion. */
 typedef struct XLogCtlInsert
 {
+#ifdef XL_LOCKFREE_RESERVATION
+	/* CurrBytePos and PrevBytePos, advanced together by 128-bit CAS */
+	pg_atomic_uint128 CurrPrevPos;
+#else
 	slock_t		insertpos_lck;	/* protects CurrBytePos and PrevBytePos */
-
-	/*
-	 * CurrBytePos is the end of reserved WAL. The next record will be
-	 * inserted at that position. PrevBytePos is the start position of the
-	 * previously inserted (or rather, reserved) record - it is copied to the
-	 * prev-link of the next record. These are stored as "usable byte
-	 * positions" rather than XLogRecPtrs (see XLogBytePosToRecPtr()).
-	 */
 	uint64		CurrBytePos;
 	uint64		PrevBytePos;
+#endif
 
 	/*
-	 * Make sure the above heavily-contended spinlock and byte positions are
-	 * on their own cache line. In particular, the RedoRecPtr and full page
-	 * write variables below should be on a different cache line. They are
-	 * read on every WAL insertion, but updated rarely, and we don't want
-	 * those reads to steal the cache line containing Curr/PrevBytePos.
+	 * Make sure the above heavily-contended reservation state is on its own
+	 * cache line. In particular, the RedoRecPtr and full page write variables
+	 * below should be on a different cache line. They are read on every WAL
+	 * insertion, but updated rarely, and we don't want those reads to steal
+	 * the cache line containing Curr/PrevBytePos.
 	 */
 	char		pad[PG_CACHE_LINE_SIZE];
 
@@ -450,6 +461,24 @@ typedef struct XLogCtlInsert
 	 */
 	WALInsertLockPadded *WALInsertLocks;
 } XLogCtlInsert;
+
+/* Read CurrBytePos without needing a snapshot of both reservation positions. */
+static inline uint64
+GetInsertCurrBytePos(XLogCtlInsert *Insert)
+{
+	uint64		bytepos;
+
+#ifdef XL_LOCKFREE_RESERVATION
+	bytepos = pg_atomic_read_u128_low64(&Insert->CurrPrevPos);
+	pg_read_barrier();
+#else
+	SpinLockAcquire(&Insert->insertpos_lck);
+	bytepos = Insert->CurrBytePos;
+	SpinLockRelease(&Insert->insertpos_lck);
+#endif
+
+	return bytepos;
+}
 
 /*
  * Total shared-memory state for XLOG.
@@ -882,8 +911,8 @@ XLogInsertRecord(XLogRecData *rdata,
 	 * record to the shared WAL buffer cache is a two-step process:
 	 *
 	 * 1. Reserve the right amount of space from the WAL. The current head of
-	 *	  reserved space is kept in Insert->CurrBytePos, and is protected by
-	 *	  insertpos_lck.
+	 *	  reserved space is advanced together with the previous record's start,
+	 *	  using a double-width CAS or insertpos_lck.
 	 *
 	 * 2. Copy the record to the reserved WAL space. This involves finding the
 	 *	  correct WAL buffer containing the reserved space, and copying the
@@ -1192,8 +1221,8 @@ XLogInsertRecord(XLogRecData *rdata,
  *
  * This is the performance critical part of XLogInsert that must be serialized
  * across backends. The rest can happen mostly in parallel. Try to keep this
- * section as short as possible, insertpos_lck can be heavily contended on a
- * busy system.
+ * section as short as possible, since reservation can be heavily contended
+ * on a busy system.
  *
  * NB: The space calculation here must match the code in CopyXLogRecordToWAL,
  * where we actually copy the record to the reserved space.
@@ -1217,15 +1246,37 @@ ReserveXLogInsertLocation(int size, XLogRecPtr *StartPos, XLogRecPtr *EndPos,
 	Assert(size > SizeOfXLogRecord);
 
 	/*
-	 * The duration the spinlock needs to be held is minimized by minimizing
-	 * the calculations that have to be done while holding the lock. The
-	 * current tip of reserved WAL is kept in CurrBytePos, as a byte position
-	 * that only counts "usable" bytes in WAL, that is, it excludes all WAL
-	 * page headers. The mapping between "usable" byte positions and physical
-	 * positions (XLogRecPtrs) can be done outside the locked region, and
-	 * because the usable byte position doesn't include any headers, reserving
-	 * X bytes from WAL is almost as simple as "CurrBytePos += X".
+	 * Keep calculations outside the serialized reservation step where
+	 * possible. The current tip of reserved WAL is kept in CurrBytePos, as a
+	 * byte position that only counts "usable" bytes in WAL, that is, it
+	 * excludes all WAL page headers. The mapping between "usable" byte
+	 * positions and physical positions (XLogRecPtrs) can be done after
+	 * reserving the bytes, and because the usable byte position doesn't
+	 * include any headers, reserving X bytes from WAL is almost as simple as
+	 * "CurrBytePos += X".
 	 */
+#ifdef XL_LOCKFREE_RESERVATION
+	{
+		uint128		old_cp;
+		uint128		new_cp;
+
+		/*
+		 * Read each field atomically.  If they come from different
+		 * reservations, the CAS fails and returns a consistent pair.
+		 */
+		startbytepos = pg_atomic_read_u128_low64(&Insert->CurrPrevPos);
+		prevbytepos = pg_atomic_read_u128_high64(&Insert->CurrPrevPos);
+		old_cp = ((uint128) prevbytepos << 64) | startbytepos;
+		do
+		{
+			startbytepos = (uint64) old_cp;
+			endbytepos = startbytepos + size;
+			prevbytepos = (uint64) (old_cp >> 64);
+			new_cp = ((uint128) startbytepos << 64) | endbytepos;
+		} while (!pg_atomic_compare_exchange_u128(&Insert->CurrPrevPos,
+												  &old_cp, new_cp));
+	}
+#else
 	SpinLockAcquire(&Insert->insertpos_lck);
 
 	startbytepos = Insert->CurrBytePos;
@@ -1235,6 +1286,7 @@ ReserveXLogInsertLocation(int size, XLogRecPtr *StartPos, XLogRecPtr *EndPos,
 	Insert->PrevBytePos = startbytepos;
 
 	SpinLockRelease(&Insert->insertpos_lck);
+#endif
 
 	*StartPos = XLogBytePosToRecPtr(startbytepos);
 	*EndPos = XLogBytePosToEndRecPtr(endbytepos);
@@ -1270,11 +1322,47 @@ ReserveXLogSwitch(XLogRecPtr *StartPos, XLogRecPtr *EndPos, XLogRecPtr *PrevPtr)
 	uint32		segleft;
 
 	/*
-	 * These calculations are a bit heavy-weight to be done while holding a
-	 * spinlock, but since we're holding all the WAL insertion locks, there
-	 * are no other inserters competing for it. GetXLogInsertRecPtr() does
-	 * compete for it, but that's not called very frequently.
+	 * Holding all the WAL insertion locks excludes other reserving inserters.
+	 * In the spinlock path, readers such as GetXLogInsertRecPtr() can still
+	 * compete for insertpos_lck, but those calls are not very frequent.
 	 */
+#ifdef XL_LOCKFREE_RESERVATION
+	{
+		uint128		old_cp;
+		uint128		new_cp;
+
+		startbytepos = pg_atomic_read_u128_low64(&Insert->CurrPrevPos);
+		prevbytepos = pg_atomic_read_u128_high64(&Insert->CurrPrevPos);
+		old_cp = ((uint128) prevbytepos << 64) | startbytepos;
+		do
+		{
+			startbytepos = (uint64) old_cp;
+
+			ptr = XLogBytePosToEndRecPtr(startbytepos);
+			if (XLogSegmentOffset(ptr, wal_segment_size) == 0)
+			{
+				*EndPos = *StartPos = ptr;
+				return false;
+			}
+
+			endbytepos = startbytepos + size;
+			prevbytepos = (uint64) (old_cp >> 64);
+
+			*StartPos = XLogBytePosToRecPtr(startbytepos);
+			*EndPos = XLogBytePosToEndRecPtr(endbytepos);
+
+			segleft = wal_segment_size - XLogSegmentOffset(*EndPos, wal_segment_size);
+			if (segleft != wal_segment_size)
+			{
+				/* consume the rest of the segment */
+				*EndPos += segleft;
+				endbytepos = XLogRecPtrToBytePos(*EndPos);
+			}
+			new_cp = ((uint128) startbytepos << 64) | endbytepos;
+		} while (!pg_atomic_compare_exchange_u128(&Insert->CurrPrevPos,
+												  &old_cp, new_cp));
+	}
+#else
 	SpinLockAcquire(&Insert->insertpos_lck);
 
 	startbytepos = Insert->CurrBytePos;
@@ -1304,6 +1392,7 @@ ReserveXLogSwitch(XLogRecPtr *StartPos, XLogRecPtr *EndPos, XLogRecPtr *PrevPtr)
 	Insert->PrevBytePos = startbytepos;
 
 	SpinLockRelease(&Insert->insertpos_lck);
+#endif
 
 	*PrevPtr = XLogBytePosToRecPtr(prevbytepos);
 
@@ -1620,9 +1709,7 @@ WaitXLogInsertionsToFinish(XLogRecPtr upto)
 		return inserted;
 
 	/* Read the current insert position */
-	SpinLockAcquire(&Insert->insertpos_lck);
-	bytepos = Insert->CurrBytePos;
-	SpinLockRelease(&Insert->insertpos_lck);
+	bytepos = GetInsertCurrBytePos(Insert);
 	reservedUpto = XLogBytePosToEndRecPtr(bytepos);
 
 	/*
@@ -5641,7 +5728,11 @@ XLOGShmemInit(void *arg)
 	XLogCtl->data_checksum_is_local = ControlFile->data_checksum_is_local;
 	SetLocalDataChecksumState(XLogCtl->data_checksum_version);
 
+#ifdef XL_LOCKFREE_RESERVATION
+	AssertPointerAlignment(&XLogCtl->Insert.CurrPrevPos, 16);
+#else
 	SpinLockInit(&XLogCtl->Insert.insertpos_lck);
+#endif
 	SpinLockInit(&XLogCtl->info_lck);
 	pg_atomic_init_u64(&XLogCtl->logInsertResult, InvalidXLogRecPtr);
 	pg_atomic_init_u64(&XLogCtl->logWriteResult, InvalidXLogRecPtr);
@@ -6728,8 +6819,18 @@ StartupXLOG(void)
 	 * previous incarnation.
 	 */
 	Insert = &XLogCtl->Insert;
+#ifdef XL_LOCKFREE_RESERVATION
+	{
+		uint128		positions;
+
+		positions = (uint128) XLogRecPtrToBytePos(endOfRecoveryInfo->lastRec) << 64;
+		positions |= XLogRecPtrToBytePos(EndOfLog);
+		pg_atomic_init_u128(&Insert->CurrPrevPos, positions);
+	}
+#else
 	Insert->PrevBytePos = XLogRecPtrToBytePos(endOfRecoveryInfo->lastRec);
 	Insert->CurrBytePos = XLogRecPtrToBytePos(EndOfLog);
+#endif
 
 	/*
 	 * Tricky point here: lastPage contains the *last* block that the LastRec
@@ -7824,7 +7925,7 @@ CreateCheckPoint(int flags)
 
 	if (shutdown)
 	{
-		XLogRecPtr	curInsert = XLogBytePosToRecPtr(Insert->CurrBytePos);
+		XLogRecPtr	curInsert = XLogBytePosToRecPtr(GetInsertCurrBytePos(Insert));
 
 		/*
 		 * Compute new REDO record ptr = location of next XLOG record.
@@ -10632,9 +10733,7 @@ GetXLogInsertRecPtr(void)
 	XLogCtlInsert *Insert = &XLogCtl->Insert;
 	uint64		current_bytepos;
 
-	SpinLockAcquire(&Insert->insertpos_lck);
-	current_bytepos = Insert->CurrBytePos;
-	SpinLockRelease(&Insert->insertpos_lck);
+	current_bytepos = GetInsertCurrBytePos(Insert);
 
 	return XLogBytePosToRecPtr(current_bytepos);
 }
@@ -10648,9 +10747,7 @@ GetXLogInsertEndRecPtr(void)
 	XLogCtlInsert *Insert = &XLogCtl->Insert;
 	uint64		current_bytepos;
 
-	SpinLockAcquire(&Insert->insertpos_lck);
-	current_bytepos = Insert->CurrBytePos;
-	SpinLockRelease(&Insert->insertpos_lck);
+	current_bytepos = GetInsertCurrBytePos(Insert);
 
 	return XLogBytePosToEndRecPtr(current_bytepos);
 }

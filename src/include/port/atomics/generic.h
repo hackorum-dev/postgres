@@ -428,3 +428,34 @@ pg_atomic_write_membarrier_u64_impl(volatile pg_atomic_uint64 *ptr, uint64 val)
 	(void) pg_atomic_exchange_u64_impl(ptr, val);
 }
 #endif
+
+#ifdef PG_HAVE_ATOMIC_U128_SUPPORT
+
+#ifndef PG_HAVE_ATOMIC_INIT_U128
+#define PG_HAVE_ATOMIC_INIT_U128
+static inline void
+pg_atomic_init_u128_impl(volatile pg_atomic_uint128 *ptr, uint128 val)
+{
+	ptr->value = val;
+}
+#endif
+
+#ifndef PG_HAVE_ATOMIC_READ_U128_LOW64
+#define PG_HAVE_ATOMIC_READ_U128_LOW64
+static inline uint64
+pg_atomic_read_u128_low64_impl(volatile pg_atomic_uint128 *ptr)
+{
+	return pg_atomic_read_u64_impl(&ptr->parts.low);
+}
+#endif
+
+#ifndef PG_HAVE_ATOMIC_READ_U128_HIGH64
+#define PG_HAVE_ATOMIC_READ_U128_HIGH64
+static inline uint64
+pg_atomic_read_u128_high64_impl(volatile pg_atomic_uint128 *ptr)
+{
+	return pg_atomic_read_u64_impl(&ptr->parts.high);
+}
+#endif
+
+#endif							/* PG_HAVE_ATOMIC_U128_SUPPORT */

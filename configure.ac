@@ -2106,13 +2106,20 @@ AC_DEFINE_UNQUOTED(MAXIMUM_ALIGNOF, $MAX_ALIGNOF, [Define as the maximum alignme
 PGAC_TYPE_128BIT_INT
 
 # Check for various atomic operations now that we have checked how to declare
-# 64bit integers.
+# 64bit and 128bit integers.
 PGAC_HAVE_GCC__SYNC_CHAR_TAS
 PGAC_HAVE_GCC__SYNC_INT32_TAS
 PGAC_HAVE_GCC__SYNC_INT32_CAS
 PGAC_HAVE_GCC__SYNC_INT64_CAS
+PGAC_HAVE_GCC__SYNC_INT128_CAS
 PGAC_HAVE_GCC__ATOMIC_INT32_CAS
 PGAC_HAVE_GCC__ATOMIC_INT64_CAS
+
+if test x"$pgac_cv_gcc_sync_int128_cas" = x"yes"; then
+  AC_MSG_NOTICE([native 128-bit CAS is available for the compiler target])
+else
+  AC_MSG_NOTICE([native 128-bit CAS is unavailable; WAL reservation will use spinlock fallback])
+fi
 
 
 # Check for __get_cpuid() and __cpuid()

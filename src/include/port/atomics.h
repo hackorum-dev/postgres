@@ -611,6 +611,68 @@ pg_atomic_monotonic_advance_u64(volatile pg_atomic_uint64 *ptr, uint64 target)
 	return currval;
 }
 
+/*
+ * The 128-bit operations are available only with native support.  There is
+ * no simulated implementation; callers must provide their own fallback.
+ */
+#ifdef PG_HAVE_ATOMIC_U128_SUPPORT
+
+/*
+ * pg_atomic_init_u128 - initialize atomic variable before concurrent use.
+ *
+ * No barrier semantics.
+ */
+static inline void
+pg_atomic_init_u128(volatile pg_atomic_uint128 *ptr, uint128 val)
+{
+	AssertPointerAlignment(ptr, 16);
+	pg_atomic_init_u128_impl(ptr, val);
+}
+
+/*
+ * pg_atomic_compare_exchange_u128 - compare and exchange a 128-bit value.
+ *
+ * Has the same semantics as pg_atomic_compare_exchange_u32().
+ */
+static inline bool
+pg_atomic_compare_exchange_u128(volatile pg_atomic_uint128 *ptr,
+								uint128 *expected, uint128 newval)
+{
+	AssertPointerAlignment(ptr, 16);
+	AssertPointerAlignment(expected, alignof(uint128));
+	return pg_atomic_compare_exchange_u128_impl(ptr, expected, newval);
+}
+
+/*
+ * pg_atomic_read_u128_low64 - atomically read bits 63..0.
+ *
+ * The bit range is independent of byte order.  Reading both halves does
+ * not give an atomic snapshot of the 128-bit value; use compare-exchange
+ * to validate a value assembled from separate reads.
+ *
+ * No barrier semantics.
+ */
+static inline uint64
+pg_atomic_read_u128_low64(volatile pg_atomic_uint128 *ptr)
+{
+	AssertPointerAlignment(ptr, 16);
+	return pg_atomic_read_u128_low64_impl(ptr);
+}
+
+/*
+ * pg_atomic_read_u128_high64 - atomically read bits 127..64.
+ *
+ * Has the same semantics as pg_atomic_read_u128_low64().
+ */
+static inline uint64
+pg_atomic_read_u128_high64(volatile pg_atomic_uint128 *ptr)
+{
+	AssertPointerAlignment(ptr, 16);
+	return pg_atomic_read_u128_high64_impl(ptr);
+}
+
+#endif							/* PG_HAVE_ATOMIC_U128_SUPPORT */
+
 #undef INSIDE_ATOMICS_H
 
 #endif							/* ATOMICS_H */

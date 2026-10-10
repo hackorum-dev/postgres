@@ -750,6 +750,54 @@ test_atomic_uint64(void)
 	EXPECT_EQ_U64(pg_atomic_fetch_and_u64(&var, ~0), 0);
 }
 
+#ifdef PG_HAVE_ATOMIC_U128_SUPPORT
+static void
+test_atomic_uint128(void)
+{
+	pg_atomic_uint128 var;
+	uint128		original;
+	uint128		changed;
+	uint128		expected;
+	uint64		original_low = UINT64CONST(0x0123456789abcdef);
+	uint64		original_high = UINT64CONST(0xfedcba9876543210);
+	int			i;
+
+	original = ((uint128) original_high << 64) | original_low;
+	changed = PG_UINT64_MAX;
+
+	pg_atomic_init_u128(&var, original);
+	EXPECT_EQ_U64(pg_atomic_read_u128_low64(&var), original_low);
+	EXPECT_EQ_U64(pg_atomic_read_u128_high64(&var), original_high);
+
+	/* A failed exchange must return the complete current value. */
+	expected = original ^ ((uint128) 1 << 127);
+	EXPECT_TRUE(!pg_atomic_compare_exchange_u128(&var, &expected, changed));
+	EXPECT_TRUE(expected == original);
+	EXPECT_EQ_U64(pg_atomic_read_u128_low64(&var), original_low);
+	EXPECT_EQ_U64(pg_atomic_read_u128_high64(&var), original_high);
+
+	/* Allow for spurious failures, as with the other CAS operations. */
+	for (i = 0; i < 100; i++)
+	{
+		expected = original;
+		if (pg_atomic_compare_exchange_u128(&var, &expected, changed))
+			break;
+	}
+	if (i == 100)
+		elog(ERROR, "atomic_compare_exchange_u128() never succeeded");
+	EXPECT_TRUE(expected == original);
+	EXPECT_EQ_U64(pg_atomic_read_u128_low64(&var), PG_UINT64_MAX);
+	EXPECT_EQ_U64(pg_atomic_read_u128_high64(&var), 0);
+
+	/* Neither half may change when the comparison fails. */
+	expected = original;
+	EXPECT_TRUE(!pg_atomic_compare_exchange_u128(&var, &expected, original));
+	EXPECT_TRUE(expected == changed);
+	EXPECT_EQ_U64(pg_atomic_read_u128_low64(&var), PG_UINT64_MAX);
+	EXPECT_EQ_U64(pg_atomic_read_u128_high64(&var), 0);
+}
+#endif							/* PG_HAVE_ATOMIC_U128_SUPPORT */
+
 /*
  * Perform, fairly minimal, testing of the spinlock implementation.
  *
@@ -828,6 +876,10 @@ test_atomic_ops(PG_FUNCTION_ARGS)
 	test_atomic_uint32();
 
 	test_atomic_uint64();
+
+#ifdef PG_HAVE_ATOMIC_U128_SUPPORT
+	test_atomic_uint128();
+#endif
 
 	/*
 	 * Arguably this shouldn't be tested as part of this function, but it's

@@ -2452,6 +2452,23 @@ int64_t expect = 0;
 __atomic_compare_exchange_n(&val, &expect, 37, 0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);'''},
 ]
 
+have_sync_int128_cas = false
+if cdata.has('PG_INT128_TYPE')
+  # Require native CAS, rather than accepting library-emulated operations.
+  atomic_checks += [
+    {'name': 'HAVE_GCC__SYNC_INT128_CAS',
+     'desc': 'native __sync_val_compare_and_swap(int128)',
+     'test': '''
+#ifndef __GCC_HAVE_SYNC_COMPARE_AND_SWAP_16
+#error no native 128-bit compare-and-swap
+#endif
+volatile unsigned @0@ val __attribute__((aligned(16))) = 0;
+return __sync_val_compare_and_swap(&val, 0, 37) != 0;'''.format(cdata.get('PG_INT128_TYPE'))},
+  ]
+else
+  cdata.set('HAVE_GCC__SYNC_INT128_CAS', false)
+endif
+
 foreach check : atomic_checks
   test = '''
 #include <stdint.h>
@@ -2460,12 +2477,20 @@ int main(void)
 @0@
 }'''.format(check['test'])
 
-  cdata.set(check['name'],
-    cc.links(test,
-      name: check['desc'],
-      args: test_c_args) ? 1 : false
-  )
+  have_atomic = cc.links(test,
+    name: check['desc'],
+    args: test_c_args)
+  cdata.set(check['name'], have_atomic ? 1 : false)
+  if check['name'] == 'HAVE_GCC__SYNC_INT128_CAS'
+    have_sync_int128_cas = have_atomic
+  endif
 endforeach
+
+if have_sync_int128_cas
+  message('native 128-bit CAS is available for the compiler target')
+else
+  message('native 128-bit CAS is unavailable; WAL reservation will use spinlock fallback')
+endif
 
 
 ###############################################################

@@ -600,6 +600,28 @@ if test x"$pgac_cv_gcc_sync_int64_cas" = x"yes"; then
   AC_DEFINE(HAVE_GCC__SYNC_INT64_CAS, 1, [Define to 1 if you have __sync_val_compare_and_swap(int64_t *, int64_t, int64_t).])
 fi])# PGAC_HAVE_GCC__SYNC_INT64_CAS
 
+# PGAC_HAVE_GCC__SYNC_INT128_CAS
+# ------------------------------
+# Check for native 128-bit __sync compare-and-swap.  Require the compiler's
+# native-CAS indicator and a successful link, excluding library emulation.
+AC_DEFUN([PGAC_HAVE_GCC__SYNC_INT128_CAS],
+[AC_CACHE_CHECK(for native builtin __sync int128 atomic operations, pgac_cv_gcc_sync_int128_cas,
+[AC_LINK_IFELSE([AC_LANG_PROGRAM([
+#ifndef PG_INT128_TYPE
+#error no usable 128-bit integer type
+#endif
+#ifndef __GCC_HAVE_SYNC_COMPARE_AND_SWAP_16
+#error no native 128-bit compare-and-swap
+#endif
+],
+  [volatile unsigned PG_INT128_TYPE val __attribute__((aligned(16))) = 0;
+   return __sync_val_compare_and_swap(&val, 0, 37) != 0;])],
+  [pgac_cv_gcc_sync_int128_cas="yes"],
+  [pgac_cv_gcc_sync_int128_cas="no"])])
+if test x"$pgac_cv_gcc_sync_int128_cas" = x"yes"; then
+  AC_DEFINE(HAVE_GCC__SYNC_INT128_CAS, 1, [Define to 1 if you have native __sync_val_compare_and_swap for 128-bit integers.])
+fi])# PGAC_HAVE_GCC__SYNC_INT128_CAS
+
 # PGAC_HAVE_GCC__ATOMIC_INT32_CAS
 # -------------------------------
 # Check if the C compiler understands __atomic_compare_exchange_n() for 32bit
