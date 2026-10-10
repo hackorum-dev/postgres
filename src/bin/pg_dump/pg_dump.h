@@ -299,6 +299,16 @@ typedef struct _convInfo
 	const char *rolname;
 } ConvInfo;
 
+/* Per-column NOT NULL constraint facts, independent of CREATE output flags. */
+typedef struct _notNullConstraintInfo
+{
+	bool		present;
+	bool		islocal;
+	bool		noinherit;
+	int			inhcount;
+	struct _constraintInfo *constraint; /* separate invalid definition, if any */
+} NotNullConstraintInfo;
+
 typedef struct _tableInfo
 {
 	/*
@@ -376,6 +386,8 @@ typedef struct _tableInfo
 	bool	   *notnull_invalid;	/* true for NOT NULL NOT VALID */
 	bool	   *notnull_noinh;	/* NOT NULL is NO INHERIT */
 	bool	   *notnull_islocal;	/* true if NOT NULL has local definition */
+	NotNullConstraintInfo *notnullinfo; /* unmodified NOT NULL inheritance
+										 * facts */
 	struct _attrDefInfo **attrdefs; /* DEFAULT expressions */
 	struct _constraintInfo *checkexprs; /* CHECK constraints */
 	struct _relStatsInfo *stats;	/* only set for matviews */
@@ -526,6 +538,10 @@ typedef struct _constraintInfo
 	bool		condeferred;	/* true if constraint is INITIALLY DEFERRED */
 	bool		conperiod;		/* true if the constraint is WITHOUT OVERLAPS */
 	bool		conislocal;		/* true if constraint has local definition */
+	/* Lifecycle facts for table CHECK and invalid NOT NULL constraints. */
+	int			coninhcount;	/* inherited definitions, independent of local */
+	bool		connoinherit;
+	int			conattnum;		/* column number for NOT NULL */
 	bool		separate;		/* true if must dump as separate item */
 } ConstraintInfo;
 
