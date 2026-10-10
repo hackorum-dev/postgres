@@ -574,6 +574,8 @@ static ObjectAddress ATAddCheckNNConstraint(List **wqueue,
 											Constraint *constr,
 											bool recurse, bool recursing, bool is_readd,
 											LOCKMODE lockmode);
+static void ATEnforceMergedCheckConstraint(List **wqueue, Relation rel,
+										   Constraint *constr, bool recurse, LOCKMODE lockmode);
 static ObjectAddress ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab,
 											   Relation rel, Constraint *fkconstraint,
 											   bool recurse, bool recursing,
@@ -1042,6 +1044,7 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 			cooked->attnum = attnum;
 			cooked->expr = colDef->cooked_default;
 			cooked->is_enforced = true;
+			cooked->is_enforcement_merge = false;
 			cooked->skip_validation = false;
 			cooked->is_local = true;	/* not used for defaults */
 			cooked->inhcount = 0;	/* ditto */
@@ -10008,6 +10011,7 @@ ATAddCheckNNConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	List	   *children;
 	ListCell   *child;
 	ObjectAddress address = InvalidObjectAddress;
+	bool		merged = false;
 
 	/* Guard against stack overflow due to overly deep inheritance tree. */
 	check_stack_depth();
@@ -10022,10 +10026,9 @@ ATAddCheckNNConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	 * a copy of the Constraint so transformExpr can't modify the original. It
 	 * returns a list of cooked constraints.
 	 *
-	 * If the constraint ends up getting merged with a pre-existing one, it's
-	 * omitted from the returned list, which is what we want: we do not need
-	 * to do any validation work.  That can only happen at child tables,
-	 * though, since we disallow merging at the top level.
+	 * A merged constraint is normally omitted from the returned list.  A
+	 * merge that starts enforcing a CHECK is returned to propagate its state
+	 * and arrange validation, without adding inheritance links again.
 	 */
 	newcons = AddRelationNewConstraints(rel, NIL,
 										list_make1(copyObject(constr)),
@@ -10042,6 +10045,8 @@ ATAddCheckNNConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	foreach(lcon, newcons)
 	{
 		CookedConstraint *ccon = (CookedConstraint *) lfirst(lcon);
+
+		merged = ccon->is_enforcement_merge;
 
 		if (!ccon->skip_validation && ccon->contype != CONSTR_NOTNULL)
 		{
@@ -10079,12 +10084,14 @@ ATAddCheckNNConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	CommandCounterIncrement();
 
 	/*
-	 * If the constraint got merged with an existing constraint, we're done.
-	 * We mustn't recurse to child tables in this case, because they've
-	 * already got the constraint, and visiting them again would lead to an
-	 * incorrect value for coninhcount.
+	 * If the constraint got merged with an existing constraint, we're done
+	 * after arranging any necessary validation and propagating enforcement.
+	 * Its inheritance links already exist, so do not add the constraint to
+	 * children again: that would incorrectly increase coninhcount.
 	 */
-	if (newcons == NIL)
+	if (merged)
+		ATEnforceMergedCheckConstraint(wqueue, rel, constr, recurse, lockmode);
+	if (newcons == NIL || merged)
 		return address;
 
 	/*
@@ -10135,6 +10142,85 @@ ATAddCheckNNConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	}
 
 	return address;
+}
+
+/*
+ * Propagate an enforced CHECK merge through existing inheritance links.
+ * Visit shared descendants only once, preserving their locality and counts.
+ * Each child's own expression uses its column numbering, which need not match
+ * the parent's.  NOT VALID changes enforcement without scanning existing rows.
+ */
+static void
+ATEnforceMergedCheckConstraint(List **wqueue, Relation rel,
+							   Constraint *constr, bool recurse, LOCKMODE lockmode)
+{
+	List	   *children;
+	Relation	conrel;
+
+	Assert(constr->contype == CONSTR_CHECK && constr->is_enforced);
+	if (constr->is_no_inherit)
+		return;
+
+	children = find_all_inheritors(RelationGetRelid(rel), lockmode, NULL);
+	if (!recurse && list_length(children) > 1)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+				 errmsg("constraint must be added to child tables too")));
+
+	conrel = table_open(ConstraintRelationId, RowExclusiveLock);
+	foreach_oid(childoid, children)
+	{
+		Relation	childrel;
+		Oid			conoid;
+		HeapTuple	tuple;
+		Form_pg_constraint con;
+
+		if (childoid == RelationGetRelid(rel))
+			continue;
+		childrel = table_open(childoid, NoLock);
+		ATSimplePermissions(AT_AddConstraint, childrel,
+							ATT_TABLE | ATT_PARTITIONED_TABLE | ATT_FOREIGN_TABLE);
+		CheckAlterTableIsSafe(childrel);
+		conoid = get_relation_constraint_oid(childoid, constr->conname, false);
+		tuple = SearchSysCacheCopy1(CONSTROID, ObjectIdGetDatum(conoid));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for constraint %u", conoid);
+		con = (Form_pg_constraint) GETSTRUCT(tuple);
+		Assert(con->contype == CONSTRAINT_CHECK && !con->connoinherit);
+
+		if (con->conenforced && !con->convalidated && !constr->skip_validation)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+					 errmsg("constraint \"%s\" conflicts with NOT VALID constraint on relation \"%s\"",
+							constr->conname, RelationGetRelationName(childrel))));
+
+		if (!con->conenforced)
+		{
+			if (!constr->skip_validation &&
+				childrel->rd_rel->relkind == RELKIND_RELATION)
+			{
+				NewConstraint *newcon = palloc0_object(NewConstraint);
+				AlteredTableInfo *childtab = ATGetQueueEntry(wqueue, childrel);
+				Datum		val = SysCacheGetAttrNotNull(CONSTROID, tuple,
+														 Anum_pg_constraint_conbin);
+				char	   *conbin = TextDatumGetCString(val);
+
+				newcon->name = pstrdup(constr->conname);
+				newcon->contype = CONSTR_CHECK;
+				newcon->qual = expand_generated_columns_in_expr(stringToNode(conbin), childrel, 1);
+				childtab->constraints = lappend(childtab->constraints, newcon);
+			}
+			con->conenforced = true;
+			con->convalidated = !constr->skip_validation;
+			CatalogTupleUpdate(conrel, &tuple->t_self, tuple);
+			InvokeObjectPostAlterHook(ConstraintRelationId, conoid, 0);
+			CacheInvalidateRelcacheByRelid(childoid);
+		}
+		heap_freetuple(tuple);
+		table_close(childrel, NoLock);
+	}
+	table_close(conrel, RowExclusiveLock);
+	CommandCounterIncrement();
 }
 
 /*
