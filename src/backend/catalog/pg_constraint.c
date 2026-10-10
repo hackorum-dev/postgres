@@ -874,6 +874,7 @@ RelationGetNotNullConstraints(Oid relid, bool cooked, bool include_noinh)
 			cookedConstr->attnum = colnum;
 			cookedConstr->expr = NULL;
 			cookedConstr->is_enforced = true;
+			cookedConstr->is_enforcement_merge = false;
 			cookedConstr->skip_validation = !conForm->convalidated;
 			cookedConstr->is_local = true;
 			cookedConstr->inhcount = 0;

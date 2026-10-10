@@ -1684,3 +1684,81 @@ select * from tuplesest_tab join
 
 drop table tuplesest_parted;
 drop table tuplesest_tab;
+
+-- Merging a local enforced CHECK must preserve NOT VALID and validate old rows
+-- when validity is requested.  Both operations merge an inherited definition.
+CREATE TABLE check_merge_parent (f1 int CONSTRAINT merge_check CHECK (f1 > 0) NOT ENFORCED);
+CREATE TABLE check_merge_child () INHERITS (check_merge_parent);
+INSERT INTO check_merge_child VALUES (-1);
+ALTER TABLE check_merge_child ADD CONSTRAINT merge_check CHECK (f1 > 0) NOT VALID;
+SELECT conenforced, convalidated, conislocal, coninhcount
+FROM pg_constraint
+WHERE conrelid = 'check_merge_child'::regclass AND contype = 'c';
+SET constraint_exclusion = on;
+SELECT count(*) FROM check_merge_child WHERE f1 < 0;
+RESET constraint_exclusion;
+
+CREATE TABLE check_merge_valid () INHERITS (check_merge_parent);
+INSERT INTO check_merge_valid VALUES (-1);
+ALTER TABLE check_merge_valid ADD CONSTRAINT merge_check CHECK (f1 > 0); -- error
+SELECT conenforced, convalidated, conislocal, coninhcount
+FROM pg_constraint
+WHERE conrelid = 'check_merge_valid'::regclass AND contype = 'c';
+DELETE FROM check_merge_valid;
+INSERT INTO check_merge_valid VALUES (1);
+ALTER TABLE check_merge_valid ADD CONSTRAINT merge_check CHECK (f1 > 0);
+SELECT conenforced, convalidated, conislocal, coninhcount
+FROM pg_constraint
+WHERE conrelid = 'check_merge_valid'::regclass AND contype = 'c';
+DROP TABLE check_merge_parent, check_merge_child, check_merge_valid;
+
+-- Merging on an intermediate table must also enforce and validate descendants.
+-- A diamond tests that existing inheritance counts are not increased, and the
+-- leaf's extra column tests that validation uses its own attribute numbering.
+CREATE TABLE merge_tree_root (f1 int CONSTRAINT tree_check CHECK (f1 > 0) NOT ENFORCED);
+CREATE TABLE merge_tree_mid () INHERITS (merge_tree_root);
+CREATE TABLE merge_tree_left () INHERITS (merge_tree_mid);
+CREATE TABLE merge_tree_right () INHERITS (merge_tree_mid);
+CREATE TABLE merge_tree_leaf (extra int, f1 int CONSTRAINT tree_check CHECK (f1 > 0) NOT ENFORCED);
+ALTER TABLE merge_tree_leaf INHERIT merge_tree_left;
+ALTER TABLE merge_tree_leaf INHERIT merge_tree_right;
+INSERT INTO merge_tree_leaf VALUES (1, -1);
+ALTER TABLE ONLY merge_tree_mid ADD CONSTRAINT tree_check CHECK (f1 > 0); -- error
+ALTER TABLE merge_tree_mid ADD CONSTRAINT tree_check CHECK (f1 > 0); -- error
+SELECT conrelid::regclass, conenforced, convalidated, conislocal, coninhcount
+FROM pg_constraint WHERE conname = 'tree_check' ORDER BY conrelid::regclass::text;
+DELETE FROM merge_tree_leaf;
+INSERT INTO merge_tree_leaf VALUES (-1, 1);
+ALTER TABLE merge_tree_mid ADD CONSTRAINT tree_check CHECK (f1 > 0);
+SELECT conrelid::regclass, conenforced, convalidated, conislocal, coninhcount
+FROM pg_constraint WHERE conname = 'tree_check' ORDER BY conrelid::regclass::text;
+INSERT INTO merge_tree_leaf VALUES (1, -2); -- error
+DROP TABLE merge_tree_leaf, merge_tree_left, merge_tree_right, merge_tree_mid, merge_tree_root;
+
+-- NOT VALID must enforce new rows throughout the subtree without rejecting
+-- old rows.  Stronger, locally enforced descendants retain their valid state.
+CREATE TABLE merge_nv_root (f1 int CONSTRAINT nv_check CHECK (f1 > 0) NOT ENFORCED);
+CREATE TABLE merge_nv_mid () INHERITS (merge_nv_root);
+CREATE TABLE merge_nv_leaf () INHERITS (merge_nv_mid);
+CREATE TABLE merge_nv_strong (f1 int CONSTRAINT nv_check CHECK (f1 > 0));
+ALTER TABLE merge_nv_strong INHERIT merge_nv_mid;
+INSERT INTO merge_nv_leaf VALUES (-1);
+ALTER TABLE ONLY merge_nv_mid ADD CONSTRAINT nv_check CHECK (f1 > 0) NOT VALID; -- error
+ALTER TABLE merge_nv_mid ADD CONSTRAINT nv_check CHECK (f1 > 0) NOT VALID;
+SELECT conrelid::regclass, conenforced, convalidated, conislocal, coninhcount
+FROM pg_constraint WHERE conname = 'nv_check' ORDER BY conrelid::regclass::text;
+INSERT INTO merge_nv_leaf VALUES (-2); -- error
+SET constraint_exclusion = on;
+SELECT count(*) FROM merge_nv_leaf WHERE f1 < 0;
+RESET constraint_exclusion;
+DROP TABLE merge_nv_leaf, merge_nv_strong, merge_nv_mid, merge_nv_root;
+
+-- An already enforced NOT VALID descendant conflicts with a valid parent merge.
+CREATE TABLE merge_conflict_root (f1 int CONSTRAINT conflict_check CHECK (f1 > 0) NOT ENFORCED);
+CREATE TABLE merge_conflict_mid () INHERITS (merge_conflict_root);
+CREATE TABLE merge_conflict_leaf () INHERITS (merge_conflict_mid);
+ALTER TABLE merge_conflict_leaf ADD CONSTRAINT conflict_check CHECK (f1 > 0) NOT VALID;
+ALTER TABLE merge_conflict_mid ADD CONSTRAINT conflict_check CHECK (f1 > 0); -- error
+SELECT conrelid::regclass, conenforced, convalidated, conislocal, coninhcount
+FROM pg_constraint WHERE conname = 'conflict_check' ORDER BY conrelid::regclass::text;
+DROP TABLE merge_conflict_leaf, merge_conflict_mid, merge_conflict_root;
