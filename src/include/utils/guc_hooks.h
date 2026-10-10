@@ -169,6 +169,7 @@ extern bool check_transaction_isolation(int *newval, void **extra, GucSource sou
 extern bool check_transaction_read_only(bool *newval, void **extra, GucSource source);
 extern void assign_transaction_timeout(int newval, void *extra);
 extern bool check_wal_buffers(int *newval, void **extra, GucSource source);
+extern bool check_wal_insert_locks(int *newval, void **extra, GucSource source);
 extern bool check_wal_consistency_checking(char **newval, void **extra,
 										   GucSource source);
 extern void assign_wal_consistency_checking(const char *newval, void *extra);
