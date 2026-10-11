@@ -1,0 +1,4 @@
+comment = 'Test opclass for a lossy GiST index with non-default equality'
+default_version = '1.0'
+module_pathname = '$libdir/test_lossy_gist_ops'
+relocatable = true
