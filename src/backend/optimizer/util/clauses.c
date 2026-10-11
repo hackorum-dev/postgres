@@ -3270,7 +3270,7 @@ eval_const_expressions_mutator(Node *node,
 				/*
 				 * If either argument is NULL they can't be equal, so the
 				 * result is the first argument, relabeled if needed to expose
-				 * the NULLIF's typmod and collation
+				 * the NULLIF's typmod and collation.
 				 */
 				foreach(arg, expr->args)
 				{
@@ -3292,11 +3292,22 @@ eval_const_expressions_mutator(Node *node,
 				 */
 				set_opfuncid((OpExpr *) expr);
 
+				/* Use the original typmod, as for the relabel below */
 				if (!has_nonconst_input &&
 					ece_function_is_safe(expr->opfuncid, context))
-					return ece_evaluate_expr(expr);
+					return (Node *) evaluate_expr((Expr *) expr,
+												  expr->opresulttype,
+												  exprTypmod(node),
+												  expr->opcollid);
 
-				return (Node *) expr;
+				/* Simplifying arguments can change the typmod, so relabel */
+				return applyRelabelType((Node *) expr,
+										expr->opresulttype,
+										exprTypmod(node),
+										expr->opcollid,
+										COERCE_IMPLICIT_CAST,
+										-1,
+										false);
 			}
 		case T_ScalarArrayOpExpr:
 			{
@@ -3766,7 +3777,7 @@ eval_const_expressions_mutator(Node *node,
 				/*
 				 * If no non-FALSE alternatives, CASE reduces to the default
 				 * result, relabeled if needed to expose the CASE's typmod and
-				 * collation
+				 * collation.
 				 */
 				if (newargs == NIL)
 					return applyRelabelType(defresult,
@@ -3784,7 +3795,14 @@ eval_const_expressions_mutator(Node *node,
 				newcase->args = newargs;
 				newcase->defresult = (Expr *) defresult;
 				newcase->location = caseexpr->location;
-				return (Node *) newcase;
+				/* Dropping branches can change the typmod, so relabel */
+				return applyRelabelType((Node *) newcase,
+										caseexpr->casetype,
+										exprTypmod(node),
+										caseexpr->casecollid,
+										COERCE_IMPLICIT_CAST,
+										-1,
+										false);
 			}
 		case T_CaseTestExpr:
 			{
@@ -3864,18 +3882,18 @@ eval_const_expressions_mutator(Node *node,
 
 				/*
 				 * If all the arguments were constant null, the result is just
-				 * null
+				 * null, with the COALESCE's typmod and collation.
 				 */
 				if (newargs == NIL)
 					return (Node *) makeNullConst(coalesceexpr->coalescetype,
-												  -1,
+												  exprTypmod(node),
 												  coalesceexpr->coalescecollid);
 
 				/*
 				 * If there's exactly one surviving argument, we no longer
 				 * need COALESCE at all: the result is that argument,
 				 * relabeled if needed to expose the COALESCE's typmod and
-				 * collation
+				 * collation.
 				 */
 				if (list_length(newargs) == 1)
 					return applyRelabelType((Node *) linitial(newargs),
@@ -3891,7 +3909,14 @@ eval_const_expressions_mutator(Node *node,
 				newcoalesce->coalescecollid = coalesceexpr->coalescecollid;
 				newcoalesce->args = newargs;
 				newcoalesce->location = coalesceexpr->location;
-				return (Node *) newcoalesce;
+				/* Dropping arguments can change the typmod, so relabel */
+				return applyRelabelType((Node *) newcoalesce,
+										coalesceexpr->coalescetype,
+										exprTypmod(node),
+										coalesceexpr->coalescecollid,
+										COERCE_IMPLICIT_CAST,
+										-1,
+										false);
 			}
 		case T_SQLValueFunction:
 			{
