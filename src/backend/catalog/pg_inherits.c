@@ -29,6 +29,7 @@
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/hsearch.h"
+#include "utils/injection_point.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 
@@ -40,6 +41,13 @@ typedef struct SeenRelsEntry
 	Oid			rel_id;			/* relation oid */
 	int			list_index;		/* its position in output list(s) */
 } SeenRelsEntry;
+
+static List *find_inheritance_children_internal(Oid parentrelId,
+												bool omit_detached,
+												LOCKMODE lockmode,
+												bool missing_ok,
+												bool *detached_exist,
+												TransactionId *detached_xmin);
 
 /*
  * find_inheritance_children
@@ -84,6 +92,24 @@ find_inheritance_children_extended(Oid parentrelId, bool omit_detached,
 								   LOCKMODE lockmode, bool *detached_exist,
 								   TransactionId *detached_xmin)
 {
+	return find_inheritance_children_internal(parentrelId, omit_detached,
+											  lockmode, false,
+											  detached_exist, detached_xmin);
+}
+
+/*
+ * find_inheritance_children_internal
+ *
+ * Workhorse for find_inheritance_children_extended.  If missing_ok is true,
+ * a parent relation that doesn't exist (anymore) is treated as having no
+ * children instead of raising an error.
+ */
+static List *
+find_inheritance_children_internal(Oid parentrelId, bool omit_detached,
+								   LOCKMODE lockmode, bool missing_ok,
+								   bool *detached_exist,
+								   TransactionId *detached_xmin)
+{
 	List	   *list = NIL;
 	Relation	relation;
 	SysScanDesc scan;
@@ -94,12 +120,26 @@ find_inheritance_children_extended(Oid parentrelId, bool omit_detached,
 	int			maxoids,
 				numoids,
 				i;
+	bool		hassubclass;
 
 	/*
 	 * Can skip the scan if pg_class shows the relation has never had a
 	 * subclass.
 	 */
-	if (!has_subclass(parentrelId))
+	if (missing_ok)
+	{
+		HeapTuple	classTuple;
+
+		classTuple = SearchSysCache1(RELOID, ObjectIdGetDatum(parentrelId));
+		if (!HeapTupleIsValid(classTuple))
+			return NIL;
+		hassubclass = ((Form_pg_class) GETSTRUCT(classTuple))->relhassubclass;
+		ReleaseSysCache(classTuple);
+	}
+	else
+		hassubclass = has_subclass(parentrelId);
+
+	if (!hassubclass)
 		return NIL;
 
 	/*
@@ -289,8 +329,26 @@ find_all_inheritors(Oid parentrelId, LOCKMODE lockmode, List **numparents)
 		List	   *currentchildren;
 		ListCell   *lc;
 
-		/* Get the direct children of this rel */
-		currentchildren = find_inheritance_children(currentrel, lockmode);
+#ifdef USE_INJECTION_POINTS
+		{
+			char		relstr[12];
+
+			snprintf(relstr, sizeof(relstr), "%u", currentrel);
+			INJECTION_POINT("find-all-inheritors-expand", relstr);
+		}
+#endif
+
+		/*
+		 * Get the direct children of this rel.  With NoLock, a rel found
+		 * below the given one may have been dropped concurrently.  It has no
+		 * children left then, as a table can only be dropped together with
+		 * its children.
+		 */
+		currentchildren =
+			find_inheritance_children_internal(currentrel, true, lockmode,
+											   lockmode == NoLock &&
+											   currentrel != parentrelId,
+											   NULL, NULL);
 
 		/*
 		 * Add to the queue only those children not already seen. This avoids
