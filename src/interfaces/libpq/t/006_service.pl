@@ -241,6 +241,28 @@ $srvfile_win_cared =~ s/\\/\\\\/g;
 		expected_stdout => qr/connect4_1/);
 }
 
+# Check that a service file that is not a plain file is rejected rather
+# than hanging while it is opened or read.
+SKIP:
+{
+	skip "test requires /dev/zero and mkfifo", 2 if $windows_os;
+
+	$dummy_node->connect_fails(
+		q{service=my_srv servicefile=/dev/zero},
+		'connection with character device as servicefile',
+		expected_stderr =>
+		  qr{service file "/dev/zero" is not a plain file});
+
+	my $srvfile_fifo = "$td/pg_service_fifo.conf";
+	system_or_bail('mkfifo', $srvfile_fifo);
+
+	$dummy_node->connect_fails(
+		q{service=my_srv servicefile='} . $srvfile_fifo . q{'},
+		'connection with FIFO as servicefile',
+		expected_stderr =>
+		  qr/service file ".*pg_service_fifo\.conf" is not a plain file/);
+}
+
 $node->teardown_node;
 
 done_testing();
