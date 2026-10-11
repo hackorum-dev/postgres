@@ -4,6 +4,17 @@
 #ifndef __PTHREAD_H
 #define __PTHREAD_H
 
+/*
+ * Rename the emulation functions, so they don't clash with a real pthreads
+ * library on Windows, like PThreads4W, that ends up in the same static link.
+ */
+#define pthread_self pq_pthread_self
+#define pthread_setspecific pq_pthread_setspecific
+#define pthread_getspecific pq_pthread_getspecific
+#define pthread_mutex_init pq_pthread_mutex_init
+#define pthread_mutex_lock pq_pthread_mutex_lock
+#define pthread_mutex_unlock pq_pthread_mutex_unlock
+
 typedef ULONG pthread_key_t;
 
 typedef struct pthread_mutex_t
