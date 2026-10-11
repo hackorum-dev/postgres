@@ -181,7 +181,9 @@ should_refetch_tuple(TM_Result res, TM_FailureData *tmfd)
  * contents, and return true.  Return false otherwise.
  *
  * 'skipduplicates' specifies whether the first matching tuple can be used
- * without comparing it against 'searchslot'. If false, all matching tuples are
+ * without comparing it against 'searchslot', or at worst by comparing just
+ * the index key columns (when the index scan requires a recheck, as with a
+ * lossy GiST index for WITHOUT OVERLAPS). If false, all matching tuples are
  * compared against 'searchslot', which must contain a complete row.
  */
 bool
@@ -222,7 +224,11 @@ retry:
 	{
 		/*
 		 * Avoid expensive equality check if the index is primary key or
-		 * replica identity index.
+		 * replica identity index, unless the index scan indicates that a
+		 * recheck is needed: a lossy index (e.g. a GiST index on a multirange
+		 * column of a WITHOUT OVERLAPS key) cannot prove an exact match, so
+		 * compare the key columns using the index's own equality semantics
+		 * (see repl_index_key_equal).
 		 */
 		if (!skipduplicates)
 		{
@@ -232,6 +238,9 @@ retry:
 			if (!tuples_equal(outslot, searchslot, eq))
 				continue;
 		}
+		else if (scan->xs_recheck &&
+				 !repl_index_key_equal(idxrel, outslot, searchslot, skey))
+			continue;
 
 		ExecMaterializeSlot(outslot);
 
@@ -751,7 +760,11 @@ RelationFindDeletedTupleInfoByIndex(Relation rel, Oid idxoid,
 	{
 		/*
 		 * Avoid expensive equality check if the index is primary key or
-		 * replica identity index.
+		 * replica identity index, unless the index scan indicates that a
+		 * recheck is needed: a lossy index (e.g. a GiST index on a multirange
+		 * column of a WITHOUT OVERLAPS key) cannot prove an exact match, so
+		 * compare the key columns using the index's own equality semantics
+		 * (see repl_index_key_equal).
 		 */
 		if (!skipduplicates)
 		{
@@ -761,6 +774,9 @@ RelationFindDeletedTupleInfoByIndex(Relation rel, Oid idxoid,
 			if (!tuples_equal(scanslot, searchslot, eq))
 				continue;
 		}
+		else if (scan->xs_recheck &&
+				 !repl_index_key_equal(idxrel, scanslot, searchslot, skey))
+			continue;
 
 		update_most_recent_deletion_info(scanslot, oldestxmin, delete_xid,
 										 delete_time, delete_origin);
