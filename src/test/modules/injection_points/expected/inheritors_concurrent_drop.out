@@ -1,0 +1,25 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_vacuum s2_drop s2_wakeup
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step s1_vacuum: VACUUM root; <waiting ...>
+step s2_drop: DROP TABLE p2;
+step s2_wakeup: 
+	SELECT injection_points_detach('find-inheritance-children-before-scan');
+	SELECT injection_points_wakeup('find-inheritance-children-before-scan');
+
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step s1_vacuum: <... completed>

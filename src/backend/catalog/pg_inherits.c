@@ -29,6 +29,7 @@
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/hsearch.h"
+#include "utils/injection_point.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 
@@ -88,18 +89,29 @@ find_inheritance_children_extended(Oid parentrelId, bool omit_detached,
 	Relation	relation;
 	SysScanDesc scan;
 	ScanKeyData key[1];
+	HeapTuple	classTuple;
 	HeapTuple	inheritsTuple;
 	Oid			inhrelid;
 	Oid		   *oidarr;
 	int			maxoids,
 				numoids,
 				i;
+	bool		hassubclass;
 
 	/*
 	 * Can skip the scan if pg_class shows the relation has never had a
 	 * subclass.
+	 *
+	 * find_all_inheritors() with NoLock doesn't lock the relations below the
+	 * first level before expanding them, so the relation may have been
+	 * dropped concurrently.  It has no children then either.
 	 */
-	if (!has_subclass(parentrelId))
+	classTuple = SearchSysCache1(RELOID, ObjectIdGetDatum(parentrelId));
+	if (!HeapTupleIsValid(classTuple))
+		return NIL;
+	hassubclass = ((Form_pg_class) GETSTRUCT(classTuple))->relhassubclass;
+	ReleaseSysCache(classTuple);
+	if (!hassubclass)
 		return NIL;
 
 	/*
@@ -108,6 +120,15 @@ find_inheritance_children_extended(Oid parentrelId, bool omit_detached,
 	maxoids = 32;
 	oidarr = palloc_array(Oid, maxoids);
 	numoids = 0;
+
+#ifdef USE_INJECTION_POINTS
+	{
+		char		parentstr[12];
+
+		snprintf(parentstr, sizeof(parentstr), "%u", parentrelId);
+		INJECTION_POINT("find-inheritance-children-before-scan", parentstr);
+	}
+#endif
 
 	relation = table_open(InheritsRelationId, AccessShareLock);
 
