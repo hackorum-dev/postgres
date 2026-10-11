@@ -3,7 +3,8 @@
 # Test that heap operations clearing visibility map bits (INSERT, UPDATE,
 # DELETE, SELECT FOR UPDATE, COPY) correctly register visibility map buffers,
 # since incremental backups rely on the WAL summarizer, which only tracks
-# registered buffers.
+# registered buffers.  Also test that the WAL summarizer tracks the VM page
+# whose tail bits are cleared by a heap truncation.
 
 use strict;
 use warnings FATAL => 'all';
@@ -14,12 +15,15 @@ use Test::More;
 my $tempdir = PostgreSQL::Test::Utils::tempdir_short();
 my $mode = $ENV{PG_TEST_PG_COMBINEBACKUP_MODE} || '--copy';
 
-# Set up primary with WAL summarization enabled.
+# Set up primary with WAL summarization enabled.  Data checksums and
+# wal_log_hints are off because with either of them truncation logs an image
+# of the VM page it modifies, which would hide what the TRUNCATE test checks.
 my $primary = PostgreSQL::Test::Cluster->new('primary');
-$primary->init(allows_streaming => 1);
+$primary->init(allows_streaming => 1, extra => ['--no-data-checksums']);
 $primary->append_conf('postgresql.conf', <<EOF);
 summarize_wal = on
 autovacuum = off
+wal_log_hints = off
 EOF
 $primary->start;
 
@@ -93,6 +97,25 @@ my @tests = (
 		visible_op => '<',
 		frozen_op => '<',
 	},
+	{
+		label => 'TRUNCATE',
+		table => 'vm_truncate_test',
+		# vacuum_truncate = off keeps the empty tail around until the
+		# explicit VACUUM (TRUNCATE), so that the truncation is the only
+		# change to the VM between the two backups.
+		setup => q{CREATE TABLE vm_truncate_test (id int)
+				WITH (vacuum_truncate = off);
+			INSERT INTO vm_truncate_test SELECT generate_series(1, 2000);
+			DELETE FROM vm_truncate_test WHERE id > 1000;},
+		modify => q{VACUUM (TRUNCATE) vm_truncate_test},
+		# Extend the restored table again with rows nobody can see. Stale VM
+		# bits for the truncated blocks would cover these new pages.
+		post_restore => q{BEGIN;
+			INSERT INTO vm_truncate_test SELECT generate_series(1, 1000);
+			ROLLBACK;},
+		visible_op => '<',
+		frozen_op => '<',
+	},
 );
 
 sub get_vm_summary
@@ -161,6 +184,9 @@ sub validate_restored_vm
 		"$test->{label} test: restored all_visible count matches primary");
 	is($restored_frozen, $primary_frozen,
 		"$test->{label} test: restored all_frozen count matches primary");
+
+	$restored->safe_psql('postgres', $test->{post_restore})
+	  if defined $test->{post_restore};
 
 	my $corrupt_tids = $restored->safe_psql('postgres',
 		"SELECT count(*) FROM pg_check_visible('$test->{table}')");
