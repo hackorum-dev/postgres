@@ -23,6 +23,15 @@ typedef bool pthread_once_t;
 #define PTHREAD_MUTEX_INITIALIZER	{ 0 }
 #define PTHREAD_ONCE_INIT			false
 
+/*
+ * Rename the emulation functions, so they don't clash with libpq's or with a
+ * real pthreads library, like PThreads4W, that ends up in the same static
+ * link.
+ */
+#define pthread_mutex_init ecpg_pthread_mutex_init
+#define pthread_mutex_lock ecpg_pthread_mutex_lock
+#define pthread_mutex_unlock ecpg_pthread_mutex_unlock
+
 int			pthread_mutex_init(pthread_mutex_t *, void *attr);
 int			pthread_mutex_lock(pthread_mutex_t *);
 int			pthread_mutex_unlock(pthread_mutex_t *);
