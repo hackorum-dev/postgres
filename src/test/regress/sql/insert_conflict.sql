@@ -92,6 +92,21 @@ explain (costs off) insert into insertconflict_nn values(1, 'x') on conflict (a)
 drop table insertconflict_nn;
 
 --
+-- Index expressions whose typmod changes when partially simplified can be
+-- inferred
+--
+create table insertconflict_typmod (a varchar(20) not null, b varchar(20));
+create unique index typmod_coalesce_key on insertconflict_typmod(coalesce(null::varchar, a, b));
+create unique index typmod_case_key on insertconflict_typmod((case when false then null::varchar when a is not null then a else b end));
+create unique index typmod_null_key on insertconflict_typmod(coalesce((case when a is not null then null::varchar(5) else b end)::varchar(20)));
+
+explain (costs off) insert into insertconflict_typmod values('x', 'y') on conflict (coalesce(null::varchar, a, b)) do nothing;
+explain (costs off) insert into insertconflict_typmod values('x', 'y') on conflict ((case when false then null::varchar when a is not null then a else b end)) do nothing;
+explain (costs off) insert into insertconflict_typmod values('x', 'y') on conflict (coalesce((case when a is not null then null::varchar(5) else b end)::varchar(20))) do nothing;
+
+drop table insertconflict_typmod;
+
+--
 -- Single key tests
 --
 create unique index key_index on insertconflicttest(key);

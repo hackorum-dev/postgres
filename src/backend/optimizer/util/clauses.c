@@ -3779,7 +3779,14 @@ eval_const_expressions_mutator(Node *node,
 				newcase->args = newargs;
 				newcase->defresult = (Expr *) defresult;
 				newcase->location = caseexpr->location;
-				return (Node *) newcase;
+				/* Dropping branches can change the typmod, so relabel */
+				return applyRelabelType((Node *) newcase,
+										caseexpr->casetype,
+										exprTypmod(node),
+										caseexpr->casecollid,
+										COERCE_IMPLICIT_CAST,
+										-1,
+										false);
 			}
 		case T_CaseTestExpr:
 			{
@@ -3859,11 +3866,11 @@ eval_const_expressions_mutator(Node *node,
 
 				/*
 				 * If all the arguments were constant null, the result is just
-				 * null
+				 * null, with the COALESCE's typmod and collation
 				 */
 				if (newargs == NIL)
 					return (Node *) makeNullConst(coalesceexpr->coalescetype,
-												  -1,
+												  exprTypmod(node),
 												  coalesceexpr->coalescecollid);
 
 				/*
@@ -3886,7 +3893,14 @@ eval_const_expressions_mutator(Node *node,
 				newcoalesce->coalescecollid = coalesceexpr->coalescecollid;
 				newcoalesce->args = newargs;
 				newcoalesce->location = coalesceexpr->location;
-				return (Node *) newcoalesce;
+				/* Dropping arguments can change the typmod, so relabel */
+				return applyRelabelType((Node *) newcoalesce,
+										coalesceexpr->coalescetype,
+										exprTypmod(node),
+										coalesceexpr->coalescecollid,
+										COERCE_IMPLICIT_CAST,
+										-1,
+										false);
 			}
 		case T_SQLValueFunction:
 			{
