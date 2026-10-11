@@ -28,6 +28,7 @@ test_install_data += files(
 
 injection_points_isolation = [
   'basic',
+  'inheritors_concurrent_drop',
   'inplace',
   'reindex_concurrently_deferred',
   'repack',
