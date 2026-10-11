@@ -6065,8 +6065,21 @@ parseServiceFile(const char *serviceFile,
 	FILE	   *f;
 	char	   *line;
 	char		buf[1024];
+	struct stat stat_buf;
 
 	*group_found = false;
+
+	/*
+	 * Reject anything that is not a plain file before opening it.  Opening a
+	 * FIFO blocks until a writer appears, and reading a character device such
+	 * as /dev/zero never reaches EOF, either of which would hang the caller
+	 * with no way to interrupt it.
+	 */
+	if (stat(serviceFile, &stat_buf) == 0 && !S_ISREG(stat_buf.st_mode))
+	{
+		libpq_append_error(errorMessage, "service file \"%s\" is not a plain file", serviceFile);
+		return 1;
+	}
 
 	f = fopen(serviceFile, "r");
 	if (f == NULL)
