@@ -1162,7 +1162,22 @@ jsonb_build_object_worker(int nargs, const Datum *args, const bool *nulls, const
 
 		/* we need to save skipped keys for the key uniqueness check */
 		if (skip && !unique_keys)
+		{
+			JsonTypeCategory tcategory;
+			Oid			outfuncoid;
+
+			/* Validate the key type without converting the omitted key. */
+			json_categorize_type(types[i], true, &tcategory, &outfuncoid);
+			if (tcategory == JSONTYPE_ARRAY ||
+				tcategory == JSONTYPE_COMPOSITE ||
+				tcategory == JSONTYPE_JSON ||
+				tcategory == JSONTYPE_JSONB ||
+				tcategory == JSONTYPE_CAST)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("key value must be scalar, not array, composite, or json")));
 			continue;
+		}
 
 		add_jsonb(args[i], false, &result, types[i], true);
 
