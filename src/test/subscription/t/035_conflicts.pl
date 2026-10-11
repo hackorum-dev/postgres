@@ -440,6 +440,101 @@ $node_A->safe_psql('postgres', "DROP TABLE tab_defer");
 $node_B->safe_psql('postgres', "DROP TABLE tab_defer");
 
 ###############################################################################
+# Check that when the replica identity index cannot be used to find deleted
+# tuples (see IsIndexUsableForFindingDeletedTuple), the sequential scan
+# compares the key columns using the index's equality semantics (the opclass's
+# equality operator and the index column's collation), the same as the index
+# scan would.  This requires ICU for a nondeterministic collation.
+#
+# The replica identity index uses a case-insensitive collation that differs
+# from the key column's attcollation ("C"), so that the two notions of
+# equality diverge: 'abc' and 'ABC' are equal under the index's collation but
+# not under the column's.  The index is created after the conflict detection
+# slot's xmin is pinned, so the sequential scan is used; the locally deleted
+# row 'ABC' must still be reported as update_deleted for the publisher's key
+# 'abc', exactly as if the index had been used.
+###############################################################################
+if ($ENV{with_icu} eq 'yes')
+{
+	# Publisher table holding the lowercase row.
+	$node_B->safe_psql(
+		'postgres', qq[
+		CREATE TABLE tab_coll (k text PRIMARY KEY, v int);
+		INSERT INTO tab_coll VALUES ('abc', 1);
+		ALTER PUBLICATION tap_pub_B ADD TABLE tab_coll;
+	]);
+
+	$node_A->safe_psql(
+		'postgres', qq[
+		CREATE COLLATION coll_ci (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+		CREATE TABLE tab_coll (k text COLLATE "C" NOT NULL, v int);
+	]);
+
+	$node_A->safe_psql('postgres',
+		"ALTER SUBSCRIPTION $subname_AB REFRESH PUBLICATION WITH (copy_data = false)"
+	);
+	$node_A->wait_for_subscription_sync($node_B, $subname_AB);
+
+	# Pin the conflict detection slot's xmin: hold an open transaction with an
+	# assigned transaction ID so that oldest_nonremovable_xid cannot advance
+	# past it.  An index created afterwards has a pg_index.xmin greater than
+	# the slot's xmin and is therefore not used to find deleted tuples,
+	# forcing the sequential scan.
+	my $holder = $node_A->background_psql('postgres');
+	$holder->query_safe('BEGIN');
+	my $pinned_xid = $holder->query_safe('SELECT txid_current()');
+
+	ok( $node_A->poll_query_until(
+			'postgres',
+			"SELECT xmin::text = '$pinned_xid' FROM pg_replication_slots WHERE slot_name = 'pg_conflict_detection'"
+		),
+		"conflict detection slot xmin pinned at $pinned_xid");
+
+	# Late replica identity index with the case-insensitive collation.
+	$node_A->safe_psql(
+		'postgres', qq[
+		CREATE UNIQUE INDEX tab_coll_ri ON tab_coll (k COLLATE coll_ci);
+		ALTER TABLE tab_coll REPLICA IDENTITY USING INDEX tab_coll_ri;
+	]);
+
+	# Insert and locally delete a row that is equal to the publisher's key
+	# only under the index's collation.
+	$node_A->safe_psql(
+		'postgres', qq[
+		INSERT INTO tab_coll VALUES ('ABC', 1);
+		DELETE FROM tab_coll WHERE k = 'ABC';
+	]);
+
+	$log_location = -s $node_A->logfile;
+
+	# The publisher updates its row; the old key sent is 'abc'.
+	$node_B->safe_psql('postgres', "UPDATE tab_coll SET v = 2 WHERE k = 'abc'");
+
+	$node_B->wait_for_catchup($subname_AB);
+
+	$logfile = slurp_file($node_A->logfile(), $log_location);
+
+	like(
+		$logfile,
+		qr/conflict detected on relation "public.tab_coll": conflict=update_deleted.*
+.*DETAIL:.* Could not find the row to be updated: remote row \(abc, 2\), replica identity \(k\)=\(abc\).
+.*The row to be updated was deleted locally in transaction [0-9]+ at .*/,
+		'update_deleted detected via sequential scan with index equality semantics'
+	);
+
+	# Clean up
+	$holder->query_safe('COMMIT');
+	ok($holder->quit, 'release the pinned transaction');
+	$node_B->safe_psql('postgres',
+		"ALTER PUBLICATION tap_pub_B DROP TABLE tab_coll");
+	$node_A->safe_psql('postgres',
+		"ALTER SUBSCRIPTION $subname_AB REFRESH PUBLICATION");
+	$node_A->safe_psql('postgres', "DROP TABLE tab_coll");
+	$node_B->safe_psql('postgres', "DROP TABLE tab_coll");
+	$node_A->safe_psql('postgres', "DROP COLLATION coll_ci");
+}
+
+###############################################################################
 # Check that the xmin value of the conflict detection slot can be advanced when
 # the subscription has no tables.
 ###############################################################################

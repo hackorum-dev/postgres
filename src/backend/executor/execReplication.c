@@ -39,7 +39,9 @@
 
 
 static bool tuples_equal(TupleTableSlot *slot1, TupleTableSlot *slot2,
-						 TypeCacheEntry **eq, Bitmapset *columns);
+						 TypeCacheEntry **eq);
+static bool repl_index_key_equal(Relation idxrel, TupleTableSlot *slot1,
+								 TupleTableSlot *slot2, ScanKey skey);
 
 /*
  * Setup a ScanKey for a search in the relation 'rel' for a tuple 'key' that
@@ -227,7 +229,7 @@ retry:
 			if (eq == NULL)
 				eq = palloc0_array(TypeCacheEntry *, outslot->tts_tupleDescriptor->natts);
 
-			if (!tuples_equal(outslot, searchslot, eq, NULL))
+			if (!tuples_equal(outslot, searchslot, eq))
 				continue;
 		}
 
@@ -283,13 +285,9 @@ retry:
 
 /*
  * Compare the tuples in the slots by checking if they have equal values.
- *
- * If 'columns' is not null, only the columns specified within it will be
- * considered for the equality check, ignoring all other columns.
  */
 static bool
-tuples_equal(TupleTableSlot *slot1, TupleTableSlot *slot2,
-			 TypeCacheEntry **eq, Bitmapset *columns)
+tuples_equal(TupleTableSlot *slot1, TupleTableSlot *slot2, TypeCacheEntry **eq)
 {
 	int			attrnum;
 
@@ -312,14 +310,6 @@ tuples_equal(TupleTableSlot *slot1, TupleTableSlot *slot2,
 		 * those
 		 */
 		if (att->attisdropped || att->attgenerated)
-			continue;
-
-		/*
-		 * Ignore columns that are not listed for checking.
-		 */
-		if (columns &&
-			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
-						   columns))
 			continue;
 
 		/*
@@ -352,6 +342,51 @@ tuples_equal(TupleTableSlot *slot1, TupleTableSlot *slot2,
 											att->attcollation,
 											slot1->tts_values[attrnum],
 											slot2->tts_values[attrnum])))
+			return false;
+	}
+
+	return true;
+}
+
+/*
+ * Compare the key columns of index 'idxrel' between the two slots, using the
+ * equality operators and collations of the scan key 'skey' built by
+ * build_replindex_scan_key().
+ */
+static bool
+repl_index_key_equal(Relation idxrel, TupleTableSlot *slot1,
+					 TupleTableSlot *slot2, ScanKey skey)
+{
+	Assert(slot1->tts_tupleDescriptor->natts ==
+		   slot2->tts_tupleDescriptor->natts);
+
+	for (int i = 0; i < idxrel->rd_index->indnkeyatts; i++)
+	{
+		AttrNumber	keycol = idxrel->rd_index->indkey.values[i];
+		Datum		value1;
+		Datum		value2;
+		bool		isnull1;
+		bool		isnull2;
+
+		value1 = slot_getattr(slot1, keycol, &isnull1);
+		value2 = slot_getattr(slot2, keycol, &isnull2);
+
+		/*
+		 * If one value is NULL and other is not, then they are certainly not
+		 * equal
+		 */
+		if (isnull1 != isnull2)
+			return false;
+
+		/*
+		 * If both are NULL, they can be considered equal.
+		 */
+		if (isnull1 || isnull2)
+			continue;
+
+		if (!DatumGetBool(FunctionCall2Coll(&skey[i].sk_func,
+											skey[i].sk_collation,
+											value1, value2)))
 			return false;
 	}
 
@@ -398,7 +433,7 @@ retry:
 	/* Try to find the tuple */
 	while (table_scan_getnextslot(scan, ForwardScanDirection, scanslot))
 	{
-		if (!tuples_equal(scanslot, searchslot, eq, NULL))
+		if (!tuples_equal(scanslot, searchslot, eq))
 			continue;
 
 		found = true;
@@ -537,8 +572,8 @@ update_most_recent_deletion_info(TupleTableSlot *scanslot,
  * that deleted this tuple.
  *
  * If 'identidxoid' is valid, it is the replica identity or primary key
- * index, and only its key columns are compared. Otherwise, all columns are
- * compared.
+ * index, and only its key columns are compared, using the index's equality
+ * semantics (see repl_index_key_equal). Otherwise, all columns are compared.
  *
  * 'oldestxmin' acts as a cutoff transaction ID. Tuples deleted by transactions
  * with IDs >= 'oldestxmin' are considered recently dead and are eligible for
@@ -576,8 +611,9 @@ RelationFindDeletedTupleInfoSeq(Relation rel, Oid identidxoid,
 {
 	TupleTableSlot *scanslot;
 	TableScanDesc scan;
-	TypeCacheEntry **eq;
-	Bitmapset  *indexbitmap = NULL;
+	TypeCacheEntry **eq = NULL;
+	ScanKeyData skey[INDEX_MAX_KEYS];
+	Relation	idxrel = NULL;
 	TupleDesc	desc PG_USED_FOR_ASSERTS_ONLY = RelationGetDescr(rel);
 
 	Assert(equalTupleDescs(desc, searchslot->tts_tupleDescriptor));
@@ -593,11 +629,16 @@ RelationFindDeletedTupleInfoSeq(Relation rel, Oid identidxoid,
 	 * tuple is not required, since the remote tuple might not include all
 	 * column values. Instead, the indexed columns alone are sufficient to
 	 * identify the target tuple (see logicalrep_rel_mark_updatable).
+	 *
+	 * The comparison must use the index's equality semantics (the opclass's
+	 * equality operator and the index column's collation) so that the result
+	 * matches what RelationFindDeletedTupleInfoByIndex() would have reported
+	 * had the index been usable.
 	 */
 	if (OidIsValid(identidxoid))
 	{
 		/* The index must have been locked already */
-		Relation	idxrel = index_open(identidxoid, NoLock);
+		idxrel = index_open(identidxoid, NoLock);
 
 		/*
 		 * The index may no longer be the replica identity if DROP INDEX
@@ -609,15 +650,17 @@ RelationFindDeletedTupleInfoSeq(Relation rel, Oid identidxoid,
 		Assert(heap_attisnull(idxrel->rd_indextuple, Anum_pg_index_indpred,
 							  NULL));
 
-		for (int i = 0; i < idxrel->rd_index->indnkeyatts; i++)
-			indexbitmap = bms_add_member(indexbitmap,
-										 idxrel->rd_index->indkey.values[i] -
-										 FirstLowInvalidHeapAttributeNumber);
-
-		index_close(idxrel, NoLock);
+		/*
+		 * Build a scan key from the remote tuple, carrying the index's
+		 * per-column equality operators and collations for
+		 * repl_index_key_equal() to compare the key columns below.
+		 */
+		(void) build_replindex_scan_key(skey, rel, idxrel, searchslot);
 	}
-
-	eq = palloc0_array(TypeCacheEntry *, searchslot->tts_tupleDescriptor->natts);
+	else
+	{
+		eq = palloc0_array(TypeCacheEntry *, searchslot->tts_tupleDescriptor->natts);
+	}
 
 	/*
 	 * Start a heap scan using SnapshotAny to identify dead tuples that are
@@ -634,7 +677,12 @@ RelationFindDeletedTupleInfoSeq(Relation rel, Oid identidxoid,
 	/* Try to find the tuple */
 	while (table_scan_getnextslot(scan, ForwardScanDirection, scanslot))
 	{
-		if (!tuples_equal(scanslot, searchslot, eq, indexbitmap))
+		if (idxrel)
+		{
+			if (!repl_index_key_equal(idxrel, scanslot, searchslot, skey))
+				continue;
+		}
+		else if (!tuples_equal(scanslot, searchslot, eq))
 			continue;
 
 		update_most_recent_deletion_info(scanslot, oldestxmin, delete_xid,
@@ -643,6 +691,9 @@ RelationFindDeletedTupleInfoSeq(Relation rel, Oid identidxoid,
 
 	table_endscan(scan);
 	ExecDropSingleTupleTableSlot(scanslot);
+
+	if (idxrel)
+		index_close(idxrel, NoLock);
 
 	return *delete_time != 0;
 }
@@ -707,7 +758,7 @@ RelationFindDeletedTupleInfoByIndex(Relation rel, Oid idxoid,
 			if (eq == NULL)
 				eq = palloc0_array(TypeCacheEntry *, scanslot->tts_tupleDescriptor->natts);
 
-			if (!tuples_equal(scanslot, searchslot, eq, NULL))
+			if (!tuples_equal(scanslot, searchslot, eq))
 				continue;
 		}
 
