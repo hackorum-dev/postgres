@@ -1,0 +1,57 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_vacuum s2_drop s2_wakeup
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step s1_vacuum: VACUUM root; <waiting ...>
+step s2_drop: DROP TABLE b;
+step s2_wakeup: 
+	SELECT injection_points_detach('find-all-inheritors-expand');
+	SELECT injection_points_wakeup('find-all-inheritors-expand');
+
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step s1_vacuum: <... completed>
+
+starting permutation: s1_pubtables s2_drop s2_wakeup
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step s1_pubtables: 
+	SELECT tablename FROM pg_publication_tables WHERE pubname = 'pub'
+	ORDER BY tablename;
+ <waiting ...>
+step s2_drop: DROP TABLE b;
+step s2_wakeup: 
+	SELECT injection_points_detach('find-all-inheritors-expand');
+	SELECT injection_points_wakeup('find-all-inheritors-expand');
+
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step s1_pubtables: <... completed>
+tablename
+---------
+a1       
+(1 row)
+

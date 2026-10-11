@@ -20,6 +20,7 @@ REGRESS_OPTS = --dlpath=$(top_builddir)/src/test/regress
 WAIT_CLEANUP_TST = $(if $(filter win32,$(PORTNAME)),,wait_cleanup)
 
 ISOLATION = basic \
+	    inheritors_concurrent_drop \
 	    inplace \
 	    reindex_concurrently_deferred \
 	    reindex_concurrently_toast \
