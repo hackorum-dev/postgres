@@ -45,6 +45,26 @@ typedef struct QueryDesc
 	int			query_instr_options;	/* OR of InstrumentOption flags for
 										 * query_instr */
 
+	/*
+	 * Nesting level at which this query was started, or -1 if not set.
+	 *
+	 * A query can end at a different nesting level than it started at.  For
+	 * example, a WITH HOLD cursor declared at top level is closed at COMMIT.
+	 * An extension that needs the starting level in ExecutorEnd can save it
+	 * here from its ExecutorStart hook.
+	 *
+	 * A statement sent by the client is at level 0, and so is one run by
+	 * EXECUTE.  A query started by another statement, while that statement is
+	 * being planned, executed or processed as a utility command, is one level
+	 * deeper.  For example, the query of a top-level DECLARE CURSOR, EXPLAIN
+	 * or CREATE TABLE AS is at level 1, and so is a query run by a function
+	 * called from a top-level statement.  This is how, for example,
+	 * pg_stat_statements counts levels.
+	 *
+	 * An extension that counts levels differently must not set this field.
+	 */
+	int			start_nesting_level;
+
 	/* These fields are set by ExecutorStart */
 	TupleDesc	tupDesc;		/* descriptor for result tuples */
 	EState	   *estate;			/* executor's query-wide state */
