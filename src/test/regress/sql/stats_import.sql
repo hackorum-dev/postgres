@@ -2898,4 +2898,48 @@ SELECT * FROM stats_import.test_range_expr_null
 SELECT COUNT(*) FROM stats_import.test_range_expr_null
   WHERE (rng * int4range(50, 150)) && '[60,70)'::int4range;
 
+-- Extended statistics restored from a table with different attribute
+-- numbers.  The source numbers are translated by column name.
+CREATE TABLE stats_import.test_attnum_map (junk int, a int, b int, c int);
+ALTER TABLE stats_import.test_attnum_map DROP COLUMN junk;
+CREATE STATISTICS stats_import.stat_attnum_map (ndistinct, dependencies)
+  ON a, b, c FROM stats_import.test_attnum_map;
+-- ok: in the source, a, b, c were attributes 1, 2, 3, now they are 2, 3, 4
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_attnum_map',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'stat_attnum_map',
+  'inherited', false,
+  'stxkeys', '{1,2,3}'::smallint[],
+  'stxkeynames', '{a,b,c}'::text[],
+  'n_distinct', '[{"attributes": [1, 2], "ndistinct": 4},
+                  {"attributes": [1, 3], "ndistinct": 5},
+                  {"attributes": [2, 3], "ndistinct": 6},
+                  {"attributes": [1, 2, 3], "ndistinct": 7}]'::pg_ndistinct,
+  'dependencies', '[{"attributes": [1], "dependency": 3, "degree": 0.5}]'::pg_dependencies);
+SELECT n_distinct, dependencies FROM pg_stats_ext
+  WHERE statistics_schemaname = 'stats_import'
+    AND statistics_name = 'stat_attnum_map';
+-- warn: attribute 4 is not one of the source keys
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_attnum_map',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'stat_attnum_map',
+  'inherited', false,
+  'stxkeys', '{1,2,3}'::smallint[],
+  'stxkeynames', '{a,b,c}'::text[],
+  'n_distinct', '[{"attributes": [1, 4], "ndistinct": 4}]'::pg_ndistinct);
+-- warn: a source column name that does not exist here
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_attnum_map',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'stat_attnum_map',
+  'inherited', false,
+  'stxkeys', '{1,2,3}'::smallint[],
+  'stxkeynames', '{a,b,zzz}'::text[],
+  'n_distinct', '[{"attributes": [1, 2], "ndistinct": 4}]'::pg_ndistinct);
+
 DROP SCHEMA stats_import CASCADE;
