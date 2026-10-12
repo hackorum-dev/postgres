@@ -1220,6 +1220,12 @@ json_build_object_worker(int nargs, const Datum *args, const bool *nulls, const 
 		bool		skip;
 		int			key_offset;
 
+		/* Keys must not be null, even if their values are skipped. */
+		if (nulls[i])
+			ereport(ERROR,
+					(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+					 errmsg("null value not allowed for object key")));
+
 		/* Skip null values if absent_on_null */
 		skip = absent_on_null && nulls[i + 1];
 
@@ -1239,11 +1245,6 @@ json_build_object_worker(int nargs, const Datum *args, const bool *nulls, const 
 		}
 
 		/* process key */
-		if (nulls[i])
-			ereport(ERROR,
-					(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
-					 errmsg("null value not allowed for object key")));
-
 		/* save key offset before appending it */
 		key_offset = out->len;
 

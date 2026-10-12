@@ -397,6 +397,15 @@ LINE 1: SELECT JSON_OBJECT('foo': NULL::jsonb FORMAT JSON ENCODING U...
                                               ^
 SELECT JSON_OBJECT(NULL: 1);
 ERROR:  null value not allowed for object key
+-- NULL keys are invalid even if their values would be omitted.
+SELECT JSON_OBJECT(NULL: NULL ABSENT ON NULL);
+ERROR:  null value not allowed for object key
+SELECT JSON_OBJECT(NULL: NULL ABSENT ON NULL RETURNING jsonb);
+ERROR:  argument 1: key must not be null
+SELECT JSON_OBJECT(NULL: NULL ABSENT ON NULL WITH UNIQUE KEYS);
+ERROR:  null value not allowed for object key
+SELECT JSON_OBJECT(NULL: NULL ABSENT ON NULL WITH UNIQUE KEYS RETURNING jsonb);
+ERROR:  argument 1: key must not be null
 SELECT JSON_OBJECT('a': 2 + 3);
  json_object 
 -------------
