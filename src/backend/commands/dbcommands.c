@@ -1904,15 +1904,6 @@ dropdb(const char *dbname, bool missing_ok, bool force)
 	CatalogTupleDelete(pgdbrel, &tup->t_self);
 	heap_freetuple(tup);
 
-	/* Log the LSN captured before the database was marked invalid */
-	if (log_object_drops)
-		ereport(LOG,
-				(errmsg("database \"%s\" (OID %u) dropped, lsn=%X/%08X",
-						dbname, db_id, LSN_FORMAT_ARGS(drop_lsn)),
-				 errhint("To recover to the point before this drop, use recovery_target_lsn = '%X/%08X' "
-						 "with recovery_target_inclusive = false.",
-						 LSN_FORMAT_ARGS(drop_lsn))));
-
 	/*
 	 * Drop db-specific replication slots.
 	 */
@@ -1946,6 +1937,15 @@ dropdb(const char *dbname, bool missing_ok, bool force)
 	 * Remove all tablespace subdirs belonging to the database.
 	 */
 	remove_dbtablespaces(db_id);
+
+	/* Log the LSN captured before the database was marked invalid */
+	if (log_object_drops)
+		ereport(LOG,
+				(errmsg("database \"%s\" (OID %u) dropped, lsn=%X/%08X",
+						dbname, db_id, LSN_FORMAT_ARGS(drop_lsn)),
+				 errhint("To recover to the point before this drop, use recovery_target_lsn = '%X/%08X' "
+						 "with recovery_target_inclusive = false.",
+						 LSN_FORMAT_ARGS(drop_lsn))));
 
 	/*
 	 * Close pg_database, but keep lock till commit.
