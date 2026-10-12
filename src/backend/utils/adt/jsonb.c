@@ -1709,6 +1709,7 @@ jsonb_object_agg_finalfn(PG_FUNCTION_ARGS)
 	JsonbAggState *arg;
 	JsonbInState result;
 	Jsonb	   *out;
+	int			npairs;
 
 	/* cannot be called directly because of internal-type argument */
 	Assert(AggCheckCallContext(fcinfo, NULL));
@@ -1719,17 +1720,23 @@ jsonb_object_agg_finalfn(PG_FUNCTION_ARGS)
 	arg = (JsonbAggState *) PG_GETARG_POINTER(0);
 
 	/*
-	 * The final function can be called more than once, so we must not change
-	 * the stored JsonbValue data structure.  Fortunately, the WJB_END_OBJECT
-	 * action will only destructively change fields in the JsonbInState struct
-	 * itself, so we can simply invoke pushJsonbValue on a local copy of that.
-	 * Note that this will run uniqueifyJsonbObject each time; that's hard to
-	 * avoid, since duplicate pairs may have been added since the previous
-	 * finalization.  We assume uniqueifyJsonbObject can be applied repeatedly
-	 * (with the same unique_keys/skip_nulls options) without damaging the
-	 * data structure.
+	 * The final function can be called more than once, for example once per
+	 * row in a window, so the stored state must not change.  The
+	 * WJB_END_OBJECT action runs uniqueifyJsonbObject, which sorts and
+	 * shrinks the pairs array in place, so work on a copy of the top parse
+	 * state and its pairs. The object is the only open container, so there is
+	 * no outer state.
 	 */
+	Assert(arg->pstate.parseState != NULL &&
+		   arg->pstate.parseState->next == NULL);
 	result = arg->pstate;
+	result.parseState = palloc_object(JsonbParseState);
+	*result.parseState = *arg->pstate.parseState;
+	npairs = arg->pstate.parseState->contVal.val.object.nPairs;
+	result.parseState->contVal.val.object.pairs = palloc_array(JsonbPair, npairs);
+	memcpy(result.parseState->contVal.val.object.pairs,
+		   arg->pstate.parseState->contVal.val.object.pairs,
+		   npairs * sizeof(JsonbPair));
 
 	pushJsonbValue(&result, WJB_END_OBJECT, NULL);
 
