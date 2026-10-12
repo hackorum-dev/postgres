@@ -513,6 +513,21 @@ cvt_timestamptz_timestamp(Datum input)
 
 	result = timestamptz2timestamp_safe(val, (Node *) &escontext);
 	/* We can ignore errors, since result is useful as-is */
+
+	/*
+	 * In the repeated hour at the end of DST, the comparison operators map a
+	 * local timestamp to the later of its two instants.  The result must not
+	 * map to a later instant than "val", or entries in between are skipped.
+	 */
+	if (!escontext.error_occurred && !TIMESTAMP_NOT_FINITE(result))
+	{
+		TimestampTz back;
+
+		back = timestamp2timestamptz_safe(result, (Node *) &escontext);
+		if (!escontext.error_occurred && back > val &&
+			back - val <= result - MIN_TIMESTAMP)
+			result -= back - val;
+	}
 	return TimestampGetDatum(result);
 }
 
