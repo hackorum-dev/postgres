@@ -323,8 +323,7 @@ sub switch_server_cert
 	my %params = @_;
 	my $pgdata = $node->data_dir;
 
-	ok(unlink($node->data_dir . '/sslconfig.conf'));
-	$node->append_conf('sslconfig.conf', 'ssl=on');
+	$node->replace_conf('sslconfig.conf', 'ssl=on');
 	$node->append_conf('sslconfig.conf', $backend->set_server_cert(\%params));
 	# use lists of ECDH curves and cipher suites for syntax testing
 	$node->append_conf('sslconfig.conf', 'ssl_groups=prime256v1:secp521r1');
@@ -357,8 +356,7 @@ sub _configure_hba_for_ssl
 	# but seems best to keep it as narrow as possible for security reasons.
 	#
 	# When connecting to certdb, also check the client certificate.
-	ok(unlink($node->data_dir . '/pg_hba.conf'));
-	$node->append_conf(
+	$node->replace_conf(
 		'pg_hba.conf', <<EOF
 # TYPE  DATABASE      USER            ADDRESS       METHOD         OPTIONS
 hostssl trustdb       md5testuser     $servercidr   md5
@@ -374,8 +372,7 @@ EOF
 	);
 
 	# Also set the ident maps. Note: fields with commas must be quoted
-	ok(unlink($node->data_dir . '/pg_ident.conf'));
-	$node->append_conf(
+	$node->replace_conf(
 		'pg_ident.conf', <<EOF
 # MAPNAME SYSTEM-USERNAME                                         PG-USERNAME
 dn        "CN=ssltestuser-dn,OU=Testing,OU=Engineering,O=PGDG"    ssltestuser
