@@ -424,6 +424,14 @@ SELECT jsonb_object_agg(name, type) FROM foo;
 -- edge case for parser
 SELECT jsonb_object_agg(DISTINCT 'a', 'abc');
 
+-- window use runs the final function once per row, repeated keys must win
+SELECT g, jsonb_object_agg(k, v) OVER (ORDER BY g)
+FROM (VALUES (1,'a',1),(1,'a',2),(1,'a',3),(1,'b',5),(2,'b',6),(3,'a',7)) t(g,k,v);
+SELECT count(*) FILTER (WHERE w IS DISTINCT FROM
+  (SELECT jsonb_object_agg('k' || (j % 8), j ORDER BY j) FROM generate_series(1, i) j))
+FROM (SELECT i, jsonb_object_agg('k' || (i % 8), i) OVER (ORDER BY i) AS w
+      FROM generate_series(1, 120) i) s;
+
 -- jsonb_object
 
 -- empty object, one dimension
