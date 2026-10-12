@@ -3552,6 +3552,19 @@ adjust_group_pathkeys_for_groupagg(PlannerInfo *root)
 		return;
 
 	/*
+	 * query_planner() can call us again after removing a join, so forget what
+	 * an earlier call marked.
+	 */
+	foreach(lc, root->agginfos)
+	{
+		AggInfo    *agginfo = lfirst_node(AggInfo, lc);
+		ListCell   *lc2;
+
+		foreach(lc2, agginfo->aggrefs)
+			lfirst_node(Aggref, lc2)->aggpresorted = false;
+	}
+
+	/*
 	 * Make a first pass over all AggInfos to collect a Bitmapset containing
 	 * the indexes of all AggInfos to be processed below.
 	 */
