@@ -80,8 +80,7 @@ END
 my $port = $webserver->port();
 my $issuer = "http://127.0.0.1:$port";
 
-unlink($node->data_dir . '/pg_hba.conf');
-$node->append_conf(
+$node->replace_conf(
 	'pg_hba.conf', qq{
 local all test oauth issuer="$issuer" scope="openid postgres"
 });
@@ -114,8 +113,7 @@ $node->connect_fails(
 # Switch to HTTPS.
 $issuer = "https://127.0.0.1:$port";
 
-unlink($node->data_dir . '/pg_hba.conf');
-$node->append_conf(
+$node->replace_conf(
 	'pg_hba.conf', qq{
 local all test      oauth issuer="$issuer"       scope="openid postgres"
 local all testalt   oauth issuer="$issuer/.well-known/oauth-authorization-server/alternate" scope="openid postgres alt"
@@ -703,15 +701,13 @@ $bgconn->query_safe("ALTER SYSTEM RESET oauth_validator.invalid_hba");
 #
 
 # Allow "user@example.com" to log in under the test role.
-unlink($node->data_dir . '/pg_ident.conf');
-$node->append_conf(
+$node->replace_conf(
 	'pg_ident.conf', qq{
 oauthmap	user\@example.com	test
 });
 
 # test and testalt use the map; testparam uses ident delegation.
-unlink($node->data_dir . '/pg_hba.conf');
-$node->append_conf(
+$node->replace_conf(
 	'pg_hba.conf', qq{
 local all test      oauth issuer="$issuer" scope="" map=oauthmap
 local all testalt   oauth issuer="$issuer" scope="" map=oauthmap
@@ -772,8 +768,7 @@ $bgconn->quit;    # the tests below restart the server
 # Test validator-specific HBA options.
 #
 
-unlink($node->data_dir . '/pg_hba.conf');
-$node->append_conf(
+$node->replace_conf(
 	'pg_hba.conf', qq{
 local all test    oauth issuer="$issuer" scope="openid postgres" delegate_ident_mapping=1 \\
                         validator.authn_id="ignored" validator.authn_id="other-identity"
@@ -801,8 +796,7 @@ $node->connect_ok(
 	]);
 
 # bad syntax
-unlink($node->data_dir . '/pg_hba.conf');
-$node->append_conf(
+$node->replace_conf(
 	'pg_hba.conf', qq{
 local all testalt oauth issuer="$issuer" scope="openid postgres" validator.=1
 });
@@ -813,8 +807,7 @@ $node->log_check("empty HBA option name",
 	$log_start,
 	log_like => [qr/invalid OAuth validator option name: "validator\."/]);
 
-unlink($node->data_dir . '/pg_hba.conf');
-$node->append_conf(
+$node->replace_conf(
 	'pg_hba.conf', qq{
 local all testalt oauth issuer="$issuer" scope="openid postgres" validator.@@=1
 });
@@ -826,8 +819,7 @@ $node->log_check("invalid HBA option name",
 	log_like => [qr/invalid OAuth validator option name: "validator\.@@"/]);
 
 # unknown settings (validation is deferred to connect time)
-unlink($node->data_dir . '/pg_hba.conf');
-$node->append_conf(
+$node->replace_conf(
 	'pg_hba.conf', qq{
 local all testalt oauth issuer="$issuer" scope="openid postgres" \\
                         validator.log=ignored validator.bad=1
@@ -860,8 +852,7 @@ $log_start = $node->wait_for_log(
 	qr/authentication method "oauth" requires option "validator" to be set/,
 	$log_start);
 
-unlink($node->data_dir . '/pg_hba.conf');
-$node->append_conf(
+$node->replace_conf(
 	'pg_hba.conf', qq{
 local all test    oauth validator=validator      issuer="$issuer"           scope="openid postgres"
 local all testalt oauth validator=fail_validator issuer="$issuer/.well-known/oauth-authorization-server/alternate" scope="openid postgres alt"
@@ -891,8 +882,7 @@ $node->connect_fails(
 #
 $node->append_conf('postgresql.conf',
 	"oauth_validator_libraries = 'magic_validator'\n");
-unlink($node->data_dir . '/pg_hba.conf');
-$node->append_conf(
+$node->replace_conf(
 	'pg_hba.conf', qq{
 local all test    oauth validator=magic_validator      issuer="$issuer"           scope="openid postgres"
 });
