@@ -2275,6 +2275,15 @@ SELECT pg_restore_extended_stats(
          versions of <productname>PostgreSQL</productname>.
         </para>
         <para>
+         The arguments <literal>stxkeys</literal> of type
+         <type>smallint[]</type> and <literal>stxkeynames</literal> of type
+         <type>text[]</type> give the column numbers and column names of the
+         statistics object in the source database, in the same order.  When
+         both are present, the column numbers in <literal>n_distinct</literal>
+         and <literal>dependencies</literal> are translated to the numbers of
+         the columns with the same names in this database.
+        </para>
+        <para>
          Minor errors are reported as a <literal>WARNING</literal> and
          ignored, and remaining statistics will still be restored. If all
          specified statistics are successfully restored, returns

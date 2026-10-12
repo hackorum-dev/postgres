@@ -50,6 +50,8 @@ enum extended_stats_argnum
 	STATSCHEMA_ARG,
 	STATNAME_ARG,
 	INHERITED_ARG,
+	STXKEYS_ARG,
+	STXKEYNAMES_ARG,
 	NDISTINCT_ARG,
 	DEPENDENCIES_ARG,
 	MOST_COMMON_VALS_ARG,
@@ -70,6 +72,8 @@ static struct StatsArgInfo extarginfo[] =
 	[STATSCHEMA_ARG] = {"statistics_schemaname", TEXTOID},
 	[STATNAME_ARG] = {"statistics_name", TEXTOID},
 	[INHERITED_ARG] = {"inherited", BOOLOID},
+	[STXKEYS_ARG] = {"stxkeys", INT2ARRAYOID},
+	[STXKEYNAMES_ARG] = {"stxkeynames", TEXTARRAYOID},
 	[NDISTINCT_ARG] = {"n_distinct", PG_NDISTINCTOID},
 	[DEPENDENCIES_ARG] = {"dependencies", PG_DEPENDENCIESOID},
 	[MOST_COMMON_VALS_ARG] = {"most_common_vals", TEXTARRAYOID},
@@ -122,6 +126,10 @@ static const char *extexprargname[NUM_ATTRIBUTE_STATS_ELEMS] =
 };
 
 static bool extended_statistics_update(FunctionCallInfo fcinfo);
+static bool remap_stxkey_attnums(AttrNumber *attnums, int n,
+								 const AttrNumber *srckeys,
+								 const AttrNumber *dstkeys, int nkeys,
+								 const char *typname);
 
 static HeapTuple get_pg_statistic_ext(Relation pg_stext, Oid nspoid,
 									  const char *stxname);
@@ -302,6 +310,45 @@ upsert_pg_statistic_ext_data(const Datum *values, const bool *nulls,
 }
 
 /*
+ * Translate positive attribute numbers in "attnums" from the numbering used
+ * by the source of the statistics to the numbering of this server.  Source
+ * key srckeys[i] maps to dstkeys[i].  Negative numbers refer to expressions
+ * and are left alone.
+ * Returns false (after a WARNING) if a number is not among the source keys.
+ */
+static bool
+remap_stxkey_attnums(AttrNumber *attnums, int n,
+					 const AttrNumber *srckeys, const AttrNumber *dstkeys,
+					 int nkeys, const char *typname)
+{
+	for (int i = 0; i < n; i++)
+	{
+		int			k;
+
+		if (attnums[i] <= 0)
+			continue;
+
+		for (k = 0; k < nkeys; k++)
+		{
+			if (srckeys[k] == attnums[i])
+				break;
+		}
+
+		if (k == nkeys)
+		{
+			ereport(WARNING,
+					errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+					errmsg("could not validate \"%s\" object: invalid attribute number %d found",
+						   typname, attnums[i]));
+			return false;
+		}
+		attnums[i] = dstkeys[k];
+	}
+
+	return true;
+}
+
+/*
  * Insert or update an extended statistics object.
  *
  * Major errors, such as the table not existing or permission errors, are
@@ -344,6 +391,9 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 	Oid		   *atttypcolls = NULL;
 	Oid			relid;
 	Oid			locked_table = InvalidOid;
+	AttrNumber *srckeys = NULL;
+	AttrNumber *dstkeys = NULL;
+	int			nsrckeys = 0;
 
 	/*
 	 * Fill out the StakindFlags "has" structure based on which parameters
@@ -570,6 +620,82 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 	}
 
 	/*
+	 * If the caller gave us the attribute numbers and names of the keys of
+	 * the statistics object it was dumped from, build the translation to our
+	 * attribute numbers, matching columns by name.  The MCV list is stored by
+	 * position in stxkeys, so it can only be used if the order is the same.
+	 */
+	if (!PG_ARGISNULL(STXKEYS_ARG) || !PG_ARGISNULL(STXKEYNAMES_ARG))
+	{
+		bool		keys_ok = !PG_ARGISNULL(STXKEYS_ARG) &&
+			!PG_ARGISNULL(STXKEYNAMES_ARG);
+		bool		order_differs = false;
+
+		if (keys_ok)
+		{
+			ArrayType  *keys_arr = PG_GETARG_ARRAYTYPE_P(STXKEYS_ARG);
+			ArrayType  *names_arr = PG_GETARG_ARRAYTYPE_P(STXKEYNAMES_ARG);
+
+			keys_ok = ARR_NDIM(keys_arr) <= 1 && ARR_NDIM(names_arr) <= 1 &&
+				!array_contains_nulls(keys_arr) &&
+				!array_contains_nulls(names_arr) &&
+				ArrayGetNItems(ARR_NDIM(keys_arr), ARR_DIMS(keys_arr)) == numattnums &&
+				ArrayGetNItems(ARR_NDIM(names_arr), ARR_DIMS(names_arr)) == numattnums;
+
+			if (keys_ok)
+			{
+				Datum	   *names;
+				int			nnames;
+
+				deconstruct_array_builtin(names_arr, TEXTOID, &names, NULL,
+										  &nnames);
+				srckeys = palloc_array(AttrNumber, numattnums);
+				dstkeys = palloc_array(AttrNumber, numattnums);
+				nsrckeys = numattnums;
+
+				for (int i = 0; i < numattnums; i++)
+				{
+					char	   *attname = TextDatumGetCString(names[i]);
+
+					srckeys[i] = ((int16 *) ARR_DATA_PTR(keys_arr))[i];
+					dstkeys[i] = get_attnum(relid, attname);
+					if (dstkeys[i] == InvalidAttrNumber)
+					{
+						keys_ok = false;
+						break;
+					}
+					if (i > 0 && dstkeys[i] < dstkeys[i - 1])
+						order_differs = true;
+				}
+			}
+		}
+
+		if (!keys_ok)
+		{
+			ereport(WARNING,
+					errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					errmsg("could not use \"%s\" and \"%s\": they do not match extended statistics object \"%s.%s\"",
+						   extarginfo[STXKEYS_ARG].argname,
+						   extarginfo[STXKEYNAMES_ARG].argname,
+						   nspname, stxname));
+			has.ndistinct = false;
+			has.dependencies = false;
+			has.mcv = false;
+			success = false;
+		}
+		else if (order_differs && has.mcv)
+		{
+			ereport(WARNING,
+					errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					errmsg("could not restore \"%s\" for extended statistics object \"%s.%s\": column order differs from the source",
+						   extarginfo[MOST_COMMON_VALS_ARG].argname,
+						   nspname, stxname));
+			has.mcv = false;
+			success = false;
+		}
+	}
+
+	/*
 	 * Either of these statistic types requires that we supply a semi-filled
 	 * VacAttrStatsP array.
 	 *
@@ -658,8 +784,21 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 		Datum		ndistinct_datum = PG_GETARG_DATUM(NDISTINCT_ARG);
 		bytea	   *data = DatumGetByteaPP(ndistinct_datum);
 		MVNDistinct *ndistinct = statext_ndistinct_deserialize(data);
+		bool		remapped = true;
 
-		if (statext_ndistinct_validate(ndistinct, &stxform->stxkeys,
+		if (srckeys != NULL)
+		{
+			for (uint32 i = 0; i < ndistinct->nitems && remapped; i++)
+				remapped = remap_stxkey_attnums(ndistinct->items[i].attributes,
+												ndistinct->items[i].nattributes,
+												srckeys, dstkeys, nsrckeys,
+												"pg_ndistinct");
+			if (remapped)
+				ndistinct_datum = PointerGetDatum(statext_ndistinct_serialize(ndistinct));
+		}
+
+		if (remapped &&
+			statext_ndistinct_validate(ndistinct, &stxform->stxkeys,
 									   numexprs, WARNING))
 		{
 			values[Anum_pg_statistic_ext_data_stxdndistinct - 1] = ndistinct_datum;
@@ -677,8 +816,21 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 		Datum		dependencies_datum = PG_GETARG_DATUM(DEPENDENCIES_ARG);
 		bytea	   *data = DatumGetByteaPP(dependencies_datum);
 		MVDependencies *dependencies = statext_dependencies_deserialize(data);
+		bool		remapped = true;
 
-		if (statext_dependencies_validate(dependencies, &stxform->stxkeys,
+		if (srckeys != NULL)
+		{
+			for (uint32 i = 0; i < dependencies->ndeps && remapped; i++)
+				remapped = remap_stxkey_attnums(dependencies->deps[i]->attributes,
+												dependencies->deps[i]->nattributes,
+												srckeys, dstkeys, nsrckeys,
+												"pg_dependencies");
+			if (remapped)
+				dependencies_datum = PointerGetDatum(statext_dependencies_serialize(dependencies));
+		}
+
+		if (remapped &&
+			statext_dependencies_validate(dependencies, &stxform->stxkeys,
 										  numexprs, WARNING))
 		{
 			values[Anum_pg_statistic_ext_data_stxddependencies - 1] = dependencies_datum;
@@ -756,6 +908,10 @@ cleanup:
 		heap_freetuple(tup);
 	if (pg_stext != NULL)
 		table_close(pg_stext, RowExclusiveLock);
+	if (srckeys != NULL)
+		pfree(srckeys);
+	if (dstkeys != NULL)
+		pfree(dstkeys);
 	if (atttypids != NULL)
 		pfree(atttypids);
 	if (atttypmods != NULL)
