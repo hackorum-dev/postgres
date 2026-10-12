@@ -1722,6 +1722,7 @@ match_unique_clauses(PlannerInfo *root, RelOptInfo *outer, List *uclauses,
 	{
 		Expr	   *clause;
 		Node	   *iclause;
+		OpExpr	   *opexpr;
 		Node	   *c1;
 		bool		matched = false;
 
@@ -1731,6 +1732,7 @@ match_unique_clauses(PlannerInfo *root, RelOptInfo *outer, List *uclauses,
 		Assert(bms_is_empty(rinfo->left_relids) ^
 			   bms_is_empty(rinfo->right_relids));
 
+		opexpr = castNode(OpExpr, rinfo->clause);
 		clause = (Expr *) copyObject(rinfo->clause);
 		ChangeVarNodes((Node *) clause, relid, outer->relid, 0);
 
@@ -1745,6 +1747,7 @@ match_unique_clauses(PlannerInfo *root, RelOptInfo *outer, List *uclauses,
 		 */
 		foreach_node(RestrictInfo, orinfo, outer->baserestrictinfo)
 		{
+			OpExpr	   *oexpr;
 			Node	   *oclause;
 			Node	   *c2;
 
@@ -1753,6 +1756,15 @@ match_unique_clauses(PlannerInfo *root, RelOptInfo *outer, List *uclauses,
 				continue;
 
 			Assert(is_opclause(orinfo->clause));
+
+			oexpr = castNode(OpExpr, orinfo->clause);
+			/*
+			 * Matching operands are not sufficient: the equality operator and
+			 * input collation must also match to ensure equivalent restrictions.
+			 */
+			if (oexpr->opno != opexpr->opno ||
+				oexpr->inputcollid != opexpr->inputcollid)
+				continue;
 
 			oclause = bms_is_empty(orinfo->left_relids) ?
 				get_rightop(orinfo->clause) : get_leftop(orinfo->clause);

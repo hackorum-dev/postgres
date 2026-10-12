@@ -3964,6 +3964,89 @@ FROM sje_agg a JOIN sje_agg a2 ON a.id = a2.id;
 EXPLAIN (COSTS OFF)
 SELECT a1.a FROM sj a1,sj a2 WHERE (a1.a=a2.a) FOR UPDATE;
 
+-- Self-join elimination must not accept a removed-side restriction clause
+-- with a different equality operator than the clause
+-- that matched the unique index on the kept side.
+CREATE FUNCTION sje_ci_eq(text, text) RETURNS boolean
+  LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL SAFE
+  AS $$
+  BEGIN
+    RETURN lower($1) = lower($2);
+  END $$;
+
+CREATE FUNCTION sje_ci_cmp(text, text) RETURNS int
+  LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+  AS $$SELECT CASE WHEN lower($1) < lower($2) THEN -1
+                   WHEN lower($1) > lower($2) THEN 1 ELSE 0 END$$;
+CREATE FUNCTION sje_ci_lt(text, text) RETURNS boolean
+  LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+  AS $$SELECT lower($1) < lower($2)$$;
+CREATE FUNCTION sje_ci_le(text, text) RETURNS boolean
+  LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+  AS $$SELECT lower($1) <= lower($2)$$;
+CREATE FUNCTION sje_ci_ge(text, text) RETURNS boolean
+  LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+  AS $$SELECT lower($1) >= lower($2)$$;
+CREATE FUNCTION sje_ci_gt(text, text) RETURNS boolean
+  LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+  AS $$SELECT lower($1) > lower($2)$$;
+CREATE OPERATOR === (LEFTARG=text, RIGHTARG=text, PROCEDURE=sje_ci_eq,
+                     COMMUTATOR='===', RESTRICT=eqsel, JOIN=eqjoinsel, MERGES);
+CREATE OPERATOR <# (LEFTARG=text, RIGHTARG=text,
+                      PROCEDURE=sje_ci_lt);
+CREATE OPERATOR <=# (LEFTARG=text, RIGHTARG=text,
+                      PROCEDURE=sje_ci_le);
+CREATE OPERATOR >=# (LEFTARG=text, RIGHTARG=text,
+                      PROCEDURE=sje_ci_ge);
+CREATE OPERATOR ># (LEFTARG=text, RIGHTARG=text,
+                      PROCEDURE=sje_ci_gt);
+CREATE OPERATOR FAMILY sje_ci_text_fam USING btree;
+CREATE OPERATOR CLASS sje_ci_text_ops FOR TYPE text USING btree
+  FAMILY sje_ci_text_fam AS
+  OPERATOR 1 <#, OPERATOR 2 <=#, OPERATOR 3 ===,
+  OPERATOR 4 >=#, OPERATOR 5 >#,
+  FUNCTION 1 sje_ci_cmp;
+
+CREATE TABLE sje_ci (id int, a text COLLATE "C", b int);
+CREATE UNIQUE INDEX sje_ci_a_idx ON sje_ci (a);
+INSERT INTO sje_ci VALUES (1, 'a', 1), (2, 'A', 1), (3, 'b', 2);
+ANALYZE sje_ci;
+
+-- 'a' and 'A' are different rows for the index's equality, but equal under
+-- ===, so the join of p1 (a === 'a') with p2 (a = 'a') must keep both.
+SELECT p1.id, p1.a, p2.id, p2.a
+FROM sje_ci p1 JOIN sje_ci p2 ON p1.b = p2.b
+WHERE p1.a === 'a' AND p2.a = 'a'
+ORDER BY 1, 3;
+
+-- Same operator on both sides still doesn't prove uniqueness against the
+-- standard index, so the join is kept here too.
+SELECT p1.id, p1.a, p2.id, p2.a
+FROM sje_ci p1 JOIN sje_ci p2 ON p1.b = p2.b
+WHERE p1.a === 'a' AND p2.a === 'a'
+ORDER BY 1, 3;
+
+-- Identical clauses on both sides allow the self-join to be removed.
+EXPLAIN (COSTS OFF)
+SELECT p1.id, p2.id
+FROM sje_ci p1 JOIN sje_ci p2 ON p1.b = p2.b
+WHERE p1.a = 'a' AND p2.a = 'a';
+
+DROP TABLE sje_ci;
+DROP OPERATOR CLASS sje_ci_text_ops USING btree;
+DROP OPERATOR FAMILY sje_ci_text_fam USING btree;
+DROP OPERATOR === (text, text);
+DROP OPERATOR <# (text, text);
+DROP OPERATOR <=# (text, text);
+DROP OPERATOR >=# (text, text);
+DROP OPERATOR ># (text, text);
+DROP FUNCTION sje_ci_eq(text, text);
+DROP FUNCTION sje_ci_cmp(text, text);
+DROP FUNCTION sje_ci_lt(text, text);
+DROP FUNCTION sje_ci_le(text, text);
+DROP FUNCTION sje_ci_ge(text, text);
+DROP FUNCTION sje_ci_gt(text, text);
+
 reset enable_hashjoin;
 reset enable_mergejoin;
 
