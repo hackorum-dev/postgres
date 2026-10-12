@@ -18500,6 +18500,35 @@ dumpStatisticsExtStats(Archive *fout, const StatsExtInfo *statsextinfo)
 		else
 			appendPQExpBufferStr(pq, "false AS inherited, ");
 
+		/*
+		 * The source attribute numbers and names of the statistics object's
+		 * keys, so that restore can translate attribute numbers inside
+		 * n_distinct and dependencies.  pg_statistic_ext.stxkeys exists in
+		 * every version that has extended statistics.
+		 */
+		appendPQExpBufferStr(pq,
+							 "( "
+							 "SELECT pg_catalog.string_to_array("
+							 "s.stxkeys::pg_catalog.text, ' ')::pg_catalog.text "
+							 "FROM pg_catalog.pg_statistic_ext AS s "
+							 "JOIN pg_catalog.pg_namespace AS n "
+							 "ON n.oid = s.stxnamespace "
+							 "WHERE n.nspname = $1 AND s.stxname = $2 "
+							 ") AS stxkeys, "
+							 "( "
+							 "SELECT pg_catalog.array_agg(a.attname::pg_catalog.text "
+							 "ORDER BY k.ord)::pg_catalog.text "
+							 "FROM pg_catalog.pg_statistic_ext AS s "
+							 "JOIN pg_catalog.pg_namespace AS n "
+							 "ON n.oid = s.stxnamespace "
+							 "CROSS JOIN LATERAL pg_catalog.unnest("
+							 "s.stxkeys::pg_catalog.int2[]) "
+							 "WITH ORDINALITY AS k(attnum, ord) "
+							 "JOIN pg_catalog.pg_attribute AS a "
+							 "ON a.attrelid = s.stxrelid AND a.attnum = k.attnum "
+							 "WHERE n.nspname = $1 AND s.stxname = $2 "
+							 ") AS stxkeynames, ");
+
 		/*--------
 		 * The ndistinct and dependencies formats changed in v19, so
 		 * everything before that needs to be translated.
@@ -18657,6 +18686,8 @@ dumpStatisticsExtStats(Archive *fout, const StatsExtInfo *statsextinfo)
 		PQExpBuffer out = createPQExpBuffer();
 
 		int			i_inherited = PQfnumber(res, "inherited");
+		int			i_stxkeys = PQfnumber(res, "stxkeys");
+		int			i_stxkeynames = PQfnumber(res, "stxkeynames");
 		int			i_ndistinct = PQfnumber(res, "n_distinct");
 		int			i_dependencies = PQfnumber(res, "dependencies");
 		int			i_mcv = PQfnumber(res, "most_common_vals");
@@ -18689,6 +18720,15 @@ dumpStatisticsExtStats(Archive *fout, const StatsExtInfo *statsextinfo)
 			appendStringLiteralAH(out, statsextinfo->dobj.name, fout);
 			appendNamedArgument(out, fout, "inherited", "boolean",
 								PQgetvalue(res, i, i_inherited));
+
+			if (!PQgetisnull(res, i, i_stxkeys) &&
+				!PQgetisnull(res, i, i_stxkeynames))
+			{
+				appendNamedArgument(out, fout, "stxkeys", "smallint[]",
+									PQgetvalue(res, i, i_stxkeys));
+				appendNamedArgument(out, fout, "stxkeynames", "text[]",
+									PQgetvalue(res, i, i_stxkeynames));
+			}
 
 			if (!PQgetisnull(res, i, i_ndistinct))
 				appendNamedArgument(out, fout, "n_distinct", "pg_ndistinct",
