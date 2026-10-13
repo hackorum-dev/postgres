@@ -649,6 +649,7 @@ DatumTupleFields
 DbInfo
 DbInfoArr
 DbLocaleInfo
+DbOidName
 DdlOptType
 DdlOption
 DeClonePtrType
