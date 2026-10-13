@@ -36,8 +36,115 @@
 #include "parser/parse_relation.h"
 #include "partitioning/partdesc.h"
 #include "partitioning/partprune.h"
+#include "nodes/nodeFuncs.h"
+#include "partitioning/partbounds.h"
+#include "utils/array.h"
+#include "utils/guc.h"
+#include "utils/lsyscache.h"
 #include "utils/rel.h"
 
+
+/*
+ * MEASUREMENT PROTOTYPE ONLY -- not a proposal.
+ *
+ * When the placeholder GUC "proto.restrict_saop" is "on", reduce a live HASH
+ * partition's "partkey = ANY (const array)" qual to the array elements that
+ * hash to that partition, using the same hash computation that pruning uses
+ * to select the partition.  Single-column hash partitioning only; any other
+ * shape is left untouched.  It exists to bound what a per-child
+ * simplification could gain, measured end to end.
+ */
+static void
+proto_restrict_child_saop(PlannerInfo *root, RelOptInfo *parent,
+						  RelOptInfo *child, int partidx)
+{
+	const char *opt = GetConfigOption("proto.restrict_saop", true, false);
+	PartitionScheme ps = parent->part_scheme;
+	AppendRelInfo *appinfo;
+	Node	   *keyexpr;
+	ListCell   *lc;
+
+	if (opt == NULL || strcmp(opt, "on") != 0)
+		return;
+	if (ps == NULL || ps->strategy != PARTITION_STRATEGY_HASH ||
+		ps->partnatts != 1 || parent->boundinfo == NULL ||
+		parent->partexprs == NULL || parent->partexprs[0] == NIL)
+		return;
+
+	appinfo = root->append_rel_array[child->relid];
+	keyexpr = adjust_appendrel_attrs(root,
+									 (Node *) linitial(parent->partexprs[0]),
+									 1, &appinfo);
+
+	foreach(lc, child->baserestrictinfo)
+	{
+		RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
+		ScalarArrayOpExpr *saop;
+		ScalarArrayOpExpr *newsaop;
+		Const	   *arr;
+		ArrayType  *at;
+		Oid			elemtype;
+		int16		typlen;
+		bool		typbyval;
+		char		typalign;
+		Datum	   *elems;
+		bool	   *nulls;
+		int			nelems;
+		int			nkeep = 0;
+		Datum	   *keep;
+
+		if (!IsA(rinfo->clause, ScalarArrayOpExpr))
+			continue;
+		saop = (ScalarArrayOpExpr *) rinfo->clause;
+		if (!saop->useOr || list_length(saop->args) != 2 ||
+			!IsA(lsecond(saop->args), Const) ||
+			!equal(strip_implicit_coercions(linitial(saop->args)), keyexpr) ||
+			!op_in_opfamily(saop->opno, ps->partopfamily[0]))
+			continue;
+		arr = (Const *) lsecond(saop->args);
+		if (arr->constisnull)
+			continue;
+		at = DatumGetArrayTypeP(arr->constvalue);
+		elemtype = ARR_ELEMTYPE(at);
+		if (elemtype != ps->partopcintype[0])
+			continue;
+		get_typlenbyvalalign(elemtype, &typlen, &typbyval, &typalign);
+		deconstruct_array(at, elemtype, typlen, typbyval, typalign,
+						  &elems, &nulls, &nelems);
+		keep = palloc_array(Datum, nelems);
+		for (int k = 0; k < nelems; k++)
+		{
+			bool		isnull = false;
+			uint64		h;
+
+			if (nulls[k])
+				continue;		/* NULL never satisfies "=" */
+			h = compute_partition_hash_value(1, ps->partsupfunc,
+											 ps->partcollation,
+											 &elems[k], &isnull);
+			if (parent->boundinfo->indexes[h % parent->boundinfo->nindexes] == partidx)
+				keep[nkeep++] = elems[k];
+		}
+		if (nkeep == 0 || nkeep == nelems)
+			continue;
+
+		newsaop = copyObject(saop);
+		newsaop->args = list_make2(linitial(saop->args),
+								   makeConst(arr->consttype, arr->consttypmod,
+											 arr->constcollid, -1,
+											 PointerGetDatum(construct_array(keep, nkeep, elemtype,
+																			 typlen, typbyval,
+																			 typalign)),
+											 false, false));
+		lfirst(lc) = make_restrictinfo(root, (Expr *) newsaop,
+									   rinfo->is_pushed_down,
+									   rinfo->has_clone,
+									   rinfo->is_clone,
+									   rinfo->pseudoconstant,
+									   rinfo->security_level,
+									   NULL, NULL, NULL);
+	}
+}
 
 static void expand_partitioned_rtentry(PlannerInfo *root, RelOptInfo *relinfo,
 									   RangeTblEntry *parentrte,
@@ -404,6 +511,7 @@ expand_partitioned_rtentry(PlannerInfo *root, RelOptInfo *relinfo,
 		/* Create the otherrel RelOptInfo too. */
 		childrelinfo = build_simple_rel(root, childRTindex, relinfo);
 		relinfo->part_rels[i] = childrelinfo;
+		proto_restrict_child_saop(root, relinfo, childrelinfo, i);
 		relinfo->all_partrels = bms_add_members(relinfo->all_partrels,
 												childrelinfo->relids);
 
