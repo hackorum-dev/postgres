@@ -1206,6 +1206,26 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 }
 
 /*
+ * Invalidate the relcache entry of a single relation, ignoring a relation
+ * that no longer exists.
+ *
+ * The relation list is built from a catalog scan that takes no lock on the
+ * relations, so a relation can be dropped concurrently before we get here.
+ */
+static void
+InvalidatePublicationRel(Oid relid)
+{
+	HeapTuple	tup;
+
+	tup = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
+	if (!HeapTupleIsValid(tup))
+		return;
+
+	CacheInvalidateRelcacheByTuple(tup);
+	ReleaseSysCache(tup);
+}
+
+/*
  * Invalidate the relations.
  */
 void
@@ -1220,7 +1240,7 @@ InvalidatePublicationRels(List *relids)
 		ListCell   *lc;
 
 		foreach(lc, relids)
-			CacheInvalidateRelcacheByRelid(lfirst_oid(lc));
+			InvalidatePublicationRel(lfirst_oid(lc));
 	}
 	else
 		CacheInvalidateRelcacheAll();
@@ -1759,6 +1779,9 @@ RemovePublicationRelById(Oid proid)
 	 */
 	relids = GetPubPartitionOptionRelations(relids, PUBLICATION_PART_ALL,
 											pubrel->prrelid);
+
+	/* DEBUG-ONLY (remove): widen the race window for issue2.sh */
+	pg_usleep(5000000L);
 
 	InvalidatePublicationRels(relids);
 
