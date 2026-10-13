@@ -41,9 +41,19 @@ typedef struct FunctionScanPerFuncState
 	Tuplestorestate *tstore;	/* holds the function result set */
 	int64		rowcount;		/* # of rows in result set, -1 if not known */
 	TupleTableSlot *func_slot;	/* function result slot (or NULL) */
+
+	/*
+	 * Storage statistics of the largest tuplestore created for this function
+	 * so far, to report in EXPLAIN ANALYZE.  maxSpaceUsed is 0 if none has
+	 * been created yet.
+	 */
+	bool		maxUsedDisk;
+	int64		maxSpaceUsed;
 } FunctionScanPerFuncState;
 
 static TupleTableSlot *FunctionNext(FunctionScanState *node);
+static void update_storage_stats(FunctionScanState *node,
+								 FunctionScanPerFuncState *fs);
 
 
 /* ----------------------------------------------------------------
@@ -104,6 +114,10 @@ FunctionNext(FunctionScanState *node)
 			 * call is fast, so the overhead shouldn't be an issue.
 			 */
 			tuplestore_rescan(tstore);
+
+			/* Collect its storage statistics for EXPLAIN ANALYZE */
+			if (node->ss.ps.instrument)
+				update_storage_stats(node, &node->funcstates[0]);
 		}
 
 		/*
@@ -163,6 +177,10 @@ FunctionNext(FunctionScanState *node)
 			 * call is fast, so the overhead shouldn't be an issue.
 			 */
 			tuplestore_rescan(fs->tstore);
+
+			/* Collect its storage statistics for EXPLAIN ANALYZE */
+			if (node->ss.ps.instrument)
+				update_storage_stats(node, fs);
 		}
 
 		/*
@@ -358,6 +376,8 @@ ExecInitFunctionScan(FunctionScan *node, EState *estate, int eflags)
 		 */
 		fs->tstore = NULL;
 		fs->rowcount = -1;
+		fs->maxUsedDisk = false;
+		fs->maxSpaceUsed = 0;
 
 		/*
 		 * Now build a tupdesc showing the result type we expect from the
@@ -520,6 +540,8 @@ ExecInitFunctionScan(FunctionScan *node, EState *estate, int eflags)
 												  "Table function arguments",
 												  ALLOCSET_DEFAULT_SIZES);
 
+	scanstate->shared_info = NULL;
+
 	return scanstate;
 }
 
@@ -535,6 +557,23 @@ ExecEndFunctionScan(FunctionScanState *node)
 	int			i;
 
 	/*
+	 * When ending a parallel worker, copy the tuplestore usage details into
+	 * shared memory so that they can be picked up by the main process to
+	 * report in EXPLAIN ANALYZE.  The Gather node above us may be rescanned,
+	 * in which case a new set of workers will write to the same slots, so
+	 * merge with any existing values rather than overwriting them.
+	 */
+	if (node->shared_info != NULL && IsParallelWorker())
+	{
+		FunctionScanInstrumentation *si;
+
+		Assert(ParallelWorkerNumber < node->shared_info->num_workers);
+		si = &node->shared_info->sinstrument[ParallelWorkerNumber];
+		si->maxSpaceUsed = Max(si->maxSpaceUsed, node->stats.maxSpaceUsed);
+		si->usedDisk |= node->stats.usedDisk;
+	}
+
+	/*
 	 * Release slots and tuplestore resources
 	 */
 	for (i = 0; i < node->nfuncs; i++)
@@ -547,6 +586,50 @@ ExecEndFunctionScan(FunctionScanState *node)
 			fs->tstore = NULL;
 		}
 	}
+}
+
+/*
+ * update_storage_stats
+ *		Update the storage statistics to report in EXPLAIN ANALYZE with the
+ *		function's tuplestore, which already holds the whole result set.
+ *
+ * For each function we keep the largest tuplestore seen across rescans.  As
+ * for Recursive Union, the node reports the storage type of the largest one
+ * and the sum of their sizes.
+ */
+static void
+update_storage_stats(FunctionScanState *node, FunctionScanPerFuncState *fs)
+{
+	bool		usedDisk;
+	int64		spaceUsed;
+	bool		maxUsedDisk = false;
+	int64		maxSpaceUsed = 0;
+	int64		totalSpaceUsed = 0;
+
+	tuplestore_get_stats(fs->tstore, &usedDisk, &spaceUsed);
+
+	/* Nothing changes unless it's the largest one for this function so far */
+	if (spaceUsed <= fs->maxSpaceUsed)
+		return;
+
+	fs->maxUsedDisk = usedDisk;
+	fs->maxSpaceUsed = spaceUsed;
+
+	for (int i = 0; i < node->nfuncs; i++)
+	{
+		FunctionScanPerFuncState *f = &node->funcstates[i];
+
+		totalSpaceUsed += f->maxSpaceUsed;
+
+		if (f->maxSpaceUsed > maxSpaceUsed)
+		{
+			maxSpaceUsed = f->maxSpaceUsed;
+			maxUsedDisk = f->maxUsedDisk;
+		}
+	}
+
+	node->stats.usedDisk = maxUsedDisk;
+	node->stats.maxSpaceUsed = totalSpaceUsed;
 }
 
 /* ----------------------------------------------------------------
@@ -613,4 +696,91 @@ ExecReScanFunctionScan(FunctionScanState *node)
 		if (node->funcstates[i].tstore != NULL)
 			tuplestore_rescan(node->funcstates[i].tstore);
 	}
+}
+
+/* ----------------------------------------------------------------
+ *						Parallel Query Support
+ * ----------------------------------------------------------------
+ */
+
+/* ----------------------------------------------------------------
+ *		ExecFunctionScanEstimate
+ *
+ *		Estimate space required to propagate function scan statistics.
+ * ----------------------------------------------------------------
+ */
+void
+ExecFunctionScanEstimate(FunctionScanState *node, ParallelContext *pcxt)
+{
+	Size		size;
+
+	/* don't need this if not instrumenting or no workers */
+	if (!node->ss.ps.instrument || pcxt->nworkers == 0)
+		return;
+
+	size = mul_size(pcxt->nworkers, sizeof(FunctionScanInstrumentation));
+	size = add_size(size, offsetof(SharedFunctionScanInfo, sinstrument));
+	shm_toc_estimate_chunk(&pcxt->estimator, size);
+	shm_toc_estimate_keys(&pcxt->estimator, 1);
+}
+
+/* ----------------------------------------------------------------
+ *		ExecFunctionScanInitializeDSM
+ *
+ *		Initialize DSM space for function scan statistics.
+ * ----------------------------------------------------------------
+ */
+void
+ExecFunctionScanInitializeDSM(FunctionScanState *node, ParallelContext *pcxt)
+{
+	Size		size;
+
+	/* don't need this if not instrumenting or no workers */
+	if (!node->ss.ps.instrument || pcxt->nworkers == 0)
+		return;
+
+	size = offsetof(SharedFunctionScanInfo, sinstrument)
+		+ pcxt->nworkers * sizeof(FunctionScanInstrumentation);
+	node->shared_info = shm_toc_allocate(pcxt->toc, size);
+	/* ensure any unfilled slots will contain zeroes */
+	memset(node->shared_info, 0, size);
+	node->shared_info->num_workers = pcxt->nworkers;
+	shm_toc_insert(pcxt->toc, node->ss.ps.plan->plan_node_id,
+				   node->shared_info);
+}
+
+/* ----------------------------------------------------------------
+ *		ExecFunctionScanInitializeWorker
+ *
+ *		Attach worker to DSM space for function scan statistics.
+ * ----------------------------------------------------------------
+ */
+void
+ExecFunctionScanInitializeWorker(FunctionScanState *node,
+								 ParallelWorkerContext *pwcxt)
+{
+	node->shared_info =
+		shm_toc_lookup(pwcxt->toc, node->ss.ps.plan->plan_node_id, true);
+}
+
+/* ----------------------------------------------------------------
+ *		ExecFunctionScanRetrieveInstrumentation
+ *
+ *		Transfer function scan statistics from DSM to private memory.
+ * ----------------------------------------------------------------
+ */
+void
+ExecFunctionScanRetrieveInstrumentation(FunctionScanState *node)
+{
+	Size		size;
+	SharedFunctionScanInfo *si;
+
+	if (node->shared_info == NULL)
+		return;
+
+	size = offsetof(SharedFunctionScanInfo, sinstrument)
+		+ node->shared_info->num_workers * sizeof(FunctionScanInstrumentation);
+	si = palloc(size);
+	memcpy(si, node->shared_info, size);
+	node->shared_info = si;
 }
