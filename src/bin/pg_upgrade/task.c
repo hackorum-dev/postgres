@@ -333,6 +333,9 @@ select_loop(int maxFd, fd_set *input, fd_set *output)
 {
 	fd_set		save_input = *input;
 	fd_set		save_output = *output;
+#ifdef WIN32
+	fd_set		exceptions;
+#endif
 
 	if (maxFd == 0)
 		return 0;
@@ -344,7 +347,18 @@ select_loop(int maxFd, fd_set *input, fd_set *output)
 		*input = save_input;
 		*output = save_output;
 
+#ifdef WIN32
+		/* Winsock reports failed nonblocking connects as exceptions. */
+		exceptions = save_output;
+		i = select(maxFd + 1, input, output, &exceptions, NULL);
+		if (i > 0)
+		{
+			for (unsigned int j = 0; j < exceptions.fd_count; j++)
+				FD_SET(exceptions.fd_array[j], output);
+		}
+#else
 		i = select(maxFd + 1, input, output, NULL, NULL);
+#endif
 
 #ifndef WIN32
 		if (i < 0 && errno == EINTR)
