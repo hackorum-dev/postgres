@@ -284,6 +284,7 @@ static PVSharedCostParams *pv_shared_cost_params = NULL;
  */
 static uint32 shared_params_generation_local = 0;
 
+static inline int parallel_vacuum_max_workers(void);
 static int	parallel_vacuum_compute_workers(Relation *indrels, int nindexes, int nrequested,
 											bool *will_parallel_vacuum);
 static void parallel_vacuum_process_all_indexes(ParallelVacuumState *pvs, int num_index_scans,
@@ -771,6 +772,17 @@ parallel_vacuum_refresh_cost_params(void)
 }
 
 /*
+ * Upper limit on the number of parallel workers a vacuum may use.
+ */
+static inline int
+parallel_vacuum_max_workers(void)
+{
+	return AmAutoVacuumWorkerProcess() ?
+		autovacuum_max_parallel_workers :
+		max_parallel_maintenance_workers;
+}
+
+/*
  * Compute the number of parallel worker processes to request.  Both index
  * vacuum and index cleanup can be executed with parallel workers.
  * The index is eligible for parallel vacuum iff its size is greater than
@@ -793,9 +805,7 @@ parallel_vacuum_compute_workers(Relation *indrels, int nindexes, int nrequested,
 	int			parallel_workers;
 	int			max_workers;
 
-	max_workers = AmAutoVacuumWorkerProcess() ?
-		autovacuum_max_parallel_workers :
-		max_parallel_maintenance_workers;
+	max_workers = parallel_vacuum_max_workers();
 
 	/*
 	 * We don't allow performing parallel operation in standalone backend or
@@ -890,6 +900,14 @@ parallel_vacuum_process_all_indexes(ParallelVacuumState *pvs, int num_index_scan
 	 * parallel_vacuum_compute_workers().
 	 */
 	nworkers = Min(nworkers, pvs->pcxt->nworkers);
+
+	/*
+	 * Re-apply the limit used in parallel_vacuum_compute_workers(), as it may
+	 * have been set to a lower value while we were scanning the heap. Only a
+	 * reduction can take effect here: the DSM was sized for pcxt->nworkers in
+	 * parallel_vacuum_init().
+	 */
+	nworkers = Min(nworkers, parallel_vacuum_max_workers());
 
 	/* Update the statistics, if we asked to */
 	if (wstats != NULL && nworkers > 0)
