@@ -21,6 +21,7 @@
 #include "access/htup_details.h"
 #include "access/xact.h"
 #include "common/int.h"
+#include "common/int128.h"
 #include "common/string.h"
 #include "funcapi.h"
 #include "miscadmin.h"
@@ -33,6 +34,19 @@
 #include "utils/tuplestore.h"
 #include "utils/tzparser.h"
 
+/*
+ * Keep general interval input wider than its stored representation until AGO
+ * has been applied.  There are at most MAXDATEFIELDS int64 input values, and
+ * even the largest unit scale fits comfortably in this accumulator.
+ */
+struct IntervalAccumulator
+{
+	INT128		tm_usec;
+	INT128		tm_mday;
+	INT128		tm_mon;
+	INT128		tm_year;
+};
+
 static int	DecodeNumber(int flen, char *str, bool haveTextMonth,
 						 int fmask, int *tmask,
 						 struct pg_tm *tm, fsec_t *fsec, bool *is2digits);
@@ -43,8 +57,8 @@ static int	DecodeTimeCommon(char *str, int fmask, int range,
 							 int *tmask, struct pg_itm *itm);
 static int	DecodeTime(char *str, int fmask, int range,
 					   int *tmask, struct pg_tm *tm, fsec_t *fsec);
-static int	DecodeTimeForInterval(char *str, int fmask, int range,
-								  int *tmask, struct pg_itm_in *itm_in);
+static int	DecodeTimeForInterval(char *str, int fmask, int range, bool negative,
+								  int *tmask, struct IntervalAccumulator *itm_in);
 static const datetkn *datebsearch(const char *key, const datetkn *base, int nel);
 static int	DecodeDate(char *str, int fmask, int *tmask, bool *is2digits,
 					   struct pg_tm *tm);
@@ -2766,8 +2780,8 @@ DecodeTime(char *str, int fmask, int range,
  * itm_in->tm_usec.
  */
 static int
-DecodeTimeForInterval(char *str, int fmask, int range,
-					  int *tmask, struct pg_itm_in *itm_in)
+DecodeTimeForInterval(char *str, int fmask, int range, bool negative,
+					  int *tmask, struct IntervalAccumulator *itm_in)
 {
 	struct pg_itm itm;
 	int			dterr;
@@ -2777,11 +2791,22 @@ DecodeTimeForInterval(char *str, int fmask, int range,
 	if (dterr)
 		return dterr;
 
-	itm_in->tm_usec = itm.tm_usec;
-	if (!int64_multiply_add(itm.tm_hour, USECS_PER_HOUR, &itm_in->tm_usec) ||
-		!int64_multiply_add(itm.tm_min, USECS_PER_MINUTE, &itm_in->tm_usec) ||
-		!int64_multiply_add(itm.tm_sec, USECS_PER_SEC, &itm_in->tm_usec))
-		return DTERR_FIELD_OVERFLOW;
+	/*
+	 * DecodeTimeCommon() checked that all components are nonnegative. Apply
+	 * the explicit or SQL-standard leading sign before accumulating.
+	 */
+	if (negative)
+	{
+		itm.tm_hour = -itm.tm_hour;
+		itm.tm_min = -itm.tm_min;
+		itm.tm_sec = -itm.tm_sec;
+		itm.tm_usec = -itm.tm_usec;
+	}
+
+	itm_in->tm_usec = int64_to_int128(itm.tm_usec);
+	int128_add_int64_mul_int64(&itm_in->tm_usec, itm.tm_hour, USECS_PER_HOUR);
+	int128_add_int64_mul_int64(&itm_in->tm_usec, itm.tm_min, USECS_PER_MINUTE);
+	int128_add_int64_mul_int64(&itm_in->tm_usec, itm.tm_sec, USECS_PER_SEC);
 
 	return 0;
 }
@@ -3492,6 +3517,17 @@ ClearPgItmIn(struct pg_itm_in *itm_in)
 }
 
 
+/* Private wide arithmetic for the general interval parser. */
+static INT128
+NegateIntervalValue(INT128 value)
+{
+	INT128		result = make_int128(~PG_INT128_HI_INT64(value),
+									 ~PG_INT128_LO_UINT64(value));
+
+	int128_add_int64(&result, 1);
+	return result;
+}
+
 /*
  * DecodeInterval()
  * Interpret previously parsed fields for general time interval.
@@ -3509,11 +3545,15 @@ ClearPgItmIn(struct pg_itm_in *itm_in)
  */
 int
 DecodeInterval(char **field, int *ftype, int nf, int range,
-			   int *dtype, struct pg_itm_in *itm_in)
+			   int *dtype, struct pg_itm_in *result)
 {
+	struct IntervalAccumulator accumulator = {0};
+	struct IntervalAccumulator *itm_in = &accumulator;
+	struct pg_itm_in fraction;
 	bool		force_negative = false;
 	bool		is_before = false;
 	bool		parsing_unit_val = false;
+	bool		negative;
 	char	   *cp;
 	int			fmask = 0,
 				tmask,
@@ -3526,7 +3566,6 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 
 	*dtype = DTK_DELTA;
 	type = IGNORE_DTF;
-	ClearPgItmIn(itm_in);
 
 	/*----------
 	 * The SQL standard defines the interval literal
@@ -3564,13 +3603,12 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 		switch (ftype[i])
 		{
 			case DTK_TIME:
+				negative = force_negative;
 				dterr = DecodeTimeForInterval(field[i], fmask, range,
+											  negative,
 											  &tmask, itm_in);
 				if (dterr)
 					return dterr;
-				if (force_negative &&
-					itm_in->tm_usec > 0)
-					itm_in->tm_usec = -itm_in->tm_usec;
 				type = DTK_DAY;
 				parsing_unit_val = false;
 				break;
@@ -3583,26 +3621,18 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 				 * it as well.
 				 */
 				Assert(*field[i] == '-' || *field[i] == '+');
+				negative = *field[i] == '-' || force_negative;
 
 				/*
 				 * Check for signed hh:mm or hh:mm:ss.  If so, process exactly
 				 * like DTK_TIME case above, plus handling the sign.
 				 */
-				if (strchr(field[i] + 1, ':') != NULL &&
-					DecodeTimeForInterval(field[i] + 1, fmask, range,
-										  &tmask, itm_in) == 0)
+				if (strchr(field[i] + 1, ':') != NULL)
 				{
-					if (*field[i] == '-')
-					{
-						/* flip the sign on time field */
-						if (itm_in->tm_usec == PG_INT64_MIN)
-							return DTERR_FIELD_OVERFLOW;
-						itm_in->tm_usec = -itm_in->tm_usec;
-					}
-
-					if (force_negative &&
-						itm_in->tm_usec > 0)
-						itm_in->tm_usec = -itm_in->tm_usec;
+					dterr = DecodeTimeForInterval(field[i] + 1, fmask, range,
+												  negative, &tmask, itm_in);
+					if (dterr)
+						return dterr;
 
 					/*
 					 * Set the next type to be a day, if units are not
@@ -3707,22 +3737,30 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 						fval = -fval;
 				}
 
+				/*
+				 * Reuse the existing fractional rounding on a zero
+				 * accumulator.
+				 */
+				ClearPgItmIn(&fraction);
 				switch (type)
 				{
 					case DTK_MICROSEC:
-						if (!AdjustMicroseconds(val, fval, 1, itm_in))
+						int128_add_int64_mul_int64(&itm_in->tm_usec, val, 1);
+						if (!AdjustFractMicroseconds(fval, 1, &fraction))
 							return DTERR_FIELD_OVERFLOW;
 						tmask = DTK_M(MICROSECOND);
 						break;
 
 					case DTK_MILLISEC:
-						if (!AdjustMicroseconds(val, fval, 1000, itm_in))
+						int128_add_int64_mul_int64(&itm_in->tm_usec, val, 1000);
+						if (!AdjustFractMicroseconds(fval, 1000, &fraction))
 							return DTERR_FIELD_OVERFLOW;
 						tmask = DTK_M(MILLISECOND);
 						break;
 
 					case DTK_SECOND:
-						if (!AdjustMicroseconds(val, fval, USECS_PER_SEC, itm_in))
+						int128_add_int64_mul_int64(&itm_in->tm_usec, val, USECS_PER_SEC);
+						if (!AdjustFractMicroseconds(fval, USECS_PER_SEC, &fraction))
 							return DTERR_FIELD_OVERFLOW;
 
 						/*
@@ -3736,63 +3774,65 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 						break;
 
 					case DTK_MINUTE:
-						if (!AdjustMicroseconds(val, fval, USECS_PER_MINUTE, itm_in))
+						int128_add_int64_mul_int64(&itm_in->tm_usec, val, USECS_PER_MINUTE);
+						if (!AdjustFractMicroseconds(fval, USECS_PER_MINUTE, &fraction))
 							return DTERR_FIELD_OVERFLOW;
 						tmask = DTK_M(MINUTE);
 						break;
 
 					case DTK_HOUR:
-						if (!AdjustMicroseconds(val, fval, USECS_PER_HOUR, itm_in))
+						int128_add_int64_mul_int64(&itm_in->tm_usec, val, USECS_PER_HOUR);
+						if (!AdjustFractMicroseconds(fval, USECS_PER_HOUR, &fraction))
 							return DTERR_FIELD_OVERFLOW;
 						tmask = DTK_M(HOUR);
 						type = DTK_DAY; /* set for next field */
 						break;
 
 					case DTK_DAY:
-						if (!AdjustDays(val, 1, itm_in) ||
-							!AdjustFractMicroseconds(fval, USECS_PER_DAY, itm_in))
+						int128_add_int64_mul_int64(&itm_in->tm_mday, val, 1);
+						if (!AdjustFractMicroseconds(fval, USECS_PER_DAY, &fraction))
 							return DTERR_FIELD_OVERFLOW;
 						tmask = DTK_M(DAY);
 						break;
 
 					case DTK_WEEK:
-						if (!AdjustDays(val, 7, itm_in) ||
-							!AdjustFractDays(fval, 7, itm_in))
+						int128_add_int64_mul_int64(&itm_in->tm_mday, val, 7);
+						if (!AdjustFractDays(fval, 7, &fraction))
 							return DTERR_FIELD_OVERFLOW;
 						tmask = DTK_M(WEEK);
 						break;
 
 					case DTK_MONTH:
-						if (!AdjustMonths(val, itm_in) ||
-							!AdjustFractDays(fval, DAYS_PER_MONTH, itm_in))
+						int128_add_int64(&itm_in->tm_mon, val);
+						if (!AdjustFractDays(fval, DAYS_PER_MONTH, &fraction))
 							return DTERR_FIELD_OVERFLOW;
 						tmask = DTK_M(MONTH);
 						break;
 
 					case DTK_YEAR:
-						if (!AdjustYears(val, 1, itm_in) ||
-							!AdjustFractYears(fval, 1, itm_in))
+						int128_add_int64_mul_int64(&itm_in->tm_year, val, 1);
+						if (!AdjustFractYears(fval, 1, &fraction))
 							return DTERR_FIELD_OVERFLOW;
 						tmask = DTK_M(YEAR);
 						break;
 
 					case DTK_DECADE:
-						if (!AdjustYears(val, 10, itm_in) ||
-							!AdjustFractYears(fval, 10, itm_in))
+						int128_add_int64_mul_int64(&itm_in->tm_year, val, 10);
+						if (!AdjustFractYears(fval, 10, &fraction))
 							return DTERR_FIELD_OVERFLOW;
 						tmask = DTK_M(DECADE);
 						break;
 
 					case DTK_CENTURY:
-						if (!AdjustYears(val, 100, itm_in) ||
-							!AdjustFractYears(fval, 100, itm_in))
+						int128_add_int64_mul_int64(&itm_in->tm_year, val, 100);
+						if (!AdjustFractYears(fval, 100, &fraction))
 							return DTERR_FIELD_OVERFLOW;
 						tmask = DTK_M(CENTURY);
 						break;
 
 					case DTK_MILLENNIUM:
-						if (!AdjustYears(val, 1000, itm_in) ||
-							!AdjustFractYears(fval, 1000, itm_in))
+						int128_add_int64_mul_int64(&itm_in->tm_year, val, 1000);
+						if (!AdjustFractYears(fval, 1000, &fraction))
 							return DTERR_FIELD_OVERFLOW;
 						tmask = DTK_M(MILLENNIUM);
 						break;
@@ -3800,6 +3840,9 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 					default:
 						return DTERR_BAD_FORMAT;
 				}
+				int128_add_int64(&itm_in->tm_usec, fraction.tm_usec);
+				int128_add_int64(&itm_in->tm_mday, fraction.tm_mday);
+				int128_add_int64(&itm_in->tm_mon, fraction.tm_mon);
 				parsing_unit_val = false;
 				break;
 
@@ -3877,21 +3920,30 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 	if (parsing_unit_val)
 		return DTERR_BAD_FORMAT;
 
-	/* finally, AGO negates everything */
+	/* Apply AGO once, after all fields have had a chance to cancel. */
 	if (is_before)
 	{
-		if (itm_in->tm_usec == PG_INT64_MIN ||
-			itm_in->tm_mday == INT_MIN ||
-			itm_in->tm_mon == INT_MIN ||
-			itm_in->tm_year == INT_MIN)
-			return DTERR_FIELD_OVERFLOW;
-
-		itm_in->tm_usec = -itm_in->tm_usec;
-		itm_in->tm_mday = -itm_in->tm_mday;
-		itm_in->tm_mon = -itm_in->tm_mon;
-		itm_in->tm_year = -itm_in->tm_year;
+		itm_in->tm_usec = NegateIntervalValue(itm_in->tm_usec);
+		itm_in->tm_mday = NegateIntervalValue(itm_in->tm_mday);
+		itm_in->tm_mon = NegateIntervalValue(itm_in->tm_mon);
+		itm_in->tm_year = NegateIntervalValue(itm_in->tm_year);
 	}
 
+	/* Narrow only after the final sign is known. */
+	if (int128_compare(itm_in->tm_usec, int64_to_int128(PG_INT64_MIN)) < 0 ||
+		int128_compare(itm_in->tm_usec, int64_to_int128(PG_INT64_MAX)) > 0 ||
+		int128_compare(itm_in->tm_mday, int64_to_int128(INT_MIN)) < 0 ||
+		int128_compare(itm_in->tm_mday, int64_to_int128(INT_MAX)) > 0 ||
+		int128_compare(itm_in->tm_mon, int64_to_int128(INT_MIN)) < 0 ||
+		int128_compare(itm_in->tm_mon, int64_to_int128(INT_MAX)) > 0 ||
+		int128_compare(itm_in->tm_year, int64_to_int128(INT_MIN)) < 0 ||
+		int128_compare(itm_in->tm_year, int64_to_int128(INT_MAX)) > 0)
+		return DTERR_FIELD_OVERFLOW;
+
+	result->tm_usec = int128_to_int64(itm_in->tm_usec);
+	result->tm_mday = (int) int128_to_int64(itm_in->tm_mday);
+	result->tm_mon = (int) int128_to_int64(itm_in->tm_mon);
+	result->tm_year = (int) int128_to_int64(itm_in->tm_year);
 	return 0;
 }
 
