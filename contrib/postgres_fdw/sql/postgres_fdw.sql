@@ -1640,6 +1640,9 @@ ALTER FOREIGN TABLE ft1 ALTER COLUMN c8 TYPE user_enum;
 -- ===================================================================
 -- subtransaction
 --  + local/remote error doesn't break cursor
+--  + we allow cursors opened before a savepoint to be first fetched
+--    after the savepoint, but if that subtransaction aborts, do not
+--    allow them to be fetched further.
 -- ===================================================================
 BEGIN;
 DECLARE c CURSOR FOR SELECT * FROM ft1 ORDER BY c1;
@@ -1653,6 +1656,38 @@ SELECT * FROM ft1 WHERE 1 / (c1 - 1) > 0;  -- ERROR
 ROLLBACK TO s;
 FETCH c;
 SELECT * FROM ft1 ORDER BY c1 LIMIT 1;
+COMMIT;
+
+BEGIN;
+DECLARE c CURSOR FOR SELECT * FROM ft1 ORDER BY c1;
+SAVEPOINT s;
+FETCH c;
+ROLLBACK TO s;
+RELEASE SAVEPOINT s;
+FETCH c;
+ABORT;
+
+BEGIN;
+DECLARE c CURSOR FOR SELECT * FROM ft1 ORDER BY c1;
+SAVEPOINT s;
+FETCH c;
+ROLLBACK TO s;
+RELEASE SAVEPOINT s;
+CLOSE c;
+COMMIT;
+
+-- cursor created in a subtransaction is handed to its parent subtransaction
+BEGIN;
+SAVEPOINT s;
+DECLARE c CURSOR FOR SELECT * FROM ft1 ORDER BY c1;
+RELEASE SAVEPOINT s;
+FETCH c;
+SAVEPOINT s;
+FETCH c;
+ROLLBACK TO s;
+RELEASE SAVEPOINT s;
+FETCH c;
+CLOSE c;
 COMMIT;
 
 -- ===================================================================

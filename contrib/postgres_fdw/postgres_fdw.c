@@ -17,6 +17,7 @@
 #include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "access/table.h"
+#include "access/xact.h"
 #include "catalog/pg_opfamily.h"
 #include "commands/defrem.h"
 #include "commands/explain_format.h"
@@ -185,6 +186,7 @@ typedef struct PgFdwScanState
 	PgFdwConnState *conn_state; /* extra per-connection state */
 	unsigned int cursor_number; /* quasi-unique ID for my cursor */
 	bool		cursor_exists;	/* have we created the cursor? */
+	int			cursor_level;	/* xact depth at which it was created */
 	int			numParams;		/* number of parameters passed to query */
 	FmgrInfo   *param_flinfo;	/* output conversion functions for them */
 	List	   *param_exprs;	/* executable expressions for param values */
@@ -207,7 +209,20 @@ typedef struct PgFdwScanState
 	MemoryContext temp_cxt;		/* context for per-tuple temporary data */
 
 	int			fetch_size;		/* number of tuples per fetch */
+
+	bool		scan_allowed;	/* is scanning the foreign table allowed? */
 } PgFdwScanState;
+
+typedef struct ForeignScanEntry
+{
+	ForeignScanState *fs_node;
+	int			fs_level;
+} ForeignScanEntry;
+
+/*
+ * Foreign scan hash table (initialized on first use)
+ */
+static HTAB *ForeignScanHash = NULL;
 
 /*
  * Execution state of a foreign insert/update/delete operation.
@@ -539,6 +554,8 @@ static void create_cursor(ForeignScanState *node);
 static void fetch_more_data(ForeignScanState *node);
 static void close_cursor(PGconn *conn, unsigned int cursor_number,
 						 PgFdwConnState *conn_state);
+static void ForeignScanHashInsert(ForeignScanState *node);
+static void ForeignScanHashDelete(ForeignScanState *node);
 static PgFdwModifyState *create_foreign_modify(EState *estate,
 											   RangeTblEntry *rte,
 											   ResultRelInfo *resultRelInfo,
@@ -1762,6 +1779,7 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	/* Assign a unique ID for my cursor */
 	fsstate->cursor_number = GetCursorNumber(fsstate->conn);
 	fsstate->cursor_exists = false;
+	fsstate->cursor_level = 0;
 
 	/* Get private info created by planner functions. */
 	fsstate->query = strVal(list_nth(fsplan->fdw_private,
@@ -1822,6 +1840,10 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 
 	/* Set the async-capable flag */
 	fsstate->async_capable = node->ss.ps.async_capable;
+
+	fsstate->scan_allowed = true;
+
+	ForeignScanHashInsert(node);
 }
 
 /*
@@ -1904,6 +1926,7 @@ postgresReScanForeignScan(ForeignScanState *node)
 	if (node->ss.ps.chgParam != NULL)
 	{
 		fsstate->cursor_exists = false;
+		fsstate->cursor_level = 0;
 		snprintf(sql, sizeof(sql), "CLOSE c%u",
 				 fsstate->cursor_number);
 	}
@@ -1915,6 +1938,7 @@ postgresReScanForeignScan(ForeignScanState *node)
 		else
 		{
 			fsstate->cursor_exists = false;
+			fsstate->cursor_level = 0;
 			snprintf(sql, sizeof(sql), "CLOSE c%u",
 					 fsstate->cursor_number);
 		}
@@ -1960,6 +1984,8 @@ postgresEndForeignScan(ForeignScanState *node)
 	/* Release remote connection */
 	ReleaseConnection(fsstate->conn);
 	fsstate->conn = NULL;
+
+	ForeignScanHashDelete(node);
 
 	/* MemoryContexts will be deleted automatically. */
 }
@@ -4054,9 +4080,21 @@ create_cursor(ForeignScanState *node)
 	StringInfoData buf;
 	PGresult   *res;
 
+	if (!fsstate->scan_allowed)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot scan foreign table \"%s\" anymore",
+						RelationGetRelationName(fsstate->rel))));
+
 	/* First, process a pending asynchronous request, if any. */
 	if (fsstate->conn_state->pendingAreq)
 		process_pending_request(fsstate->conn_state->pendingAreq);
+
+	/*
+	 * Second, synchronize the local/remote transactions.  Note that we need
+	 * to do this because this function can be called from open cursors.
+	 */
+	pgfdw_begin_remote_xact(fsstate->conn_state->entry);
 
 	/*
 	 * Construct array of query parameter values in text format.  We do the
@@ -4103,6 +4141,7 @@ create_cursor(ForeignScanState *node)
 
 	/* Mark the cursor as created, and show no tuples have been retrieved */
 	fsstate->cursor_exists = true;
+	fsstate->cursor_level = GetCurrentTransactionNestLevel();
 	fsstate->tuples = NULL;
 	fsstate->num_tuples = 0;
 	fsstate->next_tuple = 0;
@@ -4147,7 +4186,7 @@ fetch_more_data(ForeignScanState *node)
 		if (PQresultStatus(res) != PGRES_TUPLES_OK)
 			pgfdw_report_error(res, conn, fsstate->query);
 
-		/* Reset per-connection state */
+		/* Reset the pending asynchronous request */
 		fsstate->conn_state->pendingAreq = NULL;
 	}
 	else
@@ -4268,6 +4307,131 @@ close_cursor(PGconn *conn, unsigned int cursor_number,
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
 		pgfdw_report_error(res, conn, sql);
 	PQclear(res);
+}
+
+/*
+ * Add a ForeignScan node to the ForeignScanHash table
+ */
+static void
+ForeignScanHashInsert(ForeignScanState *node)
+{
+	ForeignScanEntry *entry;
+	bool		found;
+
+	/* First time through, initialize foreign scan hashtable */
+	if (ForeignScanHash == NULL)
+	{
+		HASHCTL		ctl;
+
+		ctl.keysize = sizeof(ForeignScanState *);
+		ctl.entrysize = sizeof(ForeignScanEntry);
+		ForeignScanHash = hash_create("postgres_fdw ForeignScan nodes",
+									  256L,
+									  &ctl,
+									  HASH_ELEM | HASH_BLOBS);
+	}
+
+	entry = (ForeignScanEntry *) hash_search(ForeignScanHash,
+											  &node,
+											  HASH_ENTER,
+											  &found);
+	if (found)
+		elog(ERROR, "duplicate ForeignScan node");
+	entry->fs_node = node;
+	entry->fs_level = GetCurrentTransactionNestLevel();
+}
+
+/*
+ * Remove a ForeignScan node from the ForeignScanHash table
+ */
+static void
+ForeignScanHashDelete(ForeignScanState *node)
+{
+	ForeignScanEntry *entry;
+
+	Assert(ForeignScanHash);
+
+	entry = (ForeignScanEntry *) hash_search(ForeignScanHash,
+											  &node,
+											  HASH_REMOVE,
+											  NULL);
+	if (entry == NULL)
+		elog(WARNING, "trying to delete ForeignScan node that does not exist");
+}
+
+/*
+ * Clean up foreign scans after a subtransaction commit/abort
+ */
+void
+AtEOXact_ForeignScan(bool is_commit)
+{
+	HASH_SEQ_STATUS scan;
+	ForeignScanEntry *entry;
+
+	if (ForeignScanHash == NULL)
+		return;
+
+	hash_seq_init(&scan, ForeignScanHash);
+	while ((entry = hash_seq_search(&scan)) != NULL)
+	{
+		ForeignScanState *node = entry->fs_node;
+
+		/* On commit, complain about leftover ForeignScan nodes */
+		if (is_commit)
+			elog(WARNING, "ForeignScan node %p still existing", node);
+		ForeignScanHashDelete(node);
+	}
+}
+
+/*
+ * Clean up foreign scans after a subtransaction subcommit/subabort
+ */
+void
+AtEOSubXact_ForeignScan(int level, bool is_subcommit)
+{
+	HASH_SEQ_STATUS scan;
+	ForeignScanEntry *entry;
+
+	if (ForeignScanHash == NULL)
+		return;
+
+	hash_seq_init(&scan, ForeignScanHash);
+	while ((entry = hash_seq_search(&scan)) != NULL)
+	{
+		ForeignScanState *node = entry->fs_node;
+		PgFdwScanState *fsstate;
+
+		if (is_subcommit)
+		{
+			/*
+			 * Relabel foreign scans created in this subxact as though they
+			 * are owned by the parent subxact
+			 */
+			if (entry->fs_level >= level)
+				entry->fs_level = level - 1;
+			/* Likewise for remote cursors declared in this subxact */
+			fsstate = (PgFdwScanState *) node->fdw_state;
+			if (fsstate->cursor_exists && fsstate->cursor_level >= level)
+				fsstate->cursor_level = level - 1;
+		}
+		else
+		{
+			/* Forget foreign scans created in this subxact */
+			if (entry->fs_level >= level)
+			{
+				ForeignScanHashDelete(node);
+				continue;
+			}
+			/* Disable remote cursors declared in this subxact */
+			fsstate = (PgFdwScanState *) node->fdw_state;
+			if (fsstate->cursor_exists && fsstate->cursor_level >= level)
+			{
+				fsstate->cursor_exists = false;
+				fsstate->cursor_level = 0;
+				fsstate->scan_allowed = false;
+			}
+		}
+	}
 }
 
 /*
@@ -4394,6 +4558,9 @@ create_foreign_modify(EState *estate,
  *		result if any.  (This is the shared guts of postgresExecForeignInsert,
  *		postgresExecForeignBatchInsert, postgresExecForeignUpdate, and
  *		postgresExecForeignDelete.)
+ *
+ * Note: this function is never called from open cursors, thus no need to
+ * synchronize the local/remote transactions.
  */
 static TupleTableSlot **
 execute_foreign_modify(EState *estate,
@@ -4832,6 +4999,9 @@ rebuild_fdw_scan_tlist(ForeignScan *fscan, List *tlist)
 
 /*
  * Execute a direct UPDATE/DELETE statement.
+ *
+ * Note: this function is never called from open cursors, thus no need to
+ * synchronize the local/remote transactions.
  */
 static void
 execute_dml_stmt(ForeignScanState *node)
@@ -8840,9 +9010,14 @@ fetch_more_data_begin(AsyncRequest *areq)
 
 	Assert(!fsstate->conn_state->pendingAreq);
 
-	/* Create the cursor synchronously. */
+	/*
+	 * Create the cursor synchronously if not already done.  Otherwise,
+	 * synchronize the local/remote transactions before the data fetch.
+	 */
 	if (!fsstate->cursor_exists)
 		create_cursor(node);
+	else
+		pgfdw_begin_remote_xact(fsstate->conn_state->entry);
 
 	/* We will send this query, but not wait for the response. */
 	snprintf(sql, sizeof(sql), "FETCH %d FROM c%u",
