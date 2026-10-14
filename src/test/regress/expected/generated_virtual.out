@@ -912,7 +912,11 @@ CREATE TABLE gtest_parent (f1 date NOT NULL, f2 bigint, f3 bigint GENERATED ALWA
 CREATE TABLE gtest_child PARTITION OF gtest_parent
   FOR VALUES FROM ('2016-07-01') TO ('2016-08-01');  -- inherits gen expr
 CREATE TABLE gtest_child2 PARTITION OF gtest_parent (
-    f3 WITH OPTIONS GENERATED ALWAYS AS (f2 * 22) VIRTUAL  -- overrides gen expr
+    f3 WITH OPTIONS GENERATED ALWAYS AS (f2 * 22) VIRTUAL  -- error, must match parent
+) FOR VALUES FROM ('2016-08-01') TO ('2016-09-01');
+ERROR:  virtual generated column "f3" of partition "gtest_child2" must have the same generation expression as the partitioned table
+CREATE TABLE gtest_child2 PARTITION OF gtest_parent (
+    f3 WITH OPTIONS GENERATED ALWAYS AS (f2 * 2) VIRTUAL  -- same as parent, ok
 ) FOR VALUES FROM ('2016-08-01') TO ('2016-09-01');
 CREATE TABLE gtest_child3 PARTITION OF gtest_parent (
     f3 DEFAULT 42  -- error
@@ -946,6 +950,11 @@ ERROR:  column "f3" inherits from generated column of different kind
 DETAIL:  Parent column is VIRTUAL, child column is STORED.
 DROP TABLE gtest_child3;
 CREATE TABLE gtest_child3 (f1 date NOT NULL, f2 bigint, f3 bigint GENERATED ALWAYS AS (f2 * 33) VIRTUAL);
+ALTER TABLE gtest_parent ATTACH PARTITION gtest_child3 FOR VALUES FROM ('2016-09-01') TO ('2016-10-01'); -- error
+ERROR:  virtual generated column "f3" of partition "gtest_child3" must have the same generation expression as the partitioned table
+DROP TABLE gtest_child3;
+-- different column order, so the parent's expression has to be mapped
+CREATE TABLE gtest_child3 (f3 bigint GENERATED ALWAYS AS (f2 * 2) VIRTUAL, f2 bigint, f1 date NOT NULL);
 ALTER TABLE gtest_parent ATTACH PARTITION gtest_child3 FOR VALUES FROM ('2016-09-01') TO ('2016-10-01');
 \d gtest_child
               Table "generated_virtual_tests.gtest_child"
@@ -957,21 +966,21 @@ ALTER TABLE gtest_parent ATTACH PARTITION gtest_child3 FOR VALUES FROM ('2016-09
 Partition of: gtest_parent FOR VALUES FROM ('07-01-2016') TO ('08-01-2016')
 
 \d gtest_child2
-              Table "generated_virtual_tests.gtest_child2"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
+             Table "generated_virtual_tests.gtest_child2"
+ Column |  Type  | Collation | Nullable |           Default            
+--------+--------+-----------+----------+------------------------------
  f1     | date   |           | not null | 
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 22)
+ f3     | bigint |           |          | generated always as (f2 * 2)
 Partition of: gtest_parent FOR VALUES FROM ('08-01-2016') TO ('09-01-2016')
 
 \d gtest_child3
-              Table "generated_virtual_tests.gtest_child3"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
- f1     | date   |           | not null | 
+             Table "generated_virtual_tests.gtest_child3"
+ Column |  Type  | Collation | Nullable |           Default            
+--------+--------+-----------+----------+------------------------------
+ f3     | bigint |           |          | generated always as (f2 * 2)
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 33)
+ f1     | date   |           | not null | 
 Partition of: gtest_parent FOR VALUES FROM ('09-01-2016') TO ('10-01-2016')
 
 INSERT INTO gtest_parent (f1, f2) VALUES ('2016-07-15', 1);
@@ -992,14 +1001,14 @@ SELECT tableoid::regclass, * FROM gtest_child ORDER BY 1, 2, 3;
  gtest_child | 07-15-2016 |  2 |  4
 (2 rows)
 
-SELECT tableoid::regclass, * FROM gtest_child2 ORDER BY 1, 2, 3;  -- uses child's generation expression, not parent's
+SELECT tableoid::regclass, * FROM gtest_child2 ORDER BY 1, 2, 3;
    tableoid   |     f1     | f2 | f3 
 --------------+------------+----+----
- gtest_child2 | 08-15-2016 |  3 | 66
+ gtest_child2 | 08-15-2016 |  3 |  6
 (1 row)
 
 SELECT tableoid::regclass, * FROM gtest_child3 ORDER BY 1, 2, 3;
- tableoid | f1 | f2 | f3 
+ tableoid | f3 | f2 | f1 
 ----------+----+----+----
 (0 rows)
 
@@ -1012,46 +1021,14 @@ SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
  gtest_child3 | 09-13-2016 |  1 |  2
 (3 rows)
 
--- alter only parent's and one child's generation expression
-ALTER TABLE ONLY gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4);
-ALTER TABLE gtest_child ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10);
-\d gtest_parent
-       Partitioned table "generated_virtual_tests.gtest_parent"
- Column |  Type  | Collation | Nullable |           Default            
---------+--------+-----------+----------+------------------------------
- f1     | date   |           | not null | 
- f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 4)
-Partition key: RANGE (f1)
-Number of partitions: 3 (Use \d+ to list them.)
-
-\d gtest_child
-              Table "generated_virtual_tests.gtest_child"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
- f1     | date   |           | not null | 
- f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 10)
-Partition of: gtest_parent FOR VALUES FROM ('07-01-2016') TO ('08-01-2016')
-
-\d gtest_child2
-              Table "generated_virtual_tests.gtest_child2"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
- f1     | date   |           | not null | 
- f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 22)
-Partition of: gtest_parent FOR VALUES FROM ('08-01-2016') TO ('09-01-2016')
-
-\d gtest_child3
-              Table "generated_virtual_tests.gtest_child3"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
- f1     | date   |           | not null | 
- f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 33)
-Partition of: gtest_parent FOR VALUES FROM ('09-01-2016') TO ('10-01-2016')
-
+-- cannot alter only parent's or one partition's generation expression
+ALTER TABLE ONLY gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4); -- error
+ERROR:  ALTER TABLE / SET EXPRESSION must be applied to child tables too
+ALTER TABLE gtest_child ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10); -- error
+ERROR:  cannot alter generation expression of virtual generated column "f3" of partition "gtest_child"
+HINT:  Alter the generation expression of the partitioned table instead.
+-- alter generation expression of parent and all its children altogether
+ALTER TABLE gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4);
 SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
    tableoid   |     f1     | f2 | f3 
 --------------+------------+----+----
@@ -1060,16 +1037,10 @@ SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
  gtest_child3 | 09-13-2016 |  1 |  4
 (3 rows)
 
--- check constraint was validated based on each partitions's generation expression
-ALTER TABLE gtest_parent ADD CONSTRAINT cc1 CHECK (f3 < 19); -- error
-ERROR:  check constraint "cc1" of relation "gtest_child" is violated by some row
-ALTER TABLE gtest_parent ADD CONSTRAINT cc1 CHECK (f3 < 66); -- error
+ALTER TABLE gtest_parent ADD CONSTRAINT cc1 CHECK (f3 < 12); -- error
 ERROR:  check constraint "cc1" of relation "gtest_child2" is violated by some row
-ALTER TABLE gtest_parent ADD CONSTRAINT cc1 CHECK (f3 <> 33); -- error
-ERROR:  check constraint "cc1" of relation "gtest_child3" is violated by some row
-ALTER TABLE gtest_parent ADD CONSTRAINT cc CHECK (f3 < 67); -- ok
+ALTER TABLE gtest_parent ADD CONSTRAINT cc CHECK (f3 < 13); -- ok
 ALTER TABLE gtest_parent DROP CONSTRAINT cc;
--- alter generation expression of parent and all its children altogether
 ALTER TABLE gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 2);
 \d gtest_parent
        Partitioned table "generated_virtual_tests.gtest_parent"
@@ -1103,9 +1074,9 @@ Partition of: gtest_parent FOR VALUES FROM ('08-01-2016') TO ('09-01-2016')
              Table "generated_virtual_tests.gtest_child3"
  Column |  Type  | Collation | Nullable |           Default            
 --------+--------+-----------+----------+------------------------------
- f1     | date   |           | not null | 
- f2     | bigint |           |          | 
  f3     | bigint |           |          | generated always as (f2 * 2)
+ f2     | bigint |           |          | 
+ f1     | date   |           | not null | 
 Partition of: gtest_parent FOR VALUES FROM ('09-01-2016') TO ('10-01-2016')
 
 SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
@@ -1886,11 +1857,16 @@ select * from gtest_cursor order by id;
 
 commit;
 drop table gtest_cursor;
--- NOT NULL on a partitioned table's virtual column does not prove non-nullness,
--- because a partition can have a different generation expression
+-- a partition cannot have a different generation expression, which would let
+-- the partitioned table's NOT NULL virtual column read as NULL
 CREATE TABLE gtestnn_parent2 (a int NOT NULL, b int GENERATED ALWAYS AS (nullif(a, 0)) VIRTUAL NOT NULL) PARTITION BY LIST (a);
-CREATE TABLE gtestnn_child2 PARTITION OF gtestnn_parent2 (b GENERATED ALWAYS AS (a + 1) VIRTUAL) FOR VALUES IN (0);
-INSERT INTO gtestnn_parent2 VALUES (0);
+CREATE TABLE gtestnn_child2 PARTITION OF gtestnn_parent2 (b GENERATED ALWAYS AS (a + 1) VIRTUAL) FOR VALUES IN (0); -- error
+ERROR:  virtual generated column "b" of partition "gtestnn_child2" must have the same generation expression as the partitioned table
+CREATE TABLE gtestnn_child2 PARTITION OF gtestnn_parent2 FOR VALUES IN (0, 1);
+INSERT INTO gtestnn_parent2 VALUES (0); -- error
+ERROR:  null value in column "b" of relation "gtestnn_child2" violates not-null constraint
+DETAIL:  Failing row contains (0, virtual).
+INSERT INTO gtestnn_parent2 VALUES (1);
 EXPLAIN (COSTS OFF)
 SELECT a FROM gtestnn_parent2 WHERE a NOT IN (SELECT b FROM gtestnn_parent2);
                        QUERY PLAN                        
