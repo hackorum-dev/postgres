@@ -451,8 +451,11 @@ CREATE TABLE people (
       <listitem>
        <para>
         If a parent column is a generated column, its child column must also
-        be a generated column of the same kind (stored or virtual); however,
-        the child column can have a different generation expression.
+        be a generated column of the same kind (stored or virtual).
+        In addition, for virtual generated columns of a partition, the
+        generation expression must be identical to that of the partitioned
+        table.  In all other cases, the child column can have a different
+        generation expression.
        </para>
 
        <para>
