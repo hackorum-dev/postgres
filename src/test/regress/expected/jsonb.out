@@ -3079,6 +3079,66 @@ SELECT count(*) FROM testjsonb WHERE j @@ '$.age == "25".double()';
      2
 (1 row)
 
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25 && $.age == 26).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25 || $.age == 26).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '(!(!($.age == 25))).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '(exists($.age ? (@ == 25))).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).boolean()';
+ count 
+-------
+     2
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).string() ? (@ == "true").boolean()';
+ count 
+-------
+     2
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25)[*][0].**{0}.string().upper().lower().initcap().boolean()';
+ count 
+-------
+     2
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).string().ltrim("f").rtrim("e").btrim("als").split_part("x", 1).boolean()';
+ count 
+-------
+     2
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).string().lower().size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
 SELECT count(*) FROM testjsonb WHERE j @@ 'exists($)';
  count 
 -------
@@ -3290,6 +3350,66 @@ SELECT count(*) FROM testjsonb WHERE j @@ '$.age == "25".double()';
  count 
 -------
      2
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25 && $.age == 26).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25 || $.age == 26).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '(!(!($.age == 25))).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '(exists($.age ? (@ == 25))).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).boolean()';
+ count 
+-------
+     2
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).string() ? (@ == "true").boolean()';
+ count 
+-------
+     2
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25)[*][0].**{0}.string().upper().lower().initcap().boolean()';
+ count 
+-------
+     2
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).string().ltrim("f").rtrim("e").btrim("als").split_part("x", 1).boolean()';
+ count 
+-------
+     2
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).string().lower().size().boolean()';
+ count 
+-------
+  1012
 (1 row)
 
 SELECT count(*) FROM testjsonb WHERE j @@ '$.array[*] == "foo"';
@@ -3658,6 +3778,66 @@ SELECT count(*) FROM testjsonb WHERE j @@ '$.age == "25".double()';
  count 
 -------
      2
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25 && $.age == 26).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25 || $.age == 26).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '(!(!($.age == 25))).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '(exists($.age ? (@ == 25))).size().boolean()';
+ count 
+-------
+  1012
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).boolean()';
+ count 
+-------
+     2
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).string() ? (@ == "true").boolean()';
+ count 
+-------
+     2
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25)[*][0].**{0}.string().upper().lower().initcap().boolean()';
+ count 
+-------
+     2
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).string().ltrim("f").rtrim("e").btrim("als").split_part("x", 1).boolean()';
+ count 
+-------
+     2
+(1 row)
+
+SELECT count(*) FROM testjsonb WHERE j @@ '($.age == 25).string().lower().size().boolean()';
+ count 
+-------
+  1012
 (1 row)
 
 SELECT count(*) FROM testjsonb WHERE j @@ '$.array[*] == "foo"';
