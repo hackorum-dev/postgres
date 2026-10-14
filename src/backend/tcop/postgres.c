@@ -503,6 +503,34 @@ ReadCommand(StringInfo inBuf)
 }
 
 /*
+ * Absorb ProcSignalBarriers while blocked on a client read or write, so that
+ * a client that stops sending or reading can't hold up the processes waiting
+ * for them.  We might be in the middle of a protocol message, so make any
+ * error FATAL and don't send it to the client.
+ */
+static void
+ProcessClientBarrierInterrupt(void)
+{
+	bool		save_ExitOnAnyError;
+	CommandDest save_whereToSendOutput;
+
+	if (!ProcSignalBarrierPending ||
+		InterruptHoldoffCount != 0 || CritSectionCount != 0)
+		return;
+
+	save_ExitOnAnyError = ExitOnAnyError;
+	save_whereToSendOutput = whereToSendOutput;
+	ExitOnAnyError = true;
+	if (whereToSendOutput == DestRemote)
+		whereToSendOutput = DestNone;
+
+	ProcessProcSignalBarrier();
+
+	ExitOnAnyError = save_ExitOnAnyError;
+	whereToSendOutput = save_whereToSendOutput;
+}
+
+/*
  * ProcessClientReadInterrupt() - Process interrupts specific to client reads
  *
  * This is called just before and after low-level reads.
@@ -544,6 +572,8 @@ ProcessClientReadInterrupt(bool blocked)
 		else
 			SetLatch(MyLatch);
 	}
+	else if (blocked)
+		ProcessClientBarrierInterrupt();
 
 	errno = save_errno;
 }
@@ -596,6 +626,8 @@ ProcessClientWriteInterrupt(bool blocked)
 		else
 			SetLatch(MyLatch);
 	}
+	else if (blocked)
+		ProcessClientBarrierInterrupt();
 
 	errno = save_errno;
 }
