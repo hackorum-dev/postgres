@@ -380,6 +380,7 @@ static List *MergeCheckConstraint(List *constraints, const char *name, Node *exp
 static void MergeChildAttribute(List *inh_columns, int exist_attno, int newcol_attno, const ColumnDef *newdef);
 static ColumnDef *MergeInheritedAttribute(List *inh_columns, int exist_attno, const ColumnDef *newdef);
 static void MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel, bool ispartition);
+static void CheckPartitionVirtualGeneratedExprs(Relation partrel, Relation parentrel);
 static void MergeConstraintsIntoExisting(Relation child_rel, Relation parent_rel);
 static void StoreCatalogInheritance(Oid relationId, List *supers,
 									bool child_is_partition);
@@ -539,6 +540,7 @@ static ObjectAddress ATExecDropIdentity(Relation rel, const char *colName, bool 
 										bool recurse, bool recursing);
 static ObjectAddress ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
 										 Node *newExpr, LOCKMODE lockmode);
+static void ATPrepSetExpression(Relation rel, AlterTableCmd *cmd, bool recurse, bool recursing);
 static void ATPrepDropExpression(Relation rel, AlterTableCmd *cmd, bool recurse, bool recursing, LOCKMODE lockmode);
 static ObjectAddress ATExecDropExpression(Relation rel, const char *colName, bool missing_ok, LOCKMODE lockmode);
 static ObjectAddress ATExecSetStatistics(Relation rel, const char *colName, int16 colNum,
@@ -1160,6 +1162,8 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 errmsg("\"%s\" is not partitioned",
 							RelationGetRelationName(parent))));
+
+		CheckPartitionVirtualGeneratedExprs(rel, parent);
 
 		/*
 		 * The partition constraint of the default partition depends on the
@@ -3096,7 +3100,8 @@ MergeAttributes(List *columns, const List *supers, char relpersistence,
 					 *
 					 * Same rules as above: generated-ness has to match the
 					 * parent, but the contents of the generation expression
-					 * can be different.
+					 * can be different, except for virtual generated columns
+					 * (see CheckPartitionVirtualGeneratedExprs).
 					 */
 					if (coldef->generated)
 					{
@@ -5086,6 +5091,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_SetExpression:	/* ALTER COLUMN SET EXPRESSION */
 			ATSimplePermissions(cmd->subtype, rel,
 								ATT_TABLE | ATT_PARTITIONED_TABLE | ATT_FOREIGN_TABLE);
+			ATPrepSetExpression(rel, cmd, recurse, recursing);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse, lockmode, context);
 			pass = AT_PASS_SET_EXPRESSION;
 			break;
@@ -8834,6 +8840,45 @@ ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
 	ObjectAddressSubSet(address, RelationRelationId,
 						RelationGetRelid(rel), attnum);
 	return address;
+}
+
+/*
+ * ALTER TABLE ALTER COLUMN SET EXPRESSION
+ *
+ * The expression of a virtual generated column can only be changed for a
+ * whole partition tree.  See CheckPartitionVirtualGeneratedExprs.
+ */
+static void
+ATPrepSetExpression(Relation rel, AlterTableCmd *cmd, bool recurse, bool recursing)
+{
+	HeapTuple	tuple;
+	char		attgenerated;
+
+	if (recursing)
+		return;
+
+	tuple = SearchSysCacheAttName(RelationGetRelid(rel), cmd->name);
+	if (!HeapTupleIsValid(tuple))
+		return;					/* error will be reported later */
+	attgenerated = ((Form_pg_attribute) GETSTRUCT(tuple))->attgenerated;
+	ReleaseSysCache(tuple);
+
+	if (attgenerated != ATTRIBUTE_GENERATED_VIRTUAL)
+		return;
+
+	if (rel->rd_rel->relispartition)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot alter generation expression of virtual generated column \"%s\" of partition \"%s\"",
+						cmd->name, RelationGetRelationName(rel)),
+				 errhint("Alter the generation expression of the partitioned table instead.")));
+
+	if (!recurse &&
+		rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE &&
+		find_inheritance_children(RelationGetRelid(rel), NoLock) != NIL)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("ALTER TABLE / SET EXPRESSION must be applied to child tables too")));
 }
 
 /*
@@ -18175,7 +18220,9 @@ constraints_equivalent(HeapTuple a, HeapTuple b, TupleDesc tupleDesc)
  * partitioned tables it's a foot-gun.
  *
  * The data type must match exactly. If the parent column is NOT NULL then
- * the child must be as well. Defaults are not compared, however.
+ * the child must be as well. Defaults are not compared, however, and neither
+ * are generation expressions, except for virtual generated columns of a
+ * partition.
  */
 static void
 MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel, bool ispartition)
@@ -18296,6 +18343,68 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel, bool ispart
 	}
 
 	table_close(attrrel, RowExclusiveLock);
+
+	if (ispartition)
+		CheckPartitionVirtualGeneratedExprs(child_rel, parent_rel);
+}
+
+/*
+ * CheckPartitionVirtualGeneratedExprs
+ *		Check that each virtual generated column of a partition has the same
+ *		generation expression as in the partitioned table.
+ *
+ * Reading through the partitioned table computes the parent's expression,
+ * while constraints on the partition are checked with its own, so they must
+ * be the same.
+ */
+static void
+CheckPartitionVirtualGeneratedExprs(Relation partrel, Relation parentrel)
+{
+	TupleDesc	parent_desc = RelationGetDescr(parentrel);
+	TupleDesc	part_desc = RelationGetDescr(partrel);
+	AttrMap    *attmap;
+
+	if (parent_desc->constr == NULL ||
+		!parent_desc->constr->has_generated_virtual)
+		return;
+
+	attmap = build_attrmap_by_name(part_desc, parent_desc, false);
+
+	for (AttrNumber parent_attno = 1; parent_attno <= parent_desc->natts; parent_attno++)
+	{
+		Form_pg_attribute parent_att = TupleDescAttr(parent_desc, parent_attno - 1);
+		AttrNumber	part_attno;
+		Node	   *parent_expr;
+		Node	   *part_expr;
+		bool		found_whole_row;
+
+		if (parent_att->attisdropped ||
+			parent_att->attgenerated != ATTRIBUTE_GENERATED_VIRTUAL)
+			continue;
+
+		part_attno = attmap->attnums[parent_attno - 1];
+		Assert(part_attno > 0);
+
+		parent_expr = TupleDescGetDefault(parent_desc, parent_attno);
+		part_expr = TupleDescGetDefault(part_desc, part_attno);
+		if (parent_expr == NULL || part_expr == NULL)
+			elog(ERROR, "missing generation expression for column \"%s\"",
+				 NameStr(parent_att->attname));
+
+		parent_expr = map_variable_attnos(parent_expr, 1, 0, attmap,
+										  InvalidOid, &found_whole_row);
+		/* generation expressions cannot contain whole-row Vars */
+		Assert(!found_whole_row);
+
+		if (!equal(parent_expr, part_expr))
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_COLUMN_DEFINITION),
+					 errmsg("virtual generated column \"%s\" of partition \"%s\" must have the same generation expression as the partitioned table",
+							NameStr(parent_att->attname),
+							RelationGetRelationName(partrel))));
+	}
+
+	free_attrmap(attmap);
 }
 
 /*
