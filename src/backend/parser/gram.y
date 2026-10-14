@@ -689,7 +689,9 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				json_table_default_plan_union_cross
 				json_wrapper_behavior
 %type <boolean>	json_key_uniqueness_constraint_opt
+				json_key_uniqueness_constraint
 				json_object_constructor_null_clause_opt
+				json_object_constructor_null_clause
 				json_array_constructor_null_clause_opt
 
 /*
@@ -16484,6 +16486,33 @@ func_expr_common_subexpr:
 					n->location = @1;
 					$$ = (Node *) n;
 				}
+			| JSON_OBJECT '('
+				json_object_constructor_null_clause
+				json_key_uniqueness_constraint_opt
+				json_returning_clause_opt ')'
+				{
+					JsonObjectConstructor *n = makeNode(JsonObjectConstructor);
+
+					n->exprs = NULL;
+					n->absent_on_null = $3;
+					n->unique = $4;
+					n->output = (JsonOutput *) $5;
+					n->location = @1;
+					$$ = (Node *) n;
+				}
+			| JSON_OBJECT '('
+				json_key_uniqueness_constraint
+				json_returning_clause_opt ')'
+				{
+					JsonObjectConstructor *n = makeNode(JsonObjectConstructor);
+
+					n->exprs = NULL;
+					n->absent_on_null = false;
+					n->unique = $3;
+					n->output = (JsonOutput *) $4;
+					n->location = @1;
+					$$ = (Node *) n;
+				}
 			| JSON_OBJECT '(' json_returning_clause_opt ')'
 				{
 					JsonObjectConstructor *n = makeNode(JsonObjectConstructor);
@@ -17531,11 +17560,15 @@ json_predicate_type_constraint:
  * KEYS-less productions a precedence less than IDENT (i.e., less than KEYS).
  * This prevents reducing them when the next token is KEYS.
  */
-json_key_uniqueness_constraint_opt:
+json_key_uniqueness_constraint:
 			WITH UNIQUE KEYS							{ $$ = true; }
 			| WITH UNIQUE				%prec UNBOUNDED	{ $$ = true; }
 			| WITHOUT UNIQUE KEYS						{ $$ = false; }
 			| WITHOUT UNIQUE			%prec UNBOUNDED	{ $$ = false; }
+		;
+
+json_key_uniqueness_constraint_opt:
+			json_key_uniqueness_constraint				{ $$ = $1; }
 			| /* EMPTY */ 				%prec UNBOUNDED	{ $$ = false; }
 		;
 
@@ -17560,9 +17593,13 @@ json_name_and_value:
 		;
 
 /* empty means false for objects, true for arrays */
-json_object_constructor_null_clause_opt:
+json_object_constructor_null_clause:
 			NULL_P ON NULL_P					{ $$ = false; }
 			| ABSENT ON NULL_P					{ $$ = true; }
+		;
+
+json_object_constructor_null_clause_opt:
+			json_object_constructor_null_clause			{ $$ = $1; }
 			| /* EMPTY */						{ $$ = false; }
 		;
 
