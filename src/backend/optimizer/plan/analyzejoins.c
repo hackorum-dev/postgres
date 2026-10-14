@@ -159,6 +159,7 @@ remove_useless_outer_joins(PlannerInfo *root)
 		if (rte->rtekind == RTE_SUBQUERY)
 			rte->subquery = NULL;
 		rte->securityQuals = NIL;
+		rte->tablesample = NULL;
 
 		/*
 		 * It's okay to keep scanning join_info_list for more removable joins,
