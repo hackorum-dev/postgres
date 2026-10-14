@@ -383,6 +383,7 @@ static List *MergeCheckConstraint(List *constraints, const char *name, Node *exp
 static void MergeChildAttribute(List *inh_columns, int exist_attno, int newcol_attno, const ColumnDef *newdef);
 static ColumnDef *MergeInheritedAttribute(List *inh_columns, int exist_attno, const ColumnDef *newdef);
 static void MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel, bool ispartition);
+static void CheckVirtualGeneratedExprs(Relation childrel, Relation parentrel);
 static void MergeConstraintsIntoExisting(Relation child_rel, Relation parent_rel);
 static void StoreCatalogInheritance(Oid relationId, List *supers,
 									bool child_is_partition);
@@ -552,7 +553,11 @@ static ObjectAddress ATExecSetIdentity(Relation rel, const char *colName,
 static ObjectAddress ATExecDropIdentity(Relation rel, const char *colName, bool missing_ok, LOCKMODE lockmode,
 										bool recurse, bool recursing);
 static ObjectAddress ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
-										 Node *newExpr, LOCKMODE lockmode);
+										 Node *newExpr, bool check_tree, LOCKMODE lockmode);
+static void ATPrepSetExpression(Relation rel, AlterTableCmd *cmd, bool recurse,
+								bool recursing, LOCKMODE lockmode);
+static void CheckSetExpressionTree(Relation rel, const char *colName,
+								   LOCKMODE lockmode);
 static void ATPrepDropExpression(Relation rel, AlterTableCmd *cmd, bool recurse, bool recursing, LOCKMODE lockmode);
 static ObjectAddress ATExecDropExpression(Relation rel, const char *colName, bool missing_ok, LOCKMODE lockmode);
 static ObjectAddress ATExecSetStatistics(Relation rel, const char *colName, int16 colNum,
@@ -1150,6 +1155,15 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	 * Make column generation expressions visible for use by partitioning.
 	 */
 	CommandCounterIncrement();
+
+	/* Virtual generated columns must use the parents' expressions */
+	foreach_oid(parentId, inheritOids)
+	{
+		Relation	parent = table_open(parentId, NoLock);
+
+		CheckVirtualGeneratedExprs(rel, parent);
+		table_close(parent, NoLock);
+	}
 
 	/* Process and store partition bound, if any. */
 	if (stmt->partbound)
@@ -3109,8 +3123,8 @@ MergeAttributes(List *columns, const List *supers, char relpersistence,
 					 * Check for conflicts related to generated columns.
 					 *
 					 * Same rules as above: generated-ness has to match the
-					 * parent, but the contents of the generation expression
-					 * can be different.
+					 * parent.  For virtual generated columns,
+					 * CheckVirtualGeneratedExprs checks the expression later.
 					 */
 					if (coldef->generated)
 					{
@@ -3189,7 +3203,8 @@ MergeAttributes(List *columns, const List *supers, char relpersistence,
 							(errcode(ERRCODE_INVALID_COLUMN_DEFINITION),
 							 errmsg("column \"%s\" inherits conflicting generation expressions",
 									def->colname),
-							 errhint("To resolve the conflict, specify a generation expression explicitly.")));
+							 def->generated == ATTRIBUTE_GENERATED_STORED ?
+							 errhint("To resolve the conflict, specify a generation expression explicitly.") : 0));
 				else
 					ereport(ERROR,
 							(errcode(ERRCODE_INVALID_COLUMN_DEFINITION),
@@ -3397,10 +3412,11 @@ MergeChildAttribute(List *inh_columns, int exist_attno, int newcol_attno, const 
 	 *
 	 * If the parent column is generated, the child column will be made a
 	 * generated column if it isn't already.  If it is a generated column,
-	 * we'll take its generation expression in preference to the parent's.  We
-	 * must check that the child column doesn't specify a default value or
-	 * identity, which matches the rules for a single column in
-	 * parse_utilcmd.c.
+	 * we'll take its generation expression in preference to the parent's,
+	 * though for a virtual generated column CheckVirtualGeneratedExprs later
+	 * requires the two to match.  We must check that the child column doesn't
+	 * specify a default value or identity, which matches the rules for a
+	 * single column in parse_utilcmd.c.
 	 *
 	 * Conversely, if the parent column is not generated, the child column
 	 * can't be either.  (We used to allow that, but it results in being able
@@ -5100,6 +5116,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_SetExpression:	/* ALTER COLUMN SET EXPRESSION */
 			ATSimplePermissions(cmd->subtype, rel,
 								ATT_TABLE | ATT_PARTITIONED_TABLE | ATT_FOREIGN_TABLE);
+			ATPrepSetExpression(rel, cmd, recurse, recursing, lockmode);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse, lockmode, context);
 			pass = AT_PASS_SET_EXPRESSION;
 			break;
@@ -5501,7 +5518,9 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab,
 									   cmd->recurse, false, lockmode);
 			break;
 		case AT_SetExpression:
-			address = ATExecSetExpression(tab, rel, cmd->name, cmd->def, lockmode);
+			/* ATPrepSetExpression sets recurse for the top-level table */
+			address = ATExecSetExpression(tab, rel, cmd->name, cmd->def,
+										  cmd->recurse, lockmode);
 			break;
 		case AT_DropExpression:
 			address = ATExecDropExpression(rel, cmd->name, cmd->missing_ok, lockmode);
@@ -7932,6 +7951,33 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 								   get_collation_name(ccollid),
 								   get_collation_name(childatt->attcollation))));
 
+			/*
+			 * Child column must be virtual generated if and only if parent
+			 * column is.  Our caller checks the expression.
+			 */
+			if ((colDef->generated == ATTRIBUTE_GENERATED_VIRTUAL) !=
+				(childatt->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL))
+			{
+				if (!childatt->attgenerated)
+					ereport(ERROR,
+							(errcode(ERRCODE_DATATYPE_MISMATCH),
+							 errmsg("column \"%s\" in child table must be a generated column",
+									colDef->colname)));
+				else if (!colDef->generated)
+					ereport(ERROR,
+							(errcode(ERRCODE_DATATYPE_MISMATCH),
+							 errmsg("column \"%s\" in child table must not be a generated column",
+									colDef->colname)));
+				else
+					ereport(ERROR,
+							(errcode(ERRCODE_DATATYPE_MISMATCH),
+							 errmsg("column \"%s\" inherits from generated column of different kind",
+									colDef->colname),
+							 errdetail("Parent column is %s, child column is %s.",
+									   colDef->generated == ATTRIBUTE_GENERATED_STORED ? "STORED" : "VIRTUAL",
+									   childatt->attgenerated == ATTRIBUTE_GENERATED_STORED ? "STORED" : "VIRTUAL")));
+			}
+
 			/* Bump the existing child att's inhcount */
 			if (pg_add_s16_overflow(childatt->attinhcount, 1,
 									&childatt->attinhcount))
@@ -8293,6 +8339,13 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 		ATExecAddColumn(wqueue, childtab, childrel,
 						&childcmd, recurse, true,
 						lockmode, cur_pass, context);
+
+		/* The child may have had the column already */
+		if (colDef->generated == ATTRIBUTE_GENERATED_VIRTUAL)
+		{
+			CommandCounterIncrement();
+			CheckVirtualGeneratedExprs(childrel, rel);
+		}
 
 		table_close(childrel, NoLock);
 	}
@@ -9266,7 +9319,7 @@ ATExecDropIdentity(Relation rel, const char *colName, bool missing_ok, LOCKMODE 
  */
 static ObjectAddress
 ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
-					Node *newExpr, LOCKMODE lockmode)
+					Node *newExpr, bool check_tree, LOCKMODE lockmode)
 {
 	HeapTuple	tuple;
 	Form_pg_attribute attTup;
@@ -9304,6 +9357,9 @@ ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
 
 	if (attgenerated == ATTRIBUTE_GENERATED_VIRTUAL && attTup->attnotnull)
 		tab->verify_new_notnull = true;
+
+	if (attgenerated == ATTRIBUTE_GENERATED_VIRTUAL && check_tree)
+		CheckSetExpressionTree(rel, colName, lockmode);
 
 	/*
 	 * We need to prevent this because a change of expression could affect a
@@ -9407,6 +9463,111 @@ ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
 	ObjectAddressSubSet(address, RelationRelationId,
 						RelationGetRelid(rel), attnum);
 	return address;
+}
+
+/*
+ * ALTER TABLE ALTER COLUMN SET EXPRESSION
+ *
+ * A virtual generated column must have the same expression in a table and in
+ * all its parents and children, see CheckVirtualGeneratedExprs.  So the
+ * expression can only be changed for a whole inheritance tree, from the top.
+ */
+static void
+ATPrepSetExpression(Relation rel, AlterTableCmd *cmd, bool recurse,
+					bool recursing, LOCKMODE lockmode)
+{
+	HeapTuple	tuple;
+	Form_pg_attribute attTup;
+	char		attgenerated;
+	int16		attinhcount;
+
+	/*
+	 * Check the whole tree in phase 2, once columns added by this command
+	 * exist.  See CheckSetExpressionTree.
+	 */
+	cmd->recurse = recurse && !recursing;
+
+	if (recursing)
+		return;
+
+	tuple = SearchSysCacheAttName(RelationGetRelid(rel), cmd->name);
+	if (!HeapTupleIsValid(tuple))
+		return;					/* error will be reported later */
+	attTup = (Form_pg_attribute) GETSTRUCT(tuple);
+	attgenerated = attTup->attgenerated;
+	attinhcount = attTup->attinhcount;
+	ReleaseSysCache(tuple);
+
+	if (attgenerated != ATTRIBUTE_GENERATED_VIRTUAL)
+		return;
+
+	/*
+	 * A partition has only one parent, so its column comes from a single
+	 * top-level table.  With plain inheritance it may come from several.
+	 */
+	if (attinhcount > 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+				 errmsg("cannot alter inherited column \"%s\"", cmd->name),
+				 rel->rd_rel->relispartition ?
+				 errhint("Alter the generation expression of the top-level parent table instead.") : 0));
+
+	/* Partitions pending detach count here, as they still have the column */
+	if (!recurse)
+	{
+		if (find_inheritance_children_extended(RelationGetRelid(rel), false,
+											   NoLock, NULL, NULL) != NIL)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("ALTER TABLE / SET EXPRESSION must be applied to child tables too")));
+	}
+}
+
+/*
+ * Recursion skips partitions pending detach, so they would keep the old
+ * expression.  Also, a child with another parent outside this tree would end
+ * up with a different expression than that parent.
+ */
+static void
+CheckSetExpressionTree(Relation rel, const char *colName, LOCKMODE lockmode)
+{
+	HeapTuple	tuple;
+	int16		attinhcount;
+	List	   *children;
+	List	   *numparents;
+	ListCell   *lc;
+	ListCell   *lc2;
+
+	children = find_all_inheritors(RelationGetRelid(rel), lockmode, &numparents);
+	forboth(lc, children, lc2, numparents)
+	{
+		Oid			childrelid = lfirst_oid(lc);
+		bool		detached_exist = false;
+
+		(void) find_inheritance_children_extended(childrelid, true, NoLock,
+												  &detached_exist, NULL);
+		if (detached_exist)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("cannot alter generation expression of column \"%s\" while a partition of \"%s\" is pending detach",
+							colName, get_rel_name(childrelid)),
+					 errhint("Use ALTER TABLE ... DETACH PARTITION ... FINALIZE to complete the pending detach operation.")));
+
+		if (childrelid == RelationGetRelid(rel))
+			continue;
+
+		tuple = SearchSysCacheAttName(childrelid, colName);
+		if (!HeapTupleIsValid(tuple))
+			continue;			/* error will be reported later */
+		attinhcount = ((Form_pg_attribute) GETSTRUCT(tuple))->attinhcount;
+		ReleaseSysCache(tuple);
+
+		if (attinhcount > lfirst_int(lc2))
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("cannot alter inherited column \"%s\" of relation \"%s\"",
+							colName, get_rel_name(childrelid))));
+	}
 }
 
 /*
@@ -18859,7 +19020,8 @@ constraints_equivalent(HeapTuple a, HeapTuple b, TupleDesc tupleDesc)
  * partitioned tables it's a foot-gun.
  *
  * The data type must match exactly. If the parent column is NOT NULL then
- * the child must be as well. Defaults are not compared, however.
+ * the child must be as well. Defaults are not compared, however, and neither
+ * are generation expressions, except for virtual generated columns.
  */
 static void
 MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel, bool ispartition)
@@ -18980,6 +19142,71 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel, bool ispart
 	}
 
 	table_close(attrrel, RowExclusiveLock);
+
+	CheckVirtualGeneratedExprs(child_rel, parent_rel);
+}
+
+/*
+ * CheckVirtualGeneratedExprs
+ *		Check that each virtual generated column of a child table has the same
+ *		generation expression as in the parent.
+ *
+ * Reading through the parent computes the parent's expression, while
+ * constraints on the child are checked with its own, so they must be the
+ * same.  As in constraints_equivalent, we compare the deparsed expressions.
+ * That is what pg_dump restores, and unlike equal() it also catches an
+ * implicit cast in one and an explicit cast in the other, which
+ * ALTER COLUMN TYPE treats differently.
+ */
+static void
+CheckVirtualGeneratedExprs(Relation childrel, Relation parentrel)
+{
+	TupleDesc	parent_desc = RelationGetDescr(parentrel);
+	TupleDesc	child_desc = RelationGetDescr(childrel);
+	List	   *parent_context;
+	List	   *child_context;
+
+	if (parent_desc->constr == NULL ||
+		!parent_desc->constr->has_generated_virtual)
+		return;
+
+	parent_context = deparse_context_for(RelationGetRelationName(parentrel),
+										 RelationGetRelid(parentrel));
+	child_context = deparse_context_for(RelationGetRelationName(childrel),
+										RelationGetRelid(childrel));
+
+	for (int i = 0; i < parent_desc->natts; i++)
+	{
+		Form_pg_attribute parent_att = TupleDescAttr(parent_desc, i);
+		AttrNumber	child_attno;
+		Node	   *parent_expr;
+		Node	   *child_expr;
+
+		if (parent_att->attisdropped ||
+			parent_att->attgenerated != ATTRIBUTE_GENERATED_VIRTUAL)
+			continue;
+
+		child_attno = get_attnum(RelationGetRelid(childrel),
+								 NameStr(parent_att->attname));
+		if (child_attno == InvalidAttrNumber)
+			elog(ERROR, "cache lookup failed for attribute \"%s\" of relation %u",
+				 NameStr(parent_att->attname), RelationGetRelid(childrel));
+
+		parent_expr = TupleDescGetDefault(parent_desc, i + 1);
+		child_expr = TupleDescGetDefault(child_desc, child_attno);
+		if (parent_expr == NULL || child_expr == NULL)
+			elog(ERROR, "missing generation expression for column \"%s\"",
+				 NameStr(parent_att->attname));
+
+		if (strcmp(deparse_expression(parent_expr, parent_context, false, false),
+				   deparse_expression(child_expr, child_context, false, false)) != 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_COLUMN_DEFINITION),
+					 errmsg("column \"%s\" of relation \"%s\" must have the same generation expression as in parent relation \"%s\"",
+							NameStr(parent_att->attname),
+							RelationGetRelationName(childrel),
+							RelationGetRelationName(parentrel))));
+	}
 }
 
 /*
