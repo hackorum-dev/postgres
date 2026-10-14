@@ -590,6 +590,13 @@ extract_jsp_bool_expr(JsonPathGinContext *cxt, JsonPathGinPath path,
 {
 	check_stack_depth();
 
+	/*
+	 * A following item can change the predicate's result, so the predicate
+	 * alone is not a necessary condition for the whole expression to be true.
+	 */
+	if (jspHasNext(jsp))
+		return NULL;
+
 	switch (jsp->type)
 	{
 		case jpiAnd:			/* expr && expr */
