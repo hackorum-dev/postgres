@@ -153,7 +153,8 @@ DROP TABLE gtest_normal, gtest_normal_child;
 CREATE TABLE gtestx (x int, b int DEFAULT 10) INHERITS (gtest1);  -- error
 CREATE TABLE gtestx (x int, b int GENERATED ALWAYS AS IDENTITY) INHERITS (gtest1);  -- error
 CREATE TABLE gtestx (x int, b int GENERATED ALWAYS AS (a * 22) STORED) INHERITS (gtest1);  -- error
-CREATE TABLE gtestx (x int, b int GENERATED ALWAYS AS (a * 22) VIRTUAL) INHERITS (gtest1);  -- ok, overrides parent
+CREATE TABLE gtestx (x int, b int GENERATED ALWAYS AS (a * 22) VIRTUAL) INHERITS (gtest1);  -- error
+CREATE TABLE gtestx (x int, b int GENERATED ALWAYS AS (a * 2) VIRTUAL) INHERITS (gtest1);  -- ok
 \d+ gtestx
 INSERT INTO gtestx (a, x) VALUES (11, 22);
 SELECT * FROM gtest1;
@@ -177,8 +178,69 @@ DROP TABLE gtesty;
 
 CREATE TABLE gtesty (x int, b int GENERATED ALWAYS AS (x * 22) VIRTUAL);
 CREATE TABLE gtest1_y () INHERITS (gtest1, gtesty);  -- error
-CREATE TABLE gtest1_y (b int GENERATED ALWAYS AS (x + 1) VIRTUAL) INHERITS (gtest1, gtesty);  -- ok
-\d gtest1_y
+CREATE TABLE gtest1_y (b int GENERATED ALWAYS AS (x + 1) VIRTUAL) INHERITS (gtest1, gtesty);  -- error
+DROP TABLE gtesty;
+
+-- adding a column merges it into an existing child column
+CREATE TABLE gtesty (a int);
+CREATE TABLE gtesty_1 (a int, b int GENERATED ALWAYS AS (a * 3) VIRTUAL) INHERITS (gtesty);
+CREATE TABLE gtesty_2 (a int, b int) INHERITS (gtesty);
+ALTER TABLE gtesty ADD COLUMN b int GENERATED ALWAYS AS (a * 2) VIRTUAL;  -- error
+DROP TABLE gtesty_1;
+ALTER TABLE gtesty ADD COLUMN b int GENERATED ALWAYS AS (a * 2) VIRTUAL;  -- error
+DROP TABLE gtesty CASCADE;
+
+-- a child with two parents cannot have its expression changed through one
+CREATE TABLE gtesty (a int, b int GENERATED ALWAYS AS (a * 2) VIRTUAL);
+CREATE TABLE gtestz (a int, b int GENERATED ALWAYS AS (a * 2) VIRTUAL);
+CREATE TABLE gtestyz () INHERITS (gtesty, gtestz);
+ALTER TABLE gtesty ALTER COLUMN b SET EXPRESSION AS (a * 3);  -- error
+ALTER TABLE gtestyz ALTER COLUMN b SET EXPRESSION AS (a * 3);  -- error, no hint
+DROP TABLE gtesty, gtestz CASCADE;
+-- also when the column is added by the same command
+CREATE TABLE gtestq (a int, b int GENERATED ALWAYS AS (a * 2) VIRTUAL);
+CREATE TABLE gtestp (a int);
+CREATE TABLE gtestpq () INHERITS (gtestp, gtestq);
+ALTER TABLE gtestp ADD COLUMN b int GENERATED ALWAYS AS (a * 2) VIRTUAL,
+  ALTER COLUMN b SET EXPRESSION AS (a * 3);  -- error
+DROP TABLE gtestp, gtestq CASCADE;
+-- Trees made by older minor versions can have a child whose expression
+-- differs, which CREATE and ATTACH no longer allow.  Emulate one by writing a
+-- different expression directly into the child's pg_attrdef row.
+CREATE TABLE gtestd (a int, b int GENERATED ALWAYS AS (a * 3) VIRTUAL);
+CREATE TABLE gtestr (a int, b int GENERATED ALWAYS AS (a * 2) VIRTUAL) PARTITION BY LIST (a);
+CREATE TABLE gtestr1 PARTITION OF gtestr FOR VALUES IN (1);
+UPDATE pg_attrdef SET adbin = (SELECT adbin FROM pg_attrdef WHERE adrelid = 'gtestd'::regclass)
+  WHERE adrelid = 'gtestr1'::regclass;
+-- adding a column checks only the new column, not the old one
+ALTER TABLE gtestr ADD COLUMN c int GENERATED ALWAYS AS (a + 1) VIRTUAL;
+INSERT INTO gtestr VALUES (1);
+SELECT * FROM gtestr;
+-- but the new column is still checked against a child that already has it
+CREATE TABLE gtests (a int);
+CREATE TABLE gtests1 (a int, c int GENERATED ALWAYS AS (a * 5) VIRTUAL) INHERITS (gtests);
+ALTER TABLE gtests ADD COLUMN c int GENERATED ALWAYS AS (a + 1) VIRTUAL;  -- error
+ALTER TABLE gtests ADD COLUMN c int GENERATED ALWAYS AS (a * 5) VIRTUAL;  -- ok
+DROP TABLE gtestd, gtestr, gtests CASCADE;
+-- constants that differ can have the same text, depending on settings
+CREATE TABLE gtestf (a float4, b float4 GENERATED ALWAYS AS (a * '0.1'::float4) VIRTUAL);
+SET extra_float_digits = 0;
+CREATE TABLE gtestf1 (b float4 GENERATED ALWAYS AS (a * '0.10000001'::float4) VIRTUAL) INHERITS (gtestf);  -- error
+RESET extra_float_digits;
+DROP TABLE gtestf;
+CREATE TABLE gtestz (a timestamptz, b boolean GENERATED ALWAYS AS (a < '2014-10-25 21:30:00+00'::timestamptz) VIRTUAL);
+SET DateStyle = 'SQL, MDY';
+SET TimeZone = 'Europe/Moscow';
+CREATE TABLE gtestz1 (b boolean GENERATED ALWAYS AS (a < '2014-10-25 22:30:00+00'::timestamptz) VIRTUAL) INHERITS (gtestz);  -- error
+RESET DateStyle;
+RESET TimeZone;
+DROP TABLE gtestz;
+-- a child written by hand still matches after the parent's type was changed
+CREATE TABLE gtestt (a int, b varchar(5), c varchar(5) GENERATED ALWAYS AS (b) VIRTUAL) PARTITION BY LIST (a);
+ALTER TABLE gtestt ALTER COLUMN c TYPE varchar(10);
+CREATE TABLE gtestt1 (a int, b varchar(5), c varchar(10) GENERATED ALWAYS AS (b) VIRTUAL);
+ALTER TABLE gtestt ATTACH PARTITION gtestt1 FOR VALUES IN (1);
+DROP TABLE gtestt;
 
 -- test correct handling of GENERATED column that's only in child
 CREATE TABLE gtestp (f1 int);
@@ -529,7 +591,10 @@ CREATE TABLE gtest_parent (f1 date NOT NULL, f2 bigint, f3 bigint GENERATED ALWA
 CREATE TABLE gtest_child PARTITION OF gtest_parent
   FOR VALUES FROM ('2016-07-01') TO ('2016-08-01');  -- inherits gen expr
 CREATE TABLE gtest_child2 PARTITION OF gtest_parent (
-    f3 WITH OPTIONS GENERATED ALWAYS AS (f2 * 22) VIRTUAL  -- overrides gen expr
+    f3 WITH OPTIONS GENERATED ALWAYS AS (f2 * 22) VIRTUAL  -- error, must match parent
+) FOR VALUES FROM ('2016-08-01') TO ('2016-09-01');
+CREATE TABLE gtest_child2 PARTITION OF gtest_parent (
+    f3 WITH OPTIONS GENERATED ALWAYS AS (f2 * 2) VIRTUAL  -- same as parent, ok
 ) FOR VALUES FROM ('2016-08-01') TO ('2016-09-01');
 CREATE TABLE gtest_child3 PARTITION OF gtest_parent (
     f3 DEFAULT 42  -- error
@@ -553,6 +618,15 @@ CREATE TABLE gtest_child3 (f1 date NOT NULL, f2 bigint, f3 bigint GENERATED ALWA
 ALTER TABLE gtest_parent ATTACH PARTITION gtest_child3 FOR VALUES FROM ('2016-09-01') TO ('2016-10-01'); -- error
 DROP TABLE gtest_child3;
 CREATE TABLE gtest_child3 (f1 date NOT NULL, f2 bigint, f3 bigint GENERATED ALWAYS AS (f2 * 33) VIRTUAL);
+ALTER TABLE gtest_parent ATTACH PARTITION gtest_child3 FOR VALUES FROM ('2016-09-01') TO ('2016-10-01'); -- error
+DROP TABLE gtest_child3;
+-- an explicit cast is not the same as an implicit one
+CREATE TABLE gtest_cast (a int, b numeric(10,0) GENERATED ALWAYS AS (a) VIRTUAL) PARTITION BY RANGE (a);
+CREATE TABLE gtest_cast_1 (a int, b numeric(10,0) GENERATED ALWAYS AS (a::numeric(10,0)) VIRTUAL);
+ALTER TABLE gtest_cast ATTACH PARTITION gtest_cast_1 FOR VALUES FROM (0) TO (10);  -- error
+DROP TABLE gtest_cast, gtest_cast_1;
+-- different column order, so the parent's expression has to be mapped
+CREATE TABLE gtest_child3 (f3 bigint GENERATED ALWAYS AS (f2 * 2) VIRTUAL, f2 bigint, f1 date NOT NULL);
 ALTER TABLE gtest_parent ATTACH PARTITION gtest_child3 FOR VALUES FROM ('2016-09-01') TO ('2016-10-01');
 \d gtest_child
 \d gtest_child2
@@ -562,28 +636,21 @@ INSERT INTO gtest_parent (f1, f2) VALUES ('2016-07-15', 2);
 INSERT INTO gtest_parent (f1, f2) VALUES ('2016-08-15', 3);
 SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
 SELECT tableoid::regclass, * FROM gtest_child ORDER BY 1, 2, 3;
-SELECT tableoid::regclass, * FROM gtest_child2 ORDER BY 1, 2, 3;  -- uses child's generation expression, not parent's
+SELECT tableoid::regclass, * FROM gtest_child2 ORDER BY 1, 2, 3;
 SELECT tableoid::regclass, * FROM gtest_child3 ORDER BY 1, 2, 3;
 UPDATE gtest_parent SET f1 = f1 + 60 WHERE f2 = 1;
 SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
 
--- alter only parent's and one child's generation expression
-ALTER TABLE ONLY gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4);
-ALTER TABLE gtest_child ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10);
-\d gtest_parent
-\d gtest_child
-\d gtest_child2
-\d gtest_child3
-SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
-
--- check constraint was validated based on each partitions's generation expression
-ALTER TABLE gtest_parent ADD CONSTRAINT cc1 CHECK (f3 < 19); -- error
-ALTER TABLE gtest_parent ADD CONSTRAINT cc1 CHECK (f3 < 66); -- error
-ALTER TABLE gtest_parent ADD CONSTRAINT cc1 CHECK (f3 <> 33); -- error
-ALTER TABLE gtest_parent ADD CONSTRAINT cc CHECK (f3 < 67); -- ok
-ALTER TABLE gtest_parent DROP CONSTRAINT cc;
+-- cannot alter only parent's or one partition's generation expression
+ALTER TABLE ONLY gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4); -- error
+ALTER TABLE gtest_child ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10); -- error
 
 -- alter generation expression of parent and all its children altogether
+ALTER TABLE gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4);
+SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
+ALTER TABLE gtest_parent ADD CONSTRAINT cc1 CHECK (f3 < 12); -- error
+ALTER TABLE gtest_parent ADD CONSTRAINT cc CHECK (f3 < 13); -- ok
+ALTER TABLE gtest_parent DROP CONSTRAINT cc;
 ALTER TABLE gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 2);
 \d gtest_parent
 \d gtest_child
@@ -1012,11 +1079,13 @@ commit;
 
 drop table gtest_cursor;
 
--- NOT NULL on a partitioned table's virtual column does not prove non-nullness,
--- because a partition can have a different generation expression
+-- a partition cannot have a different generation expression, which would let
+-- the partitioned table's NOT NULL virtual column read as NULL
 CREATE TABLE gtestnn_parent2 (a int NOT NULL, b int GENERATED ALWAYS AS (nullif(a, 0)) VIRTUAL NOT NULL) PARTITION BY LIST (a);
-CREATE TABLE gtestnn_child2 PARTITION OF gtestnn_parent2 (b GENERATED ALWAYS AS (a + 1) VIRTUAL) FOR VALUES IN (0);
-INSERT INTO gtestnn_parent2 VALUES (0);
+CREATE TABLE gtestnn_child2 PARTITION OF gtestnn_parent2 (b GENERATED ALWAYS AS (a + 1) VIRTUAL) FOR VALUES IN (0); -- error
+CREATE TABLE gtestnn_child2 PARTITION OF gtestnn_parent2 FOR VALUES IN (0, 1);
+INSERT INTO gtestnn_parent2 VALUES (0); -- error
+INSERT INTO gtestnn_parent2 VALUES (1);
 EXPLAIN (COSTS OFF)
 SELECT a FROM gtestnn_parent2 WHERE a NOT IN (SELECT b FROM gtestnn_parent2);
 SELECT a FROM gtestnn_parent2 WHERE a NOT IN (SELECT b FROM gtestnn_parent2);

@@ -357,15 +357,18 @@ CREATE TABLE gtestx (x int, b int GENERATED ALWAYS AS (a * 22) STORED) INHERITS 
 NOTICE:  merging column "b" with inherited definition
 ERROR:  column "b" inherits from generated column of different kind
 DETAIL:  Parent column is VIRTUAL, child column is STORED.
-CREATE TABLE gtestx (x int, b int GENERATED ALWAYS AS (a * 22) VIRTUAL) INHERITS (gtest1);  -- ok, overrides parent
+CREATE TABLE gtestx (x int, b int GENERATED ALWAYS AS (a * 22) VIRTUAL) INHERITS (gtest1);  -- error
+NOTICE:  merging column "b" with inherited definition
+ERROR:  column "b" of relation "gtestx" must have the same generation expression as in parent relation "gtest1"
+CREATE TABLE gtestx (x int, b int GENERATED ALWAYS AS (a * 2) VIRTUAL) INHERITS (gtest1);  -- ok
 NOTICE:  merging column "b" with inherited definition
 \d+ gtestx
                                     Table "generated_virtual_tests.gtestx"
- Column |  Type   | Collation | Nullable |           Default            | Storage | Stats target | Description 
---------+---------+-----------+----------+------------------------------+---------+--------------+-------------
- a      | integer |           | not null |                              | plain   |              | 
- b      | integer |           |          | generated always as (a * 22) | plain   |              | 
- x      | integer |           |          |                              | plain   |              | 
+ Column |  Type   | Collation | Nullable |           Default           | Storage | Stats target | Description 
+--------+---------+-----------+----------+-----------------------------+---------+--------------+-------------
+ a      | integer |           | not null |                             | plain   |              | 
+ b      | integer |           |          | generated always as (a * 2) | plain   |              | 
+ x      | integer |           |          |                             | plain   |              | 
 Not-null constraints:
     "gtest1_a_not_null" NOT NULL "a" (inherited)
 Inherits:
@@ -381,9 +384,9 @@ SELECT * FROM gtest1;
 (3 rows)
 
 SELECT * FROM gtestx;
- a  |  b  | x  
-----+-----+----
- 11 | 242 | 22
+ a  | b  | x  
+----+----+----
+ 11 | 22 | 22
 (1 row)
 
 CREATE TABLE gtestxx_1 (a int NOT NULL, b int);
@@ -408,22 +411,102 @@ CREATE TABLE gtesty (x int, b int GENERATED ALWAYS AS (x * 22) VIRTUAL);
 CREATE TABLE gtest1_y () INHERITS (gtest1, gtesty);  -- error
 NOTICE:  merging multiple inherited definitions of column "b"
 ERROR:  column "b" inherits conflicting generation expressions
-HINT:  To resolve the conflict, specify a generation expression explicitly.
-CREATE TABLE gtest1_y (b int GENERATED ALWAYS AS (x + 1) VIRTUAL) INHERITS (gtest1, gtesty);  -- ok
+CREATE TABLE gtest1_y (b int GENERATED ALWAYS AS (x + 1) VIRTUAL) INHERITS (gtest1, gtesty);  -- error
 NOTICE:  merging multiple inherited definitions of column "b"
 NOTICE:  moving and merging column "b" with inherited definition
 DETAIL:  User-specified column moved to the position of the inherited column.
-\d gtest1_y
-               Table "generated_virtual_tests.gtest1_y"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
- a      | integer |           | not null | 
- b      | integer |           |          | generated always as (x + 1)
- x      | integer |           |          | 
-Inherits:
-    gtest1
-    gtesty
+ERROR:  column "b" of relation "gtest1_y" must have the same generation expression as in parent relation "gtest1"
+DROP TABLE gtesty;
+-- adding a column merges it into an existing child column
+CREATE TABLE gtesty (a int);
+CREATE TABLE gtesty_1 (a int, b int GENERATED ALWAYS AS (a * 3) VIRTUAL) INHERITS (gtesty);
+NOTICE:  merging column "a" with inherited definition
+CREATE TABLE gtesty_2 (a int, b int) INHERITS (gtesty);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE gtesty ADD COLUMN b int GENERATED ALWAYS AS (a * 2) VIRTUAL;  -- error
+NOTICE:  merging definition of column "b" for child "gtesty_1"
+ERROR:  column "b" of relation "gtesty_1" must have the same generation expression as in parent relation "gtesty"
+DROP TABLE gtesty_1;
+ALTER TABLE gtesty ADD COLUMN b int GENERATED ALWAYS AS (a * 2) VIRTUAL;  -- error
+ERROR:  column "b" in child table must be a generated column
+DROP TABLE gtesty CASCADE;
+NOTICE:  drop cascades to table gtesty_2
+-- a child with two parents cannot have its expression changed through one
+CREATE TABLE gtesty (a int, b int GENERATED ALWAYS AS (a * 2) VIRTUAL);
+CREATE TABLE gtestz (a int, b int GENERATED ALWAYS AS (a * 2) VIRTUAL);
+CREATE TABLE gtestyz () INHERITS (gtesty, gtestz);
+NOTICE:  merging multiple inherited definitions of column "a"
+NOTICE:  merging multiple inherited definitions of column "b"
+ALTER TABLE gtesty ALTER COLUMN b SET EXPRESSION AS (a * 3);  -- error
+ERROR:  cannot alter inherited column "b" of relation "gtestyz"
+ALTER TABLE gtestyz ALTER COLUMN b SET EXPRESSION AS (a * 3);  -- error, no hint
+ERROR:  cannot alter inherited column "b"
+DROP TABLE gtesty, gtestz CASCADE;
+NOTICE:  drop cascades to table gtestyz
+-- also when the column is added by the same command
+CREATE TABLE gtestq (a int, b int GENERATED ALWAYS AS (a * 2) VIRTUAL);
+CREATE TABLE gtestp (a int);
+CREATE TABLE gtestpq () INHERITS (gtestp, gtestq);
+NOTICE:  merging multiple inherited definitions of column "a"
+ALTER TABLE gtestp ADD COLUMN b int GENERATED ALWAYS AS (a * 2) VIRTUAL,
+  ALTER COLUMN b SET EXPRESSION AS (a * 3);  -- error
+NOTICE:  merging definition of column "b" for child "gtestpq"
+ERROR:  cannot alter inherited column "b" of relation "gtestpq"
+DROP TABLE gtestp, gtestq CASCADE;
+NOTICE:  drop cascades to table gtestpq
+-- Trees made by older minor versions can have a child whose expression
+-- differs, which CREATE and ATTACH no longer allow.  Emulate one by writing a
+-- different expression directly into the child's pg_attrdef row.
+CREATE TABLE gtestd (a int, b int GENERATED ALWAYS AS (a * 3) VIRTUAL);
+CREATE TABLE gtestr (a int, b int GENERATED ALWAYS AS (a * 2) VIRTUAL) PARTITION BY LIST (a);
+CREATE TABLE gtestr1 PARTITION OF gtestr FOR VALUES IN (1);
+UPDATE pg_attrdef SET adbin = (SELECT adbin FROM pg_attrdef WHERE adrelid = 'gtestd'::regclass)
+  WHERE adrelid = 'gtestr1'::regclass;
+-- adding a column checks only the new column, not the old one
+ALTER TABLE gtestr ADD COLUMN c int GENERATED ALWAYS AS (a + 1) VIRTUAL;
+INSERT INTO gtestr VALUES (1);
+SELECT * FROM gtestr;
+ a | b | c 
+---+---+---
+ 1 | 2 | 2
+(1 row)
 
+-- but the new column is still checked against a child that already has it
+CREATE TABLE gtests (a int);
+CREATE TABLE gtests1 (a int, c int GENERATED ALWAYS AS (a * 5) VIRTUAL) INHERITS (gtests);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE gtests ADD COLUMN c int GENERATED ALWAYS AS (a + 1) VIRTUAL;  -- error
+NOTICE:  merging definition of column "c" for child "gtests1"
+ERROR:  column "c" of relation "gtests1" must have the same generation expression as in parent relation "gtests"
+ALTER TABLE gtests ADD COLUMN c int GENERATED ALWAYS AS (a * 5) VIRTUAL;  -- ok
+NOTICE:  merging definition of column "c" for child "gtests1"
+DROP TABLE gtestd, gtestr, gtests CASCADE;
+NOTICE:  drop cascades to table gtests1
+-- constants that differ can have the same text, depending on settings
+CREATE TABLE gtestf (a float4, b float4 GENERATED ALWAYS AS (a * '0.1'::float4) VIRTUAL);
+SET extra_float_digits = 0;
+CREATE TABLE gtestf1 (b float4 GENERATED ALWAYS AS (a * '0.10000001'::float4) VIRTUAL) INHERITS (gtestf);  -- error
+NOTICE:  moving and merging column "b" with inherited definition
+DETAIL:  User-specified column moved to the position of the inherited column.
+ERROR:  column "b" of relation "gtestf1" must have the same generation expression as in parent relation "gtestf"
+RESET extra_float_digits;
+DROP TABLE gtestf;
+CREATE TABLE gtestz (a timestamptz, b boolean GENERATED ALWAYS AS (a < '2014-10-25 21:30:00+00'::timestamptz) VIRTUAL);
+SET DateStyle = 'SQL, MDY';
+SET TimeZone = 'Europe/Moscow';
+CREATE TABLE gtestz1 (b boolean GENERATED ALWAYS AS (a < '2014-10-25 22:30:00+00'::timestamptz) VIRTUAL) INHERITS (gtestz);  -- error
+NOTICE:  moving and merging column "b" with inherited definition
+DETAIL:  User-specified column moved to the position of the inherited column.
+ERROR:  column "b" of relation "gtestz1" must have the same generation expression as in parent relation "gtestz"
+RESET DateStyle;
+RESET TimeZone;
+DROP TABLE gtestz;
+-- a child written by hand still matches after the parent's type was changed
+CREATE TABLE gtestt (a int, b varchar(5), c varchar(5) GENERATED ALWAYS AS (b) VIRTUAL) PARTITION BY LIST (a);
+ALTER TABLE gtestt ALTER COLUMN c TYPE varchar(10);
+CREATE TABLE gtestt1 (a int, b varchar(5), c varchar(10) GENERATED ALWAYS AS (b) VIRTUAL);
+ALTER TABLE gtestt ATTACH PARTITION gtestt1 FOR VALUES IN (1);
+DROP TABLE gtestt;
 -- test correct handling of GENERATED column that's only in child
 CREATE TABLE gtestp (f1 int);
 CREATE TABLE gtestc (f2 int GENERATED ALWAYS AS (f1+1) VIRTUAL) INHERITS(gtestp);
@@ -912,7 +995,11 @@ CREATE TABLE gtest_parent (f1 date NOT NULL, f2 bigint, f3 bigint GENERATED ALWA
 CREATE TABLE gtest_child PARTITION OF gtest_parent
   FOR VALUES FROM ('2016-07-01') TO ('2016-08-01');  -- inherits gen expr
 CREATE TABLE gtest_child2 PARTITION OF gtest_parent (
-    f3 WITH OPTIONS GENERATED ALWAYS AS (f2 * 22) VIRTUAL  -- overrides gen expr
+    f3 WITH OPTIONS GENERATED ALWAYS AS (f2 * 22) VIRTUAL  -- error, must match parent
+) FOR VALUES FROM ('2016-08-01') TO ('2016-09-01');
+ERROR:  column "f3" of relation "gtest_child2" must have the same generation expression as in parent relation "gtest_parent"
+CREATE TABLE gtest_child2 PARTITION OF gtest_parent (
+    f3 WITH OPTIONS GENERATED ALWAYS AS (f2 * 2) VIRTUAL  -- same as parent, ok
 ) FOR VALUES FROM ('2016-08-01') TO ('2016-09-01');
 CREATE TABLE gtest_child3 PARTITION OF gtest_parent (
     f3 DEFAULT 42  -- error
@@ -946,6 +1033,17 @@ ERROR:  column "f3" inherits from generated column of different kind
 DETAIL:  Parent column is VIRTUAL, child column is STORED.
 DROP TABLE gtest_child3;
 CREATE TABLE gtest_child3 (f1 date NOT NULL, f2 bigint, f3 bigint GENERATED ALWAYS AS (f2 * 33) VIRTUAL);
+ALTER TABLE gtest_parent ATTACH PARTITION gtest_child3 FOR VALUES FROM ('2016-09-01') TO ('2016-10-01'); -- error
+ERROR:  column "f3" of relation "gtest_child3" must have the same generation expression as in parent relation "gtest_parent"
+DROP TABLE gtest_child3;
+-- an explicit cast is not the same as an implicit one
+CREATE TABLE gtest_cast (a int, b numeric(10,0) GENERATED ALWAYS AS (a) VIRTUAL) PARTITION BY RANGE (a);
+CREATE TABLE gtest_cast_1 (a int, b numeric(10,0) GENERATED ALWAYS AS (a::numeric(10,0)) VIRTUAL);
+ALTER TABLE gtest_cast ATTACH PARTITION gtest_cast_1 FOR VALUES FROM (0) TO (10);  -- error
+ERROR:  column "b" of relation "gtest_cast_1" must have the same generation expression as in parent relation "gtest_cast"
+DROP TABLE gtest_cast, gtest_cast_1;
+-- different column order, so the parent's expression has to be mapped
+CREATE TABLE gtest_child3 (f3 bigint GENERATED ALWAYS AS (f2 * 2) VIRTUAL, f2 bigint, f1 date NOT NULL);
 ALTER TABLE gtest_parent ATTACH PARTITION gtest_child3 FOR VALUES FROM ('2016-09-01') TO ('2016-10-01');
 \d gtest_child
               Table "generated_virtual_tests.gtest_child"
@@ -957,21 +1055,21 @@ ALTER TABLE gtest_parent ATTACH PARTITION gtest_child3 FOR VALUES FROM ('2016-09
 Partition of: gtest_parent FOR VALUES FROM ('07-01-2016') TO ('08-01-2016')
 
 \d gtest_child2
-              Table "generated_virtual_tests.gtest_child2"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
+             Table "generated_virtual_tests.gtest_child2"
+ Column |  Type  | Collation | Nullable |           Default            
+--------+--------+-----------+----------+------------------------------
  f1     | date   |           | not null | 
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 22)
+ f3     | bigint |           |          | generated always as (f2 * 2)
 Partition of: gtest_parent FOR VALUES FROM ('08-01-2016') TO ('09-01-2016')
 
 \d gtest_child3
-              Table "generated_virtual_tests.gtest_child3"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
- f1     | date   |           | not null | 
+             Table "generated_virtual_tests.gtest_child3"
+ Column |  Type  | Collation | Nullable |           Default            
+--------+--------+-----------+----------+------------------------------
+ f3     | bigint |           |          | generated always as (f2 * 2)
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 33)
+ f1     | date   |           | not null | 
 Partition of: gtest_parent FOR VALUES FROM ('09-01-2016') TO ('10-01-2016')
 
 INSERT INTO gtest_parent (f1, f2) VALUES ('2016-07-15', 1);
@@ -992,14 +1090,14 @@ SELECT tableoid::regclass, * FROM gtest_child ORDER BY 1, 2, 3;
  gtest_child | 07-15-2016 |  2 |  4
 (2 rows)
 
-SELECT tableoid::regclass, * FROM gtest_child2 ORDER BY 1, 2, 3;  -- uses child's generation expression, not parent's
+SELECT tableoid::regclass, * FROM gtest_child2 ORDER BY 1, 2, 3;
    tableoid   |     f1     | f2 | f3 
 --------------+------------+----+----
- gtest_child2 | 08-15-2016 |  3 | 66
+ gtest_child2 | 08-15-2016 |  3 |  6
 (1 row)
 
 SELECT tableoid::regclass, * FROM gtest_child3 ORDER BY 1, 2, 3;
- tableoid | f1 | f2 | f3 
+ tableoid | f3 | f2 | f1 
 ----------+----+----+----
 (0 rows)
 
@@ -1012,46 +1110,14 @@ SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
  gtest_child3 | 09-13-2016 |  1 |  2
 (3 rows)
 
--- alter only parent's and one child's generation expression
-ALTER TABLE ONLY gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4);
-ALTER TABLE gtest_child ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10);
-\d gtest_parent
-       Partitioned table "generated_virtual_tests.gtest_parent"
- Column |  Type  | Collation | Nullable |           Default            
---------+--------+-----------+----------+------------------------------
- f1     | date   |           | not null | 
- f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 4)
-Partition key: RANGE (f1)
-Number of partitions: 3 (Use \d+ to list them.)
-
-\d gtest_child
-              Table "generated_virtual_tests.gtest_child"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
- f1     | date   |           | not null | 
- f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 10)
-Partition of: gtest_parent FOR VALUES FROM ('07-01-2016') TO ('08-01-2016')
-
-\d gtest_child2
-              Table "generated_virtual_tests.gtest_child2"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
- f1     | date   |           | not null | 
- f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 22)
-Partition of: gtest_parent FOR VALUES FROM ('08-01-2016') TO ('09-01-2016')
-
-\d gtest_child3
-              Table "generated_virtual_tests.gtest_child3"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
- f1     | date   |           | not null | 
- f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 33)
-Partition of: gtest_parent FOR VALUES FROM ('09-01-2016') TO ('10-01-2016')
-
+-- cannot alter only parent's or one partition's generation expression
+ALTER TABLE ONLY gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4); -- error
+ERROR:  ALTER TABLE / SET EXPRESSION must be applied to child tables too
+ALTER TABLE gtest_child ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10); -- error
+ERROR:  cannot alter inherited column "f3"
+HINT:  Alter the generation expression of the top-level parent table instead.
+-- alter generation expression of parent and all its children altogether
+ALTER TABLE gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4);
 SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
    tableoid   |     f1     | f2 | f3 
 --------------+------------+----+----
@@ -1060,16 +1126,10 @@ SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
  gtest_child3 | 09-13-2016 |  1 |  4
 (3 rows)
 
--- check constraint was validated based on each partitions's generation expression
-ALTER TABLE gtest_parent ADD CONSTRAINT cc1 CHECK (f3 < 19); -- error
-ERROR:  check constraint "cc1" of relation "gtest_child" is violated by some row
-ALTER TABLE gtest_parent ADD CONSTRAINT cc1 CHECK (f3 < 66); -- error
+ALTER TABLE gtest_parent ADD CONSTRAINT cc1 CHECK (f3 < 12); -- error
 ERROR:  check constraint "cc1" of relation "gtest_child2" is violated by some row
-ALTER TABLE gtest_parent ADD CONSTRAINT cc1 CHECK (f3 <> 33); -- error
-ERROR:  check constraint "cc1" of relation "gtest_child3" is violated by some row
-ALTER TABLE gtest_parent ADD CONSTRAINT cc CHECK (f3 < 67); -- ok
+ALTER TABLE gtest_parent ADD CONSTRAINT cc CHECK (f3 < 13); -- ok
 ALTER TABLE gtest_parent DROP CONSTRAINT cc;
--- alter generation expression of parent and all its children altogether
 ALTER TABLE gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 2);
 \d gtest_parent
        Partitioned table "generated_virtual_tests.gtest_parent"
@@ -1103,9 +1163,9 @@ Partition of: gtest_parent FOR VALUES FROM ('08-01-2016') TO ('09-01-2016')
              Table "generated_virtual_tests.gtest_child3"
  Column |  Type  | Collation | Nullable |           Default            
 --------+--------+-----------+----------+------------------------------
- f1     | date   |           | not null | 
- f2     | bigint |           |          | 
  f3     | bigint |           |          | generated always as (f2 * 2)
+ f2     | bigint |           |          | 
+ f1     | date   |           | not null | 
 Partition of: gtest_parent FOR VALUES FROM ('09-01-2016') TO ('10-01-2016')
 
 SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
@@ -1894,11 +1954,16 @@ select * from gtest_cursor order by id;
 
 commit;
 drop table gtest_cursor;
--- NOT NULL on a partitioned table's virtual column does not prove non-nullness,
--- because a partition can have a different generation expression
+-- a partition cannot have a different generation expression, which would let
+-- the partitioned table's NOT NULL virtual column read as NULL
 CREATE TABLE gtestnn_parent2 (a int NOT NULL, b int GENERATED ALWAYS AS (nullif(a, 0)) VIRTUAL NOT NULL) PARTITION BY LIST (a);
-CREATE TABLE gtestnn_child2 PARTITION OF gtestnn_parent2 (b GENERATED ALWAYS AS (a + 1) VIRTUAL) FOR VALUES IN (0);
-INSERT INTO gtestnn_parent2 VALUES (0);
+CREATE TABLE gtestnn_child2 PARTITION OF gtestnn_parent2 (b GENERATED ALWAYS AS (a + 1) VIRTUAL) FOR VALUES IN (0); -- error
+ERROR:  column "b" of relation "gtestnn_child2" must have the same generation expression as in parent relation "gtestnn_parent2"
+CREATE TABLE gtestnn_child2 PARTITION OF gtestnn_parent2 FOR VALUES IN (0, 1);
+INSERT INTO gtestnn_parent2 VALUES (0); -- error
+ERROR:  null value in column "b" of relation "gtestnn_child2" violates not-null constraint
+DETAIL:  Failing row contains (0, virtual).
+INSERT INTO gtestnn_parent2 VALUES (1);
 EXPLAIN (COSTS OFF)
 SELECT a FROM gtestnn_parent2 WHERE a NOT IN (SELECT b FROM gtestnn_parent2);
                        QUERY PLAN                        
