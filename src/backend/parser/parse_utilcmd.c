@@ -3687,9 +3687,14 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 
 					/*
 					 * For ALTER COLUMN TYPE, transform the USING clause if
-					 * one was specified.
+					 * one was specified.  When recursing to a child table,
+					 * cooked_default already holds the parent's expression
+					 * with its attribute numbers mapped to the child (see
+					 * ATPrepAlterColumnType); keep that, since the raw
+					 * expression need not mean the same thing against the
+					 * child, and transformExpr may have scribbled on it.
 					 */
-					if (def->raw_default)
+					if (def->raw_default && def->cooked_default == NULL)
 					{
 						def->cooked_default =
 							transformExpr(pstate, def->raw_default,
