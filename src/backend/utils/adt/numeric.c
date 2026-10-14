@@ -3869,13 +3869,13 @@ numeric_log(PG_FUNCTION_ARGS)
 		sign2 = numeric_sign_internal(num2);
 		if (sign1 < 0 || sign2 < 0)
 			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_ARGUMENT_FOR_LOG),
-					 errmsg("cannot take logarithm of a negative number")));
+					errcode(ERRCODE_INVALID_ARGUMENT_FOR_LOG),
+					errmsg("cannot take logarithm of a negative number"));
 		/* fail on zero inputs, as log_var would */
 		if (sign1 == 0 || sign2 == 0)
 			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_ARGUMENT_FOR_LOG),
-					 errmsg("cannot take logarithm of zero")));
+					errcode(ERRCODE_INVALID_ARGUMENT_FOR_LOG),
+					errmsg("cannot take logarithm of zero"));
 		if (NUMERIC_IS_PINF(num1))
 		{
 			/* log(Inf, Inf) reduces to Inf/Inf, so it's NaN */
@@ -3885,7 +3885,18 @@ numeric_log(PG_FUNCTION_ARGS)
 			PG_RETURN_NUMERIC(make_result(&const_zero));
 		}
 		Assert(NUMERIC_IS_PINF(num2));
-		/* log(finite-positive, Inf) is Inf */
+
+		/*
+		 * log(base, Inf) = Inf / ln(base), so the sign depends on whether
+		 * base is above or below 1.  If base = 1, fail as log_var() would.
+		  */ init_var_from_num(num1, &arg1);
+		sign1 = cmp_var(&arg1, &const_one);
+		if (sign1 == 0)
+			ereport(ERROR,
+					errcode(ERRCODE_DIVISION_BY_ZERO),
+					errmsg("division by zero"));
+		if (sign1 < 0)
+			PG_RETURN_NUMERIC(make_result(&const_ninf));
 		PG_RETURN_NUMERIC(make_result(&const_pinf));
 	}
 

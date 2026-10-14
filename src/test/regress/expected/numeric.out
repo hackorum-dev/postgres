@@ -933,6 +933,14 @@ FROM v AS v1(x1), v AS v2(x2);
       NaN |      NaN |                NaN
 (16 rows)
 
+SELECT log('0.5'::numeric, 'inf');
+    log    
+-----------
+ -Infinity
+(1 row)
+
+SELECT log('1'::numeric, 'inf');
+ERROR:  division by zero
 SELECT log('0'::numeric, '10');
 ERROR:  cannot take logarithm of zero
 SELECT log('10'::numeric, '0');
