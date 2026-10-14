@@ -581,6 +581,53 @@ extract_jsp_path_expr(JsonPathGinContext *cxt, JsonPathGinPath path,
 }
 
 /*
+ * Following items are safe to ignore when extracting index quals if their
+ * combined effect cannot turn a false or unknown predicate result into true.
+ */
+static bool
+jsp_bool_expr_has_safe_next(JsonPathItem *jsp)
+{
+	JsonPathItem next;
+
+	while (jspGetNext(jsp, &next))
+	{
+		switch (next.type)
+		{
+				/* Preserve scalar values that pass through */
+			case jpiAnyArray:
+			case jpiIndexArray:
+			case jpiAny:
+			case jpiFilter:
+
+				/* Cannot convert false to true; reject JSON null */
+			case jpiBoolean:
+			case jpiStringFunc:
+
+				/*
+				 * Case changes and substring extraction on "false" cannot
+				 * produce a string that converts to true.
+				 */
+			case jpiStrLower:
+			case jpiStrUpper:
+			case jpiStrLtrim:
+			case jpiStrRtrim:
+			case jpiStrBtrim:
+			case jpiStrInitcap:
+			case jpiStrSplitPart:
+				break;
+
+			default:
+				/* Reject items not known to be safe. */
+				return false;
+		}
+
+		jsp = &next;
+	}
+
+	return true;
+}
+
+/*
  * Recursively extract a GIN qual from the boolean jsonpath expression.
  * Returns NULL if no usable indexqual can be extracted.
  */
@@ -589,6 +636,9 @@ extract_jsp_bool_expr(JsonPathGinContext *cxt, JsonPathGinPath path,
 					  JsonPathItem *jsp, bool not)
 {
 	check_stack_depth();
+
+	if (!jsp_bool_expr_has_safe_next(jsp))
+		return NULL;
 
 	switch (jsp->type)
 	{
