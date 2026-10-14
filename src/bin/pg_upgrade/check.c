@@ -29,6 +29,7 @@ static void check_for_user_defined_postfix_ops(ClusterInfo *cluster);
 static void check_for_incompatible_polymorphics(ClusterInfo *cluster);
 static void check_for_tables_with_oids(ClusterInfo *cluster);
 static void check_for_not_null_inheritance(ClusterInfo *cluster);
+static void check_for_partition_virtual_generated_exprs(ClusterInfo *cluster);
 static void check_for_gist_inet_ops(ClusterInfo *cluster);
 static void check_for_new_tablespace_dir(void);
 static void check_for_user_defined_encoding_conversions(ClusterInfo *cluster);
@@ -672,6 +673,15 @@ check_and_dump_old_cluster(void)
 	 */
 	if (GET_MAJOR_VERSION(old_cluster.major_version) <= 1800)
 		check_for_not_null_inheritance(&old_cluster);
+
+	/*
+	 * Virtual generated columns (new in PG 18) of a partition used to be
+	 * allowed to have a different generation expression than the partitioned
+	 * table, but schema restore fails for them now.  Verify there are none.
+	 */
+	if (GET_MAJOR_VERSION(old_cluster.major_version) >= 1800 &&
+		GET_MAJOR_VERSION(old_cluster.major_version) <= 1900)
+		check_for_partition_virtual_generated_exprs(&old_cluster);
 
 	/*
 	 * The btree_gist extension contains gist_inet_ops and gist_cidr_ops
@@ -1732,6 +1742,69 @@ check_for_not_null_inheritance(ClusterInfo *cluster)
 				 "You can fix this by running\n"
 				 "    ALTER TABLE tablename ALTER column SET NOT NULL;\n"
 				 "on each column listed in the file:\n"
+				 "    %s", report.path);
+	}
+	else
+		check_ok();
+}
+
+/*
+ * check_for_partition_virtual_generated_exprs()
+ *
+ * A virtual generated column of a partition must have the same generation
+ * expression as the partitioned table.  Check that the cluster to be upgraded
+ * has no partitions that differ, which older versions allowed.
+ */
+static void
+check_for_partition_virtual_generated_exprs(ClusterInfo *cluster)
+{
+	UpgradeTaskReport report;
+	UpgradeTask *task;
+	const char *query;
+
+	prep_status("Checking for virtual generated column inconsistencies");
+
+	report.file = NULL;
+	snprintf(report.path, sizeof(report.path), "%s/%s",
+			 log_opts.basedir,
+			 "partition_virtual_generated_columns.txt");
+
+	query = "SELECT nc.nspname, cc.relname, ac.attname "
+		"FROM pg_catalog.pg_class cc "
+		"     JOIN pg_catalog.pg_namespace nc ON nc.oid = cc.relnamespace "
+		"     JOIN pg_catalog.pg_inherits i ON i.inhrelid = cc.oid "
+		"     JOIN pg_catalog.pg_attribute ac ON ac.attrelid = cc.oid "
+		"     JOIN pg_catalog.pg_attribute ap ON ap.attrelid = i.inhparent "
+		"          AND ap.attname = ac.attname "
+		"     JOIN pg_catalog.pg_attrdef dc ON dc.adrelid = ac.attrelid "
+		"          AND dc.adnum = ac.attnum "
+		"     JOIN pg_catalog.pg_attrdef dp ON dp.adrelid = ap.attrelid "
+		"          AND dp.adnum = ap.attnum "
+		"WHERE cc.relispartition AND ac.attgenerated = 'v' "
+		"      AND pg_catalog.pg_get_expr(dc.adbin, dc.adrelid) <> "
+		"          pg_catalog.pg_get_expr(dp.adbin, dp.adrelid)";
+
+	task = upgrade_task_create();
+	/* the not-null check's callback reports the same columns */
+	upgrade_task_add_step(task, query,
+						  process_inconsistent_notnull,
+						  true, &report);
+	upgrade_task_run(task, cluster);
+	upgrade_task_free(task);
+
+	if (report.file)
+	{
+		fclose(report.file);
+		pg_log(PG_REPORT, "fatal");
+		pg_fatal("Your installation contains partitions whose virtual generated columns\n"
+				 "have a different generation expression than the partitioned table.\n"
+				 "This is no longer allowed, so the upgrade would fail.  You can fix\n"
+				 "this by running\n"
+				 "    ALTER TABLE parent ALTER COLUMN column SET EXPRESSION AS (...);\n"
+				 "on the partitioned table of each column.  In version 18 this is not\n"
+				 "allowed on a table with CHECK constraints, so drop them first and\n"
+				 "add them back afterwards.  A list of the problem columns is in the\n"
+				 "file:\n"
 				 "    %s", report.path);
 	}
 	else
