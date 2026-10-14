@@ -1646,6 +1646,19 @@ INSERT INTO test_type_diff2_c3 VALUES (7, 8, 9);
 ALTER TABLE test_type_diff2 ALTER COLUMN int_four TYPE int8 USING int_four::int8;
 -- whole-row references are disallowed
 ALTER TABLE test_type_diff2 ALTER COLUMN int_four TYPE int4 USING (pg_column_size(test_type_diff2));
+-- USING expressions on children with other column numbers (bug #19756)
+CREATE TABLE test_type_diff3 (a int, b int, c bool, d bool);
+CREATE TABLE test_type_diff3_c (b int, a int, d bool, c bool);
+ALTER TABLE test_type_diff3_c INHERIT test_type_diff3;
+INSERT INTO test_type_diff3 VALUES (1, NULL, true, NULL);
+INSERT INTO test_type_diff3_c VALUES (2, 3, true, NULL);
+ALTER TABLE test_type_diff3 ALTER COLUMN a TYPE int8
+  USING a * 1000 + (b IS NULL)::int * 100 + (c IS UNKNOWN)::int * 10
+    + coalesce(extract(day from make_interval(days => b))::int, 0);
+SELECT tableoid::regclass, a, b, c, d FROM test_type_diff3 ORDER BY a;
+ALTER TABLE test_type_diff3 ALTER COLUMN a TYPE int4 USING a + (1 IS NULL)::int;
+ALTER TABLE test_type_diff3 ALTER COLUMN a TYPE int8 USING test_type_diff3.a + 1;
+SELECT tableoid::regclass, a, b, c, d FROM test_type_diff3 ORDER BY a;
 
 -- check for rollback of ANALYZE corrupting table property flags (bug #11638)
 CREATE TABLE check_fk_presence_1 (id int PRIMARY KEY, t text);
