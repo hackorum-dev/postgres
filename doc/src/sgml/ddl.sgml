@@ -451,8 +451,10 @@ CREATE TABLE people (
       <listitem>
        <para>
         If a parent column is a generated column, its child column must also
-        be a generated column of the same kind (stored or virtual); however,
-        the child column can have a different generation expression.
+        be a generated column of the same kind (stored or virtual).
+        A virtual generated child column must have the same generation
+        expression as the parent column.  A stored generated child column
+        can have a different generation expression.
        </para>
 
        <para>
@@ -478,8 +480,9 @@ CREATE TABLE people (
         ... INHERITS</command>, then its <literal>GENERATED</literal> clause
         will automatically be copied from the parent.  <command>ALTER TABLE
         ... INHERIT</command> will insist that parent and child columns
-        already match as to generation status, but it will not require their
-        generation expressions to match.
+        already match as to generation status, but it will only require
+        their generation expressions to match for virtual generated
+        columns.
        </para>
       </listitem>
       <listitem>
@@ -490,8 +493,8 @@ CREATE TABLE people (
         its <literal>GENERATED</literal> clause will automatically be copied
         from the parent.  <command>ALTER TABLE ... ATTACH PARTITION</command>
         will insist that parent and child columns already match as to
-        generation status, but it will not require their generation
-        expressions to match.
+        generation status, but it will only require their generation
+        expressions to match for virtual generated columns.
        </para>
       </listitem>
       <listitem>
@@ -499,7 +502,8 @@ CREATE TABLE people (
         In case of multiple inheritance, if one parent column is a generated
         column, then all parent columns must be generated columns.  If they
         do not all have the same generation expression, then the desired
-        expression for the child must be specified explicitly.
+        expression for the child must be specified explicitly.  For virtual
+        generated columns, they must all have the same generation expression.
        </para>
       </listitem>
      </itemizedlist>
