@@ -17,6 +17,7 @@
 #include "funcapi.h"
 #include "pgstat.h"
 #include "utils/builtins.h"
+#include "utils/guc.h"
 #include "utils/pgstat_internal.h"
 #include "utils/timestamp.h"
 
@@ -60,9 +61,11 @@ static const PgStat_KindInfo custom_stats = {
 };
 
 /*
- * Kind ID for test_custom_fixed_stats.
+ * Kind ID for test_custom_fixed_stats.  This is configurable so that tests
+ * can register it with a different ID, including the one used by
+ * test_custom_var_stats.
  */
-#define PGSTAT_KIND_TEST_CUSTOM_FIXED_STATS 26
+static int	test_custom_fixed_stats_kind = 26;
 
 /*--------------------------------------------------------------------------
  * Module initialization
@@ -72,8 +75,19 @@ static const PgStat_KindInfo custom_stats = {
 void
 _PG_init(void)
 {
+	DefineCustomIntVariable("test_custom_fixed_stats.kind_id",
+							"Sets the ID of the custom fixed stats kind.",
+							NULL,
+							&test_custom_fixed_stats_kind,
+							26,
+							PGSTAT_KIND_CUSTOM_MIN,
+							PGSTAT_KIND_CUSTOM_MAX,
+							PGC_POSTMASTER,
+							0,
+							NULL, NULL, NULL);
+
 	/* Register custom statistics kind */
-	pgstat_register_kind(PGSTAT_KIND_TEST_CUSTOM_FIXED_STATS, &custom_stats);
+	pgstat_register_kind(test_custom_fixed_stats_kind, &custom_stats);
 }
 
 /*
@@ -97,7 +111,7 @@ static void
 test_custom_stats_fixed_reset_all_cb(TimestampTz ts)
 {
 	PgStatShared_CustomFixedEntry *stats_shmem =
-		pgstat_get_custom_shmem_data(PGSTAT_KIND_TEST_CUSTOM_FIXED_STATS);
+		pgstat_get_custom_shmem_data(test_custom_fixed_stats_kind);
 
 	/* see explanation above PgStatShared_Archiver for the reset protocol */
 	LWLockAcquire(&stats_shmem->lock, LW_EXCLUSIVE);
@@ -117,9 +131,9 @@ static void
 test_custom_stats_fixed_snapshot_cb(void)
 {
 	PgStatShared_CustomFixedEntry *stats_shmem =
-		pgstat_get_custom_shmem_data(PGSTAT_KIND_TEST_CUSTOM_FIXED_STATS);
+		pgstat_get_custom_shmem_data(test_custom_fixed_stats_kind);
 	PgStat_StatCustomFixedEntry *stat_snap =
-		pgstat_get_custom_snapshot_data(PGSTAT_KIND_TEST_CUSTOM_FIXED_STATS);
+		pgstat_get_custom_snapshot_data(test_custom_fixed_stats_kind);
 	PgStat_StatCustomFixedEntry *reset_offset = &stats_shmem->reset_offset;
 	PgStat_StatCustomFixedEntry reset;
 
@@ -153,7 +167,7 @@ test_custom_stats_fixed_update(PG_FUNCTION_ARGS)
 {
 	PgStatShared_CustomFixedEntry *stats_shmem;
 
-	stats_shmem = pgstat_get_custom_shmem_data(PGSTAT_KIND_TEST_CUSTOM_FIXED_STATS);
+	stats_shmem = pgstat_get_custom_shmem_data(test_custom_fixed_stats_kind);
 
 	LWLockAcquire(&stats_shmem->lock, LW_EXCLUSIVE);
 
@@ -174,7 +188,7 @@ PG_FUNCTION_INFO_V1(test_custom_stats_fixed_reset);
 Datum
 test_custom_stats_fixed_reset(PG_FUNCTION_ARGS)
 {
-	pgstat_reset_of_kind(PGSTAT_KIND_TEST_CUSTOM_FIXED_STATS);
+	pgstat_reset_of_kind(test_custom_fixed_stats_kind);
 
 	PG_RETURN_VOID();
 }
@@ -193,8 +207,8 @@ test_custom_stats_fixed_report(PG_FUNCTION_ARGS)
 	PgStat_StatCustomFixedEntry *stats;
 
 	/* Take snapshot (applies reset offsets) */
-	pgstat_snapshot_fixed(PGSTAT_KIND_TEST_CUSTOM_FIXED_STATS);
-	stats = pgstat_get_custom_snapshot_data(PGSTAT_KIND_TEST_CUSTOM_FIXED_STATS);
+	pgstat_snapshot_fixed(test_custom_fixed_stats_kind);
+	stats = pgstat_get_custom_snapshot_data(test_custom_fixed_stats_kind);
 
 	/* Build return tuple */
 	tupdesc = CreateTemplateTupleDesc(2);

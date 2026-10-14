@@ -9,6 +9,7 @@
 # - Loss after crash recovery.
 # - Resets for fixed-sized stats.
 # - Custom hash tables for variable-sized stats
+# - Stats file with entries of a kind ID now used by a fixed-sized kind
 
 use strict;
 use warnings FATAL => 'all';
@@ -215,6 +216,37 @@ $result = $node->safe_psql('postgres',
 	q(select numcalls from test_custom_stats_fixed_report() where stats_reset is not null)
 );
 is($result, "0", "report of fixed-sized after manual reset");
+
+# Check that entries of a variable-sized stats kind in the stats file are
+# discarded if their kind ID is used by a fixed-sized stats kind at the
+# next startup.  Load only the variable-sized kind first, so as the stats
+# file includes only entries for it.
+$node->append_conf('postgresql.conf', "test_custom_fixed_stats.kind_id = 25");
+$node->adjust_conf('postgresql.conf', 'shared_preload_libraries',
+	"'test_custom_var_stats'");
+$node->adjust_conf('postgresql.conf', 'test_custom_var_stats.kind',
+	"'test_custom_var_stats'");
+$node->restart;
+
+$node->safe_psql('postgres',
+	q(select test_custom_stats_var_create('entry1', 'Test entry 1')));
+$node->safe_psql('postgres', q(select test_custom_stats_var_update('entry1')));
+$node->stop;
+
+# Use the ID of the variable-sized kind for the fixed-sized kind.
+$node->adjust_conf('postgresql.conf', 'shared_preload_libraries',
+	"'test_custom_fixed_stats'");
+my $log_offset = -s $node->logfile;
+$node->start;
+
+ok( $node->log_contains(
+		qr/invalid fixed_amount in stats kind for entry 25\/\d+\/\d+ of type S/,
+		$log_offset),
+	"stats file discarded with kind 25 now fixed-sized");
+
+$result = $node->safe_psql('postgres',
+	q(select numcalls from test_custom_stats_fixed_report()));
+is($result, "0", "fixed-sized stats usable with kind 25");
 
 # Test completed successfully
 done_testing();
