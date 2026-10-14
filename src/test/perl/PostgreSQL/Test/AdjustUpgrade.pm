@@ -156,6 +156,16 @@ sub adjust_database_contents
 		}
 	}
 
+	# Child tables whose virtual generated column has a different expression
+	# than the parent's cannot be upgraded to v20.
+	if ($old_version >= 18 && $old_version < 20)
+	{
+		_add_st(
+			$result, 'regression',
+			'drop table if exists generated_virtual_tests.gtest1_y',
+			'drop table if exists generated_virtual_tests.gtestx');
+	}
+
 	# we removed these test-support functions in v18
 	if ($old_version < 18)
 	{

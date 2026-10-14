@@ -276,6 +276,10 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
       Replacing the expression of a virtual generated column does not require a
       table rewrite, but if the column is used in a constraint, the table will
       be scanned to check that existing rows meet the constraint.
+      The expression of a virtual generated column cannot be changed for an
+      inherited column, or with <literal>ONLY</literal> for a table that has
+      child tables.  It has to be changed for the whole inheritance tree,
+      from the top.
      </para>
 
      <para>
