@@ -276,6 +276,9 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
       Replacing the expression of a virtual generated column does not require a
       table rewrite, but if the column is used in a constraint, the table will
       be scanned to check that existing rows meet the constraint.
+      The expression of a virtual generated column cannot be changed for a
+      partition alone, or with <literal>ONLY</literal> for a partitioned table
+      that has partitions.
      </para>
 
      <para>
