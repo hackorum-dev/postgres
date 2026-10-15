@@ -88,13 +88,15 @@ $ssl_server->configure_test_server_for_ssl($node, $SERVERHOSTADDR,
 note "testing password-protected keys";
 
 # Test a passphrase command which fails to unlock the private key, the server
-# should not start at all.
+# should not start at all.  Enable reloading so that the command is executed
+# at server start in EXEC_BACKEND builds as well.
 switch_server_cert(
 	$node,
 	certfile => 'server-cn-only',
 	cafile => 'root+client_ca',
 	keyfile => 'server-password',
 	passphrase_cmd => 'echo wrongpassword',
+	passphrase_cmd_reload => 'on',
 	restart => 'no');
 
 $result = $node->restart(
@@ -107,8 +109,8 @@ is($result, 0,
 # which doesn't support reloading.  Unlocking the private key will fail when
 # reloading and the already existing SSL context will remain in place, with
 # connections still accepted.  EXEC_BACKEND builds will reload the SSL context
-# on each backend startup, so command reloading must be enabled or else
-# connections will fail.
+# on each backend startup, so command reloading must be enabled or else the
+# server refuses to start.
 switch_server_cert(
 	$node,
 	certfile => 'server-cn-only',
@@ -121,26 +123,28 @@ switch_server_cert(
 $result = $node->restart(
 	fail_ok => 1,
 	log_unlike => qr/could not load private key file/);
-is($result, 1, 'restart succeeds with password-protected key file');
 
+my $log_start;
 if ($exec_backend =~ /on/)
 {
-	$node->connect_fails(
-		"$common_connstr sslrootcert=ssl/root+server_ca.crt sslmode=require",
-		"connect with correct server CA cert file sslmode=require",
-		expected_stderr => qr/\Qserver does not support SSL\E/);
+	is($result, 0,
+		'restart fails with password-protected key file without passphrase command reloading'
+	);
+	$log_start = $node->wait_for_log(
+		qr/cannot be reloaded because it requires a passphrase/);
 }
 else
 {
+	is($result, 1, 'restart succeeds with password-protected key file');
 	$node->connect_ok(
 		"$common_connstr sslrootcert=ssl/root+server_ca.crt sslmode=require",
 		"connect with correct server CA cert file sslmode=require");
-}
 
-# Reloading should fail since we cannot execute the passphrase command
-$node->reload();
-my $log_start = $node->wait_for_log(
-	qr/cannot be reloaded because it requires a passphrase/);
+	# Reloading should fail since we cannot execute the passphrase command
+	$node->reload();
+	$log_start = $node->wait_for_log(
+		qr/cannot be reloaded because it requires a passphrase/);
+}
 
 # Test a passphrase command which successfully unlocks the private key, and
 # which can be reloaded.  The server should start and connections be accepted.

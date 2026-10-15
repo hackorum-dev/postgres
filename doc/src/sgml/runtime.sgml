@@ -2292,8 +2292,9 @@ pg_dumpall -p 5432 | psql -d postgres -p 5433
    Using a passphrase by default disables the ability to change the server's
    SSL configuration without a server restart, but see <xref
    linkend="guc-ssl-passphrase-command-supports-reload"/>.
-   Furthermore, passphrase-protected private keys cannot be used at all
-   on Windows.
+   On <systemitem class="osname">Windows</systemitem>, passphrase-protected
+   private keys can only be used with a passphrase command which supports
+   reloading, otherwise the server will refuse to start.
   </para>
 
   <para>
