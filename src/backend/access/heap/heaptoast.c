@@ -28,6 +28,7 @@
 #include "access/genam.h"
 #include "access/heapam.h"
 #include "access/heaptoast.h"
+#include "access/toast_compression.h"
 #include "access/toast_helper.h"
 #include "access/toast_internals.h"
 #include "utils/fmgroids.h"
@@ -379,7 +380,8 @@ toast_flatten_tuple(HeapTuple tup, TupleDesc tupleDesc)
 			varlena    *new_value;
 
 			new_value = (varlena *) DatumGetPointer(toast_values[i]);
-			if (VARATT_IS_EXTERNAL(new_value))
+			if (VARATT_IS_EXTERNAL(new_value) ||
+				VARATT_IS_COMPRESSED_DICT(new_value))
 			{
 				new_value = detoast_external_attr(new_value);
 				toast_values[i] = PointerGetDatum(new_value);
@@ -604,7 +606,8 @@ toast_build_flattened_tuple(TupleDesc tupleDesc,
 			varlena    *new_value;
 
 			new_value = (varlena *) DatumGetPointer(new_values[i]);
-			if (VARATT_IS_EXTERNAL(new_value))
+			if (VARATT_IS_EXTERNAL(new_value) ||
+				VARATT_IS_COMPRESSED_DICT(new_value))
 			{
 				new_value = detoast_external_attr(new_value);
 				new_values[i] = PointerGetDatum(new_value);
