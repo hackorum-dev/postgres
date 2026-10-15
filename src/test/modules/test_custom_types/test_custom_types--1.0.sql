@@ -32,6 +32,11 @@ RETURNS boolean
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
 
+CREATE FUNCTION int_custom_typanalyze_stattarget_sensitive(internal)
+RETURNS boolean
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;
+
 --
 -- The int_custom type definition
 --

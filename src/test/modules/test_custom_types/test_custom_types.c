@@ -28,6 +28,7 @@ PG_FUNCTION_INFO_V1(int_custom_in);
 PG_FUNCTION_INFO_V1(int_custom_out);
 PG_FUNCTION_INFO_V1(int_custom_typanalyze_false);
 PG_FUNCTION_INFO_V1(int_custom_typanalyze_invalid);
+PG_FUNCTION_INFO_V1(int_custom_typanalyze_stattarget_sensitive);
 PG_FUNCTION_INFO_V1(int_custom_eq);
 PG_FUNCTION_INFO_V1(int_custom_ne);
 PG_FUNCTION_INFO_V1(int_custom_lt);
@@ -73,6 +74,17 @@ Datum
 int_custom_typanalyze_false(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_BOOL(false);
+}
+
+Datum
+int_custom_typanalyze_stattarget_sensitive(PG_FUNCTION_ARGS)
+{
+	VacAttrStats *stats = (VacAttrStats *) PG_GETARG_POINTER(0);
+
+	if (stats->attstattarget < 0)
+		PG_RETURN_BOOL(true);
+	else
+		PG_RETURN_BOOL(false);
 }
 
 /*
