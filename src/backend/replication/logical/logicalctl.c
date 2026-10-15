@@ -752,10 +752,24 @@ UpdateLogicalDecodingStatusEndOfRecovery(void)
 	 * XLogLogicalInfo even if we've not updated the status above as the
 	 * status have been turned on and off during recovery, having running
 	 * processes have different status on their local caches.
+	 *
+	 * Only waiting for it when the new status is "on" is necessary, though.
+	 * With wal_level = 'logical', XLogLogicalInfoActive() is true regardless
+	 * of the cached value, so no barrier is needed at all.  When the new
+	 * status is "off", a process still caching "on" only writes logical
+	 * information that isn't needed, which is always safe (the same reasoning
+	 * as in DisableLogicalDecoding()), so emit the barrier without waiting.
+	 * Waiting would make promotion depend on every process absorbing it,
+	 * including backends blocked on a client that stopped reading.
 	 */
-	if (IsUnderPostmaster)
-		WaitForProcSignalBarrier(
-								 EmitProcSignalBarrier(PROCSIGNAL_BARRIER_UPDATE_XLOG_LOGICAL_INFO));
+	if (IsUnderPostmaster && wal_level != WAL_LEVEL_LOGICAL)
+	{
+		uint64		generation;
+
+		generation = EmitProcSignalBarrier(PROCSIGNAL_BARRIER_UPDATE_XLOG_LOGICAL_INFO);
+		if (new_status)
+			WaitForProcSignalBarrier(generation);
+	}
 
 	INJECTION_POINT("startup-logical-decoding-status-change-end-of-recovery", NULL);
 }
