@@ -68,6 +68,7 @@ tests += {
       't/057_snapshot_commit_race.pl',
       't/058_shutdown_crash_restart.pl',
       't/059_remote_apply_status_interval.pl',
+      't/060_hot_standby_feedback_status_interval.pl',
     ],
   },
 }
