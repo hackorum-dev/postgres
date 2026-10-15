@@ -776,7 +776,10 @@ init_host_context(HostsLine *host, bool isServerStart, bool *hasWarned)
 	{
 		if (dummy_ssl_passwd_cb_called && isServerStart)
 		{
-			/* Only reachable in EXEC_BACKEND builds, see above */
+			/*
+			 * Only reachable in EXEC_BACKEND builds, see above and
+			 * default_openssl_tls_init().
+			 */
 			ereport(FATAL,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("private key file \"%s\" cannot be reloaded because it requires a passphrase",
@@ -2610,7 +2613,15 @@ host_cache_pointer(const char *key)
 static void
 default_openssl_tls_init(SSL_CTX *context, bool isServerStart)
 {
+	/*
+	 * In EXEC_BACKEND builds every child process loads the configuration
+	 * again, see init_host_context().
+	 */
+#ifdef EXEC_BACKEND
+	if (false)
+#else
 	if (isServerStart)
+#endif
 	{
 		if (ssl_passphrase_command[0])
 		{
