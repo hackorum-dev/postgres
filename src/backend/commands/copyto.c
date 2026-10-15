@@ -21,6 +21,7 @@
 #include "access/table.h"
 #include "access/tableam.h"
 #include "access/tupconvert.h"
+#include "access/xlog.h"
 #include "catalog/pg_inherits.h"
 #include "commands/copyapi.h"
 #include "commands/progress.h"
@@ -889,6 +890,25 @@ BeginCopyTo(ParseState *pstate,
 							RelationGetRelationName(rel))));
 	}
 
+	/* Temporary and unlogged relations are inaccessible during recovery. */
+	if (rel != NULL && RecoveryInProgress())
+	{
+		bool		accessible = RelationIsPermanent(rel);
+
+		foreach_oid(child, children)
+		{
+			if (get_rel_persistence(child) != RELPERSISTENCE_PERMANENT)
+			{
+				accessible = false;
+				break;
+			}
+		}
+
+		if (!accessible)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("cannot access temporary or unlogged relations during recovery")));
+	}
 
 	/* Allocate workspace and zero all fields */
 	cstate = palloc0_object(CopyToStateData);
