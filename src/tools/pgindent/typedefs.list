@@ -3328,6 +3328,7 @@ UpgradeTaskStep
 UploadManifestCmd
 UpperRelationKind
 UserAuth
+UserCast
 UserContext
 UserMapping
 UserOpts
