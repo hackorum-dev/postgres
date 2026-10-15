@@ -702,8 +702,17 @@ init_host_context(HostsLine *host, bool isServerStart, bool *hasWarned)
 
 		/*
 		 * Set up the password callback, if configured.
+		 *
+		 * In EXEC_BACKEND builds every child process loads the configuration
+		 * again, so even at server start we must set up the callback as for a
+		 * reload.  Otherwise a key which cannot be reloaded would be accepted
+		 * here and then fail to load in every backend.
 		 */
+#ifdef EXEC_BACKEND
+		if (false)
+#else
 		if (isServerStart)
+#endif
 		{
 			if (host->ssl_passphrase_cmd && host->ssl_passphrase_cmd[0])
 			{
@@ -765,8 +774,23 @@ init_host_context(HostsLine *host, bool isServerStart, bool *hasWarned)
 									host->ssl_key,
 									SSL_FILETYPE_PEM) != 1)
 	{
-		if (dummy_ssl_passwd_cb_called)
-			ereport(isServerStart ? FATAL : LOG,
+		if (dummy_ssl_passwd_cb_called && isServerStart)
+		{
+			/* Only reachable in EXEC_BACKEND builds, see above */
+			ereport(FATAL,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("private key file \"%s\" cannot be reloaded because it requires a passphrase",
+							host->ssl_key),
+					 errdetail("On this platform, every backend process loads the SSL configuration again."),
+					 errhint("Configure a passphrase command for this key and set \"%s\" to \"on\".",
+							 host->sourcefile ? "SSL_passphrase_cmd_reload" :
+							 "ssl_passphrase_command_supports_reload"),
+					 host->sourcefile ?
+					 errcontext("line %d of configuration file \"%s\"",
+								host->linenumber, host->sourcefile) : 0));
+		}
+		else if (dummy_ssl_passwd_cb_called)
+			ereport(LOG,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("private key file \"%s\" cannot be reloaded because it requires a passphrase",
 							host->ssl_key)));
