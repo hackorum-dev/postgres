@@ -1869,6 +1869,12 @@ vac_truncate_clog(TransactionId frozenXID,
 	bool		bogus = false;
 	bool		frozenAlreadyWrapped = false;
 
+	/*
+	 * Lock pg_database before the LWLock.  A lock wait while holding an
+	 * LWLock could neither be canceled nor absorb a ProcSignalBarrier.
+	 */
+	relation = table_open(DatabaseRelationId, AccessShareLock);
+
 	/* Restrict task to one backend per cluster; see SimpleLruTruncate(). */
 	LWLockAcquire(WrapLimitsVacuumLock, LW_EXCLUSIVE);
 
@@ -1894,8 +1900,6 @@ vac_truncate_clog(TransactionId frozenXID,
 	 * worst possible outcome is that pg_xact is not truncated as aggressively
 	 * as it could be.
 	 */
-	relation = table_open(DatabaseRelationId, AccessShareLock);
-
 	scan = table_beginscan_catalog(relation, 0, NULL);
 
 	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
