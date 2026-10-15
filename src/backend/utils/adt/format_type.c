@@ -21,6 +21,7 @@
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
 #include "mb/pg_wchar.h"
+#include "miscadmin.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -448,6 +449,7 @@ oidvectortypes(PG_FUNCTION_ARGS)
 {
 	oidvector  *oidArray = (oidvector *) PG_GETARG_POINTER(0);
 	char	   *result;
+	char	   *end;
 	int			numargs;
 	int			num;
 	size_t		total;
@@ -460,29 +462,42 @@ oidvectortypes(PG_FUNCTION_ARGS)
 	total = 20 * numargs + 1;
 	result = palloc(total);
 	result[0] = '\0';
+	end = result;
 	left = total - 1;
 
 	for (num = 0; num < numargs; num++)
 	{
-		char	   *typename = format_type_extended(oidArray->values[num], -1,
-													FORMAT_TYPE_ALLOW_INVALID);
-		size_t		slen = strlen(typename);
+		char	   *typename;
+		size_t		slen;
+
+		CHECK_FOR_INTERRUPTS();
+
+		typename = format_type_extended(oidArray->values[num], -1,
+										FORMAT_TYPE_ALLOW_INVALID);
+		slen = strlen(typename);
 
 		if (left < (slen + 2))
 		{
+			size_t		used = end - result;
+
 			total += slen + 2;
 			result = repalloc(result, total);
+			end = result + used;
 			left += slen + 2;
 		}
 
 		if (num > 0)
 		{
-			strcat(result, ", ");
+			memcpy(end, ", ", 2);
+			end += 2;
 			left -= 2;
 		}
-		strcat(result, typename);
+		memcpy(end, typename, slen);
+		end += slen;
 		left -= slen;
+		pfree(typename);
 	}
+	*end = '\0';
 
 	PG_RETURN_TEXT_P(cstring_to_text(result));
 }
