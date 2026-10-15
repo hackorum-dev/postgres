@@ -28,6 +28,7 @@
 #include "fe_utils/mbprint.h"
 #include "fe_utils/string_utils.h"
 #include "mainloop.h"
+#include "mb/pg_wchar.h"
 #include "portability/instr_time.h"
 #include "settings.h"
 
@@ -2630,9 +2631,37 @@ command_no_begin(const char *query)
 void
 addQueryComment(PQExpBuffer buf, const char *label)
 {
-#if defined(ENABLE_NLS)
-	/* This will become conditional once we've settled on the tests to use */
-	label = _(label);
+	/*
+	 * We must not translate the label unless we know that it is representable
+	 * in the server's encoding; for now, restrict ourselves to the case where
+	 * server_encoding == client_encoding.  Even then there's a hazard that
+	 * gettext might produce some other encoding.  Normally gettext emits the
+	 * encoding of LC_CTYPE, but OUTPUT_CHARSET can override that.  gettext
+	 * may keep using the OUTPUT_CHARSET it saw first, so give up if that was
+	 * set on startup or has been set anytime since then.  On Windows the
+	 * encoding gettext uses is not certain to match what we would compute, so
+	 * don't try at all there.
+	 */
+#if defined(ENABLE_NLS) && !defined(WIN32)
+	const char *server_enc = PQparameterStatus(pset.db, "server_encoding");
+	int			client_enc = PQclientEncoding(pset.db);
+
+	if (!pset.output_charset &&
+		server_enc != NULL &&
+		pg_char_to_encoding(server_enc) == client_enc &&
+		pg_get_encoding_from_locale(NULL, false) == client_enc)
+	{
+		const char *translated = _(label);
+		int			len = strlen(translated);
+
+		/*
+		 * In case the checks above miss something, make sure the server
+		 * accepts the bytes.  With equal client and server encodings, this is
+		 * the check the server does.
+		 */
+		if (pg_encoding_verifymbstr(client_enc, translated, len) == len)
+			label = translated;
+	}
 #endif
 
 	printfPQExpBuffer(buf, "/* %s */\n", label);

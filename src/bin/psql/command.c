@@ -2971,6 +2971,9 @@ exec_command_setenv(PsqlScanState scan_state, bool active_branch,
 			/* Set variable to the value of the next argument */
 			setenv(envvar, envval, 1);
 			success = true;
+			/* Hack: track whether we ever set OUTPUT_CHARSET */
+			if (strcmp(envvar, "OUTPUT_CHARSET") == 0)
+				pset.output_charset = true;
 		}
 		free(envvar);
 		free(envval);

@@ -135,6 +135,7 @@ main(int argc, char *argv[])
 	pg_logging_set_pre_callback(log_pre_callback);
 	pg_logging_set_locus_callback(log_locus_callback);
 	set_pglocale_pgservice(argv[0], PG_TEXTDOMAIN("psql"));
+	pset.output_charset = (getenv("OUTPUT_CHARSET") != NULL);
 
 	if (argc > 1)
 	{
