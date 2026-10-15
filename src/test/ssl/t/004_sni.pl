@@ -459,22 +459,37 @@ $node->connect_ok(
 
 # Test reloading a passphrase protected key without reloading support in the
 # passphrase hook. Restarting should not give any errors in the log, but the
-# subsequent reload should fail with an error regarding reloading.
+# subsequent reload should fail with an error regarding reloading.  On Windows
+# and EXEC_BACKEND every backend reloads the configuration, so such a key is
+# rejected already at server start.
 ok(unlink($node->data_dir . '/pg_hosts.conf'));
 $node->append_conf('pg_hosts.conf',
 	'localhost server-cn-only.crt server-password.key root+client_ca.crt "echo secret1" off'
 );
 $node_loglocation = -s $node->logfile;
 $result = $node->restart(fail_ok => 1);
-is($result, 1,
-	'pg_hosts.conf: restart succeeds with password-protected key when using the correct passphrase command'
-);
 my $log =
   PostgreSQL::Test::Utils::slurp_file($node->logfile, $node_loglocation);
-unlike(
-	$log,
-	qr/cannot be reloaded because it requires a passphrase/,
-	'log reload failure due to passphrase command reloading');
+if ($windows_os || $exec_backend =~ /on/)
+{
+	is($result, 0,
+		'pg_hosts.conf: restart fails with password-protected key without passphrase command reloading'
+	);
+	like(
+		$log,
+		qr/cannot be reloaded because it requires a passphrase/,
+		'log startup failure due to passphrase command reloading');
+}
+else
+{
+	is($result, 1,
+		'pg_hosts.conf: restart succeeds with password-protected key when using the correct passphrase command'
+	);
+	unlike(
+		$log,
+		qr/cannot be reloaded because it requires a passphrase/,
+		'log reload failure due to passphrase command reloading');
+}
 
 SKIP:
 {
@@ -505,14 +520,16 @@ SKIP:
 }
 
 # A host whose key cannot be loaded in an EXEC_BACKEND child must only affect
-# connections to that host.
+# connections to that host.  Such an entry is rejected at server start, but
+# EXEC_BACKEND children read pg_hosts.conf themselves, so they see an entry
+# added after server start even without a reload.
 ok(unlink($node->data_dir . '/pg_hosts.conf'));
 $node->append_conf('pg_hosts.conf',
 	'localhost server-cn-only.crt server-cn-only.key');
+$node->restart;
 $node->append_conf('pg_hosts.conf',
 	'example.org server-cn-only.crt server-password.key root+client_ca.crt "echo secret1" off'
 );
-$node->restart;
 $node_loglocation = -s $node->logfile;
 
 $node->connect_ok(
@@ -530,9 +547,12 @@ if ($windows_os || $exec_backend =~ /on/)
 }
 else
 {
-	$node->connect_ok(
+	# Without EXEC_BACKEND the entry is not used until the configuration is
+	# reloaded.
+	$node->connect_fails(
 		"$connstr sslrootcert=ssl/root+server_ca.crt sslmode=require host=example.org",
-		"pg_hosts.conf: connect to passphrase host without reload");
+		"pg_hosts.conf: host added without reload is not used",
+		expected_stderr => qr/unrecognized name/);
 }
 
 # Configure with only non-SNI connections allowed
