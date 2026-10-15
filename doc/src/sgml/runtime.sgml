@@ -2653,10 +2653,12 @@ openssl x509 -req -in server.csr -text -days 365 \
     On <systemitem class="osname">Windows</systemitem>, all connections will
     perform a configuration reload due to the different process model of that
     platform, so <replaceable>SSL_passphrase_cmd_reload</replaceable> must be
-    set to <literal>on</literal> for every entry which has an
-    <replaceable>SSL_passphrase_cmd</replaceable>.  If an entry fails to load
-    at backend start, SSL connections for the hosts of that entry will fail,
-    while the other entries remain usable.
+    set to <literal>on</literal> for every entry with a passphrase-protected
+    key, otherwise the server will refuse to start.  Since every connection
+    reads <filename>pg_hosts.conf</filename> and the files it references
+    again, changes to them can take effect for new connections even without a
+    reload.  If an entry fails to load at backend start, SSL connections for
+    the hosts of that entry will fail, while the other entries remain usable.
    </para>
 
    <para>
