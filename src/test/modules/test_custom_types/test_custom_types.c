@@ -28,6 +28,7 @@ PG_FUNCTION_INFO_V1(int_custom_in);
 PG_FUNCTION_INFO_V1(int_custom_out);
 PG_FUNCTION_INFO_V1(int_custom_typanalyze_false);
 PG_FUNCTION_INFO_V1(int_custom_typanalyze_invalid);
+PG_FUNCTION_INFO_V1(int_custom_typanalyze_stattarget_sensitive);
 PG_FUNCTION_INFO_V1(int_custom_eq);
 PG_FUNCTION_INFO_V1(int_custom_ne);
 PG_FUNCTION_INFO_V1(int_custom_lt);
@@ -108,6 +109,26 @@ int_custom_typanalyze_invalid(PG_FUNCTION_ARGS)
 	stats->compute_stats = int_custom_invalid_stats;
 
 	PG_RETURN_BOOL(true);
+}
+
+/*
+ * int_custom_typanalyze_stattarget_sensitive
+ *
+ * Accepts the column only when attstattarget is negative (i.e. "use the
+ * default"), and rejects it otherwise.  For expressions in extended
+ * statistics, examine_attribute() passes -1 while examine_expression()
+ * passes the computed statistics target, so this behaves differently in
+ * the two code paths.
+ */
+Datum
+int_custom_typanalyze_stattarget_sensitive(PG_FUNCTION_ARGS)
+{
+	VacAttrStats *stats = (VacAttrStats *) PG_GETARG_POINTER(0);
+
+	if (stats->attstattarget >= 0)
+		PG_RETURN_BOOL(false);
+
+	PG_RETURN_BOOL(std_typanalyze(stats));
 }
 
 /*
