@@ -1758,7 +1758,8 @@ include_dir 'conf.d'
         This parameter must be set to <literal>on</literal> when running on
         <systemitem class="osname">Windows</systemitem> since all connections
         will perform a configuration reload due to the different process model
-        of that platform.
+        of that platform.  If the private key requires a passphrase and this
+        parameter is <literal>off</literal>, the server will refuse to start.
        </para>
        <para>
         This parameter can only be set in the <filename>postgresql.conf</filename>
