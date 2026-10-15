@@ -47,6 +47,7 @@
 #include "storage/bufmgr.h"
 #include "storage/proc.h"
 #include "tcop/tcopprot.h"
+#include "utils/injection_point.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 
@@ -1382,6 +1383,9 @@ parallel_vacuum_main(dsm_segment *seg, shm_toc *toc)
 
 	/* Register this worker for vacuum progress reporting */
 	pgstat_progress_start_command(PROGRESS_COMMAND_VACUUM, shared->relid);
+
+	/* Used by tests to hold a worker while it is attached to its leader */
+	INJECTION_POINT("parallel-vacuum-worker-start", NULL);
 
 	/* Process indexes to perform vacuum/cleanup */
 	parallel_vacuum_process_safe_indexes(&pvs);
