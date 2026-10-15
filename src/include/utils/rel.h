@@ -165,6 +165,8 @@ typedef struct RelationData
 	Bitmapset  *rd_indexedattr; /* all cols referenced by indexes */
 	Bitmapset  *rd_summarizedattr;	/* cols indexed only by summarizing
 									 * indexes */
+	Bitmapset  *rd_exprattr;	/* cols non-summarizing indexes reference only
+								 * via expressions or as partial indexes */
 
 	PublicationDesc *rd_pubdesc;	/* publication descriptor, or NULL */
 
