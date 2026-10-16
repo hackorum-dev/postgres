@@ -3802,12 +3802,7 @@ transformJsonArrayQueryConstructor(ParseState *pstate,
 	Node	   *exec_expr;
 	CoalesceExpr *coalesce;
 	Const	   *empty_const;
-	Oid			result_type;
-	int32		result_typmod;
-	Oid			typinput;
-	Oid			typioparam;
-	int16		typlen;
-	bool		typbyval;
+	Node	   *empty_expr;
 	JsonReturning *returning;
 	List	   *args;
 	Node	   *result;
@@ -3882,29 +3877,29 @@ transformJsonArrayQueryConstructor(ParseState *pstate,
 
 	/*
 	 * Wrap in COALESCE so that an empty result set produces '[]' rather than
-	 * NULL.  The empty-array constant is created in the output type and
-	 * typmod, so that the COALESCE arguments have consistent types and any
-	 * length restriction from the RETURNING clause is enforced uniformly
-	 * across the empty and non-empty paths.
+	 * NULL.  The empty array is coerced to the output type like an untyped
+	 * literal, so that the COALESCE arguments have consistent types, and any
+	 * length restriction or domain constraint from the RETURNING clause is
+	 * enforced uniformly across the empty and non-empty paths.  In
+	 * particular, for a domain, this calls the base type's input function and
+	 * leaves the constraint checks to run time, so that they don't fail
+	 * prematurely and that later changes to the domain are respected.
 	 */
-	result_type = exprType(exec_expr);
-	result_typmod = exprTypmod(exec_expr);
-	getTypeInputInfo(result_type, &typinput, &typioparam);
-	get_typlenbyval(result_type, &typlen, &typbyval);
-
-	empty_const = makeConst(result_type,
-							result_typmod,
-							exprCollation(exec_expr),
-							(int) typlen,
-							OidInputFunctionCall(typinput, "[]",
-												 typioparam, result_typmod),
-							false,
-							typbyval);
+	empty_const = makeConst(UNKNOWNOID, -1, InvalidOid, -2,
+							CStringGetDatum(pstrdup("[]")), false, false);
+	empty_expr = coerce_to_target_type(pstate, (Node *) empty_const,
+									   UNKNOWNOID,
+									   exprType(exec_expr),
+									   exprTypmod(exec_expr),
+									   COERCION_ASSIGNMENT,
+									   COERCE_IMPLICIT_CAST,
+									   ctor->location);
+	Assert(empty_expr != NULL);
 
 	coalesce = makeNode(CoalesceExpr);
-	coalesce->coalescetype = result_type;
+	coalesce->coalescetype = exprType(exec_expr);
 	coalesce->coalescecollid = exprCollation(exec_expr);
-	coalesce->args = list_make2(exec_expr, empty_const);
+	coalesce->args = list_make2(exec_expr, empty_expr);
 	coalesce->location = ctor->location;
 
 	/*
