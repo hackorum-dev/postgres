@@ -5064,6 +5064,12 @@ GetJsonBehaviorConst(JsonBehaviorType btype)
 			break;
 	}
 
+	/*
+	 * Leave the location unset: the constant doesn't appear in the query
+	 * text, so it mustn't look like it does, for example to query jumbling,
+	 * which would make pg_stat_statements replace the behavior keyword with a
+	 * parameter symbol.
+	 */
 	con = makeConst(typid, -1, InvalidOid, len, val, isnull, isbyval);
 
 	return (Node *) con;
