@@ -827,6 +827,37 @@ SELECT JSON_ARRAY(SELECT 1 WHERE FALSE RETURNING varchar(2));
  []
 (1 row)
 
+-- JSON_ARRAY(subquery) RETURNING a domain: its constraints are checked on
+-- the empty array at run time, and only if it is used
+CREATE DOMAIN sqljson_nonempty_arr AS jsonb
+  CHECK (jsonb_array_length(VALUE) > 0);
+-- Should work
+SELECT JSON_ARRAY(SELECT 1 RETURNING sqljson_nonempty_arr);
+ json_array 
+------------
+ [1]
+(1 row)
+
+-- Should fail
+SELECT JSON_ARRAY(SELECT 1 WHERE FALSE RETURNING sqljson_nonempty_arr);
+ERROR:  value for domain sqljson_nonempty_arr violates check constraint "sqljson_nonempty_arr_check"
+CREATE DOMAIN sqljson_arr AS jsonb;
+CREATE VIEW sqljson_arr_view AS
+  SELECT JSON_ARRAY(SELECT 1 WHERE FALSE RETURNING sqljson_arr) AS a;
+-- Should work
+SELECT * FROM sqljson_arr_view;
+ a  
+----
+ []
+(1 row)
+
+ALTER DOMAIN sqljson_arr ADD CONSTRAINT sqljson_arr_nonempty
+  CHECK (jsonb_array_length(VALUE) > 0);
+-- Should fail
+SELECT * FROM sqljson_arr_view;
+ERROR:  value for domain sqljson_arr violates check constraint "sqljson_arr_nonempty"
+DROP VIEW sqljson_arr_view;
+DROP DOMAIN sqljson_nonempty_arr, sqljson_arr;
 -- Should fail
 SELECT JSON_ARRAY(SELECT FROM (VALUES (1)) foo(i));
 ERROR:  subquery must return only one column
