@@ -1763,15 +1763,12 @@ pgstat_write_statsfile(void)
 			const PgStat_KindInfo *kind_info = NULL;
 
 			/*
-			 * We should not see any "dropped" entries when writing the stats
-			 * file, as all backends and auxiliary processes should have
-			 * cleaned up their references before they terminated.
-			 *
-			 * However, since we are already shutting down, it is not worth
-			 * crashing the server over any potential cleanup issues, so we
-			 * simply skip such entries if encountered.
+			 * A "dropped" entry may survive in the hash table if it was
+			 * reinitialized for a reused stats key while still being held by
+			 * the original backend. This can happen with replication slot
+			 * stats, where a new slot can reuse the same slot index. In that
+			 * case, skip the dropped entry.
 			 */
-			Assert(!ps->dropped);
 			if (ps->dropped)
 				continue;
 
