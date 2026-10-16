@@ -947,3 +947,63 @@ SELECT pg_stat_statements_reset() IS NOT NULL AS t;
  t
 (1 row)
 
+--
+-- JSON_TABLE column definitions are part of the query ID
+--
+SELECT * FROM JSON_TABLE(jsonb '[{"a": 1}]', '$[*]'
+  COLUMNS (a int PATH '$.a')) jt;
+ a 
+---
+ 1
+(1 row)
+
+SELECT * FROM JSON_TABLE(jsonb '[{"a": 1}]', '$[*]'
+  COLUMNS (a text PATH '$.a')) jt;
+ a 
+---
+ 1
+(1 row)
+
+SELECT * FROM JSON_TABLE(jsonb '[{"a": 1}]', '$[*]'
+  COLUMNS (a int PATH '$.b' DEFAULT 0 ON EMPTY)) jt;
+ a 
+---
+ 0
+(1 row)
+
+-- same query ID as the previous one, only the constants differ
+SELECT * FROM JSON_TABLE(jsonb '[{"a": 1}]', '$[*]'
+  COLUMNS (a int PATH '$.c' DEFAULT 1 ON EMPTY)) jt;
+ a 
+---
+ 1
+(1 row)
+
+SELECT * FROM JSON_TABLE(jsonb '[{"a": 1}]', '$[*]'
+  COLUMNS (a int PATH '$.a', NESTED PATH '$.b[*]' COLUMNS (b int PATH '$'))) jt;
+ a | b 
+---+---
+ 1 |  
+(1 row)
+
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
+ calls |                                 query                                  
+-------+------------------------------------------------------------------------
+     2 | SELECT * FROM JSON_TABLE(jsonb $1, $2                                 +
+       |   COLUMNS (a int PATH $3 DEFAULT $4 ON EMPTY)) jt
+     1 | SELECT * FROM JSON_TABLE(jsonb $1, $2                                 +
+       |   COLUMNS (a int PATH $3)) jt
+     1 | SELECT * FROM JSON_TABLE(jsonb $1, $2                                 +
+       |   COLUMNS (a int PATH $3, NESTED PATH $4 COLUMNS (b int PATH $5))) jt
+     1 | SELECT * FROM JSON_TABLE(jsonb $1, $2                                 +
+       |   COLUMNS (a text PATH $3)) jt
+     0 | SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C"
+     1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+(6 rows)
+
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
