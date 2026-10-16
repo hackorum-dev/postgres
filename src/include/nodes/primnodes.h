@@ -134,13 +134,13 @@ typedef struct TableFunc
 	/* list of column default expressions */
 	List	   *coldefexprs pg_node_attr(query_jumble_ignore);
 	/* JSON_TABLE: list of column value expressions */
-	List	   *colvalexprs pg_node_attr(query_jumble_ignore);
+	List	   *colvalexprs;
 	/* JSON_TABLE: list of PASSING argument expressions */
 	List	   *passingvalexprs pg_node_attr(query_jumble_ignore);
 	/* nullability flag for each output column */
 	Bitmapset  *notnulls pg_node_attr(query_jumble_ignore);
 	/* JSON_TABLE plan */
-	Node	   *plan pg_node_attr(query_jumble_ignore);
+	Node	   *plan;
 	/* counts from 0; -1 if none specified */
 	int			ordinalitycol pg_node_attr(query_jumble_ignore);
 	/* token location, or -1 if unknown */
