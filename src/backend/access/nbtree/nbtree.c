@@ -35,6 +35,7 @@
 #include "utils/datum.h"
 #include "utils/fmgrprotos.h"
 #include "utils/index_selfuncs.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/wait_event.h"
 
@@ -171,7 +172,7 @@ bthandler(PG_FUNCTION_ARGS)
 		.amparallelrescan = btparallelrescan,
 		.amtranslatestrategy = bttranslatestrategy,
 		.amtranslatecmptype = bttranslatecmptype,
-		.amcomparedatums = NULL,
+		.amcomparedatums = btcomparedatums,
 	};
 
 	PG_RETURN_POINTER(&amroutine);
@@ -1852,4 +1853,27 @@ bttranslatecmptype(CompareType cmptype, Oid opfamily)
 		default:
 			return InvalidStrategy;
 	}
+}
+
+/*
+ * btcomparedatums() -- would newValue give the same index entry as oldValue?
+ *
+ * A btree index stores the value itself, detoasted (and maybe compressed
+ * again), and returns it in index-only scans, so the entries are the same
+ * only if the values are the same byte for byte once detoasted.  Values the
+ * operator class merely considers equal, such as numeric 1.0 and 1.00, are
+ * not.  An UPDATE that writes back the value a row already has gives the
+ * same entry even when the old value is stored compressed or out of line
+ * and the new one is not yet, which the executor's byte comparison of the
+ * stored forms counts as a change.
+ */
+bool
+btcomparedatums(Relation index, IndexInfo *indexInfo, int attnum,
+				Oid typid, Datum oldValue, Datum newValue)
+{
+	int16		typlen;
+	bool		typbyval;
+
+	get_typlenbyval(typid, &typlen, &typbyval);
+	return datum_image_eq(oldValue, newValue, typbyval, typlen);
 }
