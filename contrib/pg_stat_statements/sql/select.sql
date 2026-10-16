@@ -269,3 +269,15 @@ DROP SCHEMA pgss_schema_1 CASCADE;
 DROP SCHEMA pgss_schema_2 CASCADE;
 DROP TABLE tab_search_same, tab_search_diff_1, tab_search_diff_2;
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+
+--
+-- SQL/JSON ON EMPTY / ON ERROR behaviors are not constants
+--
+SELECT JSON_QUERY(jsonb '{}', '$.a' EMPTY ARRAY ON EMPTY);
+SELECT JSON_QUERY(jsonb '{}', '$.a' EMPTY OBJECT ON EMPTY);
+SELECT JSON_VALUE(jsonb '{}', '$.a' NULL ON EMPTY);
+SELECT JSON_VALUE(jsonb '{}', '$.a' DEFAULT 1 ON EMPTY);
+SELECT JSON_EXISTS(jsonb '{}', 'strict $.a' TRUE ON ERROR);
+SELECT JSON_EXISTS(jsonb '{}', 'strict $.a' FALSE ON ERROR);
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
