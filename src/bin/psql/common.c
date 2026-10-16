@@ -28,6 +28,7 @@
 #include "fe_utils/mbprint.h"
 #include "fe_utils/string_utils.h"
 #include "mainloop.h"
+#include "mb/pg_wchar.h"
 #include "portability/instr_time.h"
 #include "settings.h"
 
@@ -2630,9 +2631,27 @@ command_no_begin(const char *query)
 void
 addQueryComment(PQExpBuffer buf, const char *label)
 {
-#if defined(ENABLE_NLS)
-	/* This will become conditional once we've settled on the tests to use */
-	label = _(label);
+#if defined(ENABLE_NLS) && !defined(WIN32)
+	const char *server_enc = PQparameterStatus(pset.db, "server_encoding");
+	int			client_enc = PQclientEncoding(pset.db);
+
+	/*
+	 * Use the translation only if client and server both use UTF8 and the
+	 * translated bytes are valid UTF8.  Then the server accepts the query and
+	 * the label is valid text in the database.  Single-byte encodings accept
+	 * almost any byte, so the same check proves little there.  Don't try on
+	 * Windows, where the encoding gettext produces is harder to predict.
+	 */
+	if (server_enc != NULL &&
+		pg_char_to_encoding(server_enc) == PG_UTF8 &&
+		client_enc == PG_UTF8)
+	{
+		const char *translated = _(label);
+		int			len = strlen(translated);
+
+		if (pg_encoding_verifymbstr(PG_UTF8, translated, len) == len)
+			label = translated;
+	}
 #endif
 
 	printfPQExpBuffer(buf, "/* %s */\n", label);
