@@ -4143,7 +4143,31 @@ WalSndWait(uint32 socket_events, long timeout, uint32 wait_event)
 	if (wait_event == WAIT_EVENT_WAIT_FOR_STANDBY_CONFIRMATION)
 		ConditionVariablePrepareToSleep(&WalSndCtl->wal_confirm_rcv_cv);
 	else if (MyWalSnd->kind == REPLICATION_KIND_PHYSICAL)
+	{
 		ConditionVariablePrepareToSleep(&WalSndCtl->wal_flush_cv);
+
+		/*
+		 * WalSndWakeup() only sets the latch of walsenders already on the
+		 * CV's waitlist, so a flush between XLogSendPhysical() reading the
+		 * flush pointer and the call above woke nobody.  Recheck now that
+		 * we're on the waitlist, or we'd sleep until the standby's next
+		 * status message.
+		 */
+		if (wait_event == WAIT_EVENT_WAL_SENDER_MAIN && WalSndCaughtUp &&
+			!streamingDoneSending && !sendTimeLineIsHistoric &&
+			!pq_is_send_pending())
+		{
+			XLogRecPtr	flushPtr;
+
+			flushPtr = am_cascading_walsender ?
+				GetStandbyFlushRecPtr(NULL) : GetFlushRecPtr(NULL);
+			if (flushPtr > sentPtr)
+			{
+				ConditionVariableCancelSleep();
+				return;
+			}
+		}
+	}
 	else if (MyWalSnd->kind == REPLICATION_KIND_LOGICAL)
 		ConditionVariablePrepareToSleep(&WalSndCtl->wal_replay_cv);
 
