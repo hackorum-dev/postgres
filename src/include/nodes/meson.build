@@ -23,7 +23,7 @@ node_support_input_i = [
   'nodes/replnodes.h',
   'nodes/supportnodes.h',
   'nodes/value.h',
-  'utils/rel.h',
+  'utils/relfkcache.h',
 ]
 
 node_support_input = []

@@ -73,7 +73,7 @@ my @all_input_files = qw(
   nodes/replnodes.h
   nodes/supportnodes.h
   nodes/value.h
-  utils/rel.h
+  utils/relfkcache.h
 );
 
 # Nodes from these input files are automatically treated as nodetag_only.

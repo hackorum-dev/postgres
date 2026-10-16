@@ -104,6 +104,7 @@
 #include "utils/memutils.h"
 #include "utils/partcache.h"
 #include "utils/relcache.h"
+#include "utils/relfkcache.h"
 #include "utils/ruleutils.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"

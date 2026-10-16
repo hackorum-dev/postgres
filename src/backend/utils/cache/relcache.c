@@ -88,6 +88,7 @@
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/relfkcache.h"
 #include "utils/relmapper.h"
 #include "utils/resowner.h"
 #include "utils/snapmgr.h"
