@@ -1106,3 +1106,13 @@ SELECT * FROM JSON_TABLE(jsonb '{}', '$' AS p0
 \sv json_table_view_on_empty;
 
 DROP VIEW json_table_view_on_empty;
+
+-- Collations must be assigned in the context item and PASSING arguments
+SELECT * FROM JSON_TABLE(jsonb_build_object('k', ROW(1, 2) < ROW(3, 4)), '$'
+	COLUMNS (a bool PATH '$.k'));
+SELECT * FROM JSON_TABLE(jsonb_build_object('k', 'a' < 'b' COLLATE "C"), '$'
+	COLUMNS (a bool PATH '$.k'));
+SELECT * FROM JSON_TABLE(jsonb '{}', '$' PASSING 'a' < 'b' COLLATE "C" AS x
+	COLUMNS (a bool PATH '$x'));
+SELECT * FROM JSON_TABLE(jsonb '{}', '$' PASSING ROW(1, 2) < ROW(3, 4) AS x
+	COLUMNS (a bool PATH '$x'));
