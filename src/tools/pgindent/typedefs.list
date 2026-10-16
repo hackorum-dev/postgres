@@ -887,6 +887,7 @@ ForeignKeyCacheInfo
 ForeignKeyOptInfo
 ForeignPath
 ForeignScan
+ForeignScanEntry
 ForeignScanState
 ForeignServer
 ForeignServerInfo
