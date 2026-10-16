@@ -881,6 +881,12 @@ IoWorkerMain(const void *startup_data, size_t startup_data_len)
 			}
 
 			ioh = &pgaio_ctl->io_handles[io_index];
+
+			/*
+			 * Must be set before error_ioh.  There's not really a good errno
+			 * we can report here.
+			 */
+			error_errno = ENOENT;
 			error_ioh = ioh;
 			errcallback.arg = ioh;
 
@@ -899,10 +905,7 @@ IoWorkerMain(const void *startup_data, size_t startup_data_len)
 			 * It's very unlikely, but possible, that reopen fails. E.g. due
 			 * to memory allocations failing or file permissions changing or
 			 * such.  In that case we need to fail the IO.
-			 *
-			 * There's not really a good errno we can report here.
 			 */
-			error_errno = ENOENT;
 			pgaio_io_reopen(ioh);
 
 			/*
