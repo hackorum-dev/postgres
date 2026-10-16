@@ -889,3 +889,70 @@ SELECT pg_stat_statements_reset() IS NOT NULL AS t;
  t
 (1 row)
 
+--
+-- SQL/JSON ON EMPTY / ON ERROR behaviors are not constants
+--
+SELECT JSON_QUERY('{}'::jsonb, '$.a' EMPTY ARRAY ON EMPTY);
+ json_query 
+------------
+ []
+(1 row)
+
+SELECT JSON_QUERY('{}'::jsonb, '$.a' EMPTY OBJECT ON EMPTY);
+ json_query 
+------------
+ {}
+(1 row)
+
+SELECT JSON_VALUE('{}'::jsonb, '$.a' NULL ON EMPTY);
+ json_value 
+------------
+ 
+(1 row)
+
+SELECT JSON_VALUE('{}'::jsonb, '$.a' DEFAULT 1 ON EMPTY);
+ json_value 
+------------
+ 1
+(1 row)
+
+SELECT JSON_EXISTS('{}'::jsonb, 'strict $.a' TRUE ON ERROR);
+ json_exists 
+-------------
+ t
+(1 row)
+
+SELECT JSON_EXISTS('{}'::jsonb, 'strict $.a' FALSE ON ERROR);
+ json_exists 
+-------------
+ f
+(1 row)
+
+-- a typed literal such as jsonb '{}' is shown as "jsonb $1", which is not
+-- valid SQL, but the behavior keyword is kept here too
+SELECT JSON_EXISTS(jsonb '{}', 'strict $.a' UNKNOWN ON ERROR);
+ json_exists 
+-------------
+ 
+(1 row)
+
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
+ calls |                                 query                                  
+-------+------------------------------------------------------------------------
+     1 | SELECT JSON_EXISTS($1::jsonb, $2 FALSE ON ERROR)
+     1 | SELECT JSON_EXISTS($1::jsonb, $2 TRUE ON ERROR)
+     1 | SELECT JSON_EXISTS(jsonb $1, $2 UNKNOWN ON ERROR)
+     1 | SELECT JSON_QUERY($1::jsonb, $2 EMPTY ARRAY ON EMPTY)
+     1 | SELECT JSON_QUERY($1::jsonb, $2 EMPTY OBJECT ON EMPTY)
+     1 | SELECT JSON_VALUE($1::jsonb, $2 DEFAULT $3 ON EMPTY)
+     1 | SELECT JSON_VALUE($1::jsonb, $2 NULL ON EMPTY)
+     0 | SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C"
+     1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+(9 rows)
+
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
