@@ -75,6 +75,8 @@ static RestrictInfo *create_join_clause(PlannerInfo *root,
 										EquivalenceMember *leftem,
 										EquivalenceMember *rightem,
 										EquivalenceClass *parent_ec);
+static bool clone_needs_strict_clause(PlannerInfo *root,
+									  OuterJoinClauseInfo *ojcinfo);
 static bool reconsider_outer_join_clause(PlannerInfo *root,
 										 OuterJoinClauseInfo *ojcinfo,
 										 bool outer_on_left);
@@ -2155,7 +2157,11 @@ create_join_clause(PlannerInfo *root,
  * seen as a clauseless join and avoided during join order searching.
  * We handle this by generating a constant-TRUE clause that is marked with
  * the same required_relids etc as the removed outer-join clause, thus
- * making it a join clause between the correct relations.
+ * making it a join clause between the correct relations.  But that's not
+ * safe for a cloned clause (see deconstruct_distribute_oj_quals) that may be
+ * evaluated above a pushed-down outer join that has already null-extended
+ * the OUTERVAR, whose relid is not yet included in the join's relids.  There
+ * we need the original strict clause to reject the null-extended rows.
  */
 void
 reconsider_outer_join_clauses(PlannerInfo *root)
@@ -2181,6 +2187,12 @@ reconsider_outer_join_clauses(PlannerInfo *root)
 				/* remove it from the list */
 				root->left_join_clauses =
 					foreach_delete_current(root->left_join_clauses, cell);
+				/* keep the original clause if needed (see notes above) */
+				if (clone_needs_strict_clause(root, ojcinfo))
+				{
+					distribute_restrictinfo_to_rels(root, rinfo);
+					continue;
+				}
 				/* throw back a dummy replacement clause (see notes above) */
 				rinfo = make_restrictinfo(root,
 										  (Expr *) makeBoolConst(true, false),
@@ -2209,6 +2221,12 @@ reconsider_outer_join_clauses(PlannerInfo *root)
 				/* remove it from the list */
 				root->right_join_clauses =
 					foreach_delete_current(root->right_join_clauses, cell);
+				/* keep the original clause if needed (see notes above) */
+				if (clone_needs_strict_clause(root, ojcinfo))
+				{
+					distribute_restrictinfo_to_rels(root, rinfo);
+					continue;
+				}
 				/* throw back a dummy replacement clause (see notes above) */
 				rinfo = make_restrictinfo(root,
 										  (Expr *) makeBoolConst(true, false),
@@ -2272,6 +2290,31 @@ reconsider_outer_join_clauses(PlannerInfo *root)
 
 		distribute_restrictinfo_to_rels(root, ojcinfo->rinfo);
 	}
+}
+
+/*
+ * clone_needs_strict_clause
+ *	  Can this cloned outer-join clause be evaluated above a pushed-down outer
+ *	  join whose relid has been deferred?  That's possible only for an outer
+ *	  join it is incompatible with that can be pushed into the RHS of a lower
+ *	  outer join, ie has nonempty commute_below_l (see
+ *	  add_outer_joins_to_relids).
+ */
+static bool
+clone_needs_strict_clause(PlannerInfo *root, OuterJoinClauseInfo *ojcinfo)
+{
+	RestrictInfo *rinfo = ojcinfo->rinfo;
+
+	if (!rinfo->has_clone && !rinfo->is_clone)
+		return false;
+	foreach_node(SpecialJoinInfo, othersj, root->join_info_list)
+	{
+		if (othersj != ojcinfo->sjinfo && othersj->ojrelid != 0 &&
+			bms_is_member(othersj->ojrelid, rinfo->incompatible_relids) &&
+			!bms_is_empty(othersj->commute_below_l))
+			return true;
+	}
+	return false;
 }
 
 /*

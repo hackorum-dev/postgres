@@ -2442,6 +2442,23 @@ select * from
   lateral (select ss1.* from text_tbl t3 limit 1) as ss2
 where t1.f1 = ss2.f1;
 
+-- a redundant cloned outer-join clause must not become constant TRUE if it
+-- can be evaluated above a pushed-down outer join (bug #19765)
+explain (costs off)
+select a.a, b.b, c.c, d.d from
+  (values (1),(2)) as a(a)
+  left join (values (1),(2)) as b(b) on a.a = b.b
+  left join (values (7),(2)) as c(c) on b.b = c.c
+  left join (values (1),(2)) as d(d) on c.c = d.d
+where a.a = 1;
+
+select a.a, b.b, c.c, d.d from
+  (values (1),(2)) as a(a)
+  left join (values (1),(2)) as b(b) on a.a = b.b
+  left join (values (7),(2)) as c(c) on b.b = c.c
+  left join (values (1),(2)) as d(d) on c.c = d.d
+where a.a = 1;
+
 explain (verbose, costs off)
 select 1 from
   text_tbl as tt1
