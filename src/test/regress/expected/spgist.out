@@ -109,4 +109,14 @@ select count(*) from spgist_quad_fp_tbl
      1
 (1 row)
 
+-- <@ must check the box corner (high.x, low.y): high.y is within EPSILON
+-- of the centroid, so only that corner reaches the right-below quadrant
+insert into spgist_quad_fp_tbl values (point(200, 5 - 5e-6));
+select count(*) from spgist_quad_fp_tbl
+  where p <@ box(point(0, 4.99999), point(400, 4.9999995));
+ count 
+-------
+     1
+(1 row)
+
 reset enable_seqscan;
