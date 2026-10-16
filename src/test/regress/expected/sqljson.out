@@ -1789,6 +1789,29 @@ SELECT JSON_OBJECT('a': JSON_OBJECTAGG('b': 1 RETURNING text) FORMAT JSON);
 (1 row)
 
 DROP FUNCTION volatile_one, stable_one;
+-- The expression in a JsonValueExpr must be evaluated only once
+CREATE SEQUENCE sqljson_seq;
+SELECT JSON_OBJECT('a': nextval('sqljson_seq')::text FORMAT JSON),
+       JSON_ARRAY(nextval('sqljson_seq')::text FORMAT JSON);
+ json_object | json_array 
+-------------+------------
+ {"a" : 1}   | [2]
+(1 row)
+
+SELECT JSON_ARRAYAGG(nextval('sqljson_seq')::text FORMAT JSON)
+  FROM generate_series(1, 2);
+ json_arrayagg 
+---------------
+ [3, 4]
+(1 row)
+
+SELECT currval('sqljson_seq');
+ currval 
+---------
+       4
+(1 row)
+
+DROP SEQUENCE sqljson_seq;
 -- Test deparsing of JSON aggregates that are computed below a WindowAgg
 -- node.
 EXPLAIN (VERBOSE, COSTS OFF)

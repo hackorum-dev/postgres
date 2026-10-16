@@ -2361,9 +2361,27 @@ ExecInitExprRec(Expr *node, ExprState *state,
 		case T_JsonValueExpr:
 			{
 				JsonValueExpr *jve = (JsonValueExpr *) node;
+				int			jumpstep;
+
+				/*
+				 * Only the value of formatted_expr is used, and it contains
+				 * the same expression as raw_expr, possibly coerced, so also
+				 * evaluating raw_expr would evaluate the user-specified
+				 * expression twice, which matters if it is volatile.  We
+				 * still have to initialize raw_expr, for example so that the
+				 * parent Agg node knows about any Aggrefs in it, so emit its
+				 * steps but jump over them.
+				 */
+				scratch.opcode = EEOP_JUMP;
+				scratch.d.jump.jumpdone = -1;	/* computed later */
+				ExprEvalPushStep(state, &scratch);
+				jumpstep = state->steps_len - 1;
 
 				Assert(jve->raw_expr != NULL);
 				ExecInitExprRec(jve->raw_expr, state, resv, resnull);
+
+				state->steps[jumpstep].d.jump.jumpdone = state->steps_len;
+
 				Assert(jve->formatted_expr != NULL);
 				ExecInitExprRec(jve->formatted_expr, state, resv, resnull);
 				break;

@@ -1473,6 +1473,32 @@ SELECT JSON_QUERY(jsonb 'null', '$"Xyz"' PASSING 1 AS "Xyz");
  1
 (1 row)
 
+-- The context item and the PASSING arguments must be evaluated only once
+CREATE DOMAIN queryfuncs_int AS int;
+CREATE SEQUENCE queryfuncs_seq;
+SELECT JSON_QUERY(nextval('queryfuncs_seq')::text, '$'),
+       JSON_VALUE(jsonb 'null', '$x'
+                  PASSING nextval('queryfuncs_seq')::queryfuncs_int AS x);
+ json_query | json_value 
+------------+------------
+ 1          | 2
+(1 row)
+
+SELECT * FROM JSON_TABLE(nextval('queryfuncs_seq')::text, '$'
+                         COLUMNS (v int PATH '$'));
+ v 
+---
+ 3
+(1 row)
+
+SELECT currval('queryfuncs_seq');
+ currval 
+---------
+       3
+(1 row)
+
+DROP SEQUENCE queryfuncs_seq;
+DROP DOMAIN queryfuncs_int;
 -- Test PASSING and toasted values
 CREATE TABLE test_passing_toast (t text);
 ALTER TABLE test_passing_toast ALTER COLUMN t SET STORAGE EXTENDED;
