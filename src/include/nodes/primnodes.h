@@ -1686,8 +1686,9 @@ typedef struct JsonReturning
  * clause or an enclosing node's RETURNING clause.
  *
  * When deparsing a JsonValueExpr, get_rule_expr() prints raw_expr. However,
- * during the evaluation of a JsonValueExpr, the value of formatted_expr
- * takes precedence over that of raw_expr.
+ * only formatted_expr, which contains the same expression, is evaluated;
+ * raw_expr is only initialized by ExecInitExprRec(), so that e.g. any
+ * Aggrefs in it are set up.
  */
 typedef struct JsonValueExpr
 {
