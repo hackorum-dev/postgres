@@ -281,3 +281,20 @@ SELECT JSON_EXISTS(jsonb '{}', 'strict $.a' TRUE ON ERROR);
 SELECT JSON_EXISTS(jsonb '{}', 'strict $.a' FALSE ON ERROR);
 SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+
+--
+-- JSON_TABLE column definitions are part of the query ID
+--
+SELECT * FROM JSON_TABLE(jsonb '[{"a": 1}]', '$[*]'
+  COLUMNS (a int PATH '$.a')) jt;
+SELECT * FROM JSON_TABLE(jsonb '[{"a": 1}]', '$[*]'
+  COLUMNS (a text PATH '$.a')) jt;
+SELECT * FROM JSON_TABLE(jsonb '[{"a": 1}]', '$[*]'
+  COLUMNS (a int PATH '$.b' DEFAULT 0 ON EMPTY)) jt;
+-- same query ID as the previous one, only the constants differ
+SELECT * FROM JSON_TABLE(jsonb '[{"a": 1}]', '$[*]'
+  COLUMNS (a int PATH '$.c' DEFAULT 1 ON EMPTY)) jt;
+SELECT * FROM JSON_TABLE(jsonb '[{"a": 1}]', '$[*]'
+  COLUMNS (a int PATH '$.a', NESTED PATH '$.b[*]' COLUMNS (b int PATH '$'))) jt;
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
