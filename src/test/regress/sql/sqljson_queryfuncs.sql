@@ -504,6 +504,21 @@ SELECT JSON_VALUE(jsonb 'null', '$a' PASSING t AS a) = t AS ok
   FROM test_passing_toast;
 DROP TABLE test_passing_toast;
 
+-- Test PASSING of string types other than text and varchar; they are
+-- converted the same way as by to_jsonb(), so char(n) keeps its padding
+CREATE DOMAIN queryfuncs_text AS text;
+CREATE DOMAIN queryfuncs_char3 AS char(3);
+SELECT JSON_EXISTS(jsonb '["abc"]', '$[*] ? (@ == $c)' PASSING 'abc'::char(3) AS c);
+SELECT JSON_QUERY(jsonb 'null', '$c' PASSING 'ab'::char(3) AS c),
+       to_jsonb('ab'::char(3));
+SELECT JSON_VALUE(jsonb 'null', '$c' PASSING 'abc'::name AS c);
+SELECT JSON_QUERY(jsonb 'null', '$c' PASSING 'abc'::queryfuncs_text AS c);
+SELECT JSON_QUERY(jsonb 'null', '$c' PASSING 'ab'::queryfuncs_char3 AS c);
+SELECT * FROM JSON_TABLE(jsonb '[1]', '$[*]' PASSING 'abc'::char(3) AS c
+  COLUMNS (v text PATH '$c'));
+DROP DOMAIN queryfuncs_text;
+DROP DOMAIN queryfuncs_char3;
+
 -- Test ON ERROR / EMPTY value validity for the function; all fail.
 SELECT JSON_EXISTS(jsonb '1', '$' DEFAULT 1 ON ERROR);
 SELECT JSON_VALUE(jsonb '1', '$' EMPTY ON ERROR);

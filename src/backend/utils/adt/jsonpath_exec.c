@@ -73,6 +73,7 @@
 #include "utils/formatting.h"
 #include "utils/json.h"
 #include "utils/jsonpath.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/timestamp.h"
 
@@ -3395,10 +3396,39 @@ JsonItemFromDatum(Datum val, Oid typid, int32 typmod, JsonbValue *res)
 				break;
 			}
 		default:
-			ereport(ERROR,
-					errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					errmsg("could not convert value of type %s to jsonpath",
-						   format_type_be(typid)));
+			{
+				char		typcategory;
+				bool		typispreferred;
+
+				/*
+				 * transformJsonValueExpr() passes values of all string types
+				 * as they are.  Convert the ones not handled above, such as
+				 * bpchar, name or domains over text, using their output
+				 * function, the same way to_jsonb() converts bpchar and name
+				 * values.
+				 */
+				get_type_category_preferred(typid, &typcategory,
+											&typispreferred);
+				if (typcategory == TYPCATEGORY_STRING)
+				{
+					Oid			typoutput;
+					bool		typisvarlena;
+					char	   *str;
+
+					getTypeOutputInfo(typid, &typoutput, &typisvarlena);
+					str = OidOutputFunctionCall(typoutput, val);
+
+					res->type = jbvString;
+					res->val.string.val = str;
+					res->val.string.len = strlen(str);
+					break;
+				}
+
+				ereport(ERROR,
+						errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("could not convert value of type %s to jsonpath",
+							   format_type_be(typid)));
+			}
 	}
 }
 
