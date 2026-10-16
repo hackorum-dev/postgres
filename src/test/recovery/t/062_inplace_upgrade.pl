@@ -657,4 +657,78 @@ unlike(
 	qr/in-place upgrade migrator|checking for prepared transactions/,
 	'no second migration once the catalogs are migrated');
 
+# Abort the upgrade.  The rollback command stops the new version, has the
+# new installation's postgres restore the files, and starts the old version.
+# Run the restore by itself first, to compare the data directory with what it
+# held before the swap: the same, apart from the configuration file that the
+# swap command added to, and what every start of the old version resets
+# anyway: the relation cache init files, which the new version removed and
+# rewrote, and pg_subtrans, whose segments the new version's shutdown
+# checkpoint truncated and created (see the files that base backups exclude
+# in basebackup.c).
+$primary->stop;
+command_checks_all(
+	[
+		"$newbindir/postgres", '--inplace-upgrade-rollback',
+		'-D' => $primary->data_dir
+	],
+	0,
+	[qr/^$/],
+	[qr/LOG:  rolled back the in-place upgrade/],
+	'restored the files of the old version');
+my $after_restore = datadir_contents($primary);
+foreach my $contents ($before_swap, $after_restore)
+{
+	delete $contents->{'/pg_inplace_upgrade.conf'};
+	delete @$contents{
+		grep { m{pg_internal\.init$|^/pg_subtrans/.} }
+		  keys %$contents
+	};
+}
+my @changed = grep {
+	($before_swap->{$_} // 'absent') ne ($after_restore->{$_} // 'absent')
+} keys %{ { %$before_swap, %$after_restore } };
+is_deeply([ sort @changed ],
+	[], 'data directory is as before the swap, by SHA-256 of every file');
+ok(!-e $stash, 'rollback bundle removed');
+
+# The rollback command finishes the job from there.
+$offset = -s $primary->logfile;
+$primary->command_ok(
+	[ @pg_inplace_upgrade, '--log' => $primary->logfile, 'rollback' ],
+	'rolled the primary back');
+$primary->set_install_path($oldinstall);
+$primary->_update_pid(1);
+like(
+	substr(slurp_file($primary->logfile), $offset),
+	qr/database system was shut down at an upgrade boundary/,
+	'old version started from the boundary');
+is( $primary->safe_psql(
+		'postgres', 'SELECT timeline_id FROM pg_control_checkpoint()'),
+	'1',
+	'old version continues on the same timeline');
+$primary->safe_psql('postgres',
+	q{INSERT INTO t SELECT g, md5(g::text) FROM generate_series(1001, 1010) g}
+);
+$primary->safe_psql('postgres', 'CHECKPOINT');
+is(checkpoint_flag($primary),
+	'none', 'boundary is gone from the control file after a checkpoint');
+is($primary->safe_psql('postgres', $stats_query),
+	$old_stats, 'planner statistics as before the upgrade');
+is($primary->safe_psql('postgres', $view_query),
+	$old_view, 'toasted view definition as before the upgrade');
+
+# The standby resumes replay with one call, and follows the old primary
+# past the boundary.
+$standby->safe_psql('postgres', 'SELECT pg_wal_replay_resume()');
+$primary->wait_for_catchup($standby);
+is($standby->safe_psql('postgres', 'SELECT count(*) FROM t'),
+	'1010', 'standby follows the primary after the rollback');
+is($standby->safe_psql('postgres', 'SELECT pg_is_in_recovery()'),
+	't', 'standby is still a standby');
+is( $standby->safe_psql(
+		'postgres', 'SELECT received_tli FROM pg_stat_wal_receiver'),
+	'1',
+	'standby streams on the same timeline');
+
 done_testing();

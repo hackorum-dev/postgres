@@ -186,6 +186,20 @@ posture_like(
 	qr/^Upgrade posture:\s+migration failed$/m,
 	'with the migrator\'s error before the plan, the migration failed');
 
+$datadir = forge($node->data_dir, 'golive');
+touch("$datadir/$markers/golive");
+posture_like(
+	$datadir,
+	qr/^Owner:\s+new version\n.*^Upgrade posture:\s+live$/ms,
+	'with the go-live marker, the upgrade is live while still in upgrade mode'
+);
+
+# In upgrade mode, PG_VERSION still names the old version and does not
+# count.
+is( slurp_file("$datadir/PG_VERSION"),
+	($new_major - 1) . "\n",
+	'PG_VERSION names the old version');
+
 SKIP:
 {
 	skip 'directory permissions do not apply to root', 1 if $> == 0;
@@ -194,7 +208,7 @@ SKIP:
 	chmod 0000, "$datadir/$markers";
 	command_fails_like(
 		[ pg_inplace_upgrade($datadir), 'status' ],
-		qr/could not stat file ".*markers\/migrated": Permission denied/,
+		qr/could not stat file ".*markers\/golive": Permission denied/,
 		'status refuses markers it cannot stat');
 	chmod 0700, "$datadir/$markers";
 }

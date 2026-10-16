@@ -86,8 +86,11 @@ extern void InplaceUpgradeRewriteCatalog(const struct CatalogRelation *cat,
 extern void InplaceUpgradeStashFile(const char *path, const char *stashpath);
 extern void InplaceUpgradeWriteDatabaseList(const Oid *dboids,
 											char *const *dbpaths, int ndbs);
+extern bool InplaceUpgradeReadDatabaseList(bool missing_ok, int *ndbs,
+										   Oid **dboids, char ***dbpaths);
 extern void InplaceUpgradeRegisterCreatedFile(const char *path);
 extern void InplaceUpgradeWriteMarker(const char *name);
 extern void InplaceUpgradeServerPosture(struct InplaceUpgradePosture *posture);
+pg_noreturn extern void InplaceUpgradeRollbackMain(int argc, char *argv[]);
 
 #endif							/* INPLACE_UPGRADE_H */

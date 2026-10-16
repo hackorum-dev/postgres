@@ -25,6 +25,7 @@ tests += {
     'tests': [
       't/002_prepare.pl',
       't/003_swap.pl',
+      't/004_rollback.pl',
       't/007_posture.pl',
     ],
   },

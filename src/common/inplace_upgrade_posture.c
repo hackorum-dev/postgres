@@ -182,7 +182,8 @@ InplaceUpgradeReadControlFile(const char *path, ControlFileData *cf,
  * A cluster owned by the old version is at a boundary if its latest
  * checkpoint is a boundary checkpoint and it shut down there.  A cluster
  * owned by the new version is live unless it is in upgrade mode, in which
- * case its markers show how far the upgrade has come.
+ * case its markers show how far the upgrade has come.  It is live once the
+ * go-live marker is written, even before upgrade mode ends.
  */
 void
 InplaceUpgradeGetPosture(const ControlFileData *cf, const char *datadir,
@@ -223,7 +224,8 @@ InplaceUpgradeGetPosture(const ControlFileData *cf, const char *datadir,
 		return;
 	}
 
-	if (!cf->inplaceUpgradeMode)
+	if (!cf->inplaceUpgradeMode ||
+		file_exists(datadir, INPLACE_UPGRADE_MARKER_DIR "/" INPLACE_UPGRADE_MARKER_GOLIVE, result))
 		result->posture = UPGRADE_POSTURE_LIVE;
 	else if (file_exists(datadir, INPLACE_UPGRADE_MARKER_DIR "/" INPLACE_UPGRADE_MARKER_MIGRATED, result))
 		result->posture = UPGRADE_POSTURE_MIGRATED;

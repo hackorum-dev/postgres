@@ -35,6 +35,7 @@
 #include "miscadmin.h"
 #include "postmaster/postmaster.h"
 #include "tcop/tcopprot.h"
+#include "upgrade/inplace_upgrade.h"
 #include "utils/help_config.h"
 #include "utils/memutils.h"
 #include "utils/pg_locale.h"
@@ -52,6 +53,7 @@ static const char *const DispatchOptionNames[] =
 	[DISPATCH_FORKCHILD] = "forkchild",
 	[DISPATCH_DESCRIBE_CONFIG] = "describe-config",
 	[DISPATCH_SINGLE] = "single",
+	[DISPATCH_INPLACE_UPGRADE_ROLLBACK] = "inplace-upgrade-rollback",
 	/* DISPATCH_POSTMASTER has no name */
 };
 
@@ -222,6 +224,9 @@ main(int argc, char *argv[])
 		case DISPATCH_SINGLE:
 			PostgresSingleUserMain(argc, argv,
 								   strdup(get_user_name_or_exit(progname)));
+			break;
+		case DISPATCH_INPLACE_UPGRADE_ROLLBACK:
+			InplaceUpgradeRollbackMain(argc, argv);
 			break;
 		case DISPATCH_POSTMASTER:
 			PostmasterMain(argc, argv);
@@ -429,6 +434,10 @@ help(const char *progname)
 	printf(_("  --check            selects check mode (must be first argument)\n"));
 	printf(_("  DBNAME             database name (mandatory argument in bootstrapping mode)\n"));
 	printf(_("  -r FILENAME        send stdout and stderr to given file\n"));
+
+	printf(_("\nOptions for rolling back an in-place upgrade:\n"));
+	printf(_("  --inplace-upgrade-rollback  selects rollback mode (must be first argument)\n"));
+	printf(_("  -D DATADIR         data directory (mandatory argument in rollback mode)\n"));
 
 	printf(_("\nPlease read the documentation for the complete list of run-time\n"
 			 "configuration settings and how to set them on the command line or in\n"

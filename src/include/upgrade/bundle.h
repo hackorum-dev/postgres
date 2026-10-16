@@ -41,6 +41,11 @@
 #define INPLACE_UPGRADE_MARKER_MIGRATED	"migrated"
 
 /*
+ * The upgrade has gone live.  A rollback refuses while this marker exists.
+ */
+#define INPLACE_UPGRADE_MARKER_GOLIVE	"golive"
+
+/*
  * The error that ended the last attempt of the in-place upgrade migrator:
  * its SQLSTATE on the first line, its message on the lines after that.
  */

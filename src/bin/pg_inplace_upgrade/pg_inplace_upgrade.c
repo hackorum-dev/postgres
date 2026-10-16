@@ -104,6 +104,7 @@ static void usage(void);
 static int	cmd_check(void);
 static int	cmd_prepare(void);
 static int	cmd_swap(void);
+static int	cmd_rollback(void);
 static int	cmd_status(void);
 static const char *posture_name(const ClusterPosture *cp);
 
@@ -142,6 +143,7 @@ static void prepend_line_once(const char *path, const char *line);
 static void append_line_once(const char *path, const char *line);
 static void append_upgrade_settings(const char *const *settings);
 static bool reload_config(void);
+static void withdraw_upgrade_files(void);
 
 static void freeze_catalogs(PGconn *conn);
 static bool catalogs_frozen(PGconn *conn);
@@ -252,7 +254,8 @@ main(int argc, char **argv)
 	canonicalize_path(new_bindir);
 
 	if (strcmp(command, "check") != 0 && strcmp(command, "prepare") != 0 &&
-		strcmp(command, "swap") != 0 && strcmp(command, "status") != 0)
+		strcmp(command, "swap") != 0 && strcmp(command, "rollback") != 0 &&
+		strcmp(command, "status") != 0)
 	{
 		pg_log_error("unrecognized command \"%s\"", command);
 		pg_log_error_hint("Try \"%s --help\" for more information.", progname);
@@ -277,6 +280,8 @@ main(int argc, char **argv)
 		return cmd_prepare();
 	else if (strcmp(command, "swap") == 0)
 		return cmd_swap();
+	else if (strcmp(command, "rollback") == 0)
+		return cmd_rollback();
 	else
 		return cmd_status();
 }
@@ -293,12 +298,15 @@ usage(void)
 			 "             the old cluster down at an upgrade boundary\n"));
 	printf(_("  swap       start the new version on a cluster shut down at an\n"
 			 "             upgrade boundary\n"));
+	printf(_("  rollback   return the cluster to the old version, until the upgrade\n"
+			 "             goes live\n"));
 	printf(_("  status     report how far the upgrade of the cluster has got\n"));
 	printf(_("\nOptions:\n"));
 	printf(_("  -b, --old-bindir=DIR   old cluster executable directory\n"));
 	printf(_("  -B, --new-bindir=DIR   new cluster executable directory\n"));
 	printf(_("  -D, --pgdata=DATADIR   data directory of the cluster on this host\n"));
-	printf(_("  -l, --log=FILENAME     server log file for the new version's start\n"));
+	printf(_("  -l, --log=FILENAME     log file for the server this program starts and\n"
+			 "                         for the restore of a rollback\n"));
 	printf(_("  -S, --standby=CONNSTR  connection string of a standby of this cluster\n"
 			 "                         (can be given more than once)\n"));
 	printf(_("  -V, --version          output version information, then exit\n"));
@@ -927,6 +935,29 @@ reload_config(void)
 }
 
 /*
+ * Withdraw the configuration file and the authentication file by renaming
+ * them.  The include lines stay: they name files that need not exist.  The
+ * caller reloads the server, if it is running.
+ */
+static void
+withdraw_upgrade_files(void)
+{
+	const char *const names[] = {UPGRADE_CONF_FILE, UPGRADE_HBA_FILE};
+
+	for (int i = 0; i < lengthof(names); i++)
+	{
+		char	   *path = data_path(names[i]);
+		char	   *disabled = psprintf("%s" DISABLED_SUFFIX, path);
+
+		/* durable_rename() has already logged the error */
+		if (file_exists(path) && durable_rename(path, disabled) != 0)
+			exit(1);
+		pfree(path);
+		pfree(disabled);
+	}
+}
+
+/*
  * Freeze the catalogs of every database with the new installation's
  * vacuumdb, through the same socket we use.  The VACUUM runs in the old
  * server; the client only picks the SQL.  An error in any database aborts.
@@ -1179,6 +1210,88 @@ cmd_swap(void)
 	}
 
 	pg_log_info("the catalogs are migrated, and the cluster serves superusers only until the upgrade goes live");
+	return 0;
+}
+
+/*
+ * Return the cluster to the old version: stop the new version, have the new
+ * installation's postgres put back what the upgrade replaced and remove what
+ * it created, withdraw the configuration and authentication files, and start
+ * the old version.  The old version continues its timeline from the upgrade
+ * boundary.  As long as the rollback bundle is in the data directory, its
+ * restore has not completed, so it is run (again).
+ */
+static int
+cmd_rollback(void)
+{
+	ClusterPosture *cp;
+	bool		running;
+	PQExpBufferData cmd;
+	int			rc;
+
+	require_primary();
+
+	cp = read_posture();
+	if (cp->posture.posture == UPGRADE_POSTURE_LIVE)
+		pg_fatal("the upgrade of the cluster in \"%s\" has gone live and cannot be rolled back",
+				 datadir);
+
+	running = server_running();
+	if (file_exists(data_path(INPLACE_UPGRADE_DIR)))
+	{
+		if (running && cp->posture.owner == UPGRADE_OWNER_OLD)
+			pg_fatal("the old version is running on the cluster in \"%s\", but the upgrade has not been rolled back",
+					 datadir);
+		if (running)
+		{
+			pg_log_info("shutting the new version down");
+			if (stop_server(cp->bindir, "fast") != 0)
+				pg_fatal("could not shut the new version down");
+			running = false;
+		}
+
+		/*
+		 * The restore reports in the server's log format, so it goes to the
+		 * server log, like the server that starts next.
+		 */
+		pg_log_info("restoring the old version's files");
+		init_command(&cmd, new_bindir, "postgres");
+		appendPQExpBufferStr(&cmd, " --inplace-upgrade-rollback");
+		append_datadir(&cmd);
+		if (server_log)
+		{
+			appendPQExpBufferStr(&cmd, " >> ");
+			appendShellString(&cmd, server_log);
+			appendPQExpBufferStr(&cmd, " 2>&1");
+		}
+		rc = run_command(&cmd);
+		if (rc != 0)
+		{
+			pg_log_error("could not roll back the upgrade: %s",
+						 wait_result_to_str(rc));
+			if (server_log)
+				pg_log_error_hint("See the server log \"%s\".", server_log);
+			exit(1);
+		}
+	}
+	else if (cp->posture.owner == UPGRADE_OWNER_NEW)
+		pg_fatal("the rollback bundle of the cluster in \"%s\" is missing", datadir);
+
+	withdraw_upgrade_files();
+
+	if (running)
+	{
+		if (!reload_config())
+			exit(1);
+	}
+	else
+	{
+		pg_log_info("starting the old version");
+		if (run_pg_ctl(old_bindir, "-w", "start") != 0)
+			pg_fatal("could not start the old version");
+	}
+
+	pg_log_info("the cluster runs the old version");
 	return 0;
 }
 
