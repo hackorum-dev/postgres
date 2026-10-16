@@ -1088,28 +1088,21 @@ build_index_key_json(EState *estate, Relation localrel,
 					 bool *omitted)
 {
 	Relation	indexDesc;
-	TupleDesc	indexTupDesc;
+	TupleDesc	reltupdesc = RelationGetDescr(localrel);
 	Datum		values[INDEX_MAX_KEYS];
 	bool		isnull[INDEX_MAX_KEYS];
 	StringInfoData result;
 	int			indnkeyatts;
 	Datum		datum;
-	int			save_nestlevel;
 
 	Assert(slot != NULL);
 
 	Assert(CheckRelationOidLockedByMe(indexid, RowExclusiveLock, true));
 
 	indexDesc = index_open(indexid, NoLock);
-	indexTupDesc = RelationGetDescr(indexDesc);
 
 	build_index_datums_from_slot(estate, localrel, slot, indexDesc, values,
 								 isnull);
-
-	save_nestlevel = NewGUCNestLevel();
-	(void) set_config_option("datestyle", "ISO",
-							 PGC_USERSET, PGC_S_SESSION,
-							 GUC_ACTION_SAVE, true, 0, false);
 
 	/*
 	 * Build the JSON object here rather than handing the values to
@@ -1137,7 +1130,22 @@ build_index_key_json(EState *estate, Relation localrel,
 
 	for (int i = 0; i < indnkeyatts; i++)
 	{
-		Form_pg_attribute att = TupleDescAttr(indexTupDesc, i);
+		Form_pg_attribute att;
+		AttrNumber	attnum;
+
+		/*
+		 * Take the column name from the table, not the index descriptor. The
+		 * index keeps the name it had at creation, which goes stale after a
+		 * column rename and can be wrong for repeated columns such as UNIQUE
+		 * (a, a). This matches the names in the server log.
+		 *
+		 * Replica identity and primary key indexes have no expression
+		 * columns, so every key maps to a table column.
+		 */
+		attnum = indexDesc->rd_index->indkey.values[i];
+		Assert(attnum > 0);
+
+		att = TupleDescAttr(reltupdesc, attnum - 1);
 
 		if (i > 0)
 			appendStringInfoChar(&result, ',');
@@ -1165,6 +1173,10 @@ build_index_key_json(EState *estate, Relation localrel,
 			/*
 			 * Don't record a value larger than CONFLICT_MAX_VALUE_SIZE; put a
 			 * marker recording its length in its place.
+			 *
+			 * XXX The marker deliberately keeps no prefix of the value. For
+			 * arrays, composites and similar types the leading bytes are
+			 * mostly punctuation and say little about the value.
 			 */
 			if (outputlen > CONFLICT_MAX_VALUE_SIZE)
 			{
@@ -1184,7 +1196,6 @@ build_index_key_json(EState *estate, Relation localrel,
 
 	appendStringInfoChar(&result, '}');
 
-	AtEOXact_GUC(true, save_nestlevel);
 	index_close(indexDesc, NoLock);
 
 	datum = PointerGetDatum(cstring_to_text_with_len(result.data, result.len));
@@ -1369,10 +1380,13 @@ insert_conflict_log_tuple(EState *estate, Relation rel,
 
 	values[attno++] = CStringGetTextDatum(ConflictTypeNames[conflict_type]);
 
-	if (TransactionIdIsValid(remote_xid))
-		values[attno++] = TransactionIdGetDatum(remote_xid);
-	else
-		nulls[attno++] = true;
+	/*
+	 * The remote xid is always valid here: a conflict is only detected while
+	 * applying a row change, which is preceded by a BEGIN, BEGIN PREPARE or
+	 * STREAM START that recorded a valid top-level xid.
+	 */
+	Assert(TransactionIdIsValid(remote_xid));
+	values[attno++] = TransactionIdGetDatum(remote_xid);
 
 	if (XLogRecPtrIsValid(remote_final_lsn))
 		values[attno++] = LSNGetDatum(remote_final_lsn);
@@ -1436,6 +1450,11 @@ insert_conflict_log_tuple(EState *estate, Relation rel,
 
 	tuple = heap_form_tuple(RelationGetDescr(conflictlogrel), values, nulls);
 
+	/*
+	 * The conflict log table itself is never logically decoded, but its TOAST
+	 * table would be. heap_insert() passes HEAP_INSERT_NO_LOGICAL on to the
+	 * TOAST inserts, so toasted values are not decoded either.
+	 */
 	heap_insert(conflictlogrel, tuple,
 				GetCurrentCommandId(true), HEAP_INSERT_NO_LOGICAL, NULL);
 
