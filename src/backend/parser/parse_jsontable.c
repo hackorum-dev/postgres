@@ -155,6 +155,7 @@ transformJsonTable(ParseState *pstate, JsonTable *jt)
 	jfe->on_error = jt->on_error;
 	jfe->location = jt->location;
 	tf->docexpr = transformExpr(pstate, (Node *) jfe, EXPR_KIND_FROM_FUNCTION);
+	assign_expr_collations(pstate, tf->docexpr);
 
 	/*
 	 * Create a JsonTablePlan that will generate row pattern that becomes
