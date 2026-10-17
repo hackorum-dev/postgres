@@ -913,8 +913,20 @@ set_frozenxids(void)
 	int			ntups;
 	int			i_datname;
 	int			i_datallowconn;
+	MultiXactId minmxid;
 
 	prep_status("Setting frozenxid and minmxid counters in new cluster");
+
+	/*
+	 * The old cluster's next multixid is 0 if its newest multixid was the
+	 * last one before wraparound, because servers before v19 skip 0 only when
+	 * assigning the next one.  0 is not a valid multixid, so use the value
+	 * that it will have when the next multixid is assigned, the same that
+	 * copy_xact_xlog_xid() passes to pg_resetwal.
+	 */
+	minmxid = old_cluster.controldata.chkpnt_nxtmulti;
+	if (minmxid < FirstMultiXactId)
+		minmxid = FirstMultiXactId;
 
 	conn_template1 = connectToServer(&new_cluster, "template1");
 
@@ -928,7 +940,7 @@ set_frozenxids(void)
 	PQclear(executeQueryOrDie(conn_template1,
 							  "UPDATE pg_catalog.pg_database "
 							  "SET	datminmxid = '%u'",
-							  old_cluster.controldata.chkpnt_nxtmulti));
+							  minmxid));
 
 	/* get database names */
 	dbres = executeQueryOrDie(conn_template1,
@@ -978,7 +990,7 @@ set_frozenxids(void)
 								  CppAsString2(RELKIND_RELATION) ", "
 								  CppAsString2(RELKIND_MATVIEW) ", "
 								  CppAsString2(RELKIND_TOASTVALUE) ")",
-								  old_cluster.controldata.chkpnt_nxtmulti));
+								  minmxid));
 		PQfinish(conn);
 
 		/* Reset datallowconn flag */
