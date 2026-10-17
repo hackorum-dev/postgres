@@ -75,6 +75,10 @@ SELECT '1&2&4&5&6'::query_int;
 SELECT '1&(2&(4&(5|6)))'::query_int;
 SELECT '1&(2&(4&(5|!6)))'::query_int;
 
+-- Leading zeros do not make an octal number.
+SELECT '010'::query_int;
+SELECT '{10}'::int[] @@ '010'::query_int;
+
 -- Test for overflow of the int16 "left" field in findoprnd().
 -- This query uses a balanced binary tree to avoid using too much stack.
 DO $$
