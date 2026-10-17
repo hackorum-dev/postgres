@@ -2415,7 +2415,18 @@ _bt_unlink_halfdead_page(Relation rel, Buffer leafbuf, BlockNumber scanblkno,
 	 * right.
 	 */
 	if (target != leafblkno)
+	{
 		_bt_lockbuf(rel, leafbuf, BT_WRITE);
+
+		/*
+		 * The leaf page's left sibling may have split while we held no lock
+		 * on the leaf
+		 */
+		page = BufferGetPage(leafbuf);
+		opaque = BTPageGetOpaque(page);
+		leafleftsib = opaque->btpo_prev;
+		leafrightsib = opaque->btpo_next;
+	}
 	if (leftsib != P_NONE)
 	{
 		lbuf = _bt_getbuf(rel, leftsib, BT_WRITE);
