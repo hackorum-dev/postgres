@@ -722,3 +722,42 @@ select * from text_support_test where t <@ textrange_supp('a', 'd');
 drop table text_support_test;
 
 drop type textrange_supp;
+
+--
+-- ANALYZE stores NaN as the length of ranges whose subdiff is NaN, such as
+-- numeric ranges with a NaN bound or [Infinity,Infinity].  Check that NaN
+-- entries in the length histogram don't produce bogus row estimates.
+--
+create function range_explain_rows(query text) returns float8
+language plpgsql as
+$$
+declare
+  plan json;
+begin
+  execute 'explain (format json) ' || query into plan;
+  return (plan->0->'Plan'->>'Plan Rows')::float8;
+end;
+$$;
+create table numrange_nan_len (nr numrange);
+alter table numrange_nan_len alter column nr set statistics 100;
+insert into numrange_nan_len
+  select numrange(g, g + (g % 97) + 1) from generate_series(1, 1000) g;
+insert into numrange_nan_len
+  select numrange(g, 'NaN') from generate_series(1, 10) g;
+insert into numrange_nan_len
+  select '[Infinity,Infinity]' from generate_series(1, 10);
+analyze numrange_nan_len;
+select count(*) > 0 as has_nan
+  from pg_stats, unnest(range_length_histogram::text::float8[]) v
+  where schemaname = current_schema() and tablename = 'numrange_nan_len'
+    and v = 'NaN'::float8;
+select range_explain_rows('select * from numrange_nan_len where nr <@ numrange(0, 200)') <= 1020 as sane;
+select range_explain_rows('select * from numrange_nan_len where nr @> numrange(500, 510)') <= 1020 as sane;
+create table nummultirange_nan_len (nmr nummultirange);
+alter table nummultirange_nan_len alter column nmr set statistics 100;
+insert into nummultirange_nan_len select nummultirange(nr) from numrange_nan_len;
+analyze nummultirange_nan_len;
+select range_explain_rows('select * from nummultirange_nan_len where nmr <@ nummultirange(numrange(0, 200))') <= 1020 as sane;
+select range_explain_rows('select * from nummultirange_nan_len where nmr @> nummultirange(numrange(500, 510))') <= 1020 as sane;
+drop table numrange_nan_len, nummultirange_nan_len;
+drop function range_explain_rows(text);
