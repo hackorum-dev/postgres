@@ -35,11 +35,188 @@
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
+#include "access/xact.h"
+#include "access/toast_compression.h"
+#include "access/toast_internals.h"
+#include "utils/fmgroids.h"
+
+/* https://gemini.google.com/u/1/app/dc868a99fe48c7e8 */
+/* stack of nested function pointers */
+#define MAX_NESTED_CALLS 1024
+static PGFunction fn_addr_stack[MAX_NESTED_CALLS];
+static int	fn_addr_stack_ptr = 0;
+
+/*
+ *
+ * The wrapper function that receives the fully populated FunctionCallInfo,
+ * compresses varlenas in place, and calls the original function.
+ */
+static Datum
+my_function_wrapper(FunctionCallInfo fcinfo)
+{
+	PGFunction	orig_fn;
+	Datum		result;
+	bool		modified = false;
+
+	/* Allocate backup array on the stack (max args in Postgres is 100) */
+	Datum		saved_values[100];
+
+	if (fn_addr_stack_ptr > 0)
+		orig_fn = fn_addr_stack[fn_addr_stack_ptr - 1];
+	else
+		elog(ERROR, "test_toast_hook: fn_addr_stack empty");
+
+	/* Backup and compress */
+	for (int i = 0; i < fcinfo->nargs; i++)
+	{
+		saved_values[i] = fcinfo->args[i].value;
+
+		if (!fcinfo->args[i].isnull && get_fn_expr_argtype(fcinfo->flinfo, i) == TEXTOID)
+		{
+			Datum		val = fcinfo->args[i].value;
+
+			if (!VARATT_IS_EXTENDED(DatumGetPointer(val)))
+			{
+				Datum		cval = toast_compress_datum(val, TOAST_PGLZ_COMPRESSION);
+
+				if (cval)
+				{
+					fcinfo->args[i].value = cval;
+					modified = true;
+				}
+			}
+		}
+	}
+
+	/* Execute */
+	result = orig_fn(fcinfo);
+
+	/* Restore the original pointers to protect the ExprState cache */
+	if (modified)
+	{
+		for (int i = 0; i < fcinfo->nargs; i++)
+		{
+			fcinfo->args[i].value = saved_values[i];
+		}
+	}
+
+	return result;
+}
+
+/*
+ * Force Postgres to route all function calls through fmgr_security_definer.
+ */
+#define MAX_CACHED_OIDS 65536
+/*
+ * 0 = unknown, 1 = hook needed, 2 = hook not needed
+ *
+ * Exempt functions used in a search of the PROCOID system, to avoid infinite
+ * recursion.  We know none of these have text args.  This list is probably
+ * incomplete, since associated relcache rebuilds are possible but rare.
+ * FIXME test w/ debug_discard_caches.
+ */
+static uint8 oid_hook_cache[MAX_CACHED_OIDS] = {
+	[F_BTHANDLER] = 2,
+	[F_BTOIDCMP] = 2,
+	[F_BTTEXTCMP] = 2,
+	[F_HEAP_TABLEAM_HANDLER] = 2,
+	[F_INT2GT] = 2,
+	[F_OIDEQ] = 2,
+};
+
+static bool
+my_needs_fmgr_hook(Oid fn_oid)
+{
+	bool		needs_hook = false;
+	HeapTuple	tup;
+
+	/* Fast path: check local cache */
+	if (fn_oid < MAX_CACHED_OIDS)
+	{
+		if (oid_hook_cache[fn_oid] == 1)
+			return true;
+		if (oid_hook_cache[fn_oid] == 2)
+			return false;
+	}
+
+	/*
+	 * * If we cannot access the catalog safely, assume false to prevent
+	 * crashes. The cache will remain 'unknown' and will be populated during
+	 * the next in-transaction execution.
+	 */
+	if (!IsTransactionState())
+		return false;
+
+	/*
+	 * So far, infinite recursion has always been associated with a btree
+	 * opclass member relevant to the PROCOID syscache or its recursive
+	 * dependencies.  The solution has been to add the member to the
+	 * oid_hook_cache initializer.
+	 */
+	if (stack_is_too_deep())
+		elog(ERROR, "stack depth for fn_oid=%u", fn_oid);
+
+	/* Safe to query the catalog to inspect the function's arguments */
+	tup = SearchSysCache1(PROCOID, ObjectIdGetDatum(fn_oid));
+
+	if (HeapTupleIsValid(tup))
+	{
+		Form_pg_proc procForm = (Form_pg_proc) GETSTRUCT(tup);
+
+		/* Check if any argument requires TEXTOID */
+		for (int i = 0; i < procForm->pronargs; i++)
+		{
+			if (procForm->proargtypes.values[i] == TEXTOID)
+			{
+				needs_hook = true;
+				break;
+			}
+		}
+		ReleaseSysCache(tup);
+	}
+
+	/* Populate the cache */
+	if (fn_oid < MAX_CACHED_OIDS)
+	{
+		oid_hook_cache[fn_oid] = needs_hook ? 1 : 2;
+	}
+
+	return needs_hook;
+}
+
+/*
+ * Hook the execution cycle to swap the function pointer.
+ */
+static void
+my_fmgr_hook(FmgrHookEventType event, FmgrInfo *flinfo, Datum *private_data)
+{
+	if (event == FHET_START)
+	{
+		/* Stash the real function pointer */
+		if (fn_addr_stack_ptr < MAX_NESTED_CALLS)
+			fn_addr_stack[fn_addr_stack_ptr++] = flinfo->fn_addr;
+		else
+			elog(ERROR, "test_toast_hook: MAX_NESTED_CALLS exceeded");
+
+		/* Replace the execution pointer with our argument-mutating wrapper */
+		flinfo->fn_addr = my_function_wrapper;
+	}
+	else if (event == FHET_END || event == FHET_ABORT)
+	{
+		/* Pop the stack AND restore the original function pointer */
+		if (fn_addr_stack_ptr > 0)
+		{
+			fn_addr_stack_ptr--;
+			flinfo->fn_addr = fn_addr_stack[fn_addr_stack_ptr];
+		}
+	}
+}
+
 /*
  * Hooks for function calls
  */
-PGDLLIMPORT needs_fmgr_hook_type needs_fmgr_hook = NULL;
-PGDLLIMPORT fmgr_hook_type fmgr_hook = NULL;
+PGDLLIMPORT needs_fmgr_hook_type needs_fmgr_hook = my_needs_fmgr_hook;
+PGDLLIMPORT fmgr_hook_type fmgr_hook = my_fmgr_hook;
 
 /*
  * Hashtable for fast lookup of external C functions
@@ -165,7 +342,9 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 	finfo->fn_mcxt = mcxt;
 	finfo->fn_expr = NULL;		/* caller may set this later */
 
-	if ((fbp = fmgr_isbuiltin(functionId)) != NULL)
+	if ((fbp = fmgr_isbuiltin(functionId)) != NULL &&
+		(!IsNormalProcessingMode() ||
+		 !FmgrHookIsNeeded(functionId)))
 	{
 		/*
 		 * Fast path for builtin functions: don't bother consulting pg_proc
