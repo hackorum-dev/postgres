@@ -143,7 +143,8 @@ test: event_trigger_login
 # this test also uses event triggers, so likewise run it by itself
 test: fast_default
 
-# a test for hash joins using Bloom filters
+# join_hash_bloom runs parallel hash joins and is kept in this small group
+# so that it is unlikely to run out of parallel workers
 test: join_hash_bloom
 
 # run tablespace test at the end because it drops the tablespace created during
