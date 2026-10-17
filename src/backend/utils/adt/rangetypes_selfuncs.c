@@ -761,6 +761,15 @@ get_position(TypeCacheEntry *typcache, const RangeBound *value, const RangeBound
 static double
 get_len_position(double value, double hist1, double hist2)
 {
+	/*
+	 * ANALYZE stores whatever the subtype's subdiff function returns as the
+	 * range length, and that can be NaN for valid ranges, such as numeric
+	 * ranges with a NaN bound or [Infinity,Infinity].  We can't interpolate
+	 * in a bin with a NaN boundary, so just assume the middle.
+	 */
+	if (isnan(hist1) || isnan(hist2))
+		return 0.5;
+
 	if (!isinf(hist1) && !isinf(hist2))
 	{
 		/*
