@@ -93,7 +93,7 @@ gettoken(WORKSTATE *state, int32 *val)
 
 					nnn[innn] = '\0';
 					errno = 0;
-					lval = strtol(nnn, NULL, 0);
+					lval = strtol(nnn, NULL, 10);
 					*val = (int32) lval;
 					if (errno != 0 || (long) *val != lval)
 						return ERR;
