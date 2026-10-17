@@ -4366,6 +4366,8 @@ raw_expression_tree_walker_impl(Node *node,
 
 				if (WALK(stmt->distinctClause))
 					return true;
+				if (WALK(stmt->distinctSortClause))
+					return true;
 				if (WALK(stmt->intoClause))
 					return true;
 				if (WALK(stmt->targetList))
