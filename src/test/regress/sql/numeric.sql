@@ -1036,6 +1036,12 @@ FROM v;
 SELECT to_char('100'::numeric, 'FM999.9');
 SELECT to_char('100'::numeric, 'FM999.');
 SELECT to_char('100'::numeric, 'FM999');
+-- a trailing decimal point without digits must not add a NUL byte or
+-- swallow what follows it
+SELECT to_char(7, '9.') AS a, octet_length(to_char(7, '9.')) AS a_len,
+       to_char(-7, '9.MI') AS b, to_char(-7, '9.PR') AS c,
+       to_char(7, 'FM9.PL') AS d,
+       octet_length(to_char('100'::numeric, 'FM999.')) AS e_len;
 SELECT to_char('12345678901'::float8, 'FM9999999999D9999900000000000000000');
 
 SELECT to_char('100'::numeric, 'rn');

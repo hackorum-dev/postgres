@@ -5659,7 +5659,7 @@ NUM_numpart_to_char(NUMProc *Np, int id)
 						NUM_EMITC('0');
 					}
 				}
-				else
+				else if (*Np->input_p != '\0')
 				{
 					NUM_EMITC(*Np->input_p);	/* Write DIGIT */
 					Np->num_in = true;
