@@ -5531,8 +5531,7 @@ restart:
 					else
 						plainattrs = bms_add_member(plainattrs,
 													attrnum - FirstLowInvalidHeapAttributeNumber);
-					if (indexDesc->rd_indam->amcomparedatums != NULL &&
-						!indexDesc->rd_index->indisexclusion)
+					if (indexDesc->rd_indam->amcomparedatums != NULL)
 						cmpattrs = bms_add_member(cmpattrs,
 												  attrnum - FirstLowInvalidHeapAttributeNumber);
 					else
@@ -5623,10 +5622,9 @@ restart:
 	 * out what summarizing indexes reference.  They also leave out the
 	 * columns of candidate keys and the replica identity, whose changes are
 	 * decided by value as before: the table AM takes its tuple lock strength
-	 * and what it logs for logical decoding from them.  Indexes of exclusion
-	 * constraints count as unable to compare: the constraint is checked on
-	 * the values when an entry is inserted, and values that give the same
-	 * entries need not have the same conflicts.
+	 * and what it logs for logical decoding from them.  The columns of
+	 * exclusion constraints are included: if an update keeps such an index's
+	 * entries, the executor checks the constraint itself.
 	 */
 	cmpattrs = bms_del_members(cmpattrs, nocmpattrs);
 	cmpattrs = bms_del_members(cmpattrs, summarizedattrs);

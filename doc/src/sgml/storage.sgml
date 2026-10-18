@@ -1125,8 +1125,9 @@ data. Empty in ordinary tables.</entry>
      value gives the same index entries as the old one; among the built-in
      methods, that depends on the method and on the change (see
      <xref linkend="indexam"/>).  This does not apply to the columns of
-     unique indexes that a foreign key can reference, of the replica
-     identity index, or of exclusion constraints.
+     unique indexes that a foreign key can reference or of the replica
+     identity index.  It does apply to exclusion constraints, which are then
+     checked against the new values although no index entry is made.
      </para>
    </listitem>
    <listitem>

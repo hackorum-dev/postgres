@@ -23,6 +23,26 @@
 
 
 /*
+ * Follow the updates of the row whose version is at *tid to its version
+ * visible to SnapshotSelf, if any: set *tid to it, store it in slot, and
+ * return true.  Returns false if there is none.
+ */
+static bool
+row_live_version(Relation rel, ItemPointer tid, TupleTableSlot *slot)
+{
+	TableScanDesc scan = table_beginscan_tid(rel, SnapshotSelf);
+	ItemPointerData latest = *tid;
+	bool		live;
+
+	table_tuple_get_latest_tid(scan, &latest);
+	table_endscan(scan);
+	live = table_tuple_fetch_row_version(rel, &latest, SnapshotSelf, slot);
+	if (live)
+		*tid = latest;
+	return live;
+}
+
+/*
  * unique_key_recheck - trigger function to do a deferred uniqueness check.
  *
  * This now also does deferred exclusion-constraint checks, so the name is
@@ -47,6 +67,7 @@ unique_key_recheck(PG_FUNCTION_ARGS)
 	EState	   *estate;
 	ExprContext *econtext;
 	TupleTableSlot *slot;
+	TupleTableSlot *liveslot = NULL;
 	Datum		values[INDEX_MAX_KEYS];
 	bool		isnull[INDEX_MAX_KEYS];
 
@@ -102,24 +123,45 @@ unique_key_recheck(PG_FUNCTION_ARGS)
 	 * if it doesn't find the index entry for the row.  If the row's dead then
 	 * it's possible the index entry has also been marked dead, and even
 	 * removed.
-	 */
-	tmptid = checktid;
-	if (!table_fetch_tid(trigdata->tg_relation, &tmptid, SnapshotSelf, NULL))
-	{
-		/*
-		 * All rows referenced by the index entry are dead, so skip the check
-		 */
-		return PointerGetDatum(NULL);
-	}
-
-	/*
-	 * Open the index, acquiring a RowExclusiveLock, just as if we were going
-	 * to update it.  (This protects against possible changes of the index
-	 * schema, not against concurrent updates.)
+	 *
+	 * An exclusion constraint's values need not be the same along the chain,
+	 * though: a HOT update keeps the index's entries when its access method
+	 * says the new values give the same ones, and then checks the constraint
+	 * itself, queueing this recheck for the new version if it is deferred
+	 * (see ExecCheckHotExclusion()).  That version is a heap-only tuple,
+	 * which table_fetch_tid() cannot start from, and a later update may have
+	 * changed the values again.  So for an exclusion constraint, follow the
+	 * row's updates to the live version and check its values.
+	 *
+	 * Open the index first, acquiring a RowExclusiveLock, just as if we were
+	 * going to update it.  (This protects against possible changes of the
+	 * index schema, not against concurrent updates.)
 	 */
 	indexRel = index_open(trigdata->tg_trigger->tgconstrindid,
 						  RowExclusiveLock);
 	indexInfo = BuildIndexInfo(indexRel);
+
+	tmptid = checktid;
+	if (indexInfo->ii_ExclusionOps != NULL)
+	{
+		liveslot = table_slot_create(trigdata->tg_relation, NULL);
+		if (!row_live_version(trigdata->tg_relation, &tmptid, liveslot))
+		{
+			ExecDropSingleTupleTableSlot(liveslot);
+			index_close(indexRel, RowExclusiveLock);
+			return PointerGetDatum(NULL);
+		}
+		slot = liveslot;
+	}
+	else if (!table_fetch_tid(trigdata->tg_relation, &tmptid, SnapshotSelf,
+							  NULL))
+	{
+		/*
+		 * All rows referenced by the index entry are dead, so skip the check
+		 */
+		index_close(indexRel, RowExclusiveLock);
+		return PointerGetDatum(NULL);
+	}
 
 	/*
 	 * Typically the index won't have expressions, but if it does we need an
@@ -185,6 +227,8 @@ unique_key_recheck(PG_FUNCTION_ARGS)
 	 */
 	if (estate != NULL)
 		FreeExecutorState(estate);
+	if (liveslot != NULL)
+		ExecDropSingleTupleTableSlot(liveslot);
 
 	index_close(indexRel, RowExclusiveLock);
 
