@@ -109,7 +109,12 @@ MatchText(const char *t, int tlen, const char *p, int plen, pg_locale_t locale)
 		 */
 		if (*p == '%')
 		{
-			char		firstpat;
+			/*
+			 * int, not char: under MATCH_LOWER, GETCHAR() yields an unsigned
+			 * char, which a signed char would not compare equal to for bytes
+			 * >= 0x80.
+			 */
+			int			firstpat;
 
 			/*
 			 * % processing is essentially a search for a text position at
