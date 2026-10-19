@@ -301,8 +301,8 @@ end_heap_rewrite(RewriteState state)
 	UnresolvedTup unresolved;
 
 	/*
-	 * Write any remaining tuples in the UnresolvedTups table. If we have any
-	 * left, they should in fact be dead, but let's err on the safe side.
+	 * Write any remaining tuples in the UnresolvedTups table.  Usually they
+	 * are dead, but they are live if the update aborted.
 	 */
 	hash_seq_init(&seq_status, state->rs_unresolved_tups);
 
@@ -310,6 +310,8 @@ end_heap_rewrite(RewriteState state)
 	{
 		ItemPointerSetInvalid(&unresolved->tuple->t_data->t_ctid);
 		raw_heap_insert(state, unresolved->tuple);
+		logical_rewrite_heap_tuple(state, unresolved->old_tid,
+								   unresolved->tuple);
 	}
 
 	/* Write the last page, if any */
@@ -574,6 +576,14 @@ rewrite_heap_dead_tuple(RewriteState state, HeapTuple old_tuple)
 
 	if (unresolved != NULL)
 	{
+		/*
+		 * If the inserter of this tuple aborted, the update never happened
+		 * and the earlier tuple is not dead.  It will be written at the end.
+		 */
+		if (!HeapTupleHeaderXminCommitted(old_tuple->t_data) &&
+			!TransactionIdDidCommit(HeapTupleHeaderGetXmin(old_tuple->t_data)))
+			return false;
+
 		/* Need to free the contained tuple as well as the hashtable entry */
 		heap_freetuple(unresolved->tuple);
 		hash_search(state->rs_unresolved_tups, &hashkey,
