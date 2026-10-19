@@ -554,6 +554,15 @@ rewrite_heap_dead_tuple(RewriteState state, HeapTuple old_tuple)
 	 * when xmin of a tuple is greater than xmax, which sounds
 	 * counter-intuitive but is perfectly valid.
 	 *
+	 * There is one exception. Suppose a tuple is created by a transaction, and
+	 * then updated in a subtransaction, and that subtransaction is aborted.
+	 * The explanation in the paragraph above assumes that the dead tuple was
+	 * once committed. In this case, the dead tuple was never committed, so the
+	 * earlier tuple is not nesessarily dead. Also, in this case, the earlier 
+	 * tuple is put in the unresolved table because no hint bit is assigned to 
+	 * this tuple and HeapTupleSatisfiesVacuum judges it as INSERT_IN_PROGRESS.
+	 * As a result, a tuple that is actually live would not be copied.
+	 *
 	 * We don't bother to try to detect the situation the other way round,
 	 * when we encounter the dead tuple first and then the recently dead one
 	 * that points to it. If that happens, we'll have some unmatched entries
@@ -574,6 +583,17 @@ rewrite_heap_dead_tuple(RewriteState state, HeapTuple old_tuple)
 
 	if (unresolved != NULL)
 	{
+		/*
+		 * In this case, the earlier tuple is not necessarily dead. We should
+		 * copy this tuple to a new table. It's fine to leave this tuple in
+		 * unresolved table since end_heap_rewrite will copy the tuples remained
+		 * in the table with invalid ctid.
+		 *
+		 * We can rely on hint bit since HeapTupleSatisfiesVacuum set the hint 
+		 * bit for the dead tuple.
+		 */
+		if (HeapTupleHeaderXminInvalid(old_tuple->t_data))
+			return false;
 		/* Need to free the contained tuple as well as the hashtable entry */
 		heap_freetuple(unresolved->tuple);
 		hash_search(state->rs_unresolved_tups, &hashkey,
