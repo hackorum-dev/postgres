@@ -183,7 +183,8 @@ InplaceUpgradeReadControlFile(const char *path, ControlFileData *cf,
  * checkpoint is a boundary checkpoint and it shut down there.  A cluster
  * owned by the new version is live unless it is in upgrade mode, in which
  * case its markers show how far the upgrade has come.  It is live once the
- * go-live marker is written, even before upgrade mode ends.
+ * go-live marker is written, even before the go-live checkpoint ends upgrade
+ * mode.
  */
 void
 InplaceUpgradeGetPosture(const ControlFileData *cf, const char *datadir,

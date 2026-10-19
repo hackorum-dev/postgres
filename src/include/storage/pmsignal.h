@@ -42,6 +42,7 @@ typedef enum
 	PMSIGNAL_BACKGROUND_WORKER_CHANGE,	/* background worker state change */
 	PMSIGNAL_START_WALRECEIVER, /* start a walreceiver */
 	PMSIGNAL_ADVANCE_STATE_MACHINE, /* advance postmaster's state machine */
+	PMSIGNAL_INPLACE_UPGRADE_LIVE,	/* an in-place upgrade has gone live */
 	PMSIGNAL_XLOG_IS_SHUTDOWN,	/* ShutdownXLOG() completed */
 } PMSignalReason;
 

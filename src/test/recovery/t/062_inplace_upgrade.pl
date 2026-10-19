@@ -214,6 +214,21 @@ is($standby->safe_psql('postgres', 'SELECT pg_upgrade_boundary_lsn()'),
 my $standby_received =
   $standby->safe_psql('postgres', 'SELECT pg_last_wal_receive_lsn()');
 
+# A database directory in a tablespace, laid out as the old version names
+# it, made by hand.  Databases in tablespaces are not migrated, so it stays
+# empty; it shows that PG_VERSION is stamped in tablespaces too.
+sub tablespace_database
+{
+	my ($node) = @_;
+	my $location = PostgreSQL::Test::Utils::tempdir();
+	my $dir = "$location/PG_" . ($new_version->major - 1) . '_000000000';
+	mkdir $dir or die "could not create directory \"$dir\": $!";
+	$dir .= '/99999';
+	mkdir $dir or die "could not create directory \"$dir\": $!";
+	dir_symlink($location, $node->data_dir . '/pg_tblspc/99999');
+	return $dir;
+}
+
 # Digest of a file, for comparing copies of binary files
 sub file_digest
 {
@@ -730,5 +745,170 @@ is( $standby->safe_psql(
 		'postgres', 'SELECT received_tli FROM pg_stat_wal_receiver'),
 	'1',
 	'standby streams on the same timeline');
+
+# Upgrade the cluster again, and take it live this time.  The standby is not
+# in on this one: it pauses at the new boundary by itself and stays there.
+#
+# Archive for real this time, and have the old version recycle segments
+# ahead of its boundary segment, so that there are segments between the
+# boundary segment and the start segment that were never written.
+my $archive = $primary->archive_dir;
+mkdir $archive;
+$primary->append_conf('postgresql.conf',
+	"archive_command = 'cp \"%p\" \"$archive/%f\"'");
+$primary->reload;
+$primary->safe_psql('postgres',
+	'CREATE TABLE filler AS SELECT g FROM generate_series(1, 300000) g');
+$primary->safe_psql('postgres', 'CHECKPOINT');
+$primary->safe_psql('postgres', 'DROP TABLE filler');
+$primary->safe_psql('postgres', 'CHECKPOINT');
+$primary->command_ok([ @pg_inplace_upgrade, 'prepare' ],
+	'prepared the primary again');
+$primary->_update_pid(0);
+is(checkpoint_flag($primary),
+	'boundary', 'primary shut down at an upgrade boundary again');
+my $golive_boundary_lsn = checkpoint_location($primary);
+$primary->set_install_path(undef);
+$primary->command_ok(
+	[ @pg_inplace_upgrade, '--log' => $primary->logfile, 'swap' ],
+	'swapped the primary again');
+$primary->_update_pid(1);
+my $golive_start_lsn = checkpoint_location($primary);
+
+# The first page of a segment that WAL was written into gives the segment's
+# own start as its page address.
+my $wal_segment_size = $primary->safe_psql('postgres',
+	"SELECT setting FROM pg_settings WHERE name = 'wal_segment_size'");
+
+sub holds_own_wal
+{
+	my ($path) = @_;
+	my $name = substr($path, -24);
+	my $segno =
+	  hex(substr($name, 8, 8)) * (2**32 / $wal_segment_size) +
+	  hex(substr($name, 16, 8));
+	open my $fh, '<:raw', $path or die "could not open $path: $!";
+	read($fh, my $header, 16) == 16 or die "could not read $path";
+	close $fh;
+	my (undef, undef, undef, $pageaddr) = unpack('S S L Q', $header);
+	return $pageaddr == $segno * $wal_segment_size;
+}
+my $golive_start_segment = $primary->safe_psql('postgres',
+	"SELECT pg_walfile_name('$golive_start_lsn')");
+my @unwritten =
+  grep { substr($_, -24) lt $golive_start_segment && !holds_own_wal($_) }
+  glob($primary->data_dir . '/pg_wal/' . ('[0-9A-F]' x 24));
+cmp_ok(scalar(@unwritten), '>', 0,
+	'segments the old version recycled lie below the start segment');
+
+# A segment completed in upgrade mode has no archive status file until the
+# upgrade goes live.
+my $migration_segment =
+  $primary->safe_psql('postgres', 'SELECT pg_walfile_name(pg_switch_wal())');
+ok( !-e $primary->data_dir
+	  . "/pg_wal/archive_status/$migration_segment.ready",
+	'no .ready file for a segment switched in upgrade mode');
+
+my $primary_spcdb = tablespace_database($primary);
+
+# The golive command reports the end of the go-live checkpoint record.
+my ($golive_stdout, $golive_stderr);
+ok( IPC::Run::run(
+		[ @pg_inplace_upgrade, 'golive' ],
+		'>' => \$golive_stdout,
+		'2>' => \$golive_stderr),
+	'took the upgrade live');
+note($golive_stderr);
+my ($golive_lsn) = $golive_stderr =~
+  m{the go-live checkpoint record ends at ([0-9A-F]+/[0-9A-F]+)$}m;
+ok(defined $golive_lsn, 'golive reported an LSN');
+is(status_field($primary, 'Upgrade posture'),
+	'live', 'upgrade mode has ended');
+is(checkpoint_flag($primary),
+	'go-live', 'control file points at the go-live checkpoint');
+my $golive_record = checkpoint_location($primary);
+cmp_ok($golive_record, 'gt', $golive_start_lsn,
+	'go-live checkpoint lies past the start checkpoint');
+cmp_ok($golive_lsn, 'gt', $golive_record,
+	'reported LSN lies past the start of the go-live checkpoint record');
+command_like(
+	[
+		"$newbindir/pg_waldump",
+		'--path' => $primary->data_dir . '/pg_wal',
+		'--start' => $golive_record,
+		'--limit' => 1
+	],
+	qr/CHECKPOINT_ONLINE .*upgrade flag go-live/,
+	'pg_waldump shows the go-live checkpoint');
+ok(-e $stash . '/markers/golive', 'go-live marker written');
+
+# PG_VERSION names the new major version everywhere.
+my @unstamped;
+foreach my $database (split /\n/, slurp_file("$stash/databases"))
+{
+	my (undef, $dbpath) = split / /, $database;
+	push @unstamped, $dbpath
+	  if slurp_file($primary->data_dir . "/$dbpath/PG_VERSION") ne
+	  $new_version->major . "\n";
+}
+is_deeply(\@unstamped, [], 'PG_VERSION of every database stamped');
+is( slurp_file("$primary_spcdb/PG_VERSION"),
+	$new_version->major . "\n",
+	'PG_VERSION of a database in a tablespace stamped');
+is( slurp_file($primary->data_dir . '/PG_VERSION'),
+	$new_version->major . "\n",
+	'PG_VERSION of the cluster stamped');
+
+# Archiving resumes: the archiver starts, and the segments completed in
+# upgrade mode get their status files, from the boundary segment on.
+$primary->poll_query_until('postgres',
+	"SELECT count(*) > 0 FROM pg_stat_activity WHERE backend_type = 'archiver'"
+) or die 'timed out waiting for the archiver';
+my $golive_boundary_segment = $primary->safe_psql('postgres',
+	"SELECT pg_walfile_name('$golive_boundary_lsn')");
+my @unarchived = grep {
+	my $segment = $_;
+	!grep { -e $primary->data_dir . "/pg_wal/archive_status/$segment.$_" }
+	  qw(ready done)
+} ($golive_boundary_segment, $migration_segment);
+is_deeply(\@unarchived, [],
+	'boundary segment and migration segment handed to the archiver');
+
+# The segments that were never written are gone, and the archive holds only
+# segments with WAL of their own.
+is_deeply([ grep { -e $_ } @unwritten ],
+	[], 'segments that were never written removed at go-live');
+$primary->poll_query_until('postgres',
+	"SELECT last_archived_wal >= '$migration_segment' FROM pg_stat_archiver")
+  or die 'timed out waiting for the migration segment to be archived';
+is_deeply(
+	[ grep { !holds_own_wal($_) } glob("$archive/" . ('[0-9A-F]' x 24)) ],
+	[], 'every archived segment holds WAL of its own');
+
+# Normal operation: checkpoints, autovacuum, and application connections.
+my ($checkpoint_ret, undef, $checkpoint_err) =
+  $primary->psql('postgres', 'CHECKPOINT');
+is($checkpoint_ret, 0, 'CHECKPOINT succeeds after go-live')
+  or diag($checkpoint_err);
+is(checkpoint_flag($primary),
+	'none', 'go-live flag is gone from the control file after a checkpoint');
+is($primary->safe_psql('postgres', 'SHOW autovacuum'),
+	'on', 'autovacuum is on again');
+$primary->connect_ok(
+	$primary->connstr('postgres') . ' user=app',
+	'application connection admitted after go-live');
+is( $primary->safe_psql(
+		'postgres',
+		'SELECT count(*) FROM t',
+		connstr => $primary->connstr('postgres') . ' user=app'),
+	'1010',
+	'application reads its data on the new version');
+
+# The new version comes back up in normal operation.
+$primary->restart;
+is(status_field($primary, 'Upgrade posture'),
+	'live', 'new version restarted out of upgrade mode');
+is($primary->safe_psql('postgres', 'SELECT count(*) FROM t'),
+	'1010', 'data readable after the restart');
 
 done_testing();

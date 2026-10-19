@@ -2,6 +2,7 @@
 
 backend_sources += files(
   'bundle.c',
+  'golive.c',
   'migrate.c',
   'oldcatalog.c',
   'rewrite.c',

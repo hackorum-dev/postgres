@@ -32,6 +32,7 @@
 #include "storage/fd.h"
 #include "storage/latch.h"
 #include "storage/standby.h"
+#include "upgrade/inplace_upgrade.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/pg_lsn.h"
@@ -296,21 +297,16 @@ pg_upgrade_boundary_lsn(PG_FUNCTION_ARGS)
 }
 
 /*
- * Entry point of an in-place upgrade.
+ * Take an in-place upgrade live.
  *
  * The server of the next major version starts on this version's catalogs
- * and has to find this function there, so it is declared here.  It drives
- * an upgrade to the version of the server that runs it, which this version
- * cannot do.
+ * and has to find this function there, so it is declared here.  Returns the
+ * end of the go-live checkpoint record.
  */
 Datum
 pg_inplace_upgrade_golive(PG_FUNCTION_ARGS)
 {
-	ereport(ERROR,
-			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			 errmsg("in-place upgrade to this server version is not supported")));
-
-	PG_RETURN_NULL();			/* keep compiler quiet */
+	PG_RETURN_LSN(InplaceUpgradeGoLive());
 }
 
 /*

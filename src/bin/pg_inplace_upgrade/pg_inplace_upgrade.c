@@ -105,6 +105,7 @@ static int	cmd_check(void);
 static int	cmd_prepare(void);
 static int	cmd_swap(void);
 static int	cmd_rollback(void);
+static int	cmd_golive(void);
 static int	cmd_status(void);
 static const char *posture_name(const ClusterPosture *cp);
 
@@ -142,7 +143,7 @@ static void replace_file(const char *path, const char *data, size_t len);
 static void prepend_line_once(const char *path, const char *line);
 static void append_line_once(const char *path, const char *line);
 static void append_upgrade_settings(const char *const *settings);
-static bool reload_config(void);
+static bool reload_config(const char *bindir);
 static void withdraw_upgrade_files(void);
 
 static void freeze_catalogs(PGconn *conn);
@@ -255,7 +256,7 @@ main(int argc, char **argv)
 
 	if (strcmp(command, "check") != 0 && strcmp(command, "prepare") != 0 &&
 		strcmp(command, "swap") != 0 && strcmp(command, "rollback") != 0 &&
-		strcmp(command, "status") != 0)
+		strcmp(command, "golive") != 0 && strcmp(command, "status") != 0)
 	{
 		pg_log_error("unrecognized command \"%s\"", command);
 		pg_log_error_hint("Try \"%s --help\" for more information.", progname);
@@ -282,6 +283,8 @@ main(int argc, char **argv)
 		return cmd_swap();
 	else if (strcmp(command, "rollback") == 0)
 		return cmd_rollback();
+	else if (strcmp(command, "golive") == 0)
+		return cmd_golive();
 	else
 		return cmd_status();
 }
@@ -300,6 +303,8 @@ usage(void)
 			 "             upgrade boundary\n"));
 	printf(_("  rollback   return the cluster to the old version, until the upgrade\n"
 			 "             goes live\n"));
+	printf(_("  golive     take the upgrade live on the new version, so that it\n"
+			 "             cannot be rolled back, and admit client connections\n"));
 	printf(_("  status     report how far the upgrade of the cluster has got\n"));
 	printf(_("\nOptions:\n"));
 	printf(_("  -b, --old-bindir=DIR   old cluster executable directory\n"));
@@ -923,11 +928,11 @@ append_upgrade_settings(const char *const *settings)
 		append_line_once(data_path(UPGRADE_CONF_FILE), *settings);
 }
 
-/* Reload the running server's configuration with the old pg_ctl */
+/* Reload the running server's configuration with the pg_ctl in bindir */
 static bool
-reload_config(void)
+reload_config(const char *bindir)
 {
-	int			rc = run_pg_ctl(old_bindir, "", "reload");
+	int			rc = run_pg_ctl(bindir, "", "reload");
 
 	if (rc != 0)
 		pg_log_error("could not reload the server: %s", wait_result_to_str(rc));
@@ -1082,7 +1087,7 @@ cmd_prepare(void)
 	 */
 	pg_log_info("refusing client connections");
 	write_upgrade_files(conn);
-	if (!reload_config())
+	if (!reload_config(cp->bindir))
 		exit(1);
 	if (!poll_until(conn, "SELECT pg_catalog.current_setting('" RELOADED_SETTING "', true)",
 					"on", "the configuration to reload"))
@@ -1279,9 +1284,10 @@ cmd_rollback(void)
 
 	withdraw_upgrade_files();
 
+	/* Still running, the server is the old version, with no bundle left. */
 	if (running)
 	{
-		if (!reload_config())
+		if (!reload_config(cp->bindir))
 			exit(1);
 	}
 	else
@@ -1292,6 +1298,51 @@ cmd_rollback(void)
 	}
 
 	pg_log_info("the cluster runs the old version");
+	return 0;
+}
+
+/*
+ * Take the upgrade live: have the running new version write the go-live
+ * checkpoint, which ends the upgrade mode and the possibility of a rollback,
+ * then withdraw the configuration and authentication files and reload, so
+ * that applications get in again.  Reports the end of the go-live checkpoint
+ * record, for the operator to look up in the archive or on a standby.  Run
+ * again, it reports the same record and withdraws whatever is left,
+ * starting the new version first if it is not running.
+ */
+static int
+cmd_golive(void)
+{
+	ClusterPosture *cp;
+	PGconn	   *conn;
+	PGresult   *res;
+
+	require_primary();
+
+	cp = read_posture();
+	if (cp->posture.owner == UPGRADE_OWNER_OLD)
+		pg_fatal("the cluster in \"%s\" has not been swapped to the new version",
+				 datadir);
+	if (!server_running())
+	{
+		pg_log_info("starting the new version");
+		if (run_pg_ctl(cp->bindir, "-w", "start") != 0)
+			pg_fatal("could not start the new version");
+	}
+
+	conn = connect_primary("postgres");
+	pg_log_info("taking the upgrade live");
+	res = query(conn, "SELECT pg_inplace_upgrade_golive()");
+	pg_log_info("the go-live checkpoint record ends at %s",
+				PQgetvalue(res, 0, 0));
+	PQclear(res);
+	PQfinish(conn);
+
+	withdraw_upgrade_files();
+	if (!reload_config(cp->bindir))
+		exit(1);
+
+	pg_log_info("the upgrade has gone live");
 	return 0;
 }
 

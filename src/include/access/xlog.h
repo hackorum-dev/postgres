@@ -304,6 +304,7 @@ extern TimeLineID GetWALInsertionTimeLine(void);
 extern TimeLineID GetWALInsertionTimeLineIfSet(void);
 extern XLogRecPtr GetLastImportantRecPtr(void);
 extern bool GetInplaceUpgradeMode(void);
+extern XLogRecPtr GetInplaceUpgradeGoLiveLSN(void);
 extern void GetInplaceUpgradePosture(struct InplaceUpgradePosture *posture);
 extern void SetUpgradeBoundaryRequest(bool request);
 extern bool UpgradeBoundaryActive(void);

@@ -14,6 +14,7 @@
 #define INPLACE_UPGRADE_H
 
 #include "access/htup.h"
+#include "access/xlogdefs.h"
 #include "nodes/pg_list.h"
 #include "storage/relfilelocator.h"
 #include "upgrade/bundle.h"
@@ -81,6 +82,10 @@ extern void InplaceUpgradeRewriteCatalog(const struct CatalogRelation *cat,
 										 const MigrateRelation *toastindex,
 										 const FilenodeFixup *fixups,
 										 int nfixups);
+
+/* in upgrade/golive.c */
+extern XLogRecPtr InplaceUpgradeGoLive(void);
+extern void InplaceUpgradeWriteGoLiveLSN(XLogRecPtr lsn);
 
 /* in upgrade/bundle.c */
 extern void InplaceUpgradeStashFile(const char *path, const char *stashpath);

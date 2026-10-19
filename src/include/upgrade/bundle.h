@@ -46,6 +46,12 @@
 #define INPLACE_UPGRADE_MARKER_GOLIVE	"golive"
 
 /*
+ * The end of the go-live checkpoint record, written by the checkpointer
+ * before the control file that ends the upgrade mode.
+ */
+#define INPLACE_UPGRADE_GOLIVE_LSN	INPLACE_UPGRADE_DIR "/golive_lsn"
+
+/*
  * The error that ended the last attempt of the in-place upgrade migrator:
  * its SQLSTATE on the first line, its message on the lines after that.
  */

@@ -451,8 +451,8 @@ XLogArchiveNotify(const char *xlog)
 	/*
 	 * Archive nothing during an in-place upgrade, because the upgrade may
 	 * still be rolled back.  Without a status file, the segment gets one from
-	 * XLogArchiveCheckDone at a checkpoint after go-live, and the archiver
-	 * picks it up then.
+	 * XLogArchiveCatchUp at the go-live checkpoint, and the archiver picks it
+	 * up then.
 	 */
 	if (GetInplaceUpgradeMode())
 		return;
@@ -614,6 +614,39 @@ XLogArchiveCheckDone(const char *xlog)
 	/* Retry creation of the .ready file */
 	XLogArchiveNotify(xlog);
 	return false;
+}
+
+/*
+ * XLogArchiveCatchUp
+ *
+ * Give an archive status file to every completed segment in pg_wal that has
+ * none (XLogArchiveCheckDone).  The completed segments are those before the
+ * one containing endptr; that one, and any recycled ahead of it, are not.
+ */
+void
+XLogArchiveCatchUp(XLogRecPtr endptr, TimeLineID tli)
+{
+	XLogSegNo	endsegno;
+	char		lastoff[MAXFNAMELEN];
+	DIR		   *xldir;
+	struct dirent *xlde;
+
+	if (!XLogArchivingActive())
+		return;
+
+	XLByteToSeg(endptr, endsegno, wal_segment_size);
+	XLogFileName(lastoff, tli, endsegno, wal_segment_size);
+
+	xldir = AllocateDir(XLOGDIR);
+	while ((xlde = ReadDir(xldir, XLOGDIR)) != NULL)
+	{
+		if (!IsXLogFileName(xlde->d_name))
+			continue;
+		if (strcmp(xlde->d_name + 8, lastoff + 8) >= 0)
+			continue;
+		(void) XLogArchiveCheckDone(xlde->d_name);
+	}
+	FreeDir(xldir);
 }
 
 /*

@@ -4034,6 +4034,13 @@ process_pm_pmsignal(void)
 		WalReceiverRequested = true;
 	}
 
+	/*
+	 * The checkpointer has written the go-live checkpoint of an in-place
+	 * upgrade and cleared the upgrade mode in shared memory.  The signal only
+	 * wakes us: the main loop then starts the archiver.
+	 */
+	(void) CheckPostmasterSignal(PMSIGNAL_INPLACE_UPGRADE_LIVE);
+
 	if (CheckPostmasterSignal(PMSIGNAL_XLOG_IS_SHUTDOWN))
 	{
 		/* Checkpointer completed the shutdown checkpoint */

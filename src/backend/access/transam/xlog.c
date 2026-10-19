@@ -92,6 +92,7 @@
 #include "storage/ipc.h"
 #include "storage/large_object.h"
 #include "storage/latch.h"
+#include "storage/pmsignal.h"
 #include "storage/predicate.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
@@ -551,10 +552,17 @@ typedef struct XLogCtlData
 	/*
 	 * inplaceUpgradeMode says whether an in-place upgrade is in progress (see
 	 * GetInplaceUpgradeMode()).  Initialized from the control file, settled
-	 * by the startup process after a takeover, and read without locking as a
-	 * single byte.
+	 * by the startup process after a takeover, cleared by the checkpointer at
+	 * go-live, and read without locking as a single byte.
 	 */
 	bool		inplaceUpgradeMode;
+
+	/*
+	 * End of the checkpoint record that took the in-place upgrade live, set
+	 * by the checkpointer when it clears inplaceUpgradeMode; invalid until
+	 * then.  Protected by info_lck.
+	 */
+	XLogRecPtr	inplaceUpgradeGoLiveLSN;
 
 	/*
 	 * During recovery, we keep a copy of the latest checkpoint record here.
@@ -771,6 +779,7 @@ static XLogRecPtr CreateOverwriteContrecordRecord(XLogRecPtr aborted_lsn,
 												  XLogRecPtr pagePtr,
 												  TimeLineID newTLI);
 static void CheckPointGuts(XLogRecPtr checkPointRedo, int flags);
+static void InplaceUpgradeGoneLive(XLogRecPtr recptr, TimeLineID tli);
 static bool ControlFileInplaceUpgradeMode(const ControlFileData *cf);
 static void KeepLogSeg(XLogRecPtr recptr, XLogSegNo *logSegNo);
 
@@ -7464,9 +7473,16 @@ GetLastSegSwitchData(XLogRecPtr *lastSwitchLSN)
  * in an old version's layout also counts, because the startup process is
  * about to take the cluster over.  XLogCtl is initialized the same way, so
  * the postmaster gets the right answer before the startup process runs.
+ * The takeover sets the mode, and go-live clears it.
  *
  * The postmaster, single-user mode, and EXEC_BACKEND children use this to
  * check PG_VERSION before they attach to shared memory.
+ *
+ * Every call returns the current answer, so a backend admitted during the
+ * upgrade runs in normal operation once the upgrade goes live.  InitPostgres
+ * uses this for the admission check and the PG_VERSION check, which hold
+ * only at that moment.  Go-live cannot make the PG_VERSION check fail,
+ * because it stamps PG_VERSION before it clears the mode.
  */
 bool
 GetInplaceUpgradeMode(void)
@@ -7476,6 +7492,22 @@ GetInplaceUpgradeMode(void)
 
 	/* Bootstrap mode reads no control file */
 	return ControlFile != NULL && ControlFileInplaceUpgradeMode(ControlFile);
+}
+
+/*
+ * Where did the in-place upgrade go live?  Invalid if it has not, or if the
+ * server has restarted since (the bundle keeps it then; see golive.c).
+ */
+XLogRecPtr
+GetInplaceUpgradeGoLiveLSN(void)
+{
+	XLogRecPtr	result;
+
+	SpinLockAcquire(&XLogCtl->info_lck);
+	result = XLogCtl->inplaceUpgradeGoLiveLSN;
+	SpinLockRelease(&XLogCtl->info_lck);
+
+	return result;
 }
 
 /*
@@ -7499,10 +7531,10 @@ ControlFileInplaceUpgradeMode(const ControlFileData *cf)
  * file unlocked, and may see fields from before and after an update.  It
  * asks only whether the catalogs are migrated, and no update makes a
  * cluster whose catalogs are not migrated look as if they were: that takes
- * the marker "migrated".  A copy torn by the takeover at startup, with the
- * new version number but upgrade mode not yet set, still belongs to the old
- * version, since PG_VERSION names the old version until the upgrade goes
- * live.
+ * the marker "migrated", or the end of upgrade mode, which comes after it.
+ * A copy torn by the takeover at startup, with the new version number but
+ * upgrade mode not yet set, still belongs to the old version, since
+ * PG_VERSION names the old version until the upgrade goes live.
  */
 void
 GetInplaceUpgradePosture(InplaceUpgradePosture *posture)
@@ -7819,6 +7851,37 @@ update_checkpoint_display(int flags, bool restartpoint, bool reset)
 
 
 /*
+ * The go-live checkpoint has been written and the control file no longer
+ * says that an in-place upgrade is in progress.  Clear the mode in shared
+ * memory too, and wake the postmaster, so that it starts the archiver; it
+ * reads the mode from shared memory, so the mode must be cleared before the
+ * signal is sent.
+ *
+ * No segment completed during the upgrade got an archive status file.  Give
+ * one to every completed segment that has none, the boundary segment
+ * included: the removal of old segments later in this checkpoint does that
+ * only for the segments it is allowed to remove, and what wal_keep_size or a
+ * replication slot retains would wait for a later checkpoint.  Segments
+ * completed from now on get theirs the usual way.
+ */
+static void
+InplaceUpgradeGoneLive(XLogRecPtr recptr, TimeLineID tli)
+{
+	SpinLockAcquire(&XLogCtl->info_lck);
+	XLogCtl->inplaceUpgradeGoLiveLSN = recptr;
+	SpinLockRelease(&XLogCtl->info_lck);
+	XLogCtl->inplaceUpgradeMode = false;
+	pg_write_barrier();
+	SendPostmasterSignal(PMSIGNAL_INPLACE_UPGRADE_LIVE);
+
+	ereport(LOG,
+			(errmsg("the in-place upgrade has gone live at WAL location %X/%08X",
+					LSN_FORMAT_ARGS(recptr))));
+
+	XLogArchiveCatchUp(GetXLogWriteRecPtr(), tli);
+}
+
+/*
  * Perform a checkpoint --- either during shutdown, or on-the-fly
  *
  * flags is a bitwise OR of the following:
@@ -7859,6 +7922,7 @@ bool
 CreateCheckPoint(int flags)
 {
 	bool		shutdown;
+	bool		golive;
 	CheckPoint	checkPoint;
 	XLogRecPtr	recptr;
 	XLogSegNo	_logSegNo;
@@ -7893,6 +7957,14 @@ CreateCheckPoint(int flags)
 		(flags & (CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_END_OF_RECOVERY |
 				  CHECKPOINT_UPGRADE_GOLIVE)) == 0)
 		elog(ERROR, "can't create a checkpoint during an in-place upgrade");
+
+	/*
+	 * This checkpoint takes the in-place upgrade live.  Only in upgrade mode:
+	 * a request that arrives after the go-live checkpoint has ended it gets
+	 * an ordinary checkpoint.
+	 */
+	golive = ((flags & CHECKPOINT_UPGRADE_GOLIVE) != 0 &&
+			  XLogCtl->inplaceUpgradeMode);
 
 	/*
 	 * Prepare to accumulate statistics.
@@ -8142,6 +8214,8 @@ CreateCheckPoint(int flags)
 	if ((flags & CHECKPOINT_IS_SHUTDOWN) != 0 &&
 		(flags & CHECKPOINT_UPGRADE_BOUNDARY) != 0)
 		checkPoint.upgradeFlag = UPGRADE_FLAG_BOUNDARY;
+	else if (golive)
+		checkPoint.upgradeFlag = UPGRADE_FLAG_GOLIVE;
 	else
 		checkPoint.upgradeFlag = UPGRADE_FLAG_NONE;
 
@@ -8281,6 +8355,14 @@ CreateCheckPoint(int flags)
 	PriorRedoPtr = ControlFile->checkPointCopy.redo;
 
 	/*
+	 * Once the control file below ends the upgrade mode, shared memory is the
+	 * only other place that knows where the upgrade went live, and a restart
+	 * loses it; so the bundle gets it first.
+	 */
+	if (golive)
+		InplaceUpgradeWriteGoLiveLSN(recptr);
+
+	/*
 	 * Update the control file.
 	 */
 	LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
@@ -8334,6 +8416,14 @@ CreateCheckPoint(int flags)
 	 */
 	ControlFile->unloggedLSN = pg_atomic_read_membarrier_u64(&XLogCtl->unloggedLSN);
 
+	/*
+	 * The go-live checkpoint ends the in-place upgrade: once the control file
+	 * is written, a restart comes up as the new version in normal operation,
+	 * and a rollback is refused.
+	 */
+	if (golive)
+		ControlFile->inplaceUpgradeMode = false;
+
 	UpdateControlFile();
 	LWLockRelease(ControlFileLock);
 
@@ -8342,6 +8432,9 @@ CreateCheckPoint(int flags)
 	 * have trouble while fooling with old log segments.
 	 */
 	END_CRIT_SECTION();
+
+	if (golive)
+		InplaceUpgradeGoneLive(recptr, checkPoint.ThisTimeLineID);
 
 	/*
 	 * WAL summaries end when the next XLOG_CHECKPOINT_REDO or
