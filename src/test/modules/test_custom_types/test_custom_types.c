@@ -28,6 +28,7 @@ PG_FUNCTION_INFO_V1(int_custom_in);
 PG_FUNCTION_INFO_V1(int_custom_out);
 PG_FUNCTION_INFO_V1(int_custom_typanalyze_false);
 PG_FUNCTION_INFO_V1(int_custom_typanalyze_invalid);
+PG_FUNCTION_INFO_V1(int_custom_typanalyze_stattarget);
 PG_FUNCTION_INFO_V1(int_custom_eq);
 PG_FUNCTION_INFO_V1(int_custom_ne);
 PG_FUNCTION_INFO_V1(int_custom_lt);
@@ -108,6 +109,25 @@ int_custom_typanalyze_invalid(PG_FUNCTION_ARGS)
 	stats->compute_stats = int_custom_invalid_stats;
 
 	PG_RETURN_BOOL(true);
+}
+
+/*
+ * int_custom_typanalyze_stattarget
+ *
+ * This function accepts the column only when attstattarget is negative,
+ * and returns false otherwise.  For expressions in extended statistics,
+ * the first lookup passes -1 while the build passes the computed target,
+ * so the two calls give different answers.
+ */
+Datum
+int_custom_typanalyze_stattarget(PG_FUNCTION_ARGS)
+{
+	VacAttrStats *stats = (VacAttrStats *) PG_GETARG_POINTER(0);
+
+	if (stats->attstattarget >= 0)
+		PG_RETURN_BOOL(false);
+
+	PG_RETURN_BOOL(std_typanalyze(stats));
 }
 
 /*

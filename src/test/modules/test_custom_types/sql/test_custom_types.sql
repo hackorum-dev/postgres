@@ -101,6 +101,20 @@ SELECT tablename,
 SELECT COUNT(*) FROM test_table GROUP BY (func_int_custom(data));
 DROP STATISTICS test_stats;
 
+-- Switch type to use typanalyze function that depends on attstattarget.
+ALTER TYPE int_custom SET (ANALYZE = int_custom_typanalyze_stattarget);
+
+-- Extended statistics with an expression accepted by the first lookup
+-- but rejected when the statistics are built.
+CREATE STATISTICS test_stats ON func_int_custom(data), (id) FROM test_table;
+-- Computation of the stats fails, no data generated.
+ANALYZE test_table;
+SELECT stxname, stxdexpr IS NULL as expr_stats_is_null
+  FROM pg_statistic_ext s
+  LEFT JOIN pg_statistic_ext_data d ON s.oid = d.stxoid
+  WHERE stxname = 'test_stats';
+DROP STATISTICS test_stats;
+
 -- Cleanup
 DROP FUNCTION func_int_custom;
 DROP TABLE test_table;

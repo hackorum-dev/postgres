@@ -95,6 +95,7 @@ static void compute_expr_stats(Relation onerel, AnlExprData *exprdata,
 static Datum serialize_expr_stats(AnlExprData *exprdata, int nexprs);
 static Datum expr_fetch_func(VacAttrStatsP stats, int rownum, bool *isNull);
 static AnlExprData *build_expr_data(List *exprs, int stattarget);
+static void report_ext_stats_not_computed(Relation onerel, StatExtEntry *stat);
 
 static StatsBuildData *make_build_data(Relation rel, StatExtEntry *stat,
 									   int numrows, HeapTuple *rows,
@@ -170,14 +171,7 @@ BuildRelationExtStatistics(Relation onerel, bool inh, double totalrows,
 									  natts, vacattrstats);
 		if (!stats)
 		{
-			if (!AmAutoVacuumWorkerProcess())
-				ereport(WARNING,
-						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-						 errmsg("statistics object \"%s.%s\" could not be computed for relation \"%s.%s\"",
-								stat->schema, stat->name,
-								get_namespace_name(onerel->rd_rel->relnamespace),
-								RelationGetRelationName(onerel)),
-						 errtable(onerel)));
+			report_ext_stats_not_computed(onerel, stat);
 			continue;
 		}
 
@@ -196,6 +190,11 @@ BuildRelationExtStatistics(Relation onerel, bool inh, double totalrows,
 
 		/* evaluate expressions (if the statistics object has any) */
 		data = make_build_data(onerel, stat, numrows, rows, stats, stattarget);
+		if (!data)
+		{
+			report_ext_stats_not_computed(onerel, stat);
+			continue;
+		}
 
 		/* compute statistic of each requested type */
 		foreach(lc2, stat->types)
@@ -218,6 +217,12 @@ BuildRelationExtStatistics(Relation onerel, bool inh, double totalrows,
 					elog(ERROR, "requested expression stats, but there are no expressions");
 
 				exprdata = build_expr_data(stat->exprs, stattarget);
+				if (!exprdata)
+				{
+					report_ext_stats_not_computed(onerel, stat);
+					data = NULL;
+					break;
+				}
 				nexprs = list_length(stat->exprs);
 
 				compute_expr_stats(onerel, exprdata, nexprs, rows, numrows);
@@ -225,6 +230,9 @@ BuildRelationExtStatistics(Relation onerel, bool inh, double totalrows,
 				exprstats = serialize_expr_stats(exprdata, nexprs);
 			}
 		}
+
+		if (!data)
+			continue;
 
 		/* store the statistics in the catalog */
 		statext_store(stat->statOid, inh,
@@ -244,6 +252,22 @@ BuildRelationExtStatistics(Relation onerel, bool inh, double totalrows,
 	list_free(statslist);
 
 	table_close(pg_stext, RowExclusiveLock);
+}
+
+/*
+ * Warn that a statistics object could not be built for this relation.
+ */
+static void
+report_ext_stats_not_computed(Relation onerel, StatExtEntry *stat)
+{
+	if (!AmAutoVacuumWorkerProcess())
+		ereport(WARNING,
+				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+				 errmsg("statistics object \"%s.%s\" could not be computed for relation \"%s.%s\"",
+						stat->schema, stat->name,
+						get_namespace_name(onerel->rd_rel->relnamespace),
+						RelationGetRelationName(onerel)),
+				 errtable(onerel)));
 }
 
 /*
@@ -2303,6 +2327,11 @@ build_expr_data(List *exprs, int stattarget)
 
 		thisdata->expr = expr;
 		thisdata->vacattrstat = examine_expression(expr, stattarget);
+		if (thisdata->vacattrstat == NULL)
+		{
+			pfree(exprdata);
+			return NULL;
+		}
 		idx++;
 	}
 
@@ -2496,6 +2525,8 @@ statext_expressions_load(Oid stxoid, bool inh, int idx)
  * Evaluate the expressions, so that we can use the results to build
  * all the requested statistics types. This matters especially for
  * expensive expressions, of course.
+ *
+ * Returns NULL if one of the expressions cannot be analyzed.
  */
 static StatsBuildData *
 make_build_data(Relation rel, StatExtEntry *stat, int numrows, HeapTuple *rows,
@@ -2584,6 +2615,12 @@ make_build_data(Relation rel, StatExtEntry *stat, int numrows, HeapTuple *rows,
 
 		result->attnums[idx] = k;
 		result->stats[idx] = examine_expression(expr, stattarget);
+
+		if (result->stats[idx] == NULL)
+		{
+			pfree(result);
+			return NULL;
+		}
 
 		idx++;
 		k--;
