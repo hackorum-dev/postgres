@@ -33,6 +33,22 @@ AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
 
 --
+-- Typanalyze function whose result depends on attstattarget
+--
+CREATE FUNCTION int_custom_typanalyze_stattarget(internal)
+RETURNS boolean
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;
+
+--
+-- Typanalyze function that rejects the second build-time call
+--
+CREATE FUNCTION int_custom_typanalyze_once(internal)
+RETURNS boolean
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;
+
+--
 -- The int_custom type definition
 --
 -- This type is identical to int4 in storage, and is used in subsequent
