@@ -347,10 +347,13 @@ $primary->set_install_path(undef);
 $primary->append_conf('postgresql.conf',
 	"log_min_messages = 'warning,postmaster:debug1'");
 
-# The server reports ready only once the migrator is done, so "pg_ctl
-# start" returns only then.
+# The server reports ready only once the migrator is done, so the swap
+# returns only then.
 my $log_offset = -s $primary->logfile;
-$primary->start;
+$primary->command_ok(
+	[ @pg_inplace_upgrade, '--log' => $primary->logfile, 'swap' ],
+	'swapped the primary to the new version');
+$primary->_update_pid(1);
 like(
 	slurp_file($primary->logfile),
 	qr/took over the database cluster for an in-place upgrade/,

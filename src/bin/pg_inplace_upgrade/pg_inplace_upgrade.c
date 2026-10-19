@@ -52,6 +52,7 @@
 #include "fe_utils/string_utils.h"
 #include "getopt_long.h"
 #include "libpq-fe.h"
+#include "upgrade/bundle.h"
 #include "utils/pidfile.h"
 
 /*
@@ -90,6 +91,7 @@ static char *datadir = NULL;
 static char *old_bindir = NULL;
 static char *new_bindir = NULL;
 static SimpleStringList standbys = {NULL, NULL};
+static char *server_log = NULL;
 
 /*
  * The line that pulls the authentication file into the cluster's hba file.
@@ -101,6 +103,7 @@ static char *hba_include_line = NULL;
 static void usage(void);
 static int	cmd_check(void);
 static int	cmd_prepare(void);
+static int	cmd_swap(void);
 static int	cmd_status(void);
 static const char *posture_name(const ClusterPosture *cp);
 
@@ -153,6 +156,7 @@ main(int argc, char **argv)
 		{"old-bindir", required_argument, NULL, 'b'},
 		{"new-bindir", required_argument, NULL, 'B'},
 		{"standby", required_argument, NULL, 'S'},
+		{"log", required_argument, NULL, 'l'},
 		{NULL, 0, NULL, 0}
 	};
 	int			c;
@@ -177,7 +181,7 @@ main(int argc, char **argv)
 		}
 	}
 
-	while ((c = getopt_long(argc, argv, "b:B:D:S:",
+	while ((c = getopt_long(argc, argv, "b:B:D:l:S:",
 							long_options, &option_index)) != -1)
 	{
 		switch (c)
@@ -190,6 +194,9 @@ main(int argc, char **argv)
 				break;
 			case 'D':
 				datadir = pg_strdup(optarg);
+				break;
+			case 'l':
+				server_log = pg_strdup(optarg);
 				break;
 			case 'S':
 				simple_string_list_append(&standbys, optarg);
@@ -245,7 +252,7 @@ main(int argc, char **argv)
 	canonicalize_path(new_bindir);
 
 	if (strcmp(command, "check") != 0 && strcmp(command, "prepare") != 0 &&
-		strcmp(command, "status") != 0)
+		strcmp(command, "swap") != 0 && strcmp(command, "status") != 0)
 	{
 		pg_log_error("unrecognized command \"%s\"", command);
 		pg_log_error_hint("Try \"%s --help\" for more information.", progname);
@@ -268,6 +275,8 @@ main(int argc, char **argv)
 		return cmd_check();
 	else if (strcmp(command, "prepare") == 0)
 		return cmd_prepare();
+	else if (strcmp(command, "swap") == 0)
+		return cmd_swap();
 	else
 		return cmd_status();
 }
@@ -282,11 +291,14 @@ usage(void)
 	printf(_("  check      check that the running old cluster can be upgraded\n"));
 	printf(_("  prepare    refuse client connections, freeze the catalogs, and shut\n"
 			 "             the old cluster down at an upgrade boundary\n"));
+	printf(_("  swap       start the new version on a cluster shut down at an\n"
+			 "             upgrade boundary\n"));
 	printf(_("  status     report how far the upgrade of the cluster has got\n"));
 	printf(_("\nOptions:\n"));
 	printf(_("  -b, --old-bindir=DIR   old cluster executable directory\n"));
 	printf(_("  -B, --new-bindir=DIR   new cluster executable directory\n"));
 	printf(_("  -D, --pgdata=DATADIR   data directory of the cluster on this host\n"));
+	printf(_("  -l, --log=FILENAME     server log file for the new version's start\n"));
 	printf(_("  -S, --standby=CONNSTR  connection string of a standby of this cluster\n"
 			 "                         (can be given more than once)\n"));
 	printf(_("  -V, --version          output version information, then exit\n"));
@@ -474,7 +486,8 @@ server_running(void)
 
 /*
  * Run the pg_ctl in bindir on the data directory, with the given options
- * and action, and return its exit status.
+ * and action, and return its exit status.  A server it starts logs to the
+ * log file, if one was given.
  */
 static int
 run_pg_ctl(const char *bindir, const char *options, const char *action)
@@ -483,6 +496,11 @@ run_pg_ctl(const char *bindir, const char *options, const char *action)
 
 	init_command(&cmd, bindir, "pg_ctl");
 	append_datadir(&cmd);
+	if (server_log && strcmp(action, "start") == 0)
+	{
+		appendPQExpBufferStr(&cmd, " -l ");
+		appendShellString(&cmd, server_log);
+	}
 	appendPQExpBufferStr(&cmd, " -s");
 	if (options[0] != '\0')
 		appendPQExpBuffer(&cmd, " %s", options);
@@ -1103,6 +1121,66 @@ cmd_prepare(void)
 	return wait_for_standbys(boundary_lsn) ? 0 : 1;
 }
 
+static int
+cmd_swap(void)
+{
+	ClusterPosture *cp;
+	int			rc;
+
+	require_primary();
+	if (server_running())
+		pg_fatal("the cluster in \"%s\" is running", datadir);
+
+	cp = read_posture();
+	switch (cp->posture.posture)
+	{
+		case UPGRADE_POSTURE_AT_BOUNDARY:
+			break;
+		case UPGRADE_POSTURE_TAKEN_OVER:
+		case UPGRADE_POSTURE_MIGRATION_FAILED:
+		case UPGRADE_POSTURE_MIGRATED:
+			pg_log_error("the cluster in \"%s\" has already been taken over by the new version",
+						 datadir);
+			pg_log_error_hint("See \"%s status\".", progname);
+			exit(1);
+		default:
+			refuse(cp, "the cluster in \"%s\" is not shut down at an upgrade boundary",
+				   datadir);
+	}
+
+	/*
+	 * Until the upgrade goes live, the WAL summarizer must not read WAL that
+	 * a rollback discards, and no commit needs to wait for it.  These go into
+	 * the included file rather than onto the command line, so that
+	 * withdrawing the file restores the cluster's own settings.
+	 */
+	{
+		static const char *const swap_settings[] = {
+			"summarize_wal = off\n",
+			"synchronous_commit = off\n",
+			NULL
+		};
+
+		append_upgrade_settings(swap_settings);
+	}
+
+	/*
+	 * The new version takes over the cluster as it starts and reports ready
+	 * only once the catalogs are migrated, so pg_ctl returns then.
+	 */
+	pg_log_info("starting the new version");
+	rc = run_pg_ctl(new_bindir, "-w", "start");
+	if (rc != 0)
+	{
+		pg_log_error("the new version did not start: %s", wait_result_to_str(rc));
+		pg_log_error_hint("See \"%s status\".", progname);
+		exit(1);
+	}
+
+	pg_log_info("the catalogs are migrated, and the cluster serves superusers only until the upgrade goes live");
+	return 0;
+}
+
 /*
  * The posture as the 'status' command shows it, with one addition: a
  * primary that is not prepared but has the settings file shows as "prepare
@@ -1156,5 +1234,18 @@ cmd_status(void)
 		   file_exists(data_path(UPGRADE_CONF_FILE)) ? "present" :
 		   file_exists(data_path(UPGRADE_CONF_FILE DISABLED_SUFFIX)) ? "withdrawn" : "absent");
 
+	if (file_exists(data_path(INPLACE_UPGRADE_MIGRATE_ERROR)))
+	{
+		char	   *path = data_path(INPLACE_UPGRADE_MIGRATE_ERROR);
+		FILE	   *fp = fopen(path, "r");
+		char		line[1024];
+
+		if (fp == NULL)
+			pg_fatal("could not open file \"%s\": %m", path);
+		printf(_("Migration error:\n"));
+		while (fgets(line, sizeof(line), fp) != NULL)
+			printf("    %s", line);
+		fclose(fp);
+	}
 	return 0;
 }

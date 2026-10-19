@@ -24,6 +24,7 @@ tests += {
   'tap': {
     'tests': [
       't/002_prepare.pl',
+      't/003_swap.pl',
       't/007_posture.pl',
     ],
   },

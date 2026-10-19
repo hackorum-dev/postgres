@@ -1,9 +1,10 @@
 # Copyright (c) 2026, PostgreSQL Global Development Group
 
 # Where a cluster stands in an in-place upgrade, its posture, as the status
-# command shows it, on data directories forged from a real one: PG_VERSION
-# and the control file edited, no server running.  Needs the old
-# installation from PG_TEST_INPLACE_OLDINSTALL (see t/002_prepare.pl).
+# command shows it, on data directories forged from a real one: markers
+# written or removed, PG_VERSION and the control file edited, no server
+# running.  Needs the old installation from PG_TEST_INPLACE_OLDINSTALL (see
+# src/test/recovery/t/062_inplace_upgrade.pl).
 
 use strict;
 use warnings FATAL => 'all';
@@ -47,6 +48,14 @@ sub forge
 	PostgreSQL::Test::RecursiveCopy::copypath($from, $datadir);
 	chmod 0700, $datadir;
 	return $datadir;
+}
+
+sub touch
+{
+	my ($path) = @_;
+	open my $fh, '>', $path or die "could not create $path: $!";
+	close $fh;
+	return;
 }
 
 sub write_file
@@ -116,7 +125,8 @@ command_fails_like(
 	qr/incorrect checksum in control file/,
 	'status refuses a control file with a bad checksum');
 
-# A cluster of the old version, prepared for the upgrade
+# A cluster of the old version, upgraded and shut down in upgrade mode with
+# its catalogs migrated: the other postures are forged from it.
 my $node =
   PostgreSQL::Test::Cluster->new('node', install_path => $oldinstall);
 $node->init(force_initdb => 1);
@@ -132,5 +142,49 @@ posture_like(
 	$node->data_dir,
 	qr/^Owner:\s+old version\n.*^Upgrade posture:\s+at an upgrade boundary$/ms,
 	'prepared, the old version is at an upgrade boundary');
+$node->command_ok(
+	[
+		pg_inplace_upgrade($node->data_dir),
+		'--log' => $node->logfile,
+		'swap'
+	],
+	'swapped');
+$node->_update_pid(1);
+$node->set_install_path(undef);
+$node->stop;
+posture_like(
+	$node->data_dir,
+	qr/^Owner:\s+new version\n.*^Upgrade posture:\s+migrated$/ms,
+	'swapped, the catalogs are migrated');
+
+my $markers = 'pg_inplace_upgrade_bundle/markers';
+
+$datadir = forge($node->data_dir, 'taken_over');
+unlink "$datadir/$markers/migrated";
+posture_like(
+	$datadir,
+	qr/^Upgrade posture:\s+taken over$/m,
+	'without markers, the cluster is taken over');
+
+$datadir = forge($node->data_dir, 'migration_failed');
+unlink "$datadir/$markers/migrated";
+touch("$datadir/pg_inplace_upgrade_bundle/migrate_error");
+posture_like(
+	$datadir,
+	qr/^Upgrade posture:\s+migration failed$/m,
+	'with the migrator\'s error, the migration failed');
+
+SKIP:
+{
+	skip 'directory permissions do not apply to root', 1 if $> == 0;
+
+	$datadir = forge($node->data_dir, 'unreadable_markers');
+	chmod 0000, "$datadir/$markers";
+	command_fails_like(
+		[ pg_inplace_upgrade($datadir), 'status' ],
+		qr/could not stat file ".*markers\/migrated": Permission denied/,
+		'status refuses markers it cannot stat');
+	chmod 0700, "$datadir/$markers";
+}
 
 done_testing();
