@@ -284,3 +284,30 @@ SELECT JSON_EXISTS('{}'::jsonb, 'strict $.a' FALSE ON ERROR);
 SELECT JSON_EXISTS(jsonb '{}', 'strict $.a' UNKNOWN ON ERROR);
 SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+
+--
+-- JSON_TABLE column definitions are part of the query ID
+--
+SELECT * FROM JSON_TABLE('[{"a": 1}]'::jsonb, '$[*]'
+  COLUMNS (a int PATH '$.a')) jt;
+SELECT * FROM JSON_TABLE('[{"a": 1}]'::jsonb, '$[*]'
+  COLUMNS (a text PATH '$.a')) jt;
+SELECT * FROM JSON_TABLE('[{"a": 1}]'::jsonb, '$[*]'
+  COLUMNS (a int PATH '$.b' DEFAULT 0 ON EMPTY)) jt;
+-- same query ID as the previous one: only constants and column names differ
+SELECT * FROM JSON_TABLE('[{"a": 1}]'::jsonb, '$[*]'
+  COLUMNS (b int PATH '$.c' DEFAULT 1 ON EMPTY)) jt;
+-- without PATH, the path is derived from the column name, so the name counts
+SELECT * FROM JSON_TABLE('[{"a": 1}]'::jsonb, '$[*]'
+  COLUMNS (a int)) jt;
+SELECT * FROM JSON_TABLE('[{"a": 1}]'::jsonb, '$[*]'
+  COLUMNS (b int)) jt;
+SELECT * FROM JSON_TABLE('[{"a": 1}]'::jsonb, '$[*]'
+  COLUMNS (a int PATH '$.a',
+           NESTED PATH '$.b[*]' AS p1 COLUMNS (b int PATH '$'))) jt;
+-- same query ID as the previous one: only the path name differs
+SELECT * FROM JSON_TABLE('[{"a": 1}]'::jsonb, '$[*]'
+  COLUMNS (a int PATH '$.a',
+           NESTED PATH '$.b[*]' AS p2 COLUMNS (b int PATH '$'))) jt;
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
