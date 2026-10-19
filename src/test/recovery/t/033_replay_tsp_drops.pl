@@ -142,4 +142,75 @@ while ($max_attempts-- >= 0)
 }
 ok($max_attempts > 0, "invalid directory creation is detected");
 
+# Replay of DROP DATABASE and DROP TABLESPACE must advance minRecoveryPoint
+# before removing files, or a standby stopped before the commit record would
+# reach consistency too early on restart and fail on the removed files.
+$node_primary = PostgreSQL::Test::Cluster->new('primary4');
+$node_primary->init(allows_streaming => 1);
+# Without full-page images, replay of the INSERT below reads the dropped page.
+$node_primary->append_conf('postgresql.conf', 'full_page_writes = off');
+$node_primary->start;
+my $tsdir = PostgreSQL::Test::Utils::tempdir_short();
+$node_primary->safe_psql(
+	'postgres', qq[
+		CREATE TABLESPACE ts2 LOCATION '$tsdir';
+		CREATE DATABASE db3;
+	]);
+$node_primary->safe_psql('db3',
+	'CREATE TABLE t (a int); INSERT INTO t VALUES (1)');
+my $tsoid2 = $node_primary->safe_psql('postgres',
+	"SELECT oid FROM pg_tablespace WHERE spcname = 'ts2'");
+my $dboid = $node_primary->safe_psql('postgres',
+	"SELECT oid FROM pg_database WHERE datname = 'db3'");
+my $backup_tsdir = PostgreSQL::Test::Utils::tempdir_short();
+$node_primary->backup('backup4',
+	backup_options => ["--tablespace-mapping=$tsdir=$backup_tsdir"]);
+$node_standby = PostgreSQL::Test::Cluster->new('standby4');
+$node_standby->init_from_backup(
+	$node_primary, 'backup4',
+	has_streaming => 1,
+	tablespace_map =>
+	  { $tsoid2 => PostgreSQL::Test::Utils::tempdir_short() . '/ts' });
+$node_standby->start;
+
+# Stop the standby after it replays $drop_sql but before its commit record,
+# then check that $path is gone and that the standby restarts.
+sub test_drop
+{
+	my ($drop_sql, $db, $setup_sql, $path) = @_;
+
+	# Make the restart replay $setup_sql again.
+	$node_primary->safe_psql('postgres', 'CHECKPOINT');
+	$node_primary->wait_for_replay_catchup($node_standby);
+	$node_standby->stop;
+	$node_primary->safe_psql($db, $setup_sql);
+	my $xid = $node_primary->safe_psql('postgres',
+		'SELECT pg_snapshot_xmax(pg_current_snapshot())');
+	$node_primary->safe_psql('postgres', $drop_sql);
+
+	$node_standby->append_conf(
+		'postgresql.conf', qq(
+recovery_target_xid = '$xid'
+recovery_target_inclusive = off
+recovery_target_action = 'pause'
+));
+	$node_standby->start;
+	$node_standby->poll_query_until('postgres',
+		"SELECT pg_get_wal_replay_pause_state() = 'paused'")
+	  or die "timed out waiting for recovery to pause";
+	ok(!-e ($node_standby->data_dir . "/$path"), "$drop_sql: files removed");
+
+	$node_standby->stop('immediate');
+	$node_standby->append_conf('postgresql.conf', "recovery_target_xid = ''");
+	ok($node_standby->start(fail_ok => 1), "$drop_sql: standby restarts")
+	  or die "standby did not restart";
+}
+
+test_drop('DROP DATABASE db3', 'db3', 'INSERT INTO t VALUES (2)',
+	"base/$dboid");
+test_drop(
+	'DROP TABLESPACE ts2', 'postgres',
+	'CREATE TABLE t2 (a int) TABLESPACE ts2; DROP TABLE t2',
+	"pg_tblspc/$tsoid2");
+
 done_testing();
