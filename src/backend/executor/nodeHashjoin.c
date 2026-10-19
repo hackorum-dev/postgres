@@ -193,6 +193,8 @@
 /* Returns true if doing null-fill on inner relation */
 #define HJ_FILL_INNER(hjstate)	((hjstate)->hj_NullOuterTupleSlot != NULL)
 
+static inline bool ExecHashBloomReject(HashJoinTable hashtable,
+									   uint32 hashvalue);
 static TupleTableSlot *ExecHashJoinOuterGetTuple(PlanState *outerNode,
 												 HashJoinState *hjstate,
 												 uint32 *hashvalue,
@@ -1136,6 +1138,34 @@ ExecEndHashJoin(HashJoinState *node)
 	 */
 	ExecEndNode(outerPlanState(node));
 	ExecEndNode(innerPlanState(node));
+}
+
+/*
+ * ExecHashBloomReject
+ *		Should this hash value (for an outer tuple) be rejected?
+ *
+ * Returns true if a Bloom filter is in use and it proves that the given hash
+ * value (and therefore the outer tuple) cannot match any inner tuple.
+ *
+ * This is called for every outer tuple, so the common case of a hash table
+ * without a filter is handled here, inline, and only hash tables that do
+ * have a filter pay for the out-of-line call that probes it.
+ *
+ * The caller is responsible for probing each outer tuple only once. Tuples
+ * written to a batch file have already been checked (either while processing
+ * batch 0 of a serial join, or while partitioning the outer relation of a
+ * Parallel Hash join), so there's no point in checking them again when they
+ * are read back. Doing so would waste cycles and distort the probe counters
+ * used to drive the adaptive sampling.
+ */
+static inline bool
+ExecHashBloomReject(HashJoinTable hashtable, uint32 hashvalue)
+{
+	/* If there's no filter, all tuples should pass. */
+	if (hashtable->bloomFilter == NULL)
+		return false;
+
+	return ExecHashBloomProbeFilter(hashtable, hashvalue);
 }
 
 /*
