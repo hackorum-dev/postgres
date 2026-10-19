@@ -1154,10 +1154,12 @@ ExecHashJoinOuterGetTuple(PlanState *outerNode,
 			}
 			else if (hjstate->hj_KeepNullTuples)
 			{
-				/* null join key, but we must save tuple to be emitted later */
-				if (hjstate->hj_NullOuterTupleStore == NULL)
-					hjstate->hj_NullOuterTupleStore = ExecHashBuildNullTupleStore(hashtable);
-				tuplestore_puttupleslot(hjstate->hj_NullOuterTupleStore, slot);
+				/*
+				 * null join key; probe with a dummy hash value, which goes to
+				 * the current batch and cannot match
+				 */
+				*hashvalue = 0;
+				return slot;
 			}
 
 			/*
@@ -1232,10 +1234,12 @@ ExecParallelHashJoinOuterGetTuple(PlanState *outerNode,
 			}
 			else if (hjstate->hj_KeepNullTuples)
 			{
-				/* null join key, but we must save tuple to be emitted later */
-				if (hjstate->hj_NullOuterTupleStore == NULL)
-					hjstate->hj_NullOuterTupleStore = ExecHashBuildNullTupleStore(hashtable);
-				tuplestore_puttupleslot(hjstate->hj_NullOuterTupleStore, slot);
+				/*
+				 * null join key; probe with a dummy hash value, which goes to
+				 * the current batch and cannot match
+				 */
+				*hashvalue = 0;
+				return slot;
 			}
 
 			/*
