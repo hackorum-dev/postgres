@@ -142,6 +142,12 @@ bool		XLogLogicalInfo = false;
  */
 static bool XLogLogicalInfoUpdatePending = false;
 
+/*
+ * Generation of the barrier emitted by StartupLogicalDecodingStatus(), or 0
+ * if it emitted none.  Only meaningful in the startup process.
+ */
+static uint64 startup_status_generation = 0;
+
 static void update_xlog_logical_info(void);
 static void abort_logical_decoding_activation(int code, Datum arg);
 static void write_logical_decoding_status_update_record(bool status);
@@ -183,6 +189,15 @@ StartupLogicalDecodingStatus(bool last_status)
 	 */
 	LogicalDecodingCtl->xlog_logical_info = last_status;
 	LogicalDecodingCtl->logical_decoding_enabled = last_status;
+
+	/*
+	 * Processes started before this point, such as the checkpointer, cached
+	 * the old status.  Tell them to refresh, and remember the barrier so that
+	 * the end of recovery can wait for it.
+	 */
+	if (IsUnderPostmaster && last_status)
+		startup_status_generation =
+			EmitProcSignalBarrier(PROCSIGNAL_BARRIER_UPDATE_XLOG_LOGICAL_INFO);
 }
 
 /*
@@ -672,6 +687,7 @@ void
 UpdateLogicalDecodingStatusEndOfRecovery(void)
 {
 	bool		new_status = false;
+	bool		status_changed;
 
 	Assert(RecoveryInProgress());
 
@@ -715,7 +731,8 @@ UpdateLogicalDecodingStatusEndOfRecovery(void)
 	 * by the time of the recheck, the backend instead enables logical
 	 * decoding by itself, which is fine after promotion.)
 	 */
-	if (new_status != LogicalDecodingCtl->logical_decoding_enabled)
+	status_changed = (new_status != LogicalDecodingCtl->logical_decoding_enabled);
+	if (status_changed)
 	{
 		/*
 		 * Update both the logical decoding status and logical WAL logging
@@ -761,9 +778,23 @@ UpdateLogicalDecodingStatusEndOfRecovery(void)
 	{
 		uint64		generation;
 
-		generation = EmitProcSignalBarrier(PROCSIGNAL_BARRIER_UPDATE_XLOG_LOGICAL_INFO);
-		if (new_status)
-			WaitForProcSignalBarrier(generation);
+		/*
+		 * If the status was enabled all along, a stale cache can only be in a
+		 * process started before StartupLogicalDecodingStatus(), because
+		 * later processes read the enabled status at startup and an enable
+		 * replayed in between waited for everyone.  So waiting for the
+		 * startup barrier is enough.  This keeps a backend that cannot absorb
+		 * barriers, e.g. one blocked writing to a client, from holding up
+		 * promotion.
+		 */
+		if (new_status && !status_changed)
+			WaitForProcSignalBarrier(startup_status_generation);
+		else
+		{
+			generation = EmitProcSignalBarrier(PROCSIGNAL_BARRIER_UPDATE_XLOG_LOGICAL_INFO);
+			if (new_status)
+				WaitForProcSignalBarrier(generation);
+		}
 	}
 
 	INJECTION_POINT("startup-logical-decoding-status-change-end-of-recovery", NULL);
