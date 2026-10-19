@@ -28,6 +28,11 @@
  * cluster's hba file, since hba_file cannot change while the server runs.
  * Both files are withdrawn by renaming them and reloading the server.
  *
+ * On a standby, which the program tells from standby.signal, the commands
+ * do the standby's part: swap crosses it to the new version once the
+ * upgrade has gone live on the primary, and rollback resumes its replay
+ * past the boundary.  The rest run on the primary only.
+ *
  * Portions Copyright (c) 1996-2026, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -104,7 +109,9 @@ static void usage(void);
 static int	cmd_check(void);
 static int	cmd_prepare(void);
 static int	cmd_swap(void);
+static int	swap_standby(ClusterPosture *cp);
 static int	cmd_rollback(void);
+static int	rollback_standby(ClusterPosture *cp);
 static int	cmd_golive(void);
 static int	cmd_status(void);
 static const char *posture_name(const ClusterPosture *cp);
@@ -116,6 +123,7 @@ static void init_command(PQExpBuffer cmd, const char *bindir,
 static void append_datadir(PQExpBuffer cmd);
 static int	run_command(PQExpBuffer cmd);
 static void run_or_fatal(PQExpBuffer cmd, const char *what);
+static char *capture_output(PQExpBuffer cmd, int *status);
 static ClusterPosture *read_posture(void);
 pg_noreturn static void refuse(const ClusterPosture *cp, const char *fmt, ...)
 			pg_attribute_printf(2, 3);
@@ -124,11 +132,14 @@ static const char *upgrade_flag_name(uint8 flag);
 static bool server_running(void);
 static int	run_pg_ctl(const char *bindir, const char *options,
 					   const char *action);
+static int	start_server(const char *bindir, bool wait);
 static int	stop_server(const char *bindir, const char *mode);
-static bool cluster_is_standby(void);
-static void require_primary(void);
+static void require_primary(const ClusterPosture *cp);
+static bool standby_at_boundary(const ClusterPosture *cp);
+static char *primary_conninfo_setting(const char *bindir);
+static void probe_primary(const char *conninfo);
 
-static PGconn *connect_primary(const char *dbname);
+static PGconn *connect_local(const char *dbname);
 static PGconn *connect_standby(const char *conninfo);
 static PGresult *query(PGconn *conn, const char *sql);
 static bool poll_until(PGconn *conn, const char *sql, const char *expected,
@@ -300,9 +311,10 @@ usage(void)
 	printf(_("  prepare    refuse client connections, freeze the catalogs, and shut\n"
 			 "             the old cluster down at an upgrade boundary\n"));
 	printf(_("  swap       start the new version on a cluster shut down at an\n"
-			 "             upgrade boundary\n"));
+			 "             upgrade boundary; on a standby, wait until it has\n"
+			 "             replayed the go-live checkpoint\n"));
 	printf(_("  rollback   return the cluster to the old version, until the upgrade\n"
-			 "             goes live\n"));
+			 "             goes live; on a standby, resume replay past the boundary\n"));
 	printf(_("  golive     take the upgrade live on the new version, so that it\n"
 			 "             cannot be rolled back, and admit client connections\n"));
 	printf(_("  status     report how far the upgrade of the cluster has got\n"));
@@ -383,6 +395,28 @@ run_or_fatal(PQExpBuffer cmd, const char *what)
 
 	if (rc != 0)
 		pg_fatal("%s: %s", what, wait_result_to_str(rc));
+}
+
+/* Run a command line through the shell, free it, and return its output */
+static char *
+capture_output(PQExpBuffer cmd, int *status)
+{
+	FILE	   *fp;
+	PQExpBufferData out;
+	char		buf[1024];
+	size_t		n;
+
+	pg_log_debug("running: %s", cmd->data);
+	fflush(NULL);
+	fp = popen(cmd->data, "r");
+	if (fp == NULL)
+		pg_fatal("could not run \"%s\": %m", cmd->data);
+	initPQExpBuffer(&out);
+	while ((n = fread(buf, 1, sizeof(buf), fp)) > 0)
+		appendBinaryPQExpBuffer(&out, buf, n);
+	*status = pclose(fp);
+	termPQExpBuffer(cmd);
+	return out.data;
 }
 
 /*
@@ -522,6 +556,16 @@ run_pg_ctl(const char *bindir, const char *options, const char *action)
 }
 
 /*
+ * Start the server with the pg_ctl in bindir and return pg_ctl's exit
+ * status.  With wait, pg_ctl returns once the server accepts connections.
+ */
+static int
+start_server(const char *bindir, bool wait)
+{
+	return run_pg_ctl(bindir, wait ? "-w" : "-W", "start");
+}
+
+/*
  * Stop the server with the pg_ctl in bindir, in the given shutdown mode, and
  * return pg_ctl's exit status
  */
@@ -534,16 +578,10 @@ stop_server(const char *bindir, const char *mode)
 	return run_pg_ctl(bindir, options, "stop");
 }
 
-static bool
-cluster_is_standby(void)
-{
-	return file_exists(data_path("standby.signal"));
-}
-
 static void
-require_primary(void)
+require_primary(const ClusterPosture *cp)
 {
-	if (cluster_is_standby())
+	if (cp->posture.role == UPGRADE_ROLE_STANDBY)
 	{
 		pg_log_error("the cluster in \"%s\" is a standby", datadir);
 		pg_log_error_hint("Run this command on the primary.");
@@ -552,11 +590,123 @@ require_primary(void)
 }
 
 /*
+ * Is the standby parked at an upgrade boundary?  A running one reports the
+ * boundary it paused at; a stopped one was shut down in recovery with the
+ * boundary as its latest checkpoint.
+ */
+static bool
+standby_at_boundary(const ClusterPosture *cp)
+{
+	bool		result;
+
+	if (server_running())
+	{
+		PGconn	   *conn = connect_local("postgres");
+		PGresult   *res;
+
+		res = query(conn, "SELECT pg_catalog.pg_upgrade_boundary_lsn()::text");
+		result = (PQntuples(res) == 1 && !PQgetisnull(res, 0, 0) &&
+				  PQgetvalue(res, 0, 0)[0] != '\0');
+		PQclear(res);
+		PQfinish(conn);
+		return result;
+	}
+	return cp->posture.posture == UPGRADE_POSTURE_AT_BOUNDARY;
+}
+
+/*
+ * The standby's primary_conninfo, read with the postgres in bindir; it reads
+ * the configuration files with the server running as well.
+ */
+static char *
+primary_conninfo_setting(const char *bindir)
+{
+	PQExpBufferData cmd;
+	char	   *value;
+	int			status;
+
+	init_command(&cmd, bindir, "postgres");
+	appendPQExpBufferStr(&cmd, " -C primary_conninfo");
+	append_datadir(&cmd);
+	value = capture_output(&cmd, &status);
+	if (status != 0)
+		pg_fatal("could not read the setting \"%s\" of the standby in \"%s\"",
+				 "primary_conninfo", datadir);
+	(void) pg_strip_crlf(value);
+	if (value[0] == '\0')
+		pg_fatal("the standby in \"%s\" has no primary_conninfo", datadir);
+	return value;
+}
+
+/*
+ * Check that the standby can stream from a primary that runs the new version
+ * out of upgrade mode, by opening a replication connection with the
+ * standby's own primary_conninfo.  A replication connection, because the
+ * primary refuses WAL senders for the whole of the upgrade mode, whereas it
+ * admits superusers: so success means exactly that the upgrade has gone live
+ * on a new-version primary.
+ */
+static void
+probe_primary(const char *conninfo)
+{
+	PQconninfoOption *options;
+	PQconninfoOption *option;
+	char	   *errmsg = NULL;
+	const char **keywords;
+	const char **values;
+	int			n = 0;
+	PGconn	   *conn;
+
+	options = PQconninfoParse(conninfo, &errmsg);
+	if (options == NULL)
+		pg_fatal("invalid primary_conninfo \"%s\": %s", conninfo,
+				 errmsg ? errmsg : "out of memory");
+	for (option = options; option->keyword != NULL; option++)
+		n++;
+	keywords = pg_malloc((n + 3) * sizeof(*keywords));
+	values = pg_malloc((n + 3) * sizeof(*values));
+	n = 0;
+	for (option = options; option->keyword != NULL; option++)
+	{
+		if (option->val == NULL || option->val[0] == '\0')
+			continue;
+		keywords[n] = option->keyword;
+		values[n] = option->val;
+		n++;
+	}
+	keywords[n] = "replication";
+	values[n] = "true";
+	n++;
+	keywords[n] = "fallback_application_name";
+	values[n] = progname;
+	n++;
+	keywords[n] = NULL;
+	values[n] = NULL;
+
+	conn = PQconnectdbParams(keywords, values, false);
+	if (PQstatus(conn) != CONNECTION_OK)
+	{
+		pg_log_error("could not connect to the primary for streaming: %s",
+					 PQerrorMessage(conn));
+		pg_log_error_hint("The standby crosses only once the upgrade has gone live on the primary; see \"%s golive\".",
+						  progname);
+		exit(1);
+	}
+	if (PQserverVersion(conn) / 10000 != PG_MAJORVERSION_NUM)
+		pg_fatal("the primary runs PostgreSQL %d, not the new version",
+				 PQserverVersion(conn) / 10000);
+	PQfinish(conn);
+	PQconninfoFree(options);
+	free(keywords);
+	free(values);
+}
+
+/*
  * Connect to the cluster in the data directory over its Unix-domain socket,
  * found in postmaster.pid, as the operating system user.
  */
 static PGconn *
-connect_primary(const char *dbname)
+connect_local(const char *dbname)
 {
 	char	   *pidpath = data_path("postmaster.pid");
 	FILE	   *fp;
@@ -745,11 +895,11 @@ cmd_check(void)
 	PGresult   *res;
 	bool		ok;
 
-	require_primary();
+	require_primary(read_posture());
 	if (!server_running())
 		pg_fatal("the cluster in \"%s\" is not running", datadir);
 
-	conn = connect_primary("postgres");
+	conn = connect_local("postgres");
 	res = query(conn, "SELECT rolsuper FROM pg_catalog.pg_roles WHERE rolname = current_user");
 	if (strcmp(PQgetvalue(res, 0, 0), "t") != 0)
 		pg_fatal("role \"%s\" is not a superuser", PQuser(conn));
@@ -1006,7 +1156,7 @@ catalogs_frozen(PGconn *conn)
 	for (int i = 0; i < PQntuples(dbs); i++)
 	{
 		const char *dbname = PQgetvalue(dbs, i, 0);
-		PGconn	   *dbconn = connect_primary(dbname);
+		PGconn	   *dbconn = connect_local(dbname);
 		PGresult   *res = query(dbconn, sql);
 
 		for (int j = 0; j < PQntuples(res); j++)
@@ -1058,11 +1208,11 @@ cmd_prepare(void)
 	int			rc;
 
 	cp = read_posture();
-	require_primary();
+	require_primary(cp);
 	if (!server_running())
 		pg_fatal("the cluster in \"%s\" is not running", datadir);
 
-	conn = connect_primary("postgres");
+	conn = connect_local("postgres");
 
 	res = query(conn, "SELECT rolsuper FROM pg_catalog.pg_roles WHERE rolname = current_user");
 	if (strcmp(PQgetvalue(res, 0, 0), "t") != 0)
@@ -1163,11 +1313,12 @@ cmd_swap(void)
 	ClusterPosture *cp;
 	int			rc;
 
-	require_primary();
+	cp = read_posture();
+	if (cp->posture.role == UPGRADE_ROLE_STANDBY)
+		return swap_standby(cp);
 	if (server_running())
 		pg_fatal("the cluster in \"%s\" is running", datadir);
 
-	cp = read_posture();
 	switch (cp->posture.posture)
 	{
 		case UPGRADE_POSTURE_AT_BOUNDARY:
@@ -1206,7 +1357,7 @@ cmd_swap(void)
 	 * only once the catalogs are migrated, so pg_ctl returns then.
 	 */
 	pg_log_info("starting the new version");
-	rc = run_pg_ctl(new_bindir, "-w", "start");
+	rc = start_server(new_bindir, true);
 	if (rc != 0)
 	{
 		pg_log_error("the new version did not start: %s", wait_result_to_str(rc));
@@ -1215,6 +1366,95 @@ cmd_swap(void)
 	}
 
 	pg_log_info("the catalogs are migrated, and the cluster serves superusers only until the upgrade goes live");
+	return 0;
+}
+
+/*
+ * Cross the standby to the new version: with the standby parked at the
+ * boundary and the upgrade live on its primary, stop the old version and
+ * start the new one, which takes the standby over and replays the new
+ * version's WAL from the start checkpoint.  The crossing is complete when
+ * the control file shows the consistency hold cleared, that is, the go-live
+ * checkpoint replayed; "pg_ctl -w" would wait for hot standby instead, which
+ * opens only then and only with hot_standby on.  Run again, the command
+ * keeps waiting, or reports that the standby has crossed.
+ *
+ * The primary is probed before anything changes, so that a standby whose
+ * primary has not gone live stays parked, ready for a rollback.
+ */
+static int
+swap_standby(ClusterPosture *cp)
+{
+	time_t		started;
+	bool		seen_running = false;
+
+	if (cp->posture.owner == UPGRADE_OWNER_NEW)
+	{
+		if (cp->posture.posture == UPGRADE_POSTURE_LIVE)
+		{
+			pg_log_info("the standby has crossed to the new version already");
+			return 0;
+		}
+		if (!server_running())
+		{
+			pg_log_info("starting the new version");
+			if (start_server(cp->bindir, false) != 0)
+				pg_fatal("could not start the new version");
+		}
+	}
+	else
+	{
+		if (!standby_at_boundary(cp))
+			refuse(cp, "the standby in \"%s\" is not paused at an upgrade boundary",
+				   datadir);
+
+		probe_primary(primary_conninfo_setting(cp->bindir));
+
+		if (server_running())
+		{
+			pg_log_info("stopping the old version");
+			if (stop_server(cp->bindir, "fast") != 0)
+				pg_fatal("could not shut the old version down");
+			cp = read_posture();
+			if (!standby_at_boundary(cp))
+				refuse(cp, "the standby in \"%s\" did not shut down at an upgrade boundary",
+					   datadir);
+		}
+
+		pg_log_info("starting the new version");
+		if (start_server(new_bindir, false) != 0)
+			pg_fatal("could not start the new version");
+	}
+
+	started = time(NULL);
+	for (;;)
+	{
+		cp = read_posture();
+		if (cp->posture.posture == UPGRADE_POSTURE_LIVE)
+			break;
+
+		/* pg_ctl returned without waiting, so give the server time to start. */
+		if (server_running())
+			seen_running = true;
+		else if (seen_running || time(NULL) >= started + 10)
+		{
+			pg_log_error("the new version stopped");
+			pg_log_error_hint("See the server log and \"%s status\".", progname);
+			exit(1);
+		}
+
+		if (time(NULL) >= started + WAIT_SECONDS)
+		{
+			pg_log_error("timed out after %d seconds waiting for the standby to replay the go-live checkpoint",
+						 WAIT_SECONDS);
+			pg_log_error_hint("The server keeps replaying; run \"%s swap\" again to keep waiting.",
+							  progname);
+			exit(1);
+		}
+		pg_usleep(500000);
+	}
+
+	pg_log_info("the standby has crossed to the new version");
 	return 0;
 }
 
@@ -1234,9 +1474,10 @@ cmd_rollback(void)
 	PQExpBufferData cmd;
 	int			rc;
 
-	require_primary();
-
 	cp = read_posture();
+	if (cp->posture.role == UPGRADE_ROLE_STANDBY)
+		return rollback_standby(cp);
+
 	if (cp->posture.posture == UPGRADE_POSTURE_LIVE)
 		pg_fatal("the upgrade of the cluster in \"%s\" has gone live and cannot be rolled back",
 				 datadir);
@@ -1293,11 +1534,67 @@ cmd_rollback(void)
 	else
 	{
 		pg_log_info("starting the old version");
-		if (run_pg_ctl(old_bindir, "-w", "start") != 0)
+		if (start_server(old_bindir, true) != 0)
 			pg_fatal("could not start the old version");
 	}
 
 	pg_log_info("the cluster runs the old version");
+	return 0;
+}
+
+/*
+ * A standby parked at the boundary has nothing to restore: the old version
+ * resumes replay and follows the rolled-back primary past the boundary.  A
+ * standby that the new version has taken over cannot go back, and neither
+ * can its primary.
+ */
+static int
+rollback_standby(ClusterPosture *cp)
+{
+	PGconn	   *conn;
+	PGresult   *res;
+	bool		at_boundary;
+
+	if (cp->posture.owner == UPGRADE_OWNER_NEW)
+	{
+		pg_log_error("the standby in \"%s\" has been taken over by the new version and cannot be rolled back",
+					 datadir);
+		pg_log_error_hint("Its primary has gone live.");
+		exit(1);
+	}
+
+	/* Started again, the old version pauses at the boundary by itself. */
+	if (!server_running())
+	{
+		pg_log_info("starting the old version");
+		if (start_server(cp->bindir, true) != 0)
+			pg_fatal("could not start the old version");
+	}
+
+	conn = connect_local("postgres");
+	res = query(conn, "SELECT pg_catalog.pg_upgrade_boundary_lsn()::text");
+	at_boundary = (PQntuples(res) == 1 && !PQgetisnull(res, 0, 0) &&
+				   PQgetvalue(res, 0, 0)[0] != '\0');
+	PQclear(res);
+	if (at_boundary)
+	{
+		pg_log_info("resuming replay");
+		res = query(conn, "SELECT pg_catalog.pg_wal_replay_resume()");
+		PQclear(res);
+		if (!poll_until(conn, "SELECT pg_catalog.pg_get_wal_replay_pause_state()",
+						"not paused", "replay to resume"))
+			exit(1);
+		pg_log_info("the standby resumed replay past the upgrade boundary");
+	}
+	else
+	{
+		res = query(conn, "SELECT pg_catalog.pg_get_wal_replay_pause_state()");
+		if (strcmp(PQgetvalue(res, 0, 0), "not paused") != 0)
+			pg_fatal("the standby is paused, but not at an upgrade boundary");
+		PQclear(res);
+		pg_log_info("the standby is not paused at an upgrade boundary; nothing to do");
+	}
+	PQfinish(conn);
 	return 0;
 }
 
@@ -1317,20 +1614,19 @@ cmd_golive(void)
 	PGconn	   *conn;
 	PGresult   *res;
 
-	require_primary();
-
 	cp = read_posture();
+	require_primary(cp);
 	if (cp->posture.owner == UPGRADE_OWNER_OLD)
 		pg_fatal("the cluster in \"%s\" has not been swapped to the new version",
 				 datadir);
 	if (!server_running())
 	{
 		pg_log_info("starting the new version");
-		if (run_pg_ctl(cp->bindir, "-w", "start") != 0)
+		if (start_server(cp->bindir, true) != 0)
 			pg_fatal("could not start the new version");
 	}
 
-	conn = connect_primary("postgres");
+	conn = connect_local("postgres");
 	pg_log_info("taking the upgrade live");
 	res = query(conn, "SELECT pg_inplace_upgrade_golive()");
 	pg_log_info("the go-live checkpoint record ends at %s",
@@ -1359,7 +1655,7 @@ posture_name(const ClusterPosture *cp)
 		case UPGRADE_POSTURE_UNREADABLE:
 			break;
 		case UPGRADE_POSTURE_NOT_PREPARED:
-			if (!cluster_is_standby() &&
+			if (cp->posture.role == UPGRADE_ROLE_PRIMARY &&
 				file_exists(data_path(UPGRADE_CONF_FILE)))
 				return _("prepare in progress");
 			return _("not prepared");
@@ -1386,7 +1682,7 @@ cmd_status(void)
 
 	printf(_("Data directory:            %s\n"), datadir);
 	printf(_("Role:                      %s\n"),
-		   cluster_is_standby() ? "standby" : "primary");
+		   cp->posture.role == UPGRADE_ROLE_STANDBY ? "standby" : "primary");
 	printf(_("Server:                    %s\n"),
 		   server_running() ? "running" : "stopped");
 	printf(_("Owner:                     %s\n"),
@@ -1400,6 +1696,10 @@ cmd_status(void)
 	printf(_("Upgrade configuration:     %s\n"),
 		   file_exists(data_path(UPGRADE_CONF_FILE)) ? "present" :
 		   file_exists(data_path(UPGRADE_CONF_FILE DISABLED_SUFFIX)) ? "withdrawn" : "absent");
+	if (cp->posture.role == UPGRADE_ROLE_STANDBY &&
+		cp->posture.owner == UPGRADE_OWNER_NEW)
+		printf(_("Consistency hold:          %s\n"),
+			   cp->posture.hold ? _("set") : _("cleared"));
 
 	if (file_exists(data_path(INPLACE_UPGRADE_MIGRATE_ERROR)))
 	{

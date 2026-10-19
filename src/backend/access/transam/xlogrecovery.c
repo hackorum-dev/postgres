@@ -276,7 +276,9 @@ static TimeLineID receiveTLI = 0;
  * In order to reach consistency, we must replay the WAL up to
  * minRecoveryPoint.  If backupEndRequired is true, we must also reach
  * backupEndPoint, or if it's invalid, an end-of-backup record corresponding
- * to backupStartPoint.
+ * to backupStartPoint.  If inplaceUpgradeHold is true, the standby was taken
+ * over for an in-place upgrade and must also replay the go-live checkpoint,
+ * before which the catalogs on disk are the old version's.
  *
  * Note: In archive recovery, after consistency has been reached, the
  * functions in xlog.c will start updating minRecoveryPoint in the control
@@ -289,6 +291,7 @@ static TimeLineID minRecoveryPointTLI;
 static XLogRecPtr backupStartPoint;
 static XLogRecPtr backupEndPoint;
 static bool backupEndRequired = false;
+static bool inplaceUpgradeHold = false;
 
 /*
  * Have we reached a consistent database state?  In crash recovery, we have
@@ -366,6 +369,7 @@ static bool recoveryStopsBefore(XLogReaderState *record);
 static bool recoveryStopsAfter(XLogReaderState *record);
 static void UpgradeBoundaryReached(XLogRecPtr lsn);
 static void CheckForUpgradeBoundary(XLogReaderState *record);
+static void CheckForUpgradeGoLive(XLogReaderState *record, TimeLineID replayTLI);
 static char *getRecoveryStopReason(void);
 static void recoveryPausesHere(bool endOfRecovery);
 static bool recoveryApplyDelay(XLogReaderState *record);
@@ -967,6 +971,7 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	backupStartPoint = ControlFile->backupStartPoint;
 	backupEndRequired = ControlFile->backupEndRequired;
 	backupEndPoint = ControlFile->backupEndPoint;
+	inplaceUpgradeHold = ControlFile->inplaceUpgradeHold;
 	if (InArchiveRecovery)
 	{
 		minRecoveryPoint = ControlFile->minRecoveryPoint;
@@ -985,6 +990,22 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	missingContrecPtr = InvalidXLogRecPtr;
 
 	CheckPointIsUpgradeBoundary = (checkPoint.upgradeFlag == UPGRADE_FLAG_BOUNDARY);
+
+	/*
+	 * The takeover of a standby for an in-place upgrade points the control
+	 * file at where the primary's takeover put the start checkpoint, which
+	 * the standby fetches from the primary or the archive: the first record
+	 * it replays must be that checkpoint.  Later restartpoints move the
+	 * control file to other checkpoints of the new version's WAL.
+	 */
+	if (inplaceUpgradeHold &&
+		ControlFile->checkPointCopy.upgradeFlag == UPGRADE_FLAG_START &&
+		checkPoint.upgradeFlag != UPGRADE_FLAG_START)
+		ereport(FATAL,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("checkpoint record at %X/%08X is not the start checkpoint of an in-place upgrade",
+						LSN_FORMAT_ARGS(CheckPointLoc)),
+				 errdetail("This standby was taken over for an in-place upgrade and must replay the new version's WAL from its start checkpoint.")));
 
 	*wasShutdown_ptr = wasShutdown;
 	*haveBackupLabel_ptr = haveBackupLabel;
@@ -2064,6 +2085,13 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 		WalRcvRequestApplyReply();
 	}
 
+	/*
+	 * If the record just applied is the go-live checkpoint of an in-place
+	 * upgrade, release the consistency hold before checking for consistency:
+	 * the next record may be long in coming.
+	 */
+	CheckForUpgradeGoLive(xlogreader, *replayTLI);
+
 	/* Allow read-only connections if we're consistent now */
 	CheckRecoveryConsistency();
 
@@ -2244,7 +2272,7 @@ CheckRecoveryConsistency(void)
 	 * XLOG_BACKUP_END arrives to advise us of the correct minRecoveryPoint.
 	 * All we know prior to that is that we're not consistent yet.
 	 */
-	if (!reachedConsistency && !backupEndRequired &&
+	if (!reachedConsistency && !backupEndRequired && !inplaceUpgradeHold &&
 		minRecoveryPoint <= lastReplayedEndRecPtr)
 	{
 		/*
@@ -2967,6 +2995,35 @@ CheckForUpgradeBoundary(XLogReaderState *record)
 		return;
 
 	UpgradeBoundaryReached(record->ReadRecPtr);
+}
+
+/*
+ * On a standby taken over for an in-place upgrade, see whether the record
+ * just replayed is the go-live checkpoint, and if so release the
+ * consistency hold: the migration WAL has been replayed, and the catalogs
+ * on disk are the new version's.
+ */
+static void
+CheckForUpgradeGoLive(XLogReaderState *record, TimeLineID replayTLI)
+{
+	CheckPoint	checkPoint;
+
+	if (!inplaceUpgradeHold)
+		return;
+	if (XLogRecGetRmid(record) != RM_XLOG_ID ||
+		(XLogRecGetInfo(record) & ~XLR_INFO_MASK) != XLOG_CHECKPOINT_ONLINE)
+		return;
+
+	memcpy(&checkPoint, XLogRecGetData(record), sizeof(CheckPoint));
+	if (checkPoint.upgradeFlag != UPGRADE_FLAG_GOLIVE)
+		return;
+
+	InplaceUpgradeReleaseHold(record->EndRecPtr, replayTLI);
+	inplaceUpgradeHold = false;
+	ereport(LOG,
+			(errmsg("in-place upgrade went live at %X/%08X",
+					LSN_FORMAT_ARGS(record->EndRecPtr)),
+			 errdetail("Consistency is no longer withheld.")));
 }
 
 /*

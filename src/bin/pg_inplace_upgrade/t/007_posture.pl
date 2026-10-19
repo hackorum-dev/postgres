@@ -90,9 +90,16 @@ posture_like(
 	qr/^Role:\s+primary\n.*^Owner:\s+new version\n.*^Upgrade posture:\s+live$/ms,
 	'a cluster of the new version is live');
 
+my $datadir = forge($fresh->data_dir, 'fresh_standby');
+touch("$datadir/standby.signal");
+posture_like(
+	$datadir,
+	qr/^Role:\s+standby\n.*^Upgrade posture:\s+live\n.*^Consistency hold:\s+cleared$/ms,
+	'a standby of the new version is live');
+
 # Two major versions can share a control file layout: out of upgrade mode,
 # PG_VERSION tells whose the cluster is.
-my $datadir = forge($fresh->data_dir, 'fresh_old_pg_version');
+$datadir = forge($fresh->data_dir, 'fresh_old_pg_version');
 append_to_file("$datadir/PG_VERSION.new", ($new_major - 1) . "\n");
 rename "$datadir/PG_VERSION.new", "$datadir/PG_VERSION"
   or die "could not rename PG_VERSION: $!";
@@ -142,6 +149,14 @@ posture_like(
 	$node->data_dir,
 	qr/^Owner:\s+old version\n.*^Upgrade posture:\s+at an upgrade boundary$/ms,
 	'prepared, the old version is at an upgrade boundary');
+
+# A standby is at the boundary only if it shut down in recovery there.
+$datadir = forge($node->data_dir, 'boundary_standby');
+touch("$datadir/standby.signal");
+posture_like(
+	$datadir,
+	qr/^Role:\s+standby\n.*^Upgrade posture:\s+not prepared$/ms,
+	'a standby shut down out of recovery at the boundary is not at it');
 $node->command_ok(
 	[
 		pg_inplace_upgrade($node->data_dir),

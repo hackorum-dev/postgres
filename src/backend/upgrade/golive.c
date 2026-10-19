@@ -6,9 +6,8 @@
  * Take the upgrade live, once the catalogs are migrated.  This is the point
  * of no return.  Write the go-live marker first, so that any rollback is
  * refused from then on.  Then stamp the new major version into PG_VERSION,
- * in the data directory and in every database directory, and remove the
- * stale recycled WAL segments.  Last, the go-live checkpoint ends upgrade
- * mode (see CreateCheckPoint).
+ * in the data directory and in every database directory.  Last, the go-live
+ * checkpoint ends upgrade mode (see CreateCheckPoint).
  *
  * PG_VERSION is stamped before the checkpoint because a backend that starts
  * after upgrade mode ends accepts only the new version there.  After a crash
@@ -33,7 +32,6 @@
 #include <unistd.h>
 
 #include "access/xlog.h"
-#include "access/xlog_internal.h"
 #include "common/inplace_upgrade_posture.h"
 #include "common/relpath.h"
 #include "postmaster/bgwriter.h"
@@ -42,12 +40,10 @@
 #include "upgrade/inplace_upgrade.h"
 
 static XLogRecPtr read_golive_lsn(void);
-static void stamp_version_files(void);
 static void stamp_tablespace(const char *spcpath);
 static void stamp_databases_in(const char *parent);
 static bool is_oid_name(const char *name);
 static void stamp_version_file(const char *dir);
-static void remove_unwritten_segments(void);
 
 /*
  * Take the upgrade live and return the end of the go-live checkpoint
@@ -88,8 +84,7 @@ InplaceUpgradeGoLive(void)
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("the catalogs have not been migrated")));
 
-	stamp_version_files();
-	remove_unwritten_segments();
+	InplaceUpgradeStampVersionFiles();
 
 	/*
 	 * A refused request raises an error here; the checkpointer lets this one
@@ -193,12 +188,14 @@ read_golive_lsn(void)
 
 /*
  * Give PG_VERSION the new major version in every database directory, and in
- * the data directory last.  In a tablespace, they are under every version
- * directory there is: the old version's is not the one this server would
- * name.
+ * the data directory last.  The database directories are found in the data
+ * directory, not taken from the bundle, so that a standby's takeover can use
+ * this too (see xlogupgrade.c).  In a tablespace, they are under every
+ * version directory there is: the old version's is not the one this server
+ * would name.
  */
-static void
-stamp_version_files(void)
+void
+InplaceUpgradeStampVersionFiles(void)
 {
 	DIR		   *dir;
 	struct dirent *de;
@@ -303,88 +300,4 @@ stamp_version_file(const char *dir)
 				(errcode_for_file_access(),
 				 errmsg("could not close file \"%s\": %m", tmppath)));
 	durable_rename(tmppath, path, ERROR);
-}
-
-/*
- * Remove the segments below the one being written that hold no WAL of their
- * own: the old version recycled them ahead of its boundary segment, and the
- * takeover wrote the start segment after them, so they hold stale WAL under
- * the names of segments that were never written.  They had to stay for a
- * rollback; past the go-live marker there is none, and the archiver, which
- * resumes at go-live, must not get them.
- */
-static void
-remove_unwritten_segments(void)
-{
-	XLogSegNo	endsegno;
-	DIR		   *xldir;
-	struct dirent *xlde;
-	int			nremoved = 0;
-
-	XLByteToSeg(GetXLogWriteRecPtr(), endsegno, wal_segment_size);
-
-	xldir = AllocateDir(XLOGDIR);
-	while ((xlde = ReadDir(xldir, XLOGDIR)) != NULL)
-	{
-		TimeLineID	tli;
-		XLogSegNo	segno;
-		XLogRecPtr	segstart;
-		char		path[MAXPGPATH];
-		XLogPageHeaderData hdr;
-		int			fd;
-		int			r;
-
-		if (!IsXLogFileName(xlde->d_name))
-			continue;
-		XLogFromFileName(xlde->d_name, &tli, &segno, wal_segment_size);
-		if (segno >= endsegno)
-			continue;
-		XLogSegNoOffsetToRecPtr(segno, 0, wal_segment_size, segstart);
-
-		snprintf(path, sizeof(path), XLOGDIR "/%s", xlde->d_name);
-		fd = OpenTransientFile(path, O_RDONLY | PG_BINARY);
-		if (fd < 0)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not open file \"%s\": %m", path)));
-		r = read(fd, &hdr, sizeof(hdr));
-		if (r != sizeof(hdr))
-		{
-			if (r < 0)
-				ereport(ERROR,
-						(errcode_for_file_access(),
-						 errmsg("could not read file \"%s\": %m", path)));
-			else
-				ereport(ERROR,
-						(errcode(ERRCODE_DATA_CORRUPTED),
-						 errmsg("could not read file \"%s\": read %d of %zu",
-								path, r, sizeof(hdr))));
-		}
-		if (CloseTransientFile(fd) != 0)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not close file \"%s\": %m", path)));
-
-		/*
-		 * Only the page address: the boundary segment, written by the old
-		 * version, can carry another page magic.
-		 */
-		if (hdr.xlp_pageaddr == segstart)
-			continue;
-		if (unlink(path) < 0)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not remove file \"%s\": %m", path)));
-		nremoved++;
-	}
-	FreeDir(xldir);
-
-	if (nremoved > 0)
-	{
-		fsync_fname(XLOGDIR, true);
-		ereport(LOG,
-				(errmsg_plural("removed %d write-ahead log segment that was never written",
-							   "removed %d write-ahead log segments that were never written",
-							   nremoved, nremoved)));
-	}
 }

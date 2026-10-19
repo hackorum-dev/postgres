@@ -206,6 +206,15 @@ typedef struct ControlFileData
 	bool		inplaceUpgradeMode;
 
 	/*
+	 * True on a standby that the new version took over at an upgrade
+	 * boundary, until it has replayed the go-live checkpoint.  The catalogs
+	 * on disk are the old version's until the migration WAL has been
+	 * replayed, so consistency is withheld until then, the way
+	 * backupEndRequired withholds it until the end-of-backup record.
+	 */
+	bool		inplaceUpgradeHold;
+
+	/*
 	 * Parameter settings that determine if the WAL can be used for archival
 	 * or hot standby.
 	 */

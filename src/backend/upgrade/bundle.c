@@ -300,14 +300,17 @@ report_unreadable_posture(const InplaceUpgradePosture *posture)
  *
  * Roll back an in-place upgrade that has not gone live, with the server shut
  * down: remove every file on the list of created files, put back the copies
- * of the files the upgrade replaced, and remove the bundle.  The control file
- * goes back last: until then the data directory is the new version's, and
- * after that it is the old version's, shut down at its upgrade boundary.
+ * of the files the upgrade replaced, and remove the bundle.  The control
+ * file goes back last: until then the data directory is the new version's,
+ * and after that it is the old version's, shut down at its upgrade boundary.
  *
- * Two things stay as the new version left them, because every start of the
- * old version resets them anyway: the relation cache init files, which the
- * new version removed at startup and wrote again, and pg_subtrans, whose
- * segments the new version's shutdown checkpoint truncated and created.
+ * Three things stay as the new version left them, because the old version
+ * recreates them anyway: the relation cache init files, which the new
+ * version removed at startup and wrote again; pg_subtrans, whose segments
+ * the new version's shutdown checkpoint truncated and created; and the WAL
+ * segments from the start segment on, which the old version had recycled or
+ * preallocated and the takeover removed (see xlogupgrade.c).  The old
+ * version preallocates again as it writes.
  *
  * Removing the stashed control file is the commit point.  Until then,
  * running this again redoes every step; after it, only the removal of the

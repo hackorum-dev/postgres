@@ -86,6 +86,7 @@ extern void InplaceUpgradeRewriteCatalog(const struct CatalogRelation *cat,
 /* in upgrade/golive.c */
 extern XLogRecPtr InplaceUpgradeGoLive(void);
 extern void InplaceUpgradeWriteGoLiveLSN(XLogRecPtr lsn);
+extern void InplaceUpgradeStampVersionFiles(void);
 
 /* in upgrade/bundle.c */
 extern void InplaceUpgradeStashFile(const char *path, const char *stashpath);

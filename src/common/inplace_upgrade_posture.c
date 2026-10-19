@@ -5,9 +5,10 @@
  *
  * The posture of a cluster is derived from durable facts in its data
  * directory alone: the control file, the markers of the rollback bundle
- * (see upgrade/bundle.h), the error the in-place upgrade migrator left, and
- * PG_VERSION.  The server, the postmaster, and pg_inplace_upgrade all ask
- * here, so that each of them reaches the same answer the same way.
+ * (see upgrade/bundle.h), the error the in-place upgrade migrator left,
+ * PG_VERSION, and standby.signal.  The server, the postmaster, and
+ * pg_inplace_upgrade all ask here, so that each of them reaches the same
+ * answer the same way.
  *
  * Nothing here reports an error: input that cannot be
  * read gives the posture UPGRADE_POSTURE_UNREADABLE, with the reason in its
@@ -180,11 +181,12 @@ InplaceUpgradeReadControlFile(const char *path, ControlFileData *cf,
  * upgrade goes live.
  *
  * A cluster owned by the old version is at a boundary if its latest
- * checkpoint is a boundary checkpoint and it shut down there.  A cluster
- * owned by the new version is live unless it is in upgrade mode, in which
- * case its markers show how far the upgrade has come.  It is live once the
- * go-live marker is written, even before the go-live checkpoint ends upgrade
- * mode.
+ * checkpoint is a boundary checkpoint and it shut down there, or shut down
+ * in recovery for a standby.  A standby owned by the new version is taken
+ * over until it has replayed the go-live checkpoint.  A primary owned by the
+ * new version is live unless it is in upgrade mode, in which case its
+ * markers show how far the upgrade has come.  It is live once the go-live
+ * marker is written, even before the go-live checkpoint ends upgrade mode.
  */
 void
 InplaceUpgradeGetPosture(const ControlFileData *cf, const char *datadir,
@@ -202,6 +204,12 @@ InplaceUpgradeGetPosture(const ControlFileData *cf, const char *datadir,
 		return;
 	}
 
+	result->role = UPGRADE_ROLE_PRIMARY;
+	if (file_exists(datadir, "standby.signal", result))
+		result->role = UPGRADE_ROLE_STANDBY;
+	else if (result->detail[0] != '\0')
+		return;
+
 	result->owner = UPGRADE_OWNER_NEW;
 	if (cf->pg_control_version != PG_CONTROL_VERSION)
 		result->owner = UPGRADE_OWNER_OLD;
@@ -217,11 +225,22 @@ InplaceUpgradeGetPosture(const ControlFileData *cf, const char *datadir,
 
 	if (result->owner == UPGRADE_OWNER_OLD)
 	{
+		DBState		shut_down = (result->role == UPGRADE_ROLE_STANDBY) ?
+			DB_SHUTDOWNED_IN_RECOVERY : DB_SHUTDOWNED;
+
 		if (cf->checkPointCopy.upgradeFlag == UPGRADE_FLAG_BOUNDARY &&
-			cf->state == DB_SHUTDOWNED)
+			cf->state == shut_down)
 			result->posture = UPGRADE_POSTURE_AT_BOUNDARY;
 		else
 			result->posture = UPGRADE_POSTURE_NOT_PREPARED;
+		return;
+	}
+
+	if (result->role == UPGRADE_ROLE_STANDBY)
+	{
+		result->hold = cf->inplaceUpgradeHold;
+		result->posture = result->hold ? UPGRADE_POSTURE_TAKEN_OVER :
+			UPGRADE_POSTURE_LIVE;
 		return;
 	}
 

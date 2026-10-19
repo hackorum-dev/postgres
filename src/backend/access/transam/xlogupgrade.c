@@ -8,16 +8,27 @@
  * started on the same data directory, and its startup process takes over the
  * cluster before reading WAL or serving a connection.  It rewrites the
  * control file in the current format and begins the new version's WAL with
- * a start checkpoint.  The server then runs in in-place upgrade mode,
+ * a start checkpoint, in the segment after the one holding the boundary
+ * checkpoint record.  The server then runs in in-place upgrade mode,
  * admitting only superusers, until the upgrade goes live.
  *
  * The takeover first saves everything it replaces, and records every file it
- * creates, so that a rollback can undo it.
+ * creates, so that a rollback can undo it.  The exception is the WAL
+ * segments from the start segment on, which the takeover removes.  The old
+ * version recycled or preallocated them ahead of its boundary, so none holds
+ * WAL, and they are recreated as needed.
  *
  * Rewriting the control file is the last step and the only one that changes
  * what the next startup sees.  If the server stops before that, the cluster
  * is still at the boundary in the old format, and the next startup does the
  * takeover again.
+ *
+ * A standby paused at the boundary is taken over once the upgrade has gone
+ * live on the primary.  It writes no WAL and keeps nothing for a rollback:
+ * its control file is pointed at the start checkpoint, which it computes
+ * from the boundary record the same way the primary did, and it replays
+ * the new version's WAL from there with consistency withheld
+ * (ControlFileData.inplaceUpgradeHold) until the go-live checkpoint.
  *
  * Portions Copyright (c) 1996-2026, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -54,10 +65,14 @@
 	((uint64) CLOG_XACTS_PER_PAGE * SLRU_PAGES_PER_SEGMENT)
 
 static void take_over_primary(ControlFileData *cf);
+static void take_over_standby(ControlFileData *cf);
+static void remove_future_segments(XLogSegNo startsegno, int walsegsz);
 static bool control_file_stashed(void);
 static void read_whole_file(const char *path, char *buf, int len);
+static XLogSegNo start_segment(const ControlFileData *cf);
+static void set_start_checkpoint(ControlFileData *cf, XLogSegNo segno);
 static uint64 aligned_next_fxid(FullTransactionId nextXid);
-static void write_start_segment(ControlFileData *cf, char *fname);
+static void write_start_segment(const ControlFileData *cf, const char *path);
 static void write_pg_xact_page(FullTransactionId nextXid);
 static void create_or_recreate_file(const char *path, const char *buf,
 									int len, int size);
@@ -131,10 +146,7 @@ InplaceUpgradeTakeover(ControlFileData *cf)
 			break;
 
 		case DB_SHUTDOWNED_IN_RECOVERY:
-			ereport(FATAL,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("cannot take over a standby server for an in-place upgrade"),
-					 errdetail("The database cluster was shut down in recovery at an upgrade boundary.")));
+			take_over_standby(cf);
 			break;
 
 		default:
@@ -146,9 +158,52 @@ InplaceUpgradeTakeover(ControlFileData *cf)
 }
 
 /*
+ * The segment that holds the start checkpoint: the one after the segment
+ * holding the last byte of the boundary checkpoint record, which cf points
+ * at.  Both roles compute it from their control file alone, so a standby
+ * finds the primary's start checkpoint without being told where it is.
+ */
+static XLogSegNo
+start_segment(const ControlFileData *cf)
+{
+	XLogRecPtr	pos = cf->checkPoint;
+	XLogSegNo	segno;
+	uint32		remaining;
+
+	/*
+	 * WIP: a real translator supplies the old version's record length; the
+	 * identity translation makes it this version's.
+	 */
+	remaining = SizeOfXLogRecord + SizeOfXLogRecordDataHeaderShort +
+		sizeof(CheckPoint);
+
+	/* The record's end, as xlogreader computes it: skip page headers. */
+	for (;;)
+	{
+		uint32		avail = XLOG_BLCKSZ - (pos % XLOG_BLCKSZ);
+
+		if (remaining <= avail)
+		{
+			pos += remaining;
+			break;
+		}
+		remaining -= avail;
+		pos += avail;
+		if (XLogSegmentOffset(pos, cf->xlog_seg_size) == 0)
+			pos += SizeOfXLogLongPHD;
+		else
+			pos += SizeOfXLogShortPHD;
+	}
+	pos = MAXALIGN(pos);
+
+	XLByteToPrevSeg(pos, segno, cf->xlog_seg_size);
+	return segno + 1;
+}
+
+/*
  * Take over the primary.  The old version's WAL ends with the boundary
  * checkpoint.  The new version's WAL starts with a shutdown checkpoint of its
- * own, flagged START, in a new segment after every segment in pg_wal.  The
+ * own, flagged START, in the segment after the boundary record's.  The
  * cluster's identity and counters carry over from the old control file,
  * except that the next transaction ID moves up to a pg_xact segment boundary
  * (see aligned_next_fxid).  The server then comes up in in-place upgrade
@@ -157,7 +212,10 @@ InplaceUpgradeTakeover(ControlFileData *cf)
 static void
 take_over_primary(ControlFileData *cf)
 {
+	bool		repeat;
+	XLogSegNo	segno;
 	char		walfname[MAXFNAMELEN];
+	char		walpath[MAXPGPATH];
 	FullTransactionId nextXid;
 
 	ereport(LOG,
@@ -173,17 +231,29 @@ take_over_primary(ControlFileData *cf)
 
 	/*
 	 * A takeover that finds the control file unchanged since it was stashed
-	 * repeats an interrupted one.  Its WAL segment can differ from the one
-	 * the interrupted takeover created, so the list keeps that one, and a
-	 * rollback removes both.  Otherwise the old version may have run since
-	 * and reused the names on the list, so the list starts afresh.
+	 * repeats an interrupted one: the start segment in pg_wal is then the one
+	 * it created, and it removed the segments past the start segment already.
+	 * Otherwise the old version may have run since and reused the names on
+	 * the list of created files, so the list starts afresh and the segments
+	 * go again.
 	 */
-	if (!control_file_stashed() &&
-		unlink(INPLACE_UPGRADE_CREATED_FILES) < 0 && errno != ENOENT)
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not remove file \"%s\": %m",
-						INPLACE_UPGRADE_CREATED_FILES)));
+	repeat = control_file_stashed();
+	segno = start_segment(cf);
+	XLogFileName(walfname, cf->checkPointCopy.ThisTimeLineID, segno,
+				 cf->xlog_seg_size);
+	snprintf(walpath, sizeof(walpath), "%s/%s", XLOGDIR, walfname);
+	if (!repeat)
+	{
+		if (unlink(INPLACE_UPGRADE_CREATED_FILES) < 0 && errno != ENOENT)
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not remove file \"%s\": %m",
+							INPLACE_UPGRADE_CREATED_FILES)));
+		remove_future_segments(segno, cf->xlog_seg_size);
+		InplaceUpgradeRegisterCreatedFile(walpath);
+		fsync_fname(INPLACE_UPGRADE_DIR, true);
+	}
+
 	InplaceUpgradeStashFile(XLOG_CONTROL_FILE, INPLACE_UPGRADE_CONTROL_STASH);
 
 	/*
@@ -196,26 +266,22 @@ take_over_primary(ControlFileData *cf)
 								INPLACE_UPGRADE_STATS_STASH);
 
 	/* The control file's new contents */
-	cf->pg_control_version = PG_CONTROL_VERSION;
-	cf->catalog_version_no = CATALOG_VERSION_NO;
+	set_start_checkpoint(cf, segno);
 	cf->state = DB_SHUTDOWNED;
-	cf->time = (pg_time_t) time(NULL);
 	cf->inplaceUpgradeMode = true;
-
-	nextXid = FullTransactionIdFromU64(aligned_next_fxid(cf->checkPointCopy.nextXid));
+	cf->inplaceUpgradeHold = false;
+	nextXid = cf->checkPointCopy.nextXid;
 
 	/*
 	 * WIP: need to sanity-check that migration won't overwrite existing
 	 * pg_xact files.
 	 */
 
-	cf->checkPointCopy.nextXid = nextXid;
-
 	/*
 	 * The start checkpoint: the boundary checkpoint's contents, at a new
-	 * location.  Its LSN is fixed by the segment chosen for it.
+	 * location.
 	 */
-	write_start_segment(cf, walfname);
+	write_start_segment(cf, walpath);
 
 	/*
 	 * If the next xid, after skipping the reserved transaction IDs, is not on
@@ -237,6 +303,77 @@ take_over_primary(ControlFileData *cf)
 					   LSN_FORMAT_ARGS(cf->checkPoint), walfname,
 					   EpochFromFullTransactionId(nextXid),
 					   XidFromFullTransactionId(nextXid))));
+}
+
+/*
+ * The standby's takeover.  It happens only once the upgrade has gone live
+ * on the primary, so there is no rollback and nothing is kept.  The control
+ * file is pointed at the start checkpoint, which the primary wrote in the
+ * segment after the boundary record's, and recovery fetches that segment
+ * from the primary or the archive like any other; the walreceiver streams
+ * from the segment's start, so a stale copy of it in pg_wal is overwritten.
+ * The recovery fields stay as they are: minRecoveryPoint lies at or before
+ * the boundary, and the consistency hold keeps the standby from opening
+ * before the go-live checkpoint.  The standby never enters in-place upgrade
+ * mode: nothing of the migration happens here, it is all in the WAL.
+ *
+ * PG_VERSION is stamped now.  The postmaster of this start accepted the old
+ * version in it because the control file was in the old layout; a restart
+ * mid-crossing would not, and no backend reads a database's PG_VERSION
+ * before the hold is released.
+ */
+static void
+take_over_standby(ControlFileData *cf)
+{
+	ereport(LOG,
+			(errmsg("taking over the standby server for an in-place upgrade"),
+			 errdetail("The database cluster was shut down in recovery at an upgrade boundary.")));
+
+	set_start_checkpoint(cf, start_segment(cf));
+	cf->inplaceUpgradeHold = true;
+
+	InplaceUpgradeStampVersionFiles();
+
+	update_controlfile(DataDir, cf, true);
+
+	ereport(LOG,
+			(errmsg("took over the standby server for an in-place upgrade"),
+			 errdetail("Replay starts at the new version's start checkpoint at %X/%08X.",
+					   LSN_FORMAT_ARGS(cf->checkPoint))));
+}
+
+/*
+ * Remove the segments from the start segment on from pg_wal.  The old
+ * version wrote nothing past its boundary checkpoint, so they are segments
+ * it recycled or preallocated ahead of it, and the new version's WAL would
+ * overwrite them from the start checkpoint on.  They are not kept for a
+ * rollback: the old version never read them and preallocates anew when it
+ * runs again, as it does after every start with wal_recycle off.  Every
+ * segment the new version writes from here on is one it created, which the
+ * rollback removes.
+ */
+static void
+remove_future_segments(XLogSegNo startsegno, int walsegsz)
+{
+	DIR		   *dir;
+	struct dirent *de;
+
+	dir = AllocateDir(XLOGDIR);
+	while ((de = ReadDir(dir, XLOGDIR)) != NULL)
+	{
+		TimeLineID	tli;
+		XLogSegNo	segno;
+		char		path[MAXPGPATH];
+
+		if (!IsXLogFileName(de->d_name))
+			continue;
+		XLogFromFileName(de->d_name, &tli, &segno, walsegsz);
+		if (segno < startsegno)
+			continue;
+		snprintf(path, sizeof(path), XLOGDIR "/%s", de->d_name);
+		durable_unlink(path, ERROR);
+	}
+	FreeDir(dir);
 }
 
 /*
@@ -287,6 +424,30 @@ read_whole_file(const char *path, char *buf, int len)
 }
 
 /*
+ * Turn the translated control file into the new version's: the boundary
+ * checkpoint's contents become the start checkpoint, at the start of the
+ * given segment, with the next transaction ID moved up (see
+ * aligned_next_fxid).  Both roles arrive at the same start checkpoint from
+ * the same boundary this way.
+ */
+static void
+set_start_checkpoint(ControlFileData *cf, XLogSegNo segno)
+{
+	cf->pg_control_version = PG_CONTROL_VERSION;
+	cf->catalog_version_no = CATALOG_VERSION_NO;
+	cf->time = (pg_time_t) time(NULL);
+	cf->checkPointCopy.nextXid =
+		FullTransactionIdFromU64(aligned_next_fxid(cf->checkPointCopy.nextXid));
+	XLogSegNoOffsetToRecPtr(segno, SizeOfXLogLongPHD, cf->xlog_seg_size,
+							cf->checkPointCopy.redo);
+	cf->checkPoint = cf->checkPointCopy.redo;
+	cf->checkPointCopy.PrevTimeLineID = cf->checkPointCopy.ThisTimeLineID;
+	cf->checkPointCopy.time = cf->time;
+	cf->checkPointCopy.oldestActiveXid = InvalidTransactionId;
+	cf->checkPointCopy.upgradeFlag = UPGRADE_FLAG_START;
+}
+
+/*
  * The next transaction ID for the new version: the old one rounded up to the
  * start of a pg_xact segment.
  *
@@ -317,10 +478,8 @@ aligned_next_fxid(FullTransactionId nextXid)
 }
 
 /*
- * Write the segment holding the start checkpoint, and fill in the
- * checkpoint's location in the control file.  The segment is the first one
- * past every WAL file present, so that no old file is touched.  Its name
- * is returned in fname.
+ * Write the segment holding the start checkpoint, at the given path, from
+ * the checkpoint's location and contents in the control file.
  *
  * New WAL begins with a shutdown checkpoint, as WAL from initdb or
  * pg_resetwal does: it describes a cluster with nothing running and nothing
@@ -328,56 +487,25 @@ aligned_next_fxid(FullTransactionId nextXid)
  * insert it.
  */
 static void
-write_start_segment(ControlFileData *cf, char *fname)
+write_start_segment(const ControlFileData *cf, const char *path)
 {
-	TimeLineID	tli = cf->checkPointCopy.ThisTimeLineID;
-	int			walsegsz = cf->xlog_seg_size;
-	XLogSegNo	newsegno;
-	DIR		   *dir;
-	struct dirent *de;
 	PGAlignedXLogBlock buf;
 	XLogPageHeader page;
 	XLogLongPageHeader longpage;
 	XLogRecord *record;
 	char	   *recptr;
 	pg_crc32c	crc;
-	char		path[MAXPGPATH];
-
-	XLByteToSeg(cf->checkPoint, newsegno, walsegsz);
-	dir = AllocateDir(XLOGDIR);
-	while ((de = ReadDir(dir, XLOGDIR)) != NULL)
-	{
-		TimeLineID	fnametli;
-		XLogSegNo	segno;
-
-		if (!IsXLogFileName(de->d_name) &&
-			!IsPartialXLogFileName(de->d_name))
-			continue;
-		XLogFromFileName(de->d_name, &fnametli, &segno, walsegsz);
-		if (segno > newsegno)
-			newsegno = segno;
-	}
-	FreeDir(dir);
-	newsegno++;
-
-	XLogSegNoOffsetToRecPtr(newsegno, SizeOfXLogLongPHD, walsegsz,
-							cf->checkPointCopy.redo);
-	cf->checkPointCopy.PrevTimeLineID = tli;
-	cf->checkPointCopy.time = cf->time;
-	cf->checkPointCopy.oldestActiveXid = InvalidTransactionId;
-	cf->checkPointCopy.upgradeFlag = UPGRADE_FLAG_START;
-	cf->checkPoint = cf->checkPointCopy.redo;
 
 	/* the segment's first page: long header, then the checkpoint record */
 	memset(buf.data, 0, XLOG_BLCKSZ);
 	page = (XLogPageHeader) buf.data;
 	page->xlp_magic = XLOG_PAGE_MAGIC;
 	page->xlp_info = XLP_LONG_HEADER;
-	page->xlp_tli = tli;
-	page->xlp_pageaddr = cf->checkPointCopy.redo - SizeOfXLogLongPHD;
+	page->xlp_tli = cf->checkPointCopy.ThisTimeLineID;
+	page->xlp_pageaddr = cf->checkPoint - SizeOfXLogLongPHD;
 	longpage = (XLogLongPageHeader) page;
 	longpage->xlp_sysid = cf->system_identifier;
-	longpage->xlp_seg_size = walsegsz;
+	longpage->xlp_seg_size = cf->xlog_seg_size;
 	longpage->xlp_xlog_blcksz = XLOG_BLCKSZ;
 
 	recptr = (char *) page + SizeOfXLogLongPHD;
@@ -400,11 +528,7 @@ write_start_segment(ControlFileData *cf, char *fname)
 	FIN_CRC32C(crc);
 	record->xl_crc = crc;
 
-	XLogFileName(fname, tli, newsegno, walsegsz);
-	snprintf(path, sizeof(path), "%s/%s", XLOGDIR, fname);
-	InplaceUpgradeRegisterCreatedFile(path);
-	fsync_fname(INPLACE_UPGRADE_DIR, true);
-	create_or_recreate_file(path, buf.data, XLOG_BLCKSZ, walsegsz);
+	create_or_recreate_file(path, buf.data, XLOG_BLCKSZ, cf->xlog_seg_size);
 	fsync_fname(XLOGDIR, true);
 }
 

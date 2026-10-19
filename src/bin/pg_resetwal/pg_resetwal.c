@@ -934,9 +934,11 @@ RewriteControlFile(void)
 
 	/*
 	 * The new, empty WAL contains no upgrade boundary, so clear the flag of
-	 * the checkpoint that we discard.
+	 * the checkpoint that we discard, and no go-live checkpoint that could
+	 * release a standby's consistency hold.
 	 */
 	ControlFile.checkPointCopy.upgradeFlag = UPGRADE_FLAG_NONE;
+	ControlFile.inplaceUpgradeHold = false;
 
 	/*
 	 * Force the defaults for max_* settings. The values don't really matter

@@ -3341,6 +3341,7 @@ UpdateStmt
 UpgradeFlag
 UpgradeOwner
 UpgradePosture
+UpgradeRole
 UpgradeTask
 UpgradeTaskProcessCB
 UpgradeTaskReport

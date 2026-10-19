@@ -15,7 +15,11 @@
 
 #include "catalog/pg_control.h"
 
-/* How far the upgrade of the cluster has got */
+/*
+ * How far the upgrade of the cluster has got.  MIGRATING to MIGRATED apply
+ * to a primary only; a standby that the new version has taken over is
+ * TAKEN_OVER until it clears its consistency hold, then LIVE.
+ */
 typedef enum UpgradePosture
 {
 	UPGRADE_POSTURE_UNREADABLE, /* the facts could not be read */
@@ -28,6 +32,12 @@ typedef enum UpgradePosture
 	UPGRADE_POSTURE_LIVE,		/* the new version's for good */
 } UpgradePosture;
 
+typedef enum UpgradeRole
+{
+	UPGRADE_ROLE_PRIMARY,
+	UPGRADE_ROLE_STANDBY,
+} UpgradeRole;
+
 /* The installation that runs the cluster */
 typedef enum UpgradeOwner
 {
@@ -38,7 +48,9 @@ typedef enum UpgradeOwner
 typedef struct InplaceUpgradePosture
 {
 	UpgradePosture posture;
+	UpgradeRole role;
 	UpgradeOwner owner;
+	bool		hold;			/* the standby's consistency hold is set */
 	char		detail[MAXPGPATH + 128];	/* why the posture is UNREADABLE */
 } InplaceUpgradePosture;
 

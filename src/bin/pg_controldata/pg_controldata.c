@@ -326,6 +326,8 @@ main(int argc, char *argv[])
 		   ControlFile->backupEndRequired ? _("yes") : _("no"));
 	printf(_("In-place upgrade in progress:         %s\n"),
 		   ControlFile->inplaceUpgradeMode ? _("yes") : _("no"));
+	printf(_("In-place upgrade consistency hold:    %s\n"),
+		   ControlFile->inplaceUpgradeHold ? _("yes") : _("no"));
 	printf(_("wal_level setting:                    %s\n"),
 		   wal_level_str(ControlFile->wal_level));
 	printf(_("wal_log_hints setting:                %s\n"),

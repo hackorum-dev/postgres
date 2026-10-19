@@ -27,6 +27,7 @@ tests += {
       't/003_swap.pl',
       't/004_rollback.pl',
       't/005_golive.pl',
+      't/006_standby.pl',
       't/007_posture.pl',
     ],
   },

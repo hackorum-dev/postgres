@@ -1,6 +1,9 @@
 # Copyright (c) 2026, PostgreSQL Global Development Group
 
-# Test an in-place upgrade of a primary and its streaming standby.
+# Test an in-place upgrade of a primary and its streaming standby: a first
+# upgrade that is rolled back, with the standby resuming behind the old
+# primary, and a second that goes live, with the standby crossing to the new
+# version behind it, from the archive and then by streaming.
 #
 # An in-place upgrade crosses a major version boundary, so this test needs
 # two installations: the current build is the new version, and the
@@ -28,6 +31,7 @@ use PostgreSQL::Version;
 use Digest::SHA qw(sha256_hex);
 use File::Find;
 use Test::More;
+use Time::HiRes qw(usleep);
 
 if (!defined $ENV{PG_TEST_INPLACE_OLDINSTALL})
 {
@@ -173,6 +177,43 @@ $primary->wait_for_catchup($standby);
 is($standby->safe_psql('postgres', 'SELECT count(*) FROM t'),
 	'1000', 'standby has the test data');
 
+# Have the old version recycle segments ahead of its boundary segment, so
+# that the start checkpoint lands in a segment that exists already and the
+# takeover has recycled segments to remove.
+$primary->safe_psql('postgres',
+	'CREATE TABLE filler AS SELECT g FROM generate_series(1, 300000) g');
+$primary->safe_psql('postgres', 'CHECKPOINT');
+$primary->safe_psql('postgres', 'DROP TABLE filler');
+$primary->safe_psql('postgres', 'CHECKPOINT');
+$primary->wait_for_catchup($standby);
+
+# The first page of a segment that WAL was written into gives the segment's
+# own start as its page address.
+my $wal_segment_size = $primary->safe_psql('postgres',
+	"SELECT setting FROM pg_settings WHERE name = 'wal_segment_size'");
+
+sub holds_own_wal
+{
+	my ($path) = @_;
+	my $name = substr($path, -24);
+	my $segno =
+	  hex(substr($name, 8, 8)) * (2**32 / $wal_segment_size) +
+	  hex(substr($name, 16, 8));
+	open my $fh, '<:raw', $path or die "could not open $path: $!";
+	read($fh, my $header, 16) == 16 or die "could not read $path";
+	close $fh;
+	my (undef, undef, undef, $pageaddr) = unpack('S S L Q', $header);
+	return $pageaddr == $segno * $wal_segment_size;
+}
+
+# From here on, keep WAL.  A shutdown checkpoint recycles segments without
+# waiting for a lagging standby to receive them, the standby's walreceiver
+# stops at the boundary, and the migration refuses replication slots; so
+# nothing else keeps the segments the standby needs, from its lag at the
+# boundary shutdown through the start segment, until it crosses.
+$primary->append_conf('postgresql.conf', "wal_keep_size = '1GB'");
+$primary->reload;
+
 # An application session, open when the upgrade begins
 my $app = $primary->background_psql('postgres',
 	connstr => $primary->connstr('postgres') . ' user=app');
@@ -188,6 +229,12 @@ my @pg_inplace_upgrade = (
 	'--pgdata' => $primary->data_dir,
 	'--old-bindir' => "$oldinstall/bin",
 	'--new-bindir' => $newbindir);
+my @pg_inplace_upgrade_standby = (
+	"$newbindir/pg_inplace_upgrade",
+	'--pgdata' => $standby->data_dir,
+	'--old-bindir' => "$oldinstall/bin",
+	'--new-bindir' => $newbindir,
+	'--log' => $standby->logfile);
 $primary->command_ok(
 	[
 		@pg_inplace_upgrade,
@@ -392,6 +439,9 @@ $primary->append_conf('postgresql.conf',
 # checking afterwards that the migration removed nothing and registered
 # everything it created.
 my $before_swap = datadir_contents($primary);
+my %held_own_wal =
+  map { $_ => holds_own_wal($primary->data_dir . $_) }
+  grep { m{^/pg_wal/[0-9A-F]{24}$} } keys %$before_swap;
 
 # The server reports ready only once the migrator is done, so the swap
 # returns only then.
@@ -433,6 +483,43 @@ is(file_digest("$stash/pgstat.stat"),
 like(slurp_file("$stash/created_files"),
 	qr/^pg_wal\/[0-9A-F]{24}\n/,
 	'created files list names the new WAL segment first');
+
+# The start segment is the one after the boundary record's.  The segments
+# from that name on existed before the swap, recycled or preallocated by
+# the old version, so none held WAL of its own; the takeover removed them,
+# and every segment there now is one the new version created.
+sub next_segment
+{
+	my ($name) = @_;
+	my $segno = hex(substr($name, 8, 16)) + 1;
+	return substr($name, 0, 8) . sprintf('%016X', $segno);
+}
+my $start_segment =
+  $primary->safe_psql('postgres', "SELECT pg_walfile_name('$start_lsn')");
+is( $start_segment,
+	next_segment(
+		$primary->safe_psql(
+			'postgres', "SELECT pg_walfile_name('$boundary_lsn')")),
+	'start segment follows the boundary segment');
+my @future_segments =
+  sort grep { $_ ge $start_segment }
+  map { substr($_, -24) } grep { m{^/pg_wal/[0-9A-F]{24}$} }
+  keys %$before_swap;
+ok(scalar(@future_segments) > 0,
+	'the old version had segments from the start segment on');
+is_deeply([ grep { $held_own_wal{"/pg_wal/$_"} } @future_segments ],
+	[], 'none of the segments from the start segment on held WAL of its own');
+my %created_at_takeover =
+  map { $_ => 1 } split /\n/, slurp_file("$stash/created_files");
+is_deeply(
+	[
+		grep   { !$created_at_takeover{"pg_wal/$_"} }
+		  grep { $_ ge $start_segment }
+		  map  { substr($_, -24) }
+		  glob($primary->data_dir . '/pg_wal/' . ('[0-9A-F]' x 24))
+	],
+	[],
+	'every segment from the start segment on is one the new version created');
 
 # The start checkpoint is new-version WAL, and the boundary segment is
 # untouched.
@@ -544,9 +631,19 @@ is( $primary->safe_psql(
 	'rebuilt catalog index has every row');
 
 # Every file the migration created is on the created files list, and no
-# file that existed before the swap is gone.  The relation cache init
-# files are not the migration's: every start removes them, and the first
-# connection after the migration wrote them again.
+# file that existed before the swap is gone, except the segments the
+# takeover removed: those from the start segment on, none of which held WAL
+# of its own.  The relation cache init files are not the migration's: every
+# start removes them, and the first connection after the migration wrote
+# them again.
+sub removed_at_takeover
+{
+	my ($path) = @_;
+	return
+		 $path =~ m{^/pg_wal/([0-9A-F]{24})$}
+	  && $1 ge $start_segment
+	  && !$held_own_wal{$path};
+}
 my %created = map { $_ => 1 } split /\n/, slurp_file("$stash/created_files");
 my $datadir = $primary->data_dir;
 my @missing;
@@ -574,7 +671,9 @@ foreach my $dir (qw(base global pg_wal pg_xact))
 			  && !/pg_internal\.init$/
 		} keys %$before_swap)
 	{
-		push @missing, substr($path, 1) if !-e $primary->data_dir . $path;
+		push @missing, substr($path, 1)
+		  if !-e $primary->data_dir . $path
+		  && !removed_at_takeover($path);
 	}
 }
 is_deeply([ sort @unregistered ], [], 'every created file is registered');
@@ -619,6 +718,26 @@ is( scalar(() = $migration_wal =~ /rmgr: RelMap .* UPDATE /g),
 # The parked standby received none of it.
 is($standby->safe_psql('postgres', 'SELECT pg_last_wal_receive_lsn()'),
 	$standby_received, 'standby received no migration WAL');
+
+# On the standby, prepare and golive are the primary's commands, and swap
+# is refused while the primary is in upgrade mode: the probe of the primary
+# is a replication connection, which the primary refuses until the upgrade
+# goes live.
+command_fails_like(
+	[ @pg_inplace_upgrade_standby, 'prepare' ],
+	qr/is a standby/,
+	'prepare refused on the standby');
+command_fails_like(
+	[ @pg_inplace_upgrade_standby, 'golive' ],
+	qr/is a standby/,
+	'golive refused on the standby');
+command_fails_like(
+	[ @pg_inplace_upgrade_standby, 'swap' ],
+	qr/cannot start WAL sender during an in-place upgrade/,
+	'swap refused on the standby while the primary is in upgrade mode');
+is( $standby->safe_psql('postgres', 'SELECT pg_get_wal_replay_pause_state()'),
+	'paused',
+	'standby still paused at the upgrade boundary');
 
 # Archiving is fenced: no archiver runs, and switching WAL segments creates
 # no .ready file.
@@ -700,8 +819,16 @@ foreach my $contents ($before_swap, $after_restore)
 		  keys %$contents
 	};
 }
+my @absent = sort grep { !exists $after_restore->{$_} } keys %$before_swap;
+is_deeply(
+	\@absent,
+	[ map { "/pg_wal/$_" } @future_segments ],
+	'only the segments the takeover removed are absent after the rollback');
+my %absent = map { $_ => 1 } @absent;
 my @changed = grep {
-	($before_swap->{$_} // 'absent') ne ($after_restore->{$_} // 'absent')
+	!$absent{$_}
+	  && ($before_swap->{$_} // 'absent') ne
+	  ($after_restore->{$_} // 'absent')
 } keys %{ { %$before_swap, %$after_restore } };
 is_deeply([ sort @changed ],
 	[], 'data directory is as before the swap, by SHA-256 of every file');
@@ -733,10 +860,15 @@ is($primary->safe_psql('postgres', $stats_query),
 is($primary->safe_psql('postgres', $view_query),
 	$old_view, 'toasted view definition as before the upgrade');
 
-# The standby resumes replay with one call, and follows the old primary
-# past the boundary.
-$standby->safe_psql('postgres', 'SELECT pg_wal_replay_resume()');
+# The rollback command resumes the standby's replay, and it follows the old
+# primary past the boundary.  Run again, it finds nothing to do.
+$standby->command_ok(
+	[ @pg_inplace_upgrade_standby, 'rollback' ],
+	'rolled the standby back: replay resumed');
 $primary->wait_for_catchup($standby);
+$standby->command_ok(
+	[ @pg_inplace_upgrade_standby, 'rollback' ],
+	'rollback on the standby run again');
 is($standby->safe_psql('postgres', 'SELECT count(*) FROM t'),
 	'1010', 'standby follows the primary after the rollback');
 is($standby->safe_psql('postgres', 'SELECT pg_is_in_recovery()'),
@@ -746,23 +878,22 @@ is( $standby->safe_psql(
 	'1',
 	'standby streams on the same timeline');
 
-# Upgrade the cluster again, and take it live this time.  The standby is not
-# in on this one: it pauses at the new boundary by itself and stays there.
+# Upgrade the cluster again, and take it live this time.  The standby pauses
+# at the new boundary and stays there until the upgrade has gone live and it
+# crosses.
 #
-# Archive for real this time, and have the old version recycle segments
-# ahead of its boundary segment, so that there are segments between the
-# boundary segment and the start segment that were never written.
+# Archive for real this time.
 my $archive = $primary->archive_dir;
 mkdir $archive;
 $primary->append_conf('postgresql.conf',
 	"archive_command = 'cp \"%p\" \"$archive/%f\"'");
 $primary->reload;
-$primary->safe_psql('postgres',
-	'CREATE TABLE filler AS SELECT g FROM generate_series(1, 300000) g');
-$primary->safe_psql('postgres', 'CHECKPOINT');
-$primary->safe_psql('postgres', 'DROP TABLE filler');
-$primary->safe_psql('postgres', 'CHECKPOINT');
-$primary->command_ok([ @pg_inplace_upgrade, 'prepare' ],
+$primary->command_ok(
+	[
+		@pg_inplace_upgrade,
+		'--standby' => $standby->connstr('postgres'),
+		'prepare'
+	],
 	'prepared the primary again');
 $primary->_update_pid(0);
 is(checkpoint_flag($primary),
@@ -775,31 +906,8 @@ $primary->command_ok(
 $primary->_update_pid(1);
 my $golive_start_lsn = checkpoint_location($primary);
 
-# The first page of a segment that WAL was written into gives the segment's
-# own start as its page address.
-my $wal_segment_size = $primary->safe_psql('postgres',
-	"SELECT setting FROM pg_settings WHERE name = 'wal_segment_size'");
-
-sub holds_own_wal
-{
-	my ($path) = @_;
-	my $name = substr($path, -24);
-	my $segno =
-	  hex(substr($name, 8, 8)) * (2**32 / $wal_segment_size) +
-	  hex(substr($name, 16, 8));
-	open my $fh, '<:raw', $path or die "could not open $path: $!";
-	read($fh, my $header, 16) == 16 or die "could not read $path";
-	close $fh;
-	my (undef, undef, undef, $pageaddr) = unpack('S S L Q', $header);
-	return $pageaddr == $segno * $wal_segment_size;
-}
 my $golive_start_segment = $primary->safe_psql('postgres',
 	"SELECT pg_walfile_name('$golive_start_lsn')");
-my @unwritten =
-  grep { substr($_, -24) lt $golive_start_segment && !holds_own_wal($_) }
-  glob($primary->data_dir . '/pg_wal/' . ('[0-9A-F]' x 24));
-cmp_ok(scalar(@unwritten), '>', 0,
-	'segments the old version recycled lie below the start segment');
 
 # A segment completed in upgrade mode has no archive status file until the
 # upgrade goes live.
@@ -870,17 +978,25 @@ my @unarchived = grep {
 	my $segment = $_;
 	!grep { -e $primary->data_dir . "/pg_wal/archive_status/$segment.$_" }
 	  qw(ready done)
-} ($golive_boundary_segment, $migration_segment);
+} ($golive_boundary_segment, $golive_start_segment, $migration_segment);
 is_deeply(\@unarchived, [],
-	'boundary segment and migration segment handed to the archiver');
+	'boundary, start and migration segments handed to the archiver');
 
-# The segments that were never written are gone, and the archive holds only
-# segments with WAL of their own.
-is_deeply([ grep { -e $_ } @unwritten ],
-	[], 'segments that were never written removed at go-live');
+# The archive is contiguous from the boundary segment through the migration
+# segment, and holds only segments with WAL of their own.
 $primary->poll_query_until('postgres',
 	"SELECT last_archived_wal >= '$migration_segment' FROM pg_stat_archiver")
   or die 'timed out waiting for the migration segment to be archived';
+my @expected_archive;
+for (
+	my $segment = $golive_boundary_segment;
+	$segment le $migration_segment;
+	$segment = next_segment($segment))
+{
+	push @expected_archive, $segment;
+}
+is_deeply([ grep { !-e "$archive/$_" } @expected_archive ],
+	[], 'archive holds every segment from the boundary segment on');
 is_deeply(
 	[ grep { !holds_own_wal($_) } glob("$archive/" . ('[0-9A-F]' x 24)) ],
 	[], 'every archived segment holds WAL of its own');
@@ -904,11 +1020,146 @@ is( $primary->safe_psql(
 	'1010',
 	'application reads its data on the new version');
 
+# The standby crosses to the new version.  It gets the new version's WAL
+# from the archive first, then by streaming: it is given a restore_command
+# and a primary_conninfo that is refused at once.  The go-live segment is
+# the primary's current segment, so it is not in the archive, and the
+# standby stalls after the migration WAL, where the crossing can be
+# observed half-way.
+$standby->append_conf(
+	'postgresql.conf', qq{
+restore_command = 'cp "$archive/%f" "%p"'
+primary_conninfo = 'host=127.0.0.1 port=1 application_name=standby'
+});
+
+# The swap command refuses to cross while it cannot reach the primary for
+# streaming.
+command_fails_like(
+	[ @pg_inplace_upgrade_standby, 'swap' ],
+	qr/could not connect to the primary/,
+	'swap on the standby refused while the primary is unreachable');
+
+my $standby_spcdb = tablespace_database($standby);
+
+# Stop the old version and start the new one by hand, without waiting for it
+# to accept connections: it will not, until the go-live checkpoint.
+$standby->stop;
+is( status_field($standby, 'Cluster state'),
+	'shut down in recovery',
+	'standby shut down in recovery');
+is(checkpoint_flag($standby),
+	'boundary', 'standby shut down at the upgrade boundary');
+$standby->set_install_path(undef);
+my $standby_offset = -s $standby->logfile;
+command_ok(
+	[
+		"$newbindir/pg_ctl", '-D', $standby->data_dir, '-l',
+		$standby->logfile, '-o', '--cluster-name=standby', '-W',
+		'start'
+	],
+	'new version started on the standby');
+for (my $i = 0; !-e $standby->data_dir . '/postmaster.pid'; $i++)
+{
+	die 'timed out waiting for the standby to start'
+	  if $i >= 10 * $PostgreSQL::Test::Utils::timeout_default;
+	usleep(100_000);
+}
+$standby->_update_pid(1);
+
+# The walreceiver's failure to connect shows that the archive is exhausted:
+# the start checkpoint and the migration WAL have been replayed, and the
+# go-live checkpoint is nowhere.  The standby has been taken over, with the
+# consistency hold set, and is not consistent: without the hold it would
+# have opened on the old version's catalogs.
+$standby->wait_for_log(qr/could not connect to the primary server/,
+	$standby_offset);
+is(status_field($standby, 'Consistency hold'),
+	'set', 'consistency hold set on the standby');
+is(status_field($standby, 'Upgrade posture'),
+	'taken over', 'standby taken over, replaying to the go-live checkpoint');
+is(checkpoint_flag($standby),
+	'start', 'standby started from the start checkpoint');
+my $standby_log = substr(slurp_file($standby->logfile), $standby_offset);
+like(
+	$standby_log,
+	qr/took over the standby server for an in-place upgrade/,
+	'standby taken over at startup');
+unlike(
+	$standby_log,
+	qr/consistent recovery state reached/,
+	'consistency withheld before the go-live checkpoint');
+$standby->connect_fails(
+	$standby->connstr('postgres'),
+	'connection refused while consistency is withheld',
+	expected_stderr => qr/not yet accepting connections|starting up/);
+my @standby_unstamped =
+  grep { slurp_file($_) ne $new_version->major . "\n" } (
+	$standby->data_dir . '/PG_VERSION',
+	glob($standby->data_dir . '/base/*/PG_VERSION'),
+	"$standby_spcdb/PG_VERSION");
+is_deeply(\@standby_unstamped, [],
+	'PG_VERSION of the standby and of every database stamped');
+command_like(
+	[ @pg_inplace_upgrade_standby, 'status' ],
+	qr/^Upgrade posture:\s+taken over\n.*^Consistency hold:\s+set$/ms,
+	'status shows the standby replaying to the go-live checkpoint');
+
+# Let it stream from the primary.  The swap command returns once the go-live
+# checkpoint is replayed and the hold released.
+$standby->append_conf('postgresql.conf',
+		"primary_conninfo = '"
+	  . $primary->connstr
+	  . " application_name=standby'");
+$standby->reload;
+$standby->command_ok(
+	[ @pg_inplace_upgrade_standby, 'swap' ],
+	'swap on the standby returns once it has crossed');
+is(status_field($standby, 'Consistency hold'),
+	'cleared', 'consistency hold released on the standby');
+$standby_log = substr(slurp_file($standby->logfile), $standby_offset);
+like(
+	$standby_log,
+	qr/in-place upgrade went live at .*consistent recovery state reached/s,
+	'standby reached consistency after the go-live checkpoint');
+is($standby->safe_psql('postgres', 'SELECT pg_is_in_recovery()'),
+	't', 'standby is still a standby');
+is($standby->safe_psql('postgres', 'SELECT count(*) FROM t'),
+	'1010', 'standby has the data on the new version');
+is($standby->safe_psql('postgres', $stats_query),
+	$old_stats, 'planner statistics replayed on the standby');
+is($standby->safe_psql('postgres', $view_query),
+	$old_view, 'toasted view definition replayed on the standby');
+$primary->safe_psql('postgres',
+	q{INSERT INTO t SELECT g, md5(g::text) FROM generate_series(1011, 1020) g}
+);
+$primary->wait_for_catchup($standby);
+is($standby->safe_psql('postgres', 'SELECT count(*) FROM t'),
+	'1020', 'standby follows the primary on the new version');
+is( $standby->safe_psql(
+		'postgres', 'SELECT received_tli FROM pg_stat_wal_receiver'),
+	'1',
+	'standby streams on the same timeline');
+$standby->connect_ok(
+	$standby->connstr('postgres') . ' user=app',
+	'application connection admitted on the standby');
+$standby->command_ok(
+	[ @pg_inplace_upgrade_standby, 'swap' ],
+	'swap on the standby run again');
+command_fails_like(
+	[ @pg_inplace_upgrade_standby, 'rollback' ],
+	qr/cannot be rolled back/,
+	'rollback refused on the crossed standby');
+$standby->restart;
+is(status_field($standby, 'Consistency hold'),
+	'cleared', 'standby restarted without the hold');
+is($standby->safe_psql('postgres', 'SELECT count(*) FROM t'),
+	'1020', 'data readable on the standby after the restart');
+
 # The new version comes back up in normal operation.
 $primary->restart;
 is(status_field($primary, 'Upgrade posture'),
 	'live', 'new version restarted out of upgrade mode');
 is($primary->safe_psql('postgres', 'SELECT count(*) FROM t'),
-	'1010', 'data readable after the restart');
+	'1020', 'data readable after the restart');
 
 done_testing();

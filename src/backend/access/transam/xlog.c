@@ -6163,8 +6163,8 @@ StartupXLOG(void)
 
 	/*
 	 * Shared memory counted a pending takeover as upgrade mode (see
-	 * GetInplaceUpgradeMode()).  The takeover is done, and the cluster is now
-	 * in upgrade mode.
+	 * GetInplaceUpgradeMode()).  The takeover is done: a primary is now in
+	 * upgrade mode, and a standby never is.
 	 */
 	XLogCtl->inplaceUpgradeMode = ControlFile->inplaceUpgradeMode;
 	if (ControlFile->inplaceUpgradeMode)
@@ -7124,6 +7124,29 @@ ReachedEndOfBackup(XLogRecPtr EndRecPtr, TimeLineID tli)
 }
 
 /*
+ * Called by the startup process when a standby taken over for an in-place
+ * upgrade has replayed the go-live checkpoint.  Releases the
+ * consistency hold in the control file, the way ReachedEndOfBackup() clears
+ * the end-of-backup requirement.
+ */
+void
+InplaceUpgradeReleaseHold(XLogRecPtr EndRecPtr, TimeLineID tli)
+{
+	LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
+
+	if (ControlFile->minRecoveryPoint < EndRecPtr)
+	{
+		ControlFile->minRecoveryPoint = EndRecPtr;
+		ControlFile->minRecoveryPointTLI = tli;
+	}
+
+	ControlFile->inplaceUpgradeHold = false;
+	UpdateControlFile();
+
+	LWLockRelease(ControlFileLock);
+}
+
+/*
  * Perform whatever XLOG actions are necessary at end of REDO.
  *
  * The goal here is to make sure that we'll be able to recover properly if
@@ -7473,7 +7496,8 @@ GetLastSegSwitchData(XLogRecPtr *lastSwitchLSN)
  * in an old version's layout also counts, because the startup process is
  * about to take the cluster over.  XLogCtl is initialized the same way, so
  * the postmaster gets the right answer before the startup process runs.
- * The takeover sets the mode, and go-live clears it.
+ * The takeover of a primary sets the mode, and go-live clears it.  A
+ * standby never enters upgrade mode.
  *
  * The postmaster, single-user mode, and EXEC_BACKEND children use this to
  * check PG_VERSION before they attach to shared memory.
@@ -7530,8 +7554,9 @@ ControlFileInplaceUpgradeMode(const ControlFileData *cf)
  * NB: The postmaster cannot take ControlFileLock, so it copies the control
  * file unlocked, and may see fields from before and after an update.  It
  * asks only whether the catalogs are migrated, and no update makes a
- * cluster whose catalogs are not migrated look as if they were: that takes
- * the marker "migrated", or the end of upgrade mode, which comes after it.
+ * cluster whose catalogs are not migrated look as if they were.  On a
+ * primary that takes the marker "migrated", or the end of upgrade mode,
+ * which comes after it; on a standby, the release of the consistency hold.
  * A copy torn by the takeover at startup, with the new version number but
  * upgrade mode not yet set, still belongs to the old version, since
  * PG_VERSION names the old version until the upgrade goes live.
