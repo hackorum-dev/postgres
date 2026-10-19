@@ -37,7 +37,6 @@ extern void ExecParallelHashTableSetCurrentBatch(HashJoinTable hashtable,
 extern void ExecHashTableInsert(HashJoinTable hashtable,
 								TupleTableSlot *slot,
 								uint32 hashvalue);
-extern bool ExecHashBloomReject(HashJoinTable hashtable, uint32 hashvalue);
 extern void ExecParallelHashTableInsert(HashJoinTable hashtable,
 										TupleTableSlot *slot,
 										uint32 hashvalue);
@@ -76,5 +75,6 @@ extern void ExecHashBloomRememberFilter(HashJoinTable hashtable,
 										bloom_filter *filter);
 extern void ExecHashAccumInstrumentation(HashInstrumentation *instrument,
 										 HashJoinTable hashtable);
+extern bool ExecHashBloomProbeFilter(HashJoinTable hashtable, uint32 hashvalue);
 
 #endif							/* NODEHASH_H */
