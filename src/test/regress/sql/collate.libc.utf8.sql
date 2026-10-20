@@ -1,0 +1,41 @@
+/*
+ * This test is for libc collations in a UTF8 database.  It needs the
+ * en_US libc collation, and is skipped otherwise.
+ */
+
+SELECT getdatabaseencoding() <> 'UTF8' OR
+       (SELECT count(*) FROM pg_collation WHERE collname = 'en_US' AND collprovider = 'c' AND collencoding = pg_char_to_encoding('UTF8')) <> 1
+       AS skip_test \gset
+\if :skip_test
+\quit
+\endif
+
+SET client_encoding TO UTF8;
+
+-- ILIKE with an index scan must return the same rows as a seq scan.
+-- C libraries differ in which of these characters they case-map, so
+-- compare the two scans instead of listing the rows.
+CREATE TABLE libc_ilike (x text COLLATE "en_US");
+INSERT INTO libc_ilike VALUES
+  (U&'\2160q'), (U&'\2170q'),	-- ROMAN NUMERAL ONE, SMALL ROMAN NUMERAL ONE
+  (U&'\1E9Eq'), (U&'\00DFq');	-- CAPITAL SHARP S, SHARP S
+CREATE INDEX ON libc_ilike (x text_pattern_ops);
+
+SET enable_seqscan = off;
+SELECT coalesce(string_agg(x, ' ' ORDER BY x), '') AS i1 FROM libc_ilike WHERE x ILIKE U&'\2160q%' \gset
+SELECT coalesce(string_agg(x, ' ' ORDER BY x), '') AS i2 FROM libc_ilike WHERE x ILIKE U&'\2170q%' \gset
+SELECT coalesce(string_agg(x, ' ' ORDER BY x), '') AS i3 FROM libc_ilike WHERE x ILIKE U&'\00DFq%' \gset
+RESET enable_seqscan;
+
+SET enable_indexscan = off;
+SET enable_bitmapscan = off;
+SELECT coalesce(string_agg(x, ' ' ORDER BY x), '') AS s1 FROM libc_ilike WHERE x ILIKE U&'\2160q%' \gset
+SELECT coalesce(string_agg(x, ' ' ORDER BY x), '') AS s2 FROM libc_ilike WHERE x ILIKE U&'\2170q%' \gset
+SELECT coalesce(string_agg(x, ' ' ORDER BY x), '') AS s3 FROM libc_ilike WHERE x ILIKE U&'\00DFq%' \gset
+RESET enable_indexscan;
+RESET enable_bitmapscan;
+
+SELECT :'i1' = :'s1' AS roman_upper, :'i2' = :'s2' AS roman_lower,
+       :'i3' = :'s3' AS sharp_s;
+
+DROP TABLE libc_ilike;

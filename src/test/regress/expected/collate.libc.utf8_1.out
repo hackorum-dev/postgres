@@ -1,0 +1,9 @@
+/*
+ * This test is for libc collations in a UTF8 database.  It needs the
+ * en_US libc collation, and is skipped otherwise.
+ */
+SELECT getdatabaseencoding() <> 'UTF8' OR
+       (SELECT count(*) FROM pg_collation WHERE collname = 'en_US' AND collprovider = 'c' AND collencoding = pg_char_to_encoding('UTF8')) <> 1
+       AS skip_test \gset
+\if :skip_test
+\quit
