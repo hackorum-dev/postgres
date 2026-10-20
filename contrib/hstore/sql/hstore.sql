@@ -259,6 +259,12 @@ select null::testhstore0 #= hstore '';
 select null::testhstore1 #= hstore '';
 select v #= h from testhstore1 v, (values (hstore 'a=>123',1),('b=>foo,c=>3.21',2),('a=>null',3),('e=>123',4),('f=>blah',5)) x(h,i) order by i;
 
+-- hstore(record) and populate_record() call the I/O functions of the
+-- column types, whose results can depend on settings, so they are not
+-- immutable
+create index on testhstore0 ((hstore(row(a, d))));  -- error
+create index on testhstore0 (((populate_record(null::testhstore0, hstore('d', b))).d));  -- error
+
 -- keys/values
 select akeys('aa=>1 , b=>2, cq=>3'::hstore || 'cq=>l, b=>g, fg=>f');
 select akeys('""=>1');

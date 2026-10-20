@@ -35,6 +35,7 @@ install_data(
   'hstore--1.5--1.6.sql',
   'hstore--1.6--1.7.sql',
   'hstore--1.7--1.8.sql',
+  'hstore--1.8--1.9.sql',
   kwargs: contrib_data_args,
 )
 
