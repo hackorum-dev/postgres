@@ -5514,6 +5514,17 @@ GetActiveWalLevelOnStandby(void)
 }
 
 /*
+ * Get the logical decoding status recorded in the control file.  Returns false
+ * in bootstrap mode, where no control file has been read yet.
+ */
+bool
+GetControlFileLogicalDecodingStatus(void)
+{
+	return ControlFile != NULL &&
+		ControlFile->checkPointCopy.logicalDecodingEnabled;
+}
+
+/*
  * Register shared memory for XLOG.
  */
 static void

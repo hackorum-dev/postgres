@@ -63,6 +63,7 @@
 
 #include "postgres.h"
 
+#include "access/xlog.h"
 #include "access/xloginsert.h"
 #include "access/xlogrecovery.h"
 #include "catalog/pg_control.h"
@@ -158,8 +159,15 @@ LogicalDecodingCtlShmemRequest(void *arg)
 static void
 LogicalDecodingCtlShmemInit(void *arg)
 {
-	LogicalDecodingCtl->xlog_logical_info = false;
-	LogicalDecodingCtl->logical_decoding_enabled = false;
+	/*
+	 * Initialize the status with the one recorded in the control file.  The
+	 * postmaster forks auxiliary processes before the startup process reads
+	 * the checkpoint record, and they cache the status at their startup.
+	 * StartupLogicalDecodingStatus() corrects it.
+	 */
+	LogicalDecodingCtl->xlog_logical_info = GetControlFileLogicalDecodingStatus();
+	LogicalDecodingCtl->logical_decoding_enabled =
+		LogicalDecodingCtl->xlog_logical_info;
 	LogicalDecodingCtl->pending_disable = false;
 	LogicalDecodingCtl->last_replayed_enable_lsn = InvalidXLogRecPtr;
 }
@@ -171,9 +179,14 @@ LogicalDecodingCtlShmemInit(void *arg)
 void
 StartupLogicalDecodingStatus(bool last_status)
 {
+	bool		was_enabled;
+
 	/* Logical decoding is always disabled when 'minimal' WAL level */
 	if (wal_level == WAL_LEVEL_MINIMAL)
-		return;
+		last_status = false;
+
+	/* Remember what the already running processes have cached */
+	was_enabled = LogicalDecodingCtl->xlog_logical_info;
 
 	/*
 	 * Set the initial logical decoding status based on the last status. If
@@ -183,6 +196,26 @@ StartupLogicalDecodingStatus(bool last_status)
 	 */
 	LogicalDecodingCtl->xlog_logical_info = last_status;
 	LogicalDecodingCtl->logical_decoding_enabled = last_status;
+
+	/*
+	 * The starting checkpoint can disagree with the control file, for example
+	 * when recovery starts from a backup label. In that case the already
+	 * running processes have a stale cache, so notify them to refresh it. We
+	 * wait only if we turn the status on, since a process with a stale
+	 * disabled cache would omit the information logical decoding needs from
+	 * the WAL records it writes. Only auxiliary processes are running at this
+	 * point, so the wait is short. A stale enabled cache only causes extra
+	 * logical information in WAL, which is harmless (see
+	 * DisableLogicalDecoding()).
+	 */
+	if (IsUnderPostmaster && last_status != was_enabled)
+	{
+		uint64		generation;
+
+		generation = EmitProcSignalBarrier(PROCSIGNAL_BARRIER_UPDATE_XLOG_LOGICAL_INFO);
+		if (last_status)
+			WaitForProcSignalBarrier(generation);
+	}
 }
 
 /*
@@ -672,6 +705,7 @@ void
 UpdateLogicalDecodingStatusEndOfRecovery(void)
 {
 	bool		new_status = false;
+	bool		status_changed;
 
 	Assert(RecoveryInProgress());
 
@@ -715,7 +749,8 @@ UpdateLogicalDecodingStatusEndOfRecovery(void)
 	 * by the time of the recheck, the backend instead enables logical
 	 * decoding by itself, which is fine after promotion.)
 	 */
-	if (new_status != LogicalDecodingCtl->logical_decoding_enabled)
+	status_changed = (new_status != LogicalDecodingCtl->logical_decoding_enabled);
+	if (status_changed)
 	{
 		/*
 		 * Update both the logical decoding status and logical WAL logging
@@ -745,19 +780,26 @@ UpdateLogicalDecodingStatusEndOfRecovery(void)
 	else
 		LWLockRelease(LogicalDecodingControlLock);
 
+	/* Logical decoding is always enabled with wal_level = logical */
+	Assert(wal_level != WAL_LEVEL_LOGICAL || new_status);
+
 	/*
 	 * With wal_level = logical, XLogLogicalInfoActive() is always true, so no
-	 * barrier is needed.
+	 * barrier is needed. Note that we can still turn the status on here in
+	 * that case, for example when the server ran with 'replica' and had no
+	 * logical slot before the last shutdown.
 	 *
-	 * Otherwise, notify all processes to refresh XLogLogicalInfo. Wait only
-	 * if new_status is true, even if the shared status is unchanged, since
-	 * recovery may have left stale caches. Writes are not yet allowed, so we
-	 * need not wait for running transactions to finish.
+	 * If we didn't change the status, no process can have a stale cache
+	 * without a barrier already pending for it: a process caches the status
+	 * at its startup, and every change to the status emits a barrier.
 	 *
-	 * If new_status is false, stale caches only cause extra logical
-	 * information in WAL, which is safe (see DisableLogicalDecoding()).
+	 * Otherwise, notify all processes to refresh XLogLogicalInfo, and wait if
+	 * we turned the status on. Writes are not yet allowed, so we need not
+	 * wait for running transactions to finish. Turning the status off needs
+	 * no wait, as a stale enabled cache only causes extra logical information
+	 * in WAL, which is safe (see DisableLogicalDecoding()).
 	 */
-	if (IsUnderPostmaster && wal_level != WAL_LEVEL_LOGICAL)
+	if (IsUnderPostmaster && wal_level != WAL_LEVEL_LOGICAL && status_changed)
 	{
 		uint64		generation;
 
