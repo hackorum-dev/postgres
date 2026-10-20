@@ -945,7 +945,7 @@
          <returnvalue>timestamptz</returnvalue>
         </para>
         <para>
-         Returns a random value in the range
+         Returns a random value uniformly from the range
          <parameter>min</parameter> &lt;= x &lt;= <parameter>max</parameter>.
         </para>
         <para>
