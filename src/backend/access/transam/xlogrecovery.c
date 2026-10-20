@@ -264,8 +264,9 @@ static bool pendingWalRcvRestart = false;
 static TimestampTz XLogReceiptTime = 0;
 static XLogSource XLogReceiptSource = XLOG_FROM_ANY;
 
-/* Local copy of WalRcv->flushedUpto */
+/* Local copy of WalRcv->flushedUpto, and when we read it */
 static XLogRecPtr flushedUpto = InvalidXLogRecPtr;
+static TimestampTz flushedUptoTime = 0;
 static TimeLineID receiveTLI = 0;
 
 /*
@@ -3894,6 +3895,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 											 PrimarySlotName,
 											 wal_receiver_create_temp_slot);
 						flushedUpto = InvalidXLogRecPtr;
+						flushedUptoTime = 0;
 					}
 
 					/*
@@ -3908,30 +3910,33 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					/*
 					 * Walreceiver is active, so see if new data has arrived.
 					 *
-					 * We only advance XLogReceiptTime when we obtain fresh
-					 * WAL from walreceiver and observe that we had already
-					 * processed everything before the most recent "chunk"
-					 * that it flushed to disk.  In steady state where we are
-					 * keeping up with the incoming data, XLogReceiptTime will
-					 * be updated on each cycle. When we are behind,
-					 * XLogReceiptTime will not advance, so the grace time
-					 * allotted to conflicting queries will decrease.
+					 * When we obtain fresh WAL from walreceiver, the WAL at
+					 * RecPtr was not yet flushed at our previous check, so
+					 * use the time of that check as its receipt time, unless
+					 * it is in the most recent "chunk", which arrived just
+					 * now.  When we are behind, XLogReceiptTime falls behind
+					 * too, so the grace time allotted to conflicting queries
+					 * decreases.
 					 */
 					if (RecPtr < flushedUpto)
 						havedata = true;
 					else
 					{
 						XLogRecPtr	latestChunkStart;
+						TimestampTz prevFlushedUptoTime = flushedUptoTime;
 
+						flushedUptoTime = GetCurrentTimestamp();
 						flushedUpto = GetWalRcvFlushRecPtr(&latestChunkStart, &receiveTLI);
 						if (RecPtr < flushedUpto && receiveTLI == curFileTLI)
 						{
 							havedata = true;
 							if (latestChunkStart <= RecPtr)
 							{
-								XLogReceiptTime = GetCurrentTimestamp();
+								XLogReceiptTime = flushedUptoTime;
 								SetCurrentChunkStartTime(XLogReceiptTime);
 							}
+							else if (prevFlushedUptoTime > XLogReceiptTime)
+								XLogReceiptTime = prevFlushedUptoTime;
 						}
 						else
 							havedata = false;
