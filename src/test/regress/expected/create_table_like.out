@@ -580,8 +580,44 @@ ORDER BY conname COLLATE "C";
 -- fail, as partitioned tables don't allow NO INHERIT constraints
 CREATE TABLE noinh_con_copy1_parted (LIKE noinh_con_copy INCLUDING ALL)
   PARTITION BY LIST (a);
-ERROR:  cannot add NO INHERIT constraint to partitioned table "noinh_con_copy1_parted"
+ERROR:  not-null constraints on partitioned tables cannot be NO INHERIT
+LINE 1: CREATE TABLE noinh_con_copy1_parted (LIKE noinh_con_copy INC...
+                                                  ^
+DETAIL:  Not-null constraint "noinh_con_copy_c_not_null" on table "noinh_con_copy" is NO INHERIT.
 DROP TABLE noinh_con_copy, noinh_con_copy1;
+-- likewise for a NO INHERIT check constraint alone
+CREATE TABLE noinh_chk_copy (a int CHECK (a > 0) NO INHERIT);
+CREATE TABLE noinh_chk_copy_parted (LIKE noinh_chk_copy INCLUDING CONSTRAINTS)
+  PARTITION BY LIST (a);  -- fail
+ERROR:  cannot add NO INHERIT constraint to partitioned table "noinh_chk_copy_parted"
+DROP TABLE noinh_chk_copy;
+-- Not-null constraints are copied even without INCLUDING CONSTRAINTS, so a
+-- NO INHERIT one must be rejected for a partitioned table too.
+CREATE TABLE noinh_nn_copy (a int, CONSTRAINT noinh_nn_copy_a_nn NOT NULL a NO INHERIT);
+CREATE TABLE noinh_nn_copy_parted (LIKE noinh_nn_copy) PARTITION BY LIST (a);  -- fail
+ERROR:  not-null constraints on partitioned tables cannot be NO INHERIT
+LINE 1: CREATE TABLE noinh_nn_copy_parted (LIKE noinh_nn_copy) PARTI...
+                                                ^
+DETAIL:  Not-null constraint "noinh_nn_copy_a_nn" on table "noinh_nn_copy" is NO INHERIT.
+-- inheritable not-null constraints are still copied and reach the partitions
+CREATE TABLE inh_nn_copy (a int, CONSTRAINT inh_nn_copy_a_nn NOT NULL a);
+CREATE TABLE inh_nn_copy_parted (LIKE inh_nn_copy) PARTITION BY LIST (a);
+CREATE TABLE inh_nn_copy_parted_def PARTITION OF inh_nn_copy_parted DEFAULT;
+SELECT conrelid::regclass, conname, connoinherit, conislocal, coninhcount
+FROM pg_constraint
+WHERE contype = 'n'
+  AND conrelid IN ('inh_nn_copy_parted'::regclass, 'inh_nn_copy_parted_def'::regclass)
+ORDER BY conrelid::regclass::text COLLATE "C";
+        conrelid        |     conname      | connoinherit | conislocal | coninhcount 
+------------------------+------------------+--------------+------------+-------------
+ inh_nn_copy_parted     | inh_nn_copy_a_nn | f            | t          |           0
+ inh_nn_copy_parted_def | inh_nn_copy_a_nn | f            | f          |           1
+(2 rows)
+
+INSERT INTO inh_nn_copy_parted VALUES (NULL);  -- fail
+ERROR:  null value in column "a" of relation "inh_nn_copy_parted_def" violates not-null constraint
+DETAIL:  Failing row contains (null).
+DROP TABLE noinh_nn_copy, inh_nn_copy, inh_nn_copy_parted;
 /* LIKE with other relation kinds */
 CREATE TABLE ctlt4 (a int, b text);
 CREATE SEQUENCE ctlseq1;

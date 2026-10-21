@@ -1286,6 +1286,27 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 
 		lst = RelationGetNotNullConstraints(RelationGetRelid(relation), false,
 											true);
+
+		/*
+		 * Partitioned tables cannot have NO INHERIT not-null constraints, so
+		 * reject copying one, same as if it had been specified directly.
+		 */
+		if (cxt->ispartitioned)
+		{
+			foreach_node(Constraint, nnconstr, lst)
+			{
+				if (nnconstr->is_no_inherit)
+					ereport(ERROR,
+							errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("not-null constraints on partitioned tables cannot be NO INHERIT"),
+							errdetail("Not-null constraint \"%s\" on table \"%s\" is NO INHERIT.",
+									  nnconstr->conname,
+									  RelationGetRelationName(relation)),
+							parser_errposition(cxt->pstate,
+											   table_like_clause->relation->location));
+			}
+		}
+
 		cxt->nnconstraints = list_concat(cxt->nnconstraints, lst);
 
 		/* Copy comments on not-null constraints */

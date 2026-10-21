@@ -219,6 +219,28 @@ CREATE TABLE noinh_con_copy1_parted (LIKE noinh_con_copy INCLUDING ALL)
 
 DROP TABLE noinh_con_copy, noinh_con_copy1;
 
+-- likewise for a NO INHERIT check constraint alone
+CREATE TABLE noinh_chk_copy (a int CHECK (a > 0) NO INHERIT);
+CREATE TABLE noinh_chk_copy_parted (LIKE noinh_chk_copy INCLUDING CONSTRAINTS)
+  PARTITION BY LIST (a);  -- fail
+DROP TABLE noinh_chk_copy;
+
+-- Not-null constraints are copied even without INCLUDING CONSTRAINTS, so a
+-- NO INHERIT one must be rejected for a partitioned table too.
+CREATE TABLE noinh_nn_copy (a int, CONSTRAINT noinh_nn_copy_a_nn NOT NULL a NO INHERIT);
+CREATE TABLE noinh_nn_copy_parted (LIKE noinh_nn_copy) PARTITION BY LIST (a);  -- fail
+-- inheritable not-null constraints are still copied and reach the partitions
+CREATE TABLE inh_nn_copy (a int, CONSTRAINT inh_nn_copy_a_nn NOT NULL a);
+CREATE TABLE inh_nn_copy_parted (LIKE inh_nn_copy) PARTITION BY LIST (a);
+CREATE TABLE inh_nn_copy_parted_def PARTITION OF inh_nn_copy_parted DEFAULT;
+SELECT conrelid::regclass, conname, connoinherit, conislocal, coninhcount
+FROM pg_constraint
+WHERE contype = 'n'
+  AND conrelid IN ('inh_nn_copy_parted'::regclass, 'inh_nn_copy_parted_def'::regclass)
+ORDER BY conrelid::regclass::text COLLATE "C";
+INSERT INTO inh_nn_copy_parted VALUES (NULL);  -- fail
+DROP TABLE noinh_nn_copy, inh_nn_copy, inh_nn_copy_parted;
+
 
 /* LIKE with other relation kinds */
 
