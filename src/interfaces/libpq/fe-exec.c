@@ -20,6 +20,9 @@
 
 #ifdef WIN32
 #include "win32.h"
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
 #else
 #include <unistd.h>
 #endif
@@ -54,11 +57,53 @@ static const PGresult OOM_result = {
 };
 
 /*
+ * Relaxed 32-bit atomic access for the connectionless PQescapeString /
+ * PQescapeBytea state below.  pqSaveParameterStatus() runs during the
+ * startup of every PQconnectdb(), so plain accesses there raced across
+ * concurrent connection establishment (DNTWW-8553).
+ *
+ * We cannot use C11 atomics (MSVC does not support them in C mode) nor
+ * pg_atomic (it is disallowed in frontend code), so use the compiler
+ * builtins.  Relaxed ordering is sufficient: a reader accepts whatever
+ * the most recently completed connection saw.
+ */
+#ifdef _MSC_VER
+
+static inline void
+fe_atomic_store_u32(volatile uint32 *p, uint32 v)
+{
+	(void) _InterlockedExchange((volatile long *) p, (long) v);
+}
+
+static inline uint32
+fe_atomic_load_u32(const volatile uint32 *p)
+{
+	/* aligned 32-bit loads are single-copy atomic on all MSVC targets */
+	return *p;
+}
+#else
+
+static inline void
+fe_atomic_store_u32(volatile uint32 *p, uint32 v)
+{
+	__atomic_store_n(p, v, __ATOMIC_RELAXED);
+}
+
+static inline uint32
+fe_atomic_load_u32(const volatile uint32 *p)
+{
+	return __atomic_load_n(p, __ATOMIC_RELAXED);
+}
+#endif
+
+/*
  * static state needed by PQescapeString and PQescapeBytea; initialize to
  * values that result in backward-compatible behavior
+ *
+ * Zero initialization equals the former PG_SQL_ASCII / false values.
  */
-static int	static_client_encoding = PG_SQL_ASCII;
-static bool static_std_strings = false;
+static volatile uint32 static_client_encoding;
+static volatile uint32 static_std_strings;
 
 
 static PGEvent *dupEvents(PGEvent *events, int count, size_t *memSize);
@@ -1148,12 +1193,14 @@ pqSaveParameterStatus(PGconn *conn, const char *name, const char *value)
 		/* if we don't recognize the encoding name, fall back to SQL_ASCII */
 		if (conn->client_encoding < 0)
 			conn->client_encoding = PG_SQL_ASCII;
-		static_client_encoding = conn->client_encoding;
+		fe_atomic_store_u32(&static_client_encoding,
+					 (uint32) conn->client_encoding);
 	}
 	else if (strcmp(name, "standard_conforming_strings") == 0)
 	{
 		conn->std_strings = (strcmp(value, "on") == 0);
-		static_std_strings = conn->std_strings;
+		fe_atomic_store_u32(&static_std_strings,
+					 (uint32) conn->std_strings);
 	}
 	else if (strcmp(name, "server_version") == 0)
 	{
@@ -4271,9 +4318,15 @@ PQescapeStringConn(PGconn *conn,
 size_t
 PQescapeString(char *to, const char *from, size_t length)
 {
+	int		encoding;
+	bool		std_strings;
+
+	encoding = fe_atomic_load_u32(&static_client_encoding);
+	std_strings = fe_atomic_load_u32(&static_std_strings) != 0;
+
 	return PQescapeStringInternal(NULL, to, from, length, NULL,
-								  static_client_encoding,
-								  static_std_strings);
+								  encoding,
+								  std_strings);
 }
 
 
@@ -4647,8 +4700,12 @@ PQescapeByteaConn(PGconn *conn,
 unsigned char *
 PQescapeBytea(const unsigned char *from, size_t from_length, size_t *to_length)
 {
+	bool		std_strings;
+
+	std_strings = fe_atomic_load_u32(&static_std_strings) != 0;
+
 	return PQescapeByteaInternal(NULL, from, from_length, to_length,
-								 static_std_strings,
+								 std_strings,
 								 false /* can't use hex */ );
 }
 
