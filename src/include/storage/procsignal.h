@@ -66,6 +66,9 @@ typedef enum
  */
 #define MAX_CANCEL_KEY_LENGTH  32
 
+/* GUC variable */
+extern PGDLLIMPORT int ProcSignalBarrierTimeout;
+
 /*
  * prototypes for functions in procsignal.c
  */

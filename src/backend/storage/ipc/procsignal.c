@@ -38,6 +38,7 @@
 #include "storage/subsystems.h"
 #include "tcop/tcopprot.h"
 #include "utils/memutils.h"
+#include "utils/timestamp.h"
 #include "utils/wait_event.h"
 
 /*
@@ -119,9 +120,13 @@ const ShmemCallbacks ProcSignalShmemCallbacks = {
 
 NON_EXEC_STATIC ProcSignalHeader *ProcSignal = NULL;
 
+/* GUC variable */
+int			ProcSignalBarrierTimeout = 30000;
+
 static ProcSignalSlot *MyProcSignalSlot = NULL;
 
 static bool CheckProcSignal(ProcSignalReason reason);
+static void TerminateBarrierStraggler(int procno);
 static void CleanupProcSignalState(int status, Datum arg);
 static void ResetProcSignalBarrierBits(uint32 flags);
 
@@ -437,6 +442,8 @@ EmitProcSignalBarrier(ProcSignalBarrierType type)
 void
 WaitForProcSignalBarrier(uint64 generation)
 {
+	TimestampTz wait_start = 0;
+
 	Assert(generation <= pg_atomic_read_u64(&ProcSignal->psh_barrierGeneration));
 
 	elog(DEBUG1,
@@ -448,6 +455,7 @@ WaitForProcSignalBarrier(uint64 generation)
 	{
 		ProcSignalSlot *slot = &ProcSignal->psh_slot[i];
 		uint64		oldval;
+		bool		terminate_tried = false;
 
 		/*
 		 * It's important that we check only pss_barrierGeneration here and
@@ -458,9 +466,47 @@ WaitForProcSignalBarrier(uint64 generation)
 		oldval = pg_atomic_read_u64(&slot->pss_barrierGeneration);
 		while (oldval < generation)
 		{
+			long		sleep_ms = 5000;
+			bool		report_on_timeout = true;
+
+			/*
+			 * Once we have waited procsignal_barrier_timeout in total, try
+			 * once to terminate the process that has not absorbed the
+			 * barrier, then keep waiting for it to exit.  A process that
+			 * exits advertises PG_UINT64_MAX and wakes us up (see
+			 * CleanupProcSignalState()).
+			 *
+			 * XXX: This applies to every caller, not only to the startup
+			 * process.  A process blocked on its client (see
+			 * TerminateBarrierStraggler()) can hold up the end of recovery
+			 * and the replay of WAL just as well as DROP DATABASE or
+			 * pg_enable_data_checksums() on a primary.
+			 */
+			if (ProcSignalBarrierTimeout > 0 && !terminate_tried)
+			{
+				TimestampTz now = GetCurrentTimestamp();
+				long		elapsed_ms;
+
+				if (wait_start == 0)
+					wait_start = now;
+				elapsed_ms = TimestampDifferenceMilliseconds(wait_start, now);
+
+				if (elapsed_ms >= ProcSignalBarrierTimeout)
+				{
+					TerminateBarrierStraggler(i);
+					terminate_tried = true;
+				}
+				else if (ProcSignalBarrierTimeout - elapsed_ms < sleep_ms)
+				{
+					sleep_ms = ProcSignalBarrierTimeout - elapsed_ms;
+					report_on_timeout = false;
+				}
+			}
+
 			if (ConditionVariableTimedSleep(&slot->pss_barrierCV,
-											5000,
-											WAIT_EVENT_PROC_SIGNAL_BARRIER))
+											sleep_ms,
+											WAIT_EVENT_PROC_SIGNAL_BARRIER) &&
+				report_on_timeout)
 				ereport(LOG,
 						(errmsg("still waiting for backend with PID %d to accept ProcSignalBarrier",
 								(int) pg_atomic_read_u32(&slot->pss_pid))));
@@ -482,6 +528,48 @@ WaitForProcSignalBarrier(uint64 generation)
 	 * to separate it from whatever follows.
 	 */
 	pg_memory_barrier();
+}
+
+/*
+ * TerminateBarrierStraggler - terminate the process using ProcSignal slot
+ * 'procno', which has not absorbed a ProcSignalBarrier within
+ * procsignal_barrier_timeout.
+ *
+ * Only client backends and walsenders are terminated, with SIGTERM, as
+ * pg_terminate_backend() would do.  Those can block indefinitely on a client,
+ * for example sending data to a client that has stopped reading.  While
+ * blocked in a client write, a backend services only ProcDiePending (see
+ * ProcessClientWriteInterrupt()), so SIGTERM is what releases it; a recovery
+ * conflict signal would not.  Other processes are never signaled; the caller
+ * keeps waiting for them.
+ */
+static void
+TerminateBarrierStraggler(int procno)
+{
+	ProcSignalSlot *slot = &ProcSignal->psh_slot[procno];
+	PGPROC	   *proc = GetPGProcByNumber(procno);
+	pid_t		pid = (pid_t) pg_atomic_read_u32(&slot->pss_pid);
+
+	/* The slot is indexed by ProcNumber, so 'proc' is its owner */
+	if (pid == 0 || pid == MyProcPid || proc->pid != pid)
+		return;
+	if (proc->backendType != B_BACKEND && proc->backendType != B_WAL_SENDER)
+		return;
+
+	ereport(LOG,
+			(errmsg("terminating process %d because it has not accepted ProcSignalBarrier within %d ms",
+					(int) pid, ProcSignalBarrierTimeout)));
+
+	/*
+	 * As in pg_signal_backend(), the process could exit and its PID be reused
+	 * before we send the signal; that seems too unlikely to worry about.
+	 * Signal the whole process group if we have setsid().
+	 */
+#ifdef HAVE_SETSID
+	(void) kill(-pid, SIGTERM);
+#else
+	(void) kill(pid, SIGTERM);
+#endif
 }
 
 /*
