@@ -562,3 +562,61 @@ SELECT (NULL::compositetable).a;
 SELECT (NULL::compositetable).oid;
 
 DROP TABLE compositetable;
+
+-- A record operator between ROW()s cast to record must not be read back as a
+-- row comparison, which gives NULL here
+CREATE VIEW rowtypes_cmp_v1 AS
+SELECT (ROW(1, NULL::int)::record = ROW(1, NULL::int)::record) AS r;
+SELECT pg_get_viewdef('rowtypes_cmp_v1'::regclass);
+SELECT pg_get_viewdef('rowtypes_cmp_v1'::regclass) AS def \gset
+CREATE VIEW rowtypes_cmp_v1_re AS :def
+SELECT * FROM rowtypes_cmp_v1, rowtypes_cmp_v1_re;
+
+-- Nor as a row comparison with the columns of a scalar subquery
+CREATE VIEW rowtypes_cmp_v2 AS
+SELECT (ROW(1, NULL::int)::record = (SELECT ROW(1, NULL::int)::record)) AS r;
+SELECT pg_get_viewdef('rowtypes_cmp_v2'::regclass);
+SELECT pg_get_viewdef('rowtypes_cmp_v2'::regclass) AS def \gset
+CREATE VIEW rowtypes_cmp_v2_re AS :def
+SELECT * FROM rowtypes_cmp_v2, rowtypes_cmp_v2_re;
+
+-- The parser expands a whole-row reference to a JOIN USING alias into a ROW()
+CREATE TABLE rowtypes_cmp_a (x int);
+CREATE TABLE rowtypes_cmp_b (x int);
+INSERT INTO rowtypes_cmp_a VALUES (1), (2);
+INSERT INTO rowtypes_cmp_b VALUES (1), (2);
+CREATE VIEW rowtypes_cmp_v3 AS
+SELECT x, (j.* = (SELECT ROW(1))) AS r
+  FROM rowtypes_cmp_a JOIN rowtypes_cmp_b USING (x) AS j;
+SELECT pg_get_viewdef('rowtypes_cmp_v3'::regclass);
+SELECT pg_get_viewdef('rowtypes_cmp_v3'::regclass) AS def \gset
+CREATE VIEW rowtypes_cmp_v3_re AS :def
+SELECT * FROM rowtypes_cmp_v3 JOIN rowtypes_cmp_v3_re USING (x) ORDER BY x;
+
+-- So does coercing a whole-row reference to an operator's composite input
+-- type
+CREATE TYPE rowtypes_cmp_t AS (a int, b int);
+CREATE FUNCTION rowtypes_cmp_eq(rowtypes_cmp_t, rowtypes_cmp_t) RETURNS bool
+  LANGUAGE sql IMMUTABLE
+  AS 'SELECT $1.a IS NOT DISTINCT FROM $2.a AND $1.b IS NOT DISTINCT FROM $2.b';
+CREATE OPERATOR =#= (LEFTARG = rowtypes_cmp_t, RIGHTARG = rowtypes_cmp_t,
+  FUNCTION = rowtypes_cmp_eq);
+CREATE VIEW rowtypes_cmp_v4 AS
+SELECT (s1 =#= s2) AS r
+  FROM (SELECT 1 AS a, NULL::int AS b) s1, (SELECT 1, NULL::int) s2;
+SELECT pg_get_viewdef('rowtypes_cmp_v4'::regclass);
+SELECT pg_get_viewdef('rowtypes_cmp_v4'::regclass) AS def \gset
+CREATE VIEW rowtypes_cmp_v4_re AS :def
+SELECT * FROM rowtypes_cmp_v4, rowtypes_cmp_v4_re;
+
+-- A row comparison, and a ROW() compared with something other than a ROW()
+-- or a subquery, keep their output
+CREATE VIEW rowtypes_cmp_v5 AS
+SELECT (ROW(1, NULL::int) = ROW(1, NULL::int)) AS eq,
+       (ROW(1, 2)::rowtypes_cmp_t = ROW(1, 2)) AS named,
+       (ROW(1, 2) = '(1,2)'::rowtypes_cmp_t) AS one;
+SELECT pg_get_viewdef('rowtypes_cmp_v5'::regclass);
+
+-- leave the views around for the pg_upgrade test, except the ones that do
+-- not survive dump and restore yet
+DROP VIEW rowtypes_cmp_v1, rowtypes_cmp_v2, rowtypes_cmp_v3, rowtypes_cmp_v4;
