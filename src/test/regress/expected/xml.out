@@ -907,7 +907,6 @@ SELECT xpath(NULL, NULL) IS NULL FROM xmltest;
 
 SELECT xpath('', '<!-- error -->');
 ERROR:  empty XPath expression
-CONTEXT:  SQL function "xpath" statement 1
 SELECT xpath('//text()', '<local:data xmlns:local="http://127.0.0.1"><local:piece id="1">number one</local:piece><local:piece id="2" /></local:data>');
      xpath      
 ----------------
@@ -1277,7 +1276,6 @@ ERROR:  could not parse XML document
 DETAIL:  line 1: Namespace prefix nosuchprefix on tag is not defined
 <nosuchprefix:tag/>
                  ^
-CONTEXT:  SQL function "xpath" statement 1
 -- XPath deprecates relative namespaces, but they're not supposed to
 -- throw an error, only a warning.
 SELECT xpath('/*', '<relativens xmlns=''relative''/>');
