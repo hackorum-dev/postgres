@@ -121,6 +121,7 @@ statapprox_heap(Relation rel, output_type *stat)
 	TransactionId OldestXmin;
 	StatApproxReadStreamPrivate p;
 	ReadStream *stream;
+	BlockNumber scanned_new_pages = 0;
 
 	OldestXmin = GetOldestNonRemovableTransactionId(rel);
 	bstrategy = GetAccessStrategy(BAS_BULKREAD);
@@ -170,6 +171,8 @@ statapprox_heap(Relation rel, output_type *stat)
 
 		if (PageIsNew(page) || PageIsEmpty(page))
 		{
+			if (PageIsNew(page))
+				scanned_new_pages++;
 			UnlockReleaseBuffer(buf);
 			continue;
 		}
@@ -246,9 +249,10 @@ statapprox_heap(Relation rel, output_type *stat)
 	 * we already accounted for the space in those pages, too.
 	 */
 	stat->tuple_count = vac_estimate_reltuples(rel, nblocks, p.scanned,
+											   scanned_new_pages,
 											   stat->tuple_count);
 
-	/* It's not clear if we could get -1 here, but be safe. */
+	/* We get -1 if the number of tuples is unknown; report zero then. */
 	stat->tuple_count = Max(stat->tuple_count, 0);
 
 	/*
