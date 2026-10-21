@@ -4846,8 +4846,8 @@
   proargtypes => 'interval text', prosrc => 'interval_to_char' },
 
 { oid => '1282', descr => 'quote an identifier for usage in a querystring',
-  proname => 'quote_ident', prorettype => 'text', proargtypes => 'text',
-  prosrc => 'quote_ident' },
+  proname => 'quote_ident', provolatile => 's', prorettype => 'text',
+  proargtypes => 'text', prosrc => 'quote_ident' },
 { oid => '1283', descr => 'quote a literal for usage in a querystring',
   proname => 'quote_literal', prorettype => 'text', proargtypes => 'text',
   prosrc => 'quote_literal' },
@@ -9443,10 +9443,10 @@
 
 { oid => '2931',
   descr => 'evaluate XPath expression, with namespaces support',
-  proname => 'xpath', prorettype => '_xml', proargtypes => 'text xml _text',
-  prosrc => 'xpath' },
+  proname => 'xpath', provolatile => 's', prorettype => '_xml',
+  proargtypes => 'text xml _text', prosrc => 'xpath' },
 { oid => '2932', descr => 'evaluate XPath expression',
-  proname => 'xpath', prolang => 'sql', prorettype => '_xml',
+  proname => 'xpath', prolang => 'sql', provolatile => 's', prorettype => '_xml',
   proargtypes => 'text xml', prosrc => 'see system_functions.sql' },
 
 { oid => '2614', descr => 'test XML value against XPath expression',
