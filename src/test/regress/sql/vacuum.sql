@@ -525,3 +525,55 @@ SELECT id, pg_column_toast_chunk_id(f1) IS NULL AS f1_chunk_null,
 SELECT pg_column_toast_chunk_id(f1) = :'id_2_chunk' AS same_chunk
   FROM vac_rewrite_toast WHERE id = 2;
 DROP TABLE vac_rewrite_toast;
+
+-- Test VACUUM's estimate of pg_class.reltuples when it skips most of the
+-- relation using the visibility map.  Read-only queries can set pages
+-- all-visible during on-access pruning, so even the first VACUUM after a bulk
+-- load may scan only the tail end of the relation, including any new pages
+-- left behind by bulk extension.  That's not a representative sample of the
+-- relation.  Temp tables are used because their visibility horizon depends
+-- only on this backend, which makes on-access pruning deterministic.
+--
+-- Never vacuumed or analyzed: reltuples should remain unknown, rather than
+-- being extrapolated from the few pages that VACUUM scanned.
+CREATE TEMP TABLE vac_reltuples_new AS
+  SELECT g AS a, repeat('x', 100) AS b FROM generate_series(1, 4000) g;
+SELECT relpages, reltuples FROM pg_class
+  WHERE oid = 'vac_reltuples_new'::regclass;
+SELECT count(*) FROM vac_reltuples_new;  -- sets most pages all-visible
+VACUUM vac_reltuples_new;
+SELECT relpages > 0 AS has_pages, reltuples FROM pg_class
+  WHERE oid = 'vac_reltuples_new'::regclass;
+-- Likewise for a relation that was empty when it was last vacuumed
+CREATE TEMP TABLE vac_reltuples_empty (a int, b text);
+VACUUM vac_reltuples_empty;
+SELECT relpages, reltuples FROM pg_class
+  WHERE oid = 'vac_reltuples_empty'::regclass;
+INSERT INTO vac_reltuples_empty
+  SELECT g, repeat('x', 100) FROM generate_series(1, 4000) g;
+SELECT count(*) FROM vac_reltuples_empty;
+SELECT pg_stat_force_next_flush();
+VACUUM vac_reltuples_empty;
+SELECT relpages > 0 AS has_pages, reltuples FROM pg_class
+  WHERE oid = 'vac_reltuples_empty'::regclass;
+-- VACUUM shouldn't reset the cumulative statistics' live tuple count either
+SELECT n_live_tup FROM pg_stat_all_tables
+  WHERE relid = 'vac_reltuples_empty'::regclass;
+-- With prior statistics, new pages at the end of a bulk-extended relation
+-- must not make reltuples drift
+CREATE TEMP TABLE vac_reltuples_known AS
+  SELECT g AS a, repeat('x', 100) AS b FROM generate_series(1, 4000) g;
+ANALYZE vac_reltuples_known;
+SELECT reltuples FROM pg_class WHERE oid = 'vac_reltuples_known'::regclass;
+SELECT count(*) FROM vac_reltuples_known;
+VACUUM vac_reltuples_known;
+SELECT reltuples FROM pg_class WHERE oid = 'vac_reltuples_known'::regclass;
+-- ... and reltuples must not go stale when the relation grows, even if
+-- VACUUM scans only a single page
+INSERT INTO vac_reltuples_known
+  SELECT g, repeat('x', 100) FROM generate_series(4001, 8000) g;
+SELECT count(*) FROM vac_reltuples_known;
+VACUUM vac_reltuples_known;
+SELECT reltuples BETWEEN 7600 AND 8400 AS reltuples_ok FROM pg_class
+  WHERE oid = 'vac_reltuples_known'::regclass;
+DROP TABLE vac_reltuples_new, vac_reltuples_empty, vac_reltuples_known;

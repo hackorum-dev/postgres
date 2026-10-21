@@ -312,6 +312,13 @@ typedef struct LVRelState
 	 */
 	BlockNumber eager_scanned_pages;
 
+	/*
+	 * Count of new (all-zeroes) pages scanned.  These are never set
+	 * all-visible, so every VACUUM scans them.  They're excluded from the
+	 * sample used to estimate the relation's tuple density.
+	 */
+	BlockNumber scanned_new_pages;
+
 	BlockNumber removed_pages;	/* # pages removed by relation truncation */
 	BlockNumber new_frozen_tuple_pages; /* # pages with newly frozen tuples */
 
@@ -741,6 +748,7 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 	/* Initialize page counters explicitly (be tidy) */
 	vacrel->scanned_pages = 0;
 	vacrel->eager_scanned_pages = 0;
+	vacrel->scanned_new_pages = 0;
 	vacrel->removed_pages = 0;
 	vacrel->new_frozen_tuple_pages = 0;
 	vacrel->lpdead_item_pages = 0;
@@ -955,9 +963,11 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 	/*
 	 * Now actually update rel's pg_class entry.
 	 *
-	 * In principle new_live_tuples could be -1 indicating that we (still)
-	 * don't know the tuple count.  In practice that can't happen, since we
-	 * scan every page that isn't skipped using the visibility map.
+	 * new_live_tuples could be -1 indicating that we (still) don't know the
+	 * tuple count.  That happens when we skip nearly all of the pages of a
+	 * relation that has no prior statistics using the visibility map, which
+	 * is possible because on-access pruning can set pages all-visible before
+	 * the relation is ever vacuumed.
 	 */
 	vac_update_relstats(rel, new_rel_pages, vacrel->new_live_tuples,
 						new_rel_allvisible, new_rel_allfrozen,
@@ -966,7 +976,9 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 						&frozenxid_updated, &minmulti_updated, false);
 
 	/*
-	 * Report results to the cumulative stats system, too.
+	 * Report results to the cumulative stats system, too.  If we don't know
+	 * the number of live tuples, pass -1 so that the stats system keeps its
+	 * current count.
 	 *
 	 * Deliberately avoid telling the stats system about LP_DEAD items that
 	 * remain in the table due to VACUUM bypassing index and heap vacuuming.
@@ -976,7 +988,7 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 	 * vacuuming.
 	 */
 	pgstat_report_vacuum(rel,
-						 Max(vacrel->new_live_tuples, 0),
+						 vacrel->new_live_tuples,
 						 vacrel->recently_dead_tuples +
 						 vacrel->missed_dead_tuples,
 						 starttime);
@@ -1597,11 +1609,12 @@ lazy_scan_heap(LVRelState *vacrel)
 	/* now we can compute the new value for pg_class.reltuples */
 	vacrel->new_live_tuples = vac_estimate_reltuples(vacrel->rel, rel_pages,
 													 vacrel->scanned_pages,
+													 vacrel->scanned_new_pages,
 													 vacrel->live_tuples);
 
 	/*
-	 * Also compute the total number of surviving heap entries.  In the
-	 * (unlikely) scenario that new_live_tuples is -1, take it as zero.
+	 * Also compute the total number of surviving heap entries.  If
+	 * new_live_tuples is -1 (unknown), take it as zero.
 	 */
 	vacrel->new_rel_tuples =
 		Max(vacrel->new_live_tuples, 0) + vacrel->recently_dead_tuples +
@@ -1912,7 +1925,12 @@ lazy_scan_new_or_empty(LVRelState *vacrel, Buffer buf, BlockNumber blkno,
 		 * Do that by testing if there's any space recorded for the page. If
 		 * not, enter it. We do so after releasing the lock on the heap page,
 		 * the FSM is approximate, after all.
+		 *
+		 * Also count the page separately, so that the unused tail end of a
+		 * bulk-extended relation doesn't distort our estimate of the
+		 * relation's tuple density.  See vac_estimate_reltuples().
 		 */
+		vacrel->scanned_new_pages++;
 		UnlockReleaseBuffer(buf);
 
 		if (GetRecordedFreeSpace(vacrel->rel, blkno) == 0)
