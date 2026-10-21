@@ -519,14 +519,15 @@ visibilitymap_prepare_truncate(Relation rel, BlockNumber nheapblocks)
 
 		/*
 		 * Truncation of a relation is WAL-logged at a higher-level, and we
-		 * will be called at WAL replay. But if checksums are enabled, we need
-		 * to still write a WAL record to protect against a torn page, if the
-		 * page is flushed to disk before the truncation WAL record. We cannot
-		 * use MarkBufferDirtyHint here, because that will not dirty the page
-		 * during recovery.
+		 * will be called at WAL replay. But the truncation WAL record does
+		 * not reference this page, so we still log it here.  WAL summaries
+		 * for incremental backup need that, and so does torn page protection
+		 * if the page is flushed to disk before the truncation WAL record. We
+		 * cannot use MarkBufferDirtyHint here, because that will not dirty
+		 * the page during recovery.
 		 */
 		MarkBufferDirty(mapBuffer);
-		if (!InRecovery && RelationNeedsWAL(rel) && XLogHintBitIsNeeded())
+		if (!InRecovery && RelationNeedsWAL(rel))
 			log_newpage_buffer(mapBuffer, false);
 
 		END_CRIT_SECTION();
