@@ -1352,6 +1352,15 @@ vacuum_xid_failsafe_check(const struct VacuumCutoffs *cutoffs)
  *		the old value of pg_class.reltuples/pg_class.relpages as a measurement
  *		of the tuple density in the unscanned pages.
  *
+ *		scanned_new_pages is the number of scanned pages that were found to be
+ *		new (all-zeroes), such as the unused tail end of a bulk-extended
+ *		relation.  They are included in scanned_pages.  Such pages are never
+ *		marked all-visible, so they are scanned every time, and they contain
+ *		no tuples.  They are not representative of the rest of the relation,
+ *		so we don't treat them as part of our sample of its tuple density.
+ *
+ *		Returns -1 if the number of tuples is (still) unknown.
+ *
  *		Note: scanned_tuples should count only *live* tuples, since
  *		pg_class.reltuples is defined that way.
  */
@@ -1359,44 +1368,74 @@ double
 vac_estimate_reltuples(Relation relation,
 					   BlockNumber total_pages,
 					   BlockNumber scanned_pages,
+					   BlockNumber scanned_new_pages,
 					   double scanned_tuples)
 {
 	BlockNumber old_rel_pages = relation->rd_rel->relpages;
 	double		old_rel_tuples = relation->rd_rel->reltuples;
+	BlockNumber sampled_pages;
+	double		sampleable_pages;
 	double		old_density;
 	double		unscanned_pages;
 	double		total_tuples;
+
+	Assert(scanned_new_pages <= scanned_pages);
 
 	/* If we did scan the whole table, just use the count as-is */
 	if (scanned_pages >= total_pages)
 		return scanned_tuples;
 
 	/*
+	 * Only the initialized pages that we scanned tell us anything about the
+	 * relation's tuple density.
+	 */
+	sampled_pages = scanned_pages - scanned_new_pages;
+	sampleable_pages = (double) total_pages - (double) scanned_new_pages;
+
+	/*
+	 * If old density is unknown, we can't do much except scale up
+	 * scanned_tuples to match the size of the relation.  That's only
+	 * reasonable if we sampled a meaningful fraction of the relation, though.
+	 * The pages that VACUUM scans are the ones that aren't all-visible, which
+	 * is anything but a random sample: they're typically the most recently
+	 * modified pages at the end of the relation.  Since on-access pruning can
+	 * set pages all-visible during read-only queries, even a relation that
+	 * has never been vacuumed or analyzed may have almost all of its pages
+	 * skipped.  Rather than extrapolating from a few unrepresentative pages,
+	 * report that the number of tuples is still unknown if we sampled no more
+	 * than a single page, or less than 2% of the relation.
+	 *
+	 * A relation that was empty when last vacuumed or analyzed (relpages = 0,
+	 * reltuples = 0) is treated the same way: that tells us nothing about the
+	 * density of the pages that were added since.
+	 */
+	if (old_rel_tuples < 0 || old_rel_pages == 0)
+	{
+		if (sampled_pages <= 1 || sampled_pages < sampleable_pages * 0.02)
+			return -1;
+		return floor((scanned_tuples / sampled_pages) * sampleable_pages + 0.5);
+	}
+
+	/*
 	 * When successive VACUUM commands scan the same few pages again and
 	 * again, without anything from the table really changing, there is a risk
 	 * that our beliefs about tuple density will gradually become distorted.
 	 * This might be caused by vacuumlazy.c implementation details, such as
-	 * its tendency to always scan the last heap page.  Handle that here.
+	 * its tendency to always scan the last heap page and any new pages.
+	 * Handle that here.
 	 *
 	 * If the relation is _exactly_ the same size according to the existing
-	 * pg_class entry, and only a few of its pages (less than 2%) were
-	 * scanned, keep the existing value of reltuples.  Also keep the existing
-	 * value when only a subset of rel's pages <= a single page were scanned.
-	 *
-	 * (Note: we might be returning -1 here.)
+	 * pg_class entry, and only a few of its pages (less than 2%, or no more
+	 * than a single page) were sampled, keep the existing value of reltuples.
+	 * We don't do that when the relation's size has changed, though: pages
+	 * that were added since the last VACUUM or ANALYZE might have been set
+	 * all-visible by on-access pruning, so the existing value might not
+	 * account for them at all.  The normal calculation below estimates their
+	 * contents using the old density instead.
 	 */
 	if (old_rel_pages == total_pages &&
-		scanned_pages < (double) total_pages * 0.02)
+		(sampled_pages <= 1 || sampled_pages < sampleable_pages * 0.02))
 		return old_rel_tuples;
-	if (scanned_pages <= 1)
-		return old_rel_tuples;
-
-	/*
-	 * If old density is unknown, we can't do much except scale up
-	 * scanned_tuples to match total_pages.
-	 */
-	if (old_rel_tuples < 0 || old_rel_pages == 0)
-		return floor((scanned_tuples / scanned_pages) * total_pages + 0.5);
 
 	/*
 	 * Okay, we've covered the corner cases.  The normal calculation is to
