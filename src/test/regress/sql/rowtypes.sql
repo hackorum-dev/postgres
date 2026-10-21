@@ -619,4 +619,4 @@ SELECT pg_get_viewdef('rowtypes_cmp_v5'::regclass);
 
 -- leave the views around for the pg_upgrade test, except the ones that do
 -- not survive dump and restore yet
-DROP VIEW rowtypes_cmp_v1, rowtypes_cmp_v2, rowtypes_cmp_v3, rowtypes_cmp_v4;
+DROP VIEW rowtypes_cmp_v3, rowtypes_cmp_v4;
