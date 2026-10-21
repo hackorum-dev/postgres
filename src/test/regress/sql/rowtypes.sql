@@ -617,6 +617,4 @@ SELECT (ROW(1, NULL::int) = ROW(1, NULL::int)) AS eq,
        (ROW(1, 2) = '(1,2)'::rowtypes_cmp_t) AS one;
 SELECT pg_get_viewdef('rowtypes_cmp_v5'::regclass);
 
--- leave the views around for the pg_upgrade test, except the ones that do
--- not survive dump and restore yet
-DROP VIEW rowtypes_cmp_v3, rowtypes_cmp_v4;
+-- leave the views around for the pg_upgrade test
