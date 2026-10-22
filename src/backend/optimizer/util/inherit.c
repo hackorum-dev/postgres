@@ -36,6 +36,7 @@
 #include "parser/parse_relation.h"
 #include "partitioning/partdesc.h"
 #include "partitioning/partprune.h"
+#include "utils/injection_point.h"
 #include "utils/rel.h"
 
 
@@ -333,6 +334,10 @@ expand_partitioned_rtentry(PlannerInfo *root, RelOptInfo *relinfo,
 
 	partdesc = PartitionDirectoryLookup(root->glob->partition_directory,
 										parentrel);
+
+	/* test-only: pause after a sub-partitioned table's PartitionDesc is read */
+	if (parentrel->rd_rel->relispartition)
+		INJECTION_POINT("expand-subpartdesc-read", NULL);
 
 	/* A partitioned table should always have a partition descriptor. */
 	Assert(partdesc);
