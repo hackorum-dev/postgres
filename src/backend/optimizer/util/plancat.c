@@ -49,6 +49,7 @@
 #include "storage/bufmgr.h"
 #include "tcop/tcopprot.h"
 #include "utils/builtins.h"
+#include "utils/injection_point.h"
 #include "utils/lsyscache.h"
 #include "utils/partcache.h"
 #include "utils/rel.h"
@@ -133,6 +134,9 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 	 * rangetable.
 	 */
 	relation = table_open(relationObjectId, NoLock);
+
+	/* test-only: pause after inlining, before index_open() */
+	INJECTION_POINT("get-relation-info-start", NULL);
 
 	/*
 	 * Relations without a table AM can be used in a query only if they are of
