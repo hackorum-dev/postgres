@@ -2235,7 +2235,9 @@ scalararraysel(PlannerInfo *root,
  * concerns.  Most callers will use it in double-type expressions anyway.
  *
  * Note: in some code paths root can be passed as NULL, resulting in
- * slightly worse estimates.
+ * slightly worse estimates.  It's also possible that we have a root
+ * but we've not yet reached query_planner, in which case examine_variable
+ * would fail; guard against that by checking if simple_rel_array is set up.
  */
 double
 estimate_array_length(PlannerInfo *root, Node *arrayexpr)
@@ -2259,7 +2261,7 @@ estimate_array_length(PlannerInfo *root, Node *arrayexpr)
 	{
 		return list_length(((ArrayExpr *) arrayexpr)->elements);
 	}
-	else if (arrayexpr && root)
+	else if (arrayexpr && root && root->simple_rel_array)
 	{
 		/* See if we can find any statistics about it */
 		VariableStatData vardata;
