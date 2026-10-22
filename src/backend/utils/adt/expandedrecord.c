@@ -45,6 +45,12 @@ static const ExpandedObjectMethods ER_methods =
 static void ER_mc_callback(void *arg);
 static MemoryContext get_short_term_cxt(ExpandedRecordHeader *erh);
 static void build_dummy_expanded_header(ExpandedRecordHeader *main_erh);
+static void expanded_record_set_field_worker(ExpandedRecordHeader *erh,
+											 int fnumber,
+											 Datum newValue, bool isnull,
+											 bool expand_external,
+											 bool check_constraints,
+											 bool free_old_value);
 static pg_noinline void check_domain_for_new_field(ExpandedRecordHeader *erh,
 												   int fnumber,
 												   Datum newValue, bool isnull);
@@ -677,13 +683,19 @@ ER_get_flat_size(ExpandedObjectHeader *eohptr)
 				VARATT_IS_EXTERNAL(DatumGetPointer(erh->dvalues[i])))
 			{
 				/*
-				 * expanded_record_set_field_internal can do the actual work
-				 * of detoasting.  It needn't recheck domain constraints.
+				 * expanded_record_set_field_worker can do the actual work of
+				 * detoasting.  It needn't recheck domain constraints.
+				 *
+				 * It mustn't pfree the old value, though: a caller may still
+				 * be using a field value it fetched earlier.  The old value
+				 * is just a TOAST pointer, so it can stay around until the
+				 * record is deleted.
 				 */
-				expanded_record_set_field_internal(erh, i + 1,
-												   erh->dvalues[i], false,
-												   true,
-												   false);
+				expanded_record_set_field_worker(erh, i + 1,
+												 erh->dvalues[i], false,
+												 true,
+												 false,
+												 false);
 			}
 		}
 
@@ -1002,6 +1014,21 @@ expanded_record_set_field_internal(ExpandedRecordHeader *erh, int fnumber,
 								   bool expand_external,
 								   bool check_constraints)
 {
+	expanded_record_set_field_worker(erh, fnumber, newValue, isnull,
+									 expand_external, check_constraints,
+									 true);
+}
+
+/*
+ * Workhorse for expanded_record_set_field_internal
+ */
+static void
+expanded_record_set_field_worker(ExpandedRecordHeader *erh, int fnumber,
+								 Datum newValue, bool isnull,
+								 bool expand_external,
+								 bool check_constraints,
+								 bool free_old_value)
+{
 	TupleDesc	tupdesc;
 	CompactAttribute *attr;
 	Datum	   *dvalues;
@@ -1108,7 +1135,7 @@ expanded_record_set_field_internal(ExpandedRecordHeader *erh, int fnumber,
 	 * whatever we just allocated here is in the short-lived domain check
 	 * context.
 	 */
-	if (oldValue && !(erh->flags & ER_FLAG_IS_DUMMY))
+	if (oldValue && free_old_value && !(erh->flags & ER_FLAG_IS_DUMMY))
 	{
 		/* Don't try to pfree a part of the original flat record */
 		if (oldValue < erh->fstartptr || oldValue >= erh->fendptr)
