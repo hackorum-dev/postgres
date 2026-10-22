@@ -927,6 +927,22 @@ begin
   end loop;
 end$$;
 
+-- check using a toasted field and the whole record in one expression
+-- the dropped column makes "select into" store the fields separately
+create table toasted_hole (id int, junk text, b text);
+alter table toasted_hole alter column b set storage external;
+insert into toasted_hole values (1, 'x', repeat('ffoob',4000));
+alter table toasted_hole drop column junk;
+
+create function toasted_hole_test() returns bool language plpgsql as
+$$ declare r toasted_hole;
+begin
+  select * into r from toasted_hole;
+  return r.b = (to_jsonb(r) ->> 'b');
+end $$;
+
+select toasted_hole_test();
+
 -- check coercion of a record result to named-composite function output type
 create function compresult(int8) returns two_int8s language plpgsql as
 $$ declare r record; begin r := row($1,$1); return r; end $$;
