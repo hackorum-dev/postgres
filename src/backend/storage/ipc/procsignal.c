@@ -38,6 +38,7 @@
 #include "storage/subsystems.h"
 #include "tcop/tcopprot.h"
 #include "utils/memutils.h"
+#include "utils/timestamp.h"
 #include "utils/wait_event.h"
 
 /*
@@ -119,9 +120,13 @@ const ShmemCallbacks ProcSignalShmemCallbacks = {
 
 NON_EXEC_STATIC ProcSignalHeader *ProcSignal = NULL;
 
+/* GUC variable */
+int			ProcSignalBarrierTimeout = 30000;
+
 static ProcSignalSlot *MyProcSignalSlot = NULL;
 
 static bool CheckProcSignal(ProcSignalReason reason);
+static bool TerminateBarrierStraggler(int procno, uint64 generation);
 static void CleanupProcSignalState(int status, Datum arg);
 static void ResetProcSignalBarrierBits(uint32 flags);
 
@@ -437,6 +442,8 @@ EmitProcSignalBarrier(ProcSignalBarrierType type)
 void
 WaitForProcSignalBarrier(uint64 generation)
 {
+	TimestampTz wait_start = 0;
+
 	Assert(generation <= pg_atomic_read_u64(&ProcSignal->psh_barrierGeneration));
 
 	elog(DEBUG1,
@@ -448,6 +455,7 @@ WaitForProcSignalBarrier(uint64 generation)
 	{
 		ProcSignalSlot *slot = &ProcSignal->psh_slot[i];
 		uint64		oldval;
+		bool		terminated = false;
 
 		/*
 		 * It's important that we check only pss_barrierGeneration here and
@@ -458,9 +466,46 @@ WaitForProcSignalBarrier(uint64 generation)
 		oldval = pg_atomic_read_u64(&slot->pss_barrierGeneration);
 		while (oldval < generation)
 		{
+			long		sleep_ms = 5000;
+			bool		report_on_timeout = true;
+
+			/*
+			 * Once we have waited procsignal_barrier_timeout in total,
+			 * terminate the process that has not absorbed the barrier if it
+			 * is blocked writing to its client, then keep waiting for it to
+			 * exit.  A process that exits advertises PG_UINT64_MAX and wakes
+			 * us up (see CleanupProcSignalState()).  A process that is
+			 * waiting for anything else is left alone, but checked again each
+			 * time we wake up.
+			 *
+			 * XXX: This applies to every caller, not only to the startup
+			 * process.  A process blocked on its client (see
+			 * TerminateBarrierStraggler()) can hold up the end of recovery
+			 * and the replay of WAL just as well as DROP DATABASE or
+			 * pg_enable_data_checksums() on a primary.
+			 */
+			if (ProcSignalBarrierTimeout > 0 && !terminated)
+			{
+				TimestampTz now = GetCurrentTimestamp();
+				long		elapsed_ms;
+
+				if (wait_start == 0)
+					wait_start = now;
+				elapsed_ms = TimestampDifferenceMilliseconds(wait_start, now);
+
+				if (elapsed_ms >= ProcSignalBarrierTimeout)
+					terminated = TerminateBarrierStraggler(i, generation);
+				else if (ProcSignalBarrierTimeout - elapsed_ms < sleep_ms)
+				{
+					sleep_ms = ProcSignalBarrierTimeout - elapsed_ms;
+					report_on_timeout = false;
+				}
+			}
+
 			if (ConditionVariableTimedSleep(&slot->pss_barrierCV,
-											5000,
-											WAIT_EVENT_PROC_SIGNAL_BARRIER))
+											sleep_ms,
+											WAIT_EVENT_PROC_SIGNAL_BARRIER) &&
+				report_on_timeout)
 				ereport(LOG,
 						(errmsg("still waiting for backend with PID %d to accept ProcSignalBarrier",
 								(int) pg_atomic_read_u32(&slot->pss_pid))));
@@ -482,6 +527,75 @@ WaitForProcSignalBarrier(uint64 generation)
 	 * to separate it from whatever follows.
 	 */
 	pg_memory_barrier();
+}
+
+/*
+ * TerminateBarrierStraggler - terminate the process using ProcSignal slot
+ * 'procno' if it has still not absorbed barrier 'generation' and is blocked
+ * writing to its client.  Returns true if it was signaled.
+ *
+ * Only a client backend or walsender waiting in ClientWrite is terminated,
+ * with SIGTERM, as pg_terminate_backend() would do.  While blocked in a client
+ * write, a backend services only ProcDiePending (see
+ * ProcessClientWriteInterrupt()), so it cannot absorb the barrier until its
+ * client reads again, and SIGTERM is what releases it; a recovery conflict
+ * signal would not.
+ *
+ * Processes waiting for anything else are not signaled, even when they cannot
+ * absorb the barrier either while they wait.  A backend waiting for
+ * synchronous replication has already committed its transaction locally (see
+ * SyncRepWaitForLSN()), and one in COPY FROM STDIN is waiting for its client
+ * to send more data, which the client may be about to do.
+ */
+static bool
+TerminateBarrierStraggler(int procno, uint64 generation)
+{
+	ProcSignalSlot *slot = &ProcSignal->psh_slot[procno];
+	PGPROC	   *proc = GetPGProcByNumber(procno);
+	pid_t		pid;
+	bool		absorbed;
+
+	/*
+	 * The process that our caller saw has not absorbed the barrier may have
+	 * exited since, and another may have taken over the slot.  The PID and
+	 * the barrier generation change together under pss_mutex, and a new
+	 * process starts out with the current barrier generation (see
+	 * ProcSignalInit()), so reading both under the lock tells whether the PID
+	 * is still that of a process that has not absorbed the barrier.
+	 */
+	SpinLockAcquire(&slot->pss_mutex);
+	pid = (pid_t) pg_atomic_read_u32(&slot->pss_pid);
+	absorbed = pg_atomic_read_u64(&slot->pss_barrierGeneration) >= generation;
+	SpinLockRelease(&slot->pss_mutex);
+
+	if (absorbed || pid == 0 || pid == MyProcPid)
+		return false;
+
+	/* The slot is indexed by ProcNumber, so 'proc' is its owner */
+	if (proc->pid != pid)
+		return false;
+	if (proc->backendType != B_BACKEND && proc->backendType != B_WAL_SENDER)
+		return false;
+	if (*((volatile uint32 *) &proc->wait_event_info) != WAIT_EVENT_CLIENT_WRITE)
+		return false;
+
+	ereport(LOG,
+			(errmsg("terminating process %d because it has not accepted ProcSignalBarrier within %d ms",
+					(int) pid, ProcSignalBarrierTimeout),
+			 errdetail("The process is blocked sending data to its client.")));
+
+	/*
+	 * As in pg_signal_backend(), the process could exit and its PID be reused
+	 * before we send the signal; that seems too unlikely to worry about.
+	 * Signal the whole process group if we have setsid().
+	 */
+#ifdef HAVE_SETSID
+	(void) kill(-pid, SIGTERM);
+#else
+	(void) kill(pid, SIGTERM);
+#endif
+
+	return true;
 }
 
 /*

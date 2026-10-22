@@ -11836,6 +11836,44 @@ dynamic_library_path = '/usr/local/lib/postgresql:$libdir'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-procsignal-barrier-timeout" xreflabel="procsignal_barrier_timeout">
+      <term><varname>procsignal_barrier_timeout</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>procsignal_barrier_timeout</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Some operations change state that every running process must take
+        into account before the operation can continue, and wait until all
+        processes have done so.  Among them are the end of recovery and the
+        replay of WAL on a standby when logical decoding is being enabled,
+        enabling or disabling data checksums online (see
+        <xref linkend="functions-admin-checksum"/>) and
+        <command>DROP DATABASE</command>.  A session can only do this
+        between other work; one that is blocked sending data to a client that
+        has stopped reading cannot, and the operation would wait for it
+        indefinitely.  This parameter sets how long the operation waits
+        before it terminates a client backend or WAL sender process that is
+        blocked that way, as <function>pg_terminate_backend</function> would.
+        This includes a session that is still sending a single large value
+        to a slow client.  Sessions waiting for anything else, for example
+        for synchronous replication or for more data from the client during
+        <command>COPY FROM STDIN</command>, are not terminated, nor are other
+        processes; the operation keeps waiting for them.  A message is
+        written to the server log for each process terminated this way.
+       </para>
+       <para>
+        If this value is specified without units, it is taken as
+        milliseconds.  A value of zero disables the timeout, so the
+        operation waits as long as it takes.  The default is 30 seconds
+        (<literal>30s</literal>).  This parameter can only be set in the
+        <filename>postgresql.conf</filename> file or on the server command
+        line.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-max-locks-per-transaction" xreflabel="max_locks_per_transaction">
       <term><varname>max_locks_per_transaction</varname> (<type>integer</type>)
       <indexterm>

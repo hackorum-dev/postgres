@@ -2423,6 +2423,16 @@
   check_hook => 'check_primary_slot_name',
 },
 
+{ name => 'procsignal_barrier_timeout', type => 'int', context => 'PGC_SIGHUP', group => 'LOCK_MANAGEMENT',
+  short_desc => 'Sets the time to wait for a session to accept a global state change before terminating it.',
+  long_desc => '0 disables the timeout.',
+  flags => 'GUC_UNIT_MS',
+  variable => 'ProcSignalBarrierTimeout',
+  boot_val => '30000',
+  min => '0',
+  max => 'INT_MAX',
+},
+
 { name => 'quote_all_identifiers', type => 'bool', context => 'PGC_USERSET', group => 'COMPAT_OPTIONS_PREVIOUS',
   short_desc => 'When generating SQL fragments, quote all identifiers.',
   variable => 'quote_all_identifiers',
