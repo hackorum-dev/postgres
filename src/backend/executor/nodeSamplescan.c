@@ -19,6 +19,7 @@
 #include "access/tsmapi.h"
 #include "common/pg_prng.h"
 #include "executor/executor.h"
+#include "executor/instrument.h"
 #include "executor/nodeSamplescan.h"
 #include "utils/fmgrprotos.h"
 #include "utils/rel.h"
@@ -292,6 +293,12 @@ tablesample_init(SampleScanState *scanstate)
 	/* Now we can create or reset the HeapScanDesc */
 	if (scanstate->ss.ss_currentScanDesc == NULL)
 	{
+		uint32		flags = ScanRelIsReadOnly(&scanstate->ss) ?
+			SO_HINT_REL_READ_ONLY : SO_NONE;
+
+		if (scanstate->ss.ps.state->es_instrument & INSTRUMENT_BUFFERS)
+			flags |= SO_SCAN_INSTRUMENT_STRATEGY;
+
 		scanstate->ss.ss_currentScanDesc =
 			table_beginscan_sampling(scanstate->ss.ss_currentRelation,
 									 scanstate->ss.ps.state->es_snapshot,
@@ -299,8 +306,7 @@ tablesample_init(SampleScanState *scanstate)
 									 scanstate->use_bulkread,
 									 allow_sync,
 									 scanstate->use_pagemode,
-									 ScanRelIsReadOnly(&scanstate->ss) ?
-									 SO_HINT_REL_READ_ONLY : SO_NONE);
+									 flags);
 	}
 	else
 	{

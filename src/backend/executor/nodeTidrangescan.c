@@ -251,6 +251,8 @@ TidRangeNext(TidRangeScanState *node)
 
 			if (estate->es_instrument & INSTRUMENT_IO)
 				flags |= SO_SCAN_INSTRUMENT;
+			if (estate->es_instrument & INSTRUMENT_BUFFERS)
+				flags |= SO_SCAN_INSTRUMENT_STRATEGY;
 
 			scandesc = table_beginscan_tidrange(node->ss.ss_currentRelation,
 												estate->es_snapshot,
@@ -351,7 +353,7 @@ ExecEndTidRangeScan(TidRangeScanState *node)
 {
 	TableScanDesc scan = node->ss.ss_currentScanDesc;
 
-	/* Collect IO stats for this process into shared instrumentation */
+	/* Collect scan statistics for this process into shared instrumentation */
 	if (node->trss_sinstrument != NULL && IsParallelWorker())
 	{
 		TidRangeScanInstrumentation *si;
@@ -362,6 +364,8 @@ ExecEndTidRangeScan(TidRangeScanState *node)
 		if (scan && scan->rs_instrument)
 		{
 			AccumulateIOStats(&si->stats.io, &scan->rs_instrument->io);
+			si->stats.strategy = scan->rs_instrument->strategy;
+			si->stats.strategy_valid = scan->rs_instrument->strategy_valid;
 		}
 	}
 
@@ -484,6 +488,8 @@ ExecTidRangeScanInitializeDSM(TidRangeScanState *node, ParallelContext *pcxt)
 
 	if (estate->es_instrument & INSTRUMENT_IO)
 		flags |= SO_SCAN_INSTRUMENT;
+	if (estate->es_instrument & INSTRUMENT_BUFFERS)
+		flags |= SO_SCAN_INSTRUMENT_STRATEGY;
 
 	pscan = shm_toc_allocate(pcxt->toc, node->trss_pscanlen);
 	table_parallelscan_initialize(node->ss.ss_currentRelation,
@@ -529,6 +535,8 @@ ExecTidRangeScanInitializeWorker(TidRangeScanState *node,
 
 	if (node->ss.ps.state->es_instrument & INSTRUMENT_IO)
 		flags |= SO_SCAN_INSTRUMENT;
+	if (node->ss.ps.state->es_instrument & INSTRUMENT_BUFFERS)
+		flags |= SO_SCAN_INSTRUMENT_STRATEGY;
 
 	pscan = shm_toc_lookup(pwcxt->toc, node->ss.ps.plan->plan_node_id, false);
 	node->ss.ss_currentScanDesc =
@@ -547,7 +555,8 @@ ExecTidRangeScanInstrumentEstimate(TidRangeScanState *node,
 	EState	   *estate = node->ss.ps.state;
 	Size		size;
 
-	if ((estate->es_instrument & INSTRUMENT_IO) == 0 || pcxt->nworkers == 0)
+	if ((estate->es_instrument & (INSTRUMENT_BUFFERS | INSTRUMENT_IO)) == 0 ||
+		pcxt->nworkers == 0)
 		return;
 
 	size = add_size(offsetof(SharedTidRangeScanInstrumentation, sinstrument),
@@ -568,7 +577,8 @@ ExecTidRangeScanInstrumentInitDSM(TidRangeScanState *node,
 	SharedTidRangeScanInstrumentation *sinstrument;
 	Size		size;
 
-	if ((estate->es_instrument & INSTRUMENT_IO) == 0 || pcxt->nworkers == 0)
+	if ((estate->es_instrument & (INSTRUMENT_BUFFERS | INSTRUMENT_IO)) == 0 ||
+		pcxt->nworkers == 0)
 		return;
 
 	size = add_size(offsetof(SharedTidRangeScanInstrumentation, sinstrument),
@@ -592,7 +602,7 @@ ExecTidRangeScanInstrumentInitWorker(TidRangeScanState *node,
 {
 	EState	   *estate = node->ss.ps.state;
 
-	if ((estate->es_instrument & INSTRUMENT_IO) == 0)
+	if ((estate->es_instrument & (INSTRUMENT_BUFFERS | INSTRUMENT_IO)) == 0)
 		return;
 
 	node->trss_sinstrument = shm_toc_lookup(pwcxt->toc,

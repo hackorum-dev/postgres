@@ -26,6 +26,7 @@
 #include "access/tableam.h"
 #include "catalog/pg_type.h"
 #include "executor/executor.h"
+#include "executor/instrument.h"
 #include "executor/nodeTidscan.h"
 #include "lib/qunique.h"
 #include "miscadmin.h"
@@ -146,9 +147,17 @@ TidListEval(TidScanState *tidstate)
 	 * the node might never get executed.
 	 */
 	if (tidstate->ss.ss_currentScanDesc == NULL)
+	{
+		uint32		flags = SO_NONE;
+
+		if (tidstate->ss.ps.state->es_instrument & INSTRUMENT_BUFFERS)
+			flags |= SO_SCAN_INSTRUMENT_STRATEGY;
+
 		tidstate->ss.ss_currentScanDesc =
 			table_beginscan_tid(tidstate->ss.ss_currentRelation,
-								tidstate->ss.ps.state->es_snapshot);
+								tidstate->ss.ps.state->es_snapshot,
+								flags);
+	}
 	scan = tidstate->ss.ss_currentScanDesc;
 
 	/*

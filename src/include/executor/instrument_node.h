@@ -18,6 +18,8 @@
 #ifndef INSTRUMENT_NODE_H
 #define INSTRUMENT_NODE_H
 
+#include "storage/buf.h"
+
 /*
  * Offset added to plan_node_id to create a second TOC key for per-worker scan
  * instrumentation. Instrumentation and parallel-awareness are independent, so
@@ -78,6 +80,10 @@ typedef struct IOStats
 typedef struct TableScanInstrumentation
 {
 	IOStats		io;
+
+	/* Buffer access strategy reported by the table AM, if available. */
+	BufferAccessStrategyType strategy;
+	bool		strategy_valid;
 } TableScanInstrumentation;
 
 /* merge IO statistics from 'src' into 'dst' */
