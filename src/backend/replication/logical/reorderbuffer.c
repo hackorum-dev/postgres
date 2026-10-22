@@ -109,6 +109,7 @@
 #include "storage/procarray.h"
 #include "storage/sinval.h"
 #include "utils/builtins.h"
+#include "utils/injection_point.h"
 #include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
@@ -2305,11 +2306,13 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 			 * required for the cases when we decode the changes before the
 			 * COMMIT record is processed.
 			 */
-			if (streaming || rbtxn_is_prepared(change->txn))
+			if (streaming || rbtxn_is_prepared(rbtxn_get_toptxn(change->txn)))
 			{
 				curtxn = change->txn;
 				SetupCheckXidLive(curtxn->xid);
 			}
+
+			INJECTION_POINT("reorderbuffer-process-change", NULL);
 
 			switch (change->action)
 			{
