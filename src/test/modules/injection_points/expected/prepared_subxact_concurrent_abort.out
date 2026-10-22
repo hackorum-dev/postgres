@@ -1,0 +1,49 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s2_prepare s1_decode s2_rollback_prepared s2_update_catalog s2_detach s2_wakeup
+?column?
+--------
+init    
+(1 row)
+
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step s2_prepare: 
+	BEGIN;
+	SAVEPOINT sp;
+	ALTER TABLE t ADD COLUMN b int;
+	INSERT INTO t VALUES (1, 1);
+	RELEASE SAVEPOINT sp;
+	PREPARE TRANSACTION 'x';
+
+step s1_decode: 
+	SELECT data FROM pg_logical_slot_get_changes('s', NULL, NULL,
+		'skip-empty-xacts', '1', 'include-xids', '0');
+ <waiting ...>
+step s2_rollback_prepared: ROLLBACK PREPARED 'x';
+step s2_update_catalog: ALTER TABLE t SET (fillfactor = 90);
+step s2_detach: SELECT injection_points_detach('reorderbuffer-process-change');
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+step s2_wakeup: SELECT injection_points_wakeup('reorderbuffer-process-change');
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step s1_decode: <... completed>
+data
+----
+(0 rows)
+
+pg_drop_replication_slot
+------------------------
+                        
+(1 row)
+
