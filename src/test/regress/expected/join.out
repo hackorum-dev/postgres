@@ -6937,6 +6937,79 @@ where t1.f1 = ss2.f1;
  doh! | 4567890123456789 | 123 | 4567890123456789 | doh! | 4567890123456789 | doh!
 (1 row)
 
+-- a redundant cloned outer-join clause must not become constant TRUE if it
+-- can be evaluated above a pushed-down outer join (bug #19765)
+explain (costs off)
+select a.a, b.b, c.c, d.d from
+  (values (1),(2)) as a(a)
+  left join (values (1),(2)) as b(b) on a.a = b.b
+  left join (values (7),(2)) as c(c) on b.b = c.c
+  left join (values (1),(2)) as d(d) on c.c = d.d
+where a.a = 1;
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Nested Loop Left Join
+   Join Filter: ("*VALUES*_2".column1 = "*VALUES*_3".column1)
+   ->  Nested Loop Left Join
+         Join Filter: ("*VALUES*_1".column1 = "*VALUES*_2".column1)
+         ->  Nested Loop Left Join
+               ->  Values Scan on "*VALUES*"
+                     Filter: (column1 = 1)
+               ->  Values Scan on "*VALUES*_1"
+                     Filter: (column1 = 1)
+         ->  Values Scan on "*VALUES*_2"
+               Filter: (column1 = 1)
+   ->  Values Scan on "*VALUES*_3"
+         Filter: (column1 = 1)
+(13 rows)
+
+select a.a, b.b, c.c, d.d from
+  (values (1),(2)) as a(a)
+  left join (values (1),(2)) as b(b) on a.a = b.b
+  left join (values (7),(2)) as c(c) on b.b = c.c
+  left join (values (1),(2)) as d(d) on c.c = d.d
+where a.a = 1;
+ a | b | c | d 
+---+---+---+---
+ 1 | 1 |   |  
+(1 row)
+
+-- same, with the outer joins commuting in the other direction
+explain (costs off)
+select a.a, b.b, c.c, d.d from
+  (values (1),(2)) as a(a)
+  left join (values (1),(2)) as b(b) on a.a = b.b
+  left join ((values (7),(2)) as c(c)
+             left join (values (1),(2)) as d(d) on c.c = d.d) on b.b = c.c
+where a.a = 1;
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Nested Loop Left Join
+   Join Filter: ("*VALUES*_2".column1 = "*VALUES*_3".column1)
+   ->  Nested Loop Left Join
+         Join Filter: ("*VALUES*_1".column1 = "*VALUES*_2".column1)
+         ->  Nested Loop Left Join
+               ->  Values Scan on "*VALUES*"
+                     Filter: (column1 = 1)
+               ->  Values Scan on "*VALUES*_1"
+                     Filter: (column1 = 1)
+         ->  Values Scan on "*VALUES*_2"
+               Filter: (column1 = 1)
+   ->  Values Scan on "*VALUES*_3"
+         Filter: (column1 = 1)
+(13 rows)
+
+select a.a, b.b, c.c, d.d from
+  (values (1),(2)) as a(a)
+  left join (values (1),(2)) as b(b) on a.a = b.b
+  left join ((values (7),(2)) as c(c)
+             left join (values (1),(2)) as d(d) on c.c = d.d) on b.b = c.c
+where a.a = 1;
+ a | b | c | d 
+---+---+---+---
+ 1 | 1 |   |  
+(1 row)
+
 explain (verbose, costs off)
 select 1 from
   text_tbl as tt1
@@ -6962,6 +7035,7 @@ where tt1.f1 = ss1.c0;
                Output: tt4.f1
                ->  Nested Loop Left Join
                      Output: tt4.f1
+                     Join Filter: (tt3.f1 = tt4.f1)
                      ->  Seq Scan on public.text_tbl tt3
                            Output: tt3.f1
                            Filter: (tt3.f1 = 'foo'::text)
@@ -6979,7 +7053,7 @@ where tt1.f1 = ss1.c0;
                      Output: (tt4.f1)
                      ->  Seq Scan on public.text_tbl tt5
                            Output: tt4.f1
-(32 rows)
+(33 rows)
 
 select 1 from
   text_tbl as tt1
