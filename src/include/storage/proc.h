@@ -383,6 +383,13 @@ typedef struct PGPROC
 	 ************************************************************************/
 
 	uint32		wait_event_info;	/* proc's wait information */
+
+	/*
+	 * Number of sends to the client completed by this process.  Written only
+	 * by the process itself; read by WaitForProcSignalBarrier() to tell a
+	 * slow client from one that has stopped reading.
+	 */
+	pg_atomic_uint32 clientSendCount;
 }
 PGPROC;
 
