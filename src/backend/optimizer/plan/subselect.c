@@ -93,6 +93,7 @@ static bool contain_outer_selfref_walker(Node *node, Index *depth);
 static void inline_cte(PlannerInfo *root, CommonTableExpr *cte);
 static bool inline_cte_walker(Node *node, inline_cte_walker_context *context);
 static bool sublink_testexpr_is_not_nullable(PlannerInfo *root, SubLink *sublink);
+static bool sublink_inner_arg_is_param(Node *arg);
 static int	add_antijoin_rte(Query *parse);
 static bool simplify_EXISTS_query(PlannerInfo *root, Query *query);
 static Query *convert_EXISTS_to_ANY(PlannerInfo *root, Query *subselect,
@@ -1494,6 +1495,13 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
  * multi-column ordering checks.  In all cases, we validate the operators and
  * the outer expressions.
  *
+ * We must also check the inner side of each comparison.  The caller verifies
+ * that the sub-select's output columns cannot be NULL, but the parser may
+ * have wrapped the corresponding Param in a coercion to the operator's input
+ * type, and a cast function can return NULL for a non-null input.  So we
+ * insist that each inner argument be the bare Param, possibly under a
+ * binary-compatible RelabelType.
+ *
  * It is acceptable for this check not to be exhaustive.  We can err on the
  * side of conservatism: if we're not sure, it's okay to return FALSE.
  */
@@ -1524,6 +1532,10 @@ sublink_testexpr_is_not_nullable(PlannerInfo *root, SubLink *sublink)
 		if (!op_is_safe_index_member(opexpr->opno))
 			return false;
 
+		/* the inner argument must not be able to go NULL; see above */
+		if (!sublink_inner_arg_is_param(lsecond(opexpr->args)))
+			return false;
+
 		outer_exprs = lappend(outer_exprs, linitial(opexpr->args));
 	}
 	else if (is_andclause(testexpr) || is_orclause(testexpr))
@@ -1544,6 +1556,10 @@ sublink_testexpr_is_not_nullable(PlannerInfo *root, SubLink *sublink)
 			if (!op_is_safe_index_member(opexpr->opno))
 				return false;
 
+			/* the inner argument must not be able to go NULL */
+			if (!sublink_inner_arg_is_param(lsecond(opexpr->args)))
+				return false;
+
 			outer_exprs = lappend(outer_exprs, linitial(opexpr->args));
 		}
 	}
@@ -1556,6 +1572,13 @@ sublink_testexpr_is_not_nullable(PlannerInfo *root, SubLink *sublink)
 		{
 			/* verify operator safety; see comment above */
 			if (!op_is_safe_index_member(opno))
+				return false;
+		}
+
+		/* the inner arguments must not be able to go NULL */
+		foreach_ptr(Node, rarg, rcexpr->rargs)
+		{
+			if (!sublink_inner_arg_is_param(rarg))
 				return false;
 		}
 
@@ -1598,6 +1621,24 @@ sublink_testexpr_is_not_nullable(PlannerInfo *root, SubLink *sublink)
 	}
 
 	return true;
+}
+
+/*
+ * sublink_inner_arg_is_param: is this inner argument of an ANY_SUBLINK's
+ * comparison just the sublink's output Param, possibly binary-relabeled?
+ *
+ * Helper for sublink_testexpr_is_not_nullable.  Anything else (such as an
+ * implicit coercion applied by the parser) could turn a non-null sub-select
+ * output into NULL.
+ */
+static bool
+sublink_inner_arg_is_param(Node *arg)
+{
+	while (arg && IsA(arg, RelabelType))
+		arg = (Node *) ((RelabelType *) arg)->arg;
+
+	return arg && IsA(arg, Param) &&
+		((Param *) arg)->paramkind == PARAM_SUBLINK;
 }
 
 /*
