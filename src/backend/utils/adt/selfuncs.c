@@ -2266,18 +2266,6 @@ estimate_array_length(PlannerInfo *root, Node *arrayexpr)
 		AttStatsSlot sslot;
 		double		nelem = 0;
 
-		/*
-		 * Skip calling examine_variable for Var with varno 0, which has no
-		 * valid relation entry and would error in find_base_rel.  Such a Var
-		 * can appear when a nested set operation's output type doesn't match
-		 * the parent's expected type, because recurse_set_operations builds a
-		 * projection target list using generate_setop_tlist with varno 0, and
-		 * if the required type coercion involves an ArrayCoerceExpr, we can
-		 * be called on that Var.
-		 */
-		if (IsA(arrayexpr, Var) && ((Var *) arrayexpr)->varno == 0)
-			return 10;			/* default guess, should match scalararraysel */
-
 		examine_variable(root, arrayexpr, 0, &vardata);
 		if (HeapTupleIsValid(vardata.statsTuple))
 		{
@@ -5645,6 +5633,10 @@ ReleaseDummy(HeapTuple tuple)
  *		statistic_proc_security_check().
  *
  * Caller is responsible for doing ReleaseVariableStats() before exiting.
+ *
+ * In some code paths this can be called before we've set up RelOptInfos
+ * for the query's relations.  Therefore, we use find_base_rel_noerr()
+ * and don't complain if it returns NULL.
  */
 void
 examine_variable(PlannerInfo *root, Node *node, int varRelid,
@@ -5683,16 +5675,21 @@ examine_variable(PlannerInfo *root, Node *node, int varRelid,
 		(varRelid == 0 || varRelid == ((Var *) basenode)->varno))
 	{
 		Var		   *var = (Var *) basenode;
+		RelOptInfo *rel = find_base_rel_noerr(root, var->varno);
 
-		/* Set up result fields other than the stats tuple */
-		vardata->var = basenode;	/* return Var without phvs or relabeling */
-		vardata->rel = find_base_rel(root, var->varno);
-		vardata->atttype = var->vartype;
-		vardata->atttypmod = var->vartypmod;
-		vardata->isunique = has_unique_index(vardata->rel, var->varattno);
+		if (rel)
+		{
+			/* Set up result fields other than the stats tuple */
+			vardata->var = basenode;	/* Var without phvs or relabeling */
+			vardata->rel = rel;
+			vardata->atttype = var->vartype;
+			vardata->atttypmod = var->vartypmod;
+			vardata->isunique = has_unique_index(rel, var->varattno);
 
-		/* Try to locate some stats */
-		examine_simple_variable(root, var, vardata);
+			/* Try to locate some stats */
+			examine_simple_variable(root, var, vardata);
+		}
+		/* If we didn't find a rel, not much we can do */
 
 		return;
 	}
@@ -5720,7 +5717,7 @@ examine_variable(PlannerInfo *root, Node *node, int varRelid,
 		{
 			if (varRelid == 0 || varRelid == relid)
 			{
-				onerel = find_base_rel(root, relid);
+				onerel = find_base_rel_noerr(root, relid);
 				vardata->rel = onerel;
 				node = basenode;	/* strip any phvs or relabeling */
 			}
@@ -5732,13 +5729,14 @@ examine_variable(PlannerInfo *root, Node *node, int varRelid,
 			if (varRelid == 0)
 			{
 				/* treat it as a variable of a join relation */
+				/* find_join_rel returns null if no such join has been made */
 				vardata->rel = find_join_rel(root, varnos);
 				node = basenode;	/* strip any phvs or relabeling */
 			}
 			else if (bms_is_member(varRelid, varnos))
 			{
 				/* ignore the vars belonging to other relations */
-				vardata->rel = find_base_rel(root, varRelid);
+				vardata->rel = find_base_rel_noerr(root, varRelid);
 				node = basenode;	/* strip any phvs or relabeling */
 				/* note: no point in expressional-index search here */
 			}
