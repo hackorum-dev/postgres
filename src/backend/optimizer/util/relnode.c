@@ -66,6 +66,9 @@ static List *build_joinrel_restrictlist(PlannerInfo *root,
 #ifdef USE_ASSERT_CHECKING
 static bool no_duplicate_clause_serials(List *clauses);
 #endif
+static bool deferred_oj_makes_clause_needed(PlannerInfo *root,
+											RestrictInfo *rinfo,
+											Relids available_relids);
 static void build_joinrel_joinlist(RelOptInfo *joinrel,
 								   RelOptInfo *outer_rel,
 								   RelOptInfo *inner_rel);
@@ -1454,6 +1457,30 @@ no_duplicate_clause_serials(List *clauses)
 #endif
 
 /*
+ * Is a constant-propagated outer-join clause needed at this level?
+ *
+ * The clause is needed when one of the outer joins that can null its outer
+ * operand has already had both minimum inputs formed, but its OJ relid is
+ * still absent because a commuting lower outer join has not been completed.
+ */
+static bool
+deferred_oj_makes_clause_needed(PlannerInfo *root, RestrictInfo *rinfo,
+								Relids available_relids)
+{
+	foreach_node(SpecialJoinInfo, sjinfo, root->join_info_list)
+	{
+		if (!bms_is_member(sjinfo->ojrelid, rinfo->const_oj_relids))
+			continue;
+		if (!bms_is_member(sjinfo->ojrelid, available_relids) &&
+			bms_is_subset(sjinfo->min_lefthand, available_relids) &&
+			bms_is_subset(sjinfo->min_righthand, available_relids) &&
+			!bms_is_subset(sjinfo->commute_below_l, available_relids))
+			return true;
+	}
+	return false;
+}
+
+/*
  * build_joinrel_restrictlist
  * build_joinrel_joinlist
  *	  These routines build lists of restriction and join clauses for a
@@ -1599,7 +1626,10 @@ subbuild_joinrel_restrictlist(PlannerInfo *root,
 					   bms_is_subset(rinfo->required_relids,
 									 both_input_relids));
 			}
-
+			if (rinfo->const_oj_relids &&
+				!deferred_oj_makes_clause_needed(root, rinfo,
+											 both_input_relids))
+				continue;
 			/*
 			 * OK, so add it to the list, being careful to eliminate
 			 * duplicates.  (Since RestrictInfo nodes in different joinlists
@@ -1828,6 +1858,9 @@ get_baserel_parampathinfo(PlannerInfo *root, RelOptInfo *baserel,
 			if (bms_is_member(rinfo->rinfo_serial, pserials))
 				continue;
 		}
+		if (rinfo->const_oj_relids &&
+			!deferred_oj_makes_clause_needed(root, rinfo, joinrelids))
+			continue;
 
 		pclauses = lappend(pclauses, rinfo);
 		pserials = bms_add_member(pserials, rinfo->rinfo_serial);
@@ -1974,6 +2007,9 @@ get_joinrel_parampathinfo(PlannerInfo *root, RelOptInfo *joinrel,
 			if (bms_is_member(rinfo->rinfo_serial, pserials))
 				continue;
 		}
+		if (rinfo->const_oj_relids &&
+			!deferred_oj_makes_clause_needed(root, rinfo, join_and_req))
+			continue;
 
 		pclauses = lappend(pclauses, rinfo);
 		pserials = bms_add_member(pserials, rinfo->rinfo_serial);

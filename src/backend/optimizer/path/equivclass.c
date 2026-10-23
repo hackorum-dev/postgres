@@ -75,6 +75,9 @@ static RestrictInfo *create_join_clause(PlannerInfo *root,
 										EquivalenceMember *leftem,
 										EquivalenceMember *rightem,
 										EquivalenceClass *parent_ec);
+static Relids find_deferred_const_oj_relids(PlannerInfo *root,
+											OuterJoinClauseInfo *ojcinfo,
+											bool outer_on_left);
 static bool reconsider_outer_join_clause(PlannerInfo *root,
 										 OuterJoinClauseInfo *ojcinfo,
 										 bool outer_on_left);
@@ -2155,7 +2158,11 @@ create_join_clause(PlannerInfo *root,
  * seen as a clauseless join and avoided during join order searching.
  * We handle this by generating a constant-TRUE clause that is marked with
  * the same required_relids etc as the removed outer-join clause, thus
- * making it a join clause between the correct relations.
+ * making it a join clause between the correct relations.  But that's not
+ * safe for a cloned clause (see deconstruct_distribute_oj_quals) that may be
+ * evaluated above a pushed-down outer join that has already null-extended
+ * the OUTERVAR, whose relid is not yet included in the join's relids.  There
+ * we need the original strict clause to reject the null-extended rows.
  */
 void
 reconsider_outer_join_clauses(PlannerInfo *root)
@@ -2181,6 +2188,14 @@ reconsider_outer_join_clauses(PlannerInfo *root)
 				/* remove it from the list */
 				root->left_join_clauses =
 					foreach_delete_current(root->left_join_clauses, cell);
+				/* keep the original clause if it can still be needed */
+				rinfo->const_oj_relids =
+					find_deferred_const_oj_relids(root, ojcinfo, true);
+				if (rinfo->const_oj_relids)
+				{
+					distribute_restrictinfo_to_rels(root, rinfo);
+					continue;
+				}
 				/* throw back a dummy replacement clause (see notes above) */
 				rinfo = make_restrictinfo(root,
 										  (Expr *) makeBoolConst(true, false),
@@ -2209,6 +2224,14 @@ reconsider_outer_join_clauses(PlannerInfo *root)
 				/* remove it from the list */
 				root->right_join_clauses =
 					foreach_delete_current(root->right_join_clauses, cell);
+								/* keep the original clause if it can still be needed */
+				rinfo->const_oj_relids =
+					find_deferred_const_oj_relids(root, ojcinfo, false);
+				if (rinfo->const_oj_relids)
+				{
+					distribute_restrictinfo_to_rels(root, rinfo);
+					continue;
+				}
 				/* throw back a dummy replacement clause (see notes above) */
 				rinfo = make_restrictinfo(root,
 										  (Expr *) makeBoolConst(true, false),
@@ -2272,6 +2295,39 @@ reconsider_outer_join_clauses(PlannerInfo *root)
 
 		distribute_restrictinfo_to_rels(root, ojcinfo->rinfo);
 	}
+}
+
+/*
+ * find_deferred_const_oj_relids
+ *	  Find outer joins that can make this clause necessary even though
+ *	  constant propagation normally makes it redundant.
+ *
+ * Such an outer join must be able to null the clause's outer operand, and
+ * its relid must be one with which this clone is incompatible.  A nonempty
+ * commute_below_l means that add_outer_joins_to_relids() can defer that
+ * relid after the join has physically null-extended the operand.
+ */
+static Relids
+find_deferred_const_oj_relids(PlannerInfo *root,
+								 OuterJoinClauseInfo *ojcinfo,
+								 bool outer_on_left)
+{
+	RestrictInfo *rinfo = ojcinfo->rinfo;
+	Relids		outer_relids;
+	Relids		result = NULL;
+
+	if (!rinfo->has_clone && !rinfo->is_clone)
+		return NULL;
+	outer_relids = outer_on_left ? rinfo->left_relids : rinfo->right_relids;
+	foreach_node(SpecialJoinInfo, othersj, root->join_info_list)
+	{
+		if (othersj != ojcinfo->sjinfo && othersj->ojrelid != 0 &&
+			bms_is_member(othersj->ojrelid, rinfo->incompatible_relids) &&
+			!bms_is_empty(othersj->commute_below_l) &&
+			bms_overlap(othersj->syn_righthand, outer_relids))
+			result = bms_add_member(result, othersj->ojrelid);
+	}
+	return result;
 }
 
 /*

@@ -2933,6 +2933,11 @@ typedef struct RestrictInfo
 
 	/* Relids above which we cannot evaluate the clause (see comment above) */
 	Relids		incompatible_relids;
+	/*
+	 * For an outer-join clone made redundant by constant propagation, OJ
+	 * relids whose deferred addition can make the original clause necessary.
+	 */
+	Relids		const_oj_relids;
 
 	/* If an outer-join clause, the outer-side relations, else NULL: */
 	Relids		outer_relids;
