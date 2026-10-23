@@ -876,6 +876,9 @@
 #------------------------------------------------------------------------------
 
 #deadlock_timeout = 1s
+#procsignal_barrier_timeout = 30s       # terminate a session that has not
+                                        # accepted a global state change
+                                        # after this long; 0 disables
 #max_locks_per_transaction = 128        # min 10
                                         # (change requires restart)
 #max_pred_locks_per_transaction = 64    # min 10

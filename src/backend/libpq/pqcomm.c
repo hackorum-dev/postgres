@@ -76,6 +76,7 @@
 #include "postmaster/postmaster.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
+#include "storage/proc.h"
 #include "utils/guc_hooks.h"
 #include "utils/memutils.h"
 
@@ -1417,6 +1418,11 @@ internal_flush_buffer(const char *buf, size_t *start, size_t *end)
 		last_reported_send_errno = 0;	/* reset after any successful send */
 		bufptr += r;
 		*start += r;
+
+		/* Let WaitForProcSignalBarrier() see that we are making progress */
+		if (MyProc != NULL)
+			pg_atomic_write_u32(&MyProc->clientSendCount,
+								pg_atomic_read_u32(&MyProc->clientSendCount) + 1);
 	}
 
 	*start = *end = 0;
