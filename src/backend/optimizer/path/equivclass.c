@@ -2155,7 +2155,11 @@ create_join_clause(PlannerInfo *root,
  * seen as a clauseless join and avoided during join order searching.
  * We handle this by generating a constant-TRUE clause that is marked with
  * the same required_relids etc as the removed outer-join clause, thus
- * making it a join clause between the correct relations.
+ * making it a join clause between the correct relations.  But we don't do
+ * that for cloned clauses (see deconstruct_distribute_oj_quals): a clone may
+ * be evaluated above a pushed-down outer join that has already null-extended
+ * the OUTERVAR, whose relid is not yet included in the join's relids.  There
+ * we need the original strict clause to reject the null-extended rows.
  */
 void
 reconsider_outer_join_clauses(PlannerInfo *root)
@@ -2181,6 +2185,15 @@ reconsider_outer_join_clauses(PlannerInfo *root)
 				/* remove it from the list */
 				root->left_join_clauses =
 					foreach_delete_current(root->left_join_clauses, cell);
+				/* throw back a cloned clause as-is (see notes above) */
+				if (rinfo->has_clone || rinfo->is_clone)
+				{
+					/* but the kept clause has no extra selectivity */
+					rinfo->norm_selec = 1.0;
+					rinfo->outer_selec = 1.0;
+					distribute_restrictinfo_to_rels(root, rinfo);
+					continue;
+				}
 				/* throw back a dummy replacement clause (see notes above) */
 				rinfo = make_restrictinfo(root,
 										  (Expr *) makeBoolConst(true, false),
@@ -2209,6 +2222,15 @@ reconsider_outer_join_clauses(PlannerInfo *root)
 				/* remove it from the list */
 				root->right_join_clauses =
 					foreach_delete_current(root->right_join_clauses, cell);
+				/* throw back a cloned clause as-is (see notes above) */
+				if (rinfo->has_clone || rinfo->is_clone)
+				{
+					/* but the kept clause has no extra selectivity */
+					rinfo->norm_selec = 1.0;
+					rinfo->outer_selec = 1.0;
+					distribute_restrictinfo_to_rels(root, rinfo);
+					continue;
+				}
 				/* throw back a dummy replacement clause (see notes above) */
 				rinfo = make_restrictinfo(root,
 										  (Expr *) makeBoolConst(true, false),
