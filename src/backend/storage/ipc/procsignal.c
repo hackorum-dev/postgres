@@ -124,6 +124,8 @@ static ProcSignalSlot *MyProcSignalSlot = NULL;
 static bool CheckProcSignal(ProcSignalReason reason);
 static void CleanupProcSignalState(int status, Datum arg);
 static void ResetProcSignalBarrierBits(uint32 flags);
+static void ProcessProcSignalBarrierInternal(bool noerror);
+static bool BarrierTypeAbsorbableWithoutError(ProcSignalBarrierType type);
 
 /*
  * ProcSignalShmemRequest
@@ -512,6 +514,90 @@ HandleProcSignalBarrierInterrupt(void)
 void
 ProcessProcSignalBarrier(void)
 {
+	ProcessProcSignalBarrierInternal(false);
+}
+
+/*
+ * ProcessProcSignalBarrierNoError - absorb barriers where an ERROR is not
+ * allowed
+ *
+ * Some waits cannot run CHECK_FOR_INTERRUPTS(): SyncRepWaitForLSN() holds off
+ * interrupts after the commit record has been flushed, and a backend waiting
+ * for more data from its client in the middle of a command, as in COPY FROM
+ * STDIN, cannot process a query cancel there.  If such a process did not
+ * absorb barriers while it waits, every process waiting for a barrier, such as
+ * DROP DATABASE, would wait as long as it does.
+ *
+ * This absorbs the pending barriers only if every pending type can be absorbed
+ * where an ERROR is not allowed (see BarrierTypeAbsorbableWithoutError()).
+ * Otherwise it absorbs nothing and leaves all of them pending for the next
+ * CHECK_FOR_INTERRUPTS(), exactly as if it had not been called: the barrier
+ * generation can only advance once every pending type has been handled.
+ *
+ * It may be called with interrupts held off, but not in a critical section,
+ * and not while holding an LWLock.
+ */
+void
+ProcessProcSignalBarrierNoError(void)
+{
+	Assert(CritSectionCount == 0);
+
+	ProcessProcSignalBarrierInternal(true);
+}
+
+/*
+ * Can this barrier type be absorbed where an ERROR is not allowed?
+ *
+ * ProcessProcSignalBarrierNoError() absorbs the pending barriers only if this
+ * returns true for every pending type.  Return true only for a type whose
+ * processing does nothing that CommitTransaction() does not already do after
+ * its commit record: it must not raise an ERROR, allocate memory or take a lock
+ * that the caller could be holding, except on a path that commit processing
+ * itself runs in the same state.  There is deliberately no default case, so
+ * that the compiler warns if a new type is not classified here.
+ */
+static bool
+BarrierTypeAbsorbableWithoutError(ProcSignalBarrierType type)
+{
+	switch (type)
+	{
+		case PROCSIGNAL_BARRIER_SMGRRELEASE:
+
+			/*
+			 * smgrreleaseall() closes files without allocating memory (see
+			 * _fdvec_resize()).  With io_method=io_uring, FileClose() may
+			 * wait for this backend's in-flight IO in pgaio_closing_fd(),
+			 * which can raise an ERROR only on an internal consistency
+			 * failure. CommitTransaction() runs the same path after its
+			 * commit record, in smgrDoPendingDeletes().
+			 */
+			return true;
+		case PROCSIGNAL_BARRIER_UPDATE_XLOG_LOGICAL_INFO:
+
+			/*
+			 * With a transaction ID assigned this only sets a flag, consumed
+			 * by AtEOXact_LogicalCtl(); otherwise it reads shared state under
+			 * a shared LWLock that no barrier emitter holds while it waits.
+			 */
+			return true;
+		case PROCSIGNAL_BARRIER_CHECKSUM_OFF:
+		case PROCSIGNAL_BARRIER_CHECKSUM_INPROGRESS_ON:
+		case PROCSIGNAL_BARRIER_CHECKSUM_INPROGRESS_OFF:
+		case PROCSIGNAL_BARRIER_CHECKSUM_ON:
+			/* AbsorbDataChecksumsBarrier() raises an ERROR on a bad state. */
+			return false;
+	}
+
+	return false;				/* not reached for a valid type */
+}
+
+/*
+ * Workhorse for ProcessProcSignalBarrier() and
+ * ProcessProcSignalBarrierNoError().
+ */
+static void
+ProcessProcSignalBarrierInternal(bool noerror)
+{
 	uint64		local_gen;
 	uint64		shared_gen;
 	volatile uint32 flags;
@@ -555,6 +641,28 @@ ProcessProcSignalBarrier(void)
 	 * back any for which we don't manage to successfully absorb the barrier.
 	 */
 	flags = pg_atomic_exchange_u32(&MyProcSignalSlot->pss_barrierCheckMask, 0);
+
+	/*
+	 * Where an ERROR is not allowed, absorb nothing unless every pending type
+	 * can be absorbed there: put all the bits back for the next call.
+	 */
+	if (noerror)
+	{
+		uint32		check = flags;
+
+		while (check != 0)
+		{
+			ProcSignalBarrierType type;
+
+			type = (ProcSignalBarrierType) pg_rightmost_one_pos32(check);
+			if (!BarrierTypeAbsorbableWithoutError(type))
+			{
+				ResetProcSignalBarrierBits(flags);
+				return;
+			}
+			BARRIER_CLEAR_BIT(check, type);
+		}
+	}
 
 	/*
 	 * If there are no flags set, then we can skip doing any real work.

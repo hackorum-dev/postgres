@@ -82,6 +82,7 @@
 #include "replication/walsender.h"
 #include "replication/walsender_private.h"
 #include "storage/proc.h"
+#include "storage/procsignal.h"
 #include "tcop/tcopprot.h"
 #include "utils/guc_hooks.h"
 #include "utils/ps_status.h"
@@ -333,6 +334,15 @@ SyncRepWaitForLSN(XLogRecPtr lsn, bool commit)
 			SyncRepCancelWait();
 			break;
 		}
+
+		/*
+		 * Interrupts are held off, so CHECK_FOR_INTERRUPTS() would not absorb
+		 * a ProcSignalBarrier, and whoever waits for one would wait as long
+		 * as we do.  Absorb it here if every pending type allows it where an
+		 * ERROR is not allowed: the transaction has already committed.
+		 */
+		if (ProcSignalBarrierPending)
+			ProcessProcSignalBarrierNoError();
 
 		/*
 		 * Wait on latch.  Any condition that should wake us up will set the

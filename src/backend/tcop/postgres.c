@@ -544,6 +544,17 @@ ProcessClientReadInterrupt(bool blocked)
 		else
 			SetLatch(MyLatch);
 	}
+	else if (blocked && ProcSignalBarrierPending)
+	{
+		/*
+		 * Waiting for more data from the client in the middle of a command,
+		 * as in COPY FROM STDIN.  CHECK_FOR_INTERRUPTS() is not safe here,
+		 * but barriers that can be absorbed where an ERROR is not allowed
+		 * are, so that a client that stops sending does not hold up whoever
+		 * waits for the barrier.
+		 */
+		ProcessProcSignalBarrierNoError();
+	}
 
 	errno = save_errno;
 }

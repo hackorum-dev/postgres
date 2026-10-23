@@ -45,6 +45,11 @@ typedef enum
 
 #define NUM_PROCSIGNALS (PROCSIG_RECOVERY_CONFLICT + 1)
 
+/*
+ * Barrier types.  A new type must also be classified in
+ * BarrierTypeAbsorbableWithoutError() (procsignal.c), which decides whether it
+ * can be absorbed where an ERROR is not allowed.
+ */
 typedef enum
 {
 	PROCSIGNAL_BARRIER_SMGRRELEASE, /* ask smgr to close files */
@@ -77,6 +82,7 @@ extern void SendCancelRequest(int backendPID, const uint8 *cancel_key, int cance
 extern uint64 EmitProcSignalBarrier(ProcSignalBarrierType type);
 extern void WaitForProcSignalBarrier(uint64 generation);
 extern void ProcessProcSignalBarrier(void);
+extern void ProcessProcSignalBarrierNoError(void);
 
 extern void procsignal_sigusr1_handler(SIGNAL_ARGS);
 
