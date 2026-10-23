@@ -2804,6 +2804,54 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a AND
          1 |      0
 (1 row)
 
+-- mcv with domains over bool
+CREATE DOMAIN mcv_bool_domain AS bool;
+CREATE TABLE mcv_lists_bool_domain (
+    a mcv_bool_domain,
+    b mcv_bool_domain,
+    c INT
+)
+WITH (autovacuum_enabled = off);
+INSERT INTO mcv_lists_bool_domain (a, b, c)
+     SELECT
+         (mod(i,2) = 0), (mod(i,4) = 0), mod(i,8)
+     FROM generate_series(1,10000) s(i);
+CREATE STATISTICS mcv_lists_bool_domain_stats (mcv)
+  ON a, b, c, ((c > 4)::mcv_bool_domain)
+  FROM mcv_lists_bool_domain;
+ANALYZE mcv_lists_bool_domain;
+SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool_domain WHERE a AND b AND c = 0');
+ estimated | actual 
+-----------+--------
+      1250 |   1250
+(1 row)
+
+SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool_domain WHERE NOT a AND b');
+ estimated | actual 
+-----------+--------
+         1 |      0
+(1 row)
+
+SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool_domain WHERE a = true AND b = false');
+ estimated | actual 
+-----------+--------
+      2500 |   2500
+(1 row)
+
+SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool_domain WHERE (a OR b) AND c = 1');
+ estimated | actual 
+-----------+--------
+         1 |      0
+(1 row)
+
+SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool_domain WHERE a AND (c > 4)::mcv_bool_domain');
+ estimated | actual 
+-----------+--------
+      1250 |   1250
+(1 row)
+
+DROP TABLE mcv_lists_bool_domain;
+DROP DOMAIN mcv_bool_domain;
 -- mcv covering just a small fraction of data
 CREATE TABLE mcv_lists_partial (
     a INT,
