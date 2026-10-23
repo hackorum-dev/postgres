@@ -1789,4 +1789,45 @@ SELECT * FROM null_tab t1
 WHERE COALESCE(t1.id, -1) NOT IN
     (SELECT t1.val FROM not_null_tab t2 WHERE t2.val IS NOT NULL);
 
+-- No ANTI JOIN: the sub-select's output is coerced to the operator's input
+-- type by a cast function, which can return NULL for a non-null input, so a
+-- comparison can yield NULL even though both sides are non-nullable
+CREATE FUNCTION int4_to_text_nullzero(int4) RETURNS text
+    AS $$ SELECT CASE WHEN $1 <> 0 THEN format('%s', $1) END $$
+    LANGUAGE sql IMMUTABLE STRICT;
+CREATE CAST (int4 AS text) WITH FUNCTION int4_to_text_nullzero(int4) AS IMPLICIT;
+CREATE TEMP TABLE nn_text_tab (t text NOT NULL, k int NOT NULL);
+CREATE TEMP TABLE nn_int_tab (i int NOT NULL, k int NOT NULL);
+INSERT INTO nn_text_tab VALUES ('1', 1), ('5', 1);
+INSERT INTO nn_int_tab VALUES (0, 1), (1, 1);
+
+EXPLAIN (COSTS OFF)
+SELECT * FROM nn_text_tab WHERE t NOT IN (SELECT i FROM nn_int_tab);
+
+-- '1' matches 1, and '5' is compared with the NULL that 0 is cast to, so no
+-- row qualifies
+SELECT * FROM nn_text_tab WHERE t NOT IN (SELECT i FROM nn_int_tab);
+
+-- The cast cannot return NULL here, so '5' qualifies but '1' does not
+SELECT * FROM nn_text_tab WHERE t NOT IN (SELECT i FROM nn_int_tab WHERE i <> 0);
+
+-- Likewise for the multi-column form
+EXPLAIN (COSTS OFF)
+SELECT * FROM nn_text_tab WHERE (t, k) NOT IN (SELECT i, k FROM nn_int_tab);
+
+SELECT * FROM nn_text_tab WHERE (t, k) NOT IN (SELECT i, k FROM nn_int_tab);
+
+-- Likewise for a row comparison
+EXPLAIN (COSTS OFF)
+SELECT * FROM nn_text_tab WHERE NOT (t, k) > ANY (SELECT i, k FROM nn_int_tab);
+
+SELECT * FROM nn_text_tab WHERE NOT (t, k) > ANY (SELECT i, k FROM nn_int_tab);
+
+-- ANTI JOIN: a binary-compatible relabeling of the sub-select's output cannot
+-- produce NULLs
+CREATE TEMP TABLE nn_varchar_tab (v varchar NOT NULL);
+
+EXPLAIN (COSTS OFF)
+SELECT * FROM nn_text_tab WHERE t NOT IN (SELECT v FROM nn_varchar_tab);
+
 ROLLBACK;
