@@ -56,15 +56,11 @@
   <productname>DocBook</productname> allows an author to specify the
    structure and content of a technical document without worrying
    about presentation details.  A document style defines how that
-   content is rendered into one of several final forms.  DocBook is
-   maintained by the <ulink url="https://www.oasis-open.org">
-   OASIS group</ulink>.  The <ulink url="https://www.oasis-open.org/docbook/">
-   official DocBook site</ulink> has good introductory and reference documentation and
-   a complete O'Reilly book for your online reading pleasure.
-   The <ulink url="https://www.freebsd.org/docproj/">
-   FreeBSD Documentation Project</ulink> also uses DocBook and has some good
-   information, including a number of style guidelines that might be
-   worth considering.
+   content is rendered into one of several final forms.
+   The <ulink url="https://docbook.org/"> DocBook site</ulink> has
+   good introductory and reference documentation,
+   a complete O'Reilly book for your online reading pleasure,
+   and an archive with previously released versions.
   </para>
  </sect1>
 
@@ -78,7 +74,7 @@
 
    <variablelist>
     <varlistentry id="docguide-toolsets-docbook-dtd">
-     <term><ulink url="https://www.oasis-open.org/docbook/">DocBook DTD</ulink></term>
+     <term><ulink url="https://archive.docbook.org/schemas/">DocBook DTD</ulink></term>
      <listitem>
       <para>
        This is the definition of DocBook itself.  We currently use version
