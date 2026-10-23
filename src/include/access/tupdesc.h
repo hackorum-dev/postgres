@@ -174,6 +174,11 @@ typedef struct TupleDescData
 	int			firstNonGuaranteedAttr; /* index of the first nullable,
 										 * missing, dropped, or !attbyval
 										 * compact_attrs element. */
+	int16		td_rowidentity_attno;	/* 0-based attno of ROW IDENTITY col,
+										 * or -1 if none */
+	uint8		td_partition_bits;	/* P: bit width of partition_id (0..30) */
+	uint64		td_partition_prefix;	/* (uint64) partition_id <<
+										 * (48 - Max(0, P - 14)) */
 	TupleConstr *constr;		/* constraints, or NULL if none */
 	/* compact_attrs[N] is the compact metadata of Attribute Number N+1 */
 	pg_attribute_counted_by(natts) CompactAttribute compact_attrs[FLEXIBLE_ARRAY_MEMBER];
