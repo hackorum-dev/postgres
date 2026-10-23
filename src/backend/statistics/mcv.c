@@ -1622,6 +1622,13 @@ mcv_get_match_bitmap(PlannerInfo *root, List *clauses,
 			clause = (Node *) ((RestrictInfo *) clause)->clause;
 
 		/*
+		 * Look inside any binary-compatible relabeling, as
+		 * statext_is_compatible_clause_internal does.
+		 */
+		if (IsA(clause, RelabelType))
+			clause = (Node *) ((RelabelType *) clause)->arg;
+
+		/*
 		 * Handle the various types of clauses - OpClause, NullTest and
 		 * AND/OR/NOT
 		 */
@@ -1913,7 +1920,7 @@ mcv_get_match_bitmap(PlannerInfo *root, List *clauses,
 			/* match the attribute to a dimension of the statistic */
 			int			idx = bms_member_index(keys, var->varattno);
 
-			Assert(var->vartype == BOOLOID);
+			Assert(getBaseType(var->vartype) == BOOLOID);
 
 			/*
 			 * Walk through the MCV items and evaluate the current clause. We
