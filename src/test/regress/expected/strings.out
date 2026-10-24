@@ -1455,13 +1455,13 @@ ERROR:  regexp_split_to_array() does not support the "global" option
 -- change NULL-display back
 \pset null ''
 -- E021-11 position expression
-SELECT POSITION('4' IN '1234567890') = '4' AS "4";
+SELECT POSITION('4' IN '1234567890') = $int4$4$int4$ AS "4";
  4 
 ---
  t
 (1 row)
 
-SELECT POSITION('5' IN '1234567890') = '5' AS "5";
+SELECT POSITION('5' IN '1234567890') = $int4$5$int4$ AS "5";
  5 
 ---
  t
