@@ -114,7 +114,51 @@ typedef struct IndexScanInstrumentation
 
 	/* Table tuples fetched count (incremented during index-only scans) */
 	uint64		ntabletuplefetches;
+
+	/* Whether the index AM should record its buffer access strategy */
+	bool		need_strategy;
+
+	/* Buffer access strategy reported by the index AM, if available */
+	BufferAccessStrategyType strategy;
+	bool		strategy_valid;
 } IndexScanInstrumentation;
+
+/*
+ * Record the buffer access strategy selected by an index AM.
+ *
+ * The strategy is recorded only when requested by the executor.
+ */
+static inline void
+InstrRecordIndexScanStrategy(IndexScanInstrumentation *instrument,
+							 BufferAccessStrategyType strategy)
+{
+	if (!instrument)
+		return;
+
+	if (instrument->need_strategy)
+	{
+		Assert(!instrument->strategy_valid ||
+			   instrument->strategy == strategy);
+		instrument->strategy = strategy;
+		instrument->strategy_valid = true;
+	}
+}
+
+/* Merge index scan instrumentation from 'src' into 'dst'. */
+static inline void
+AccumulateIndexScanInstrumentation(IndexScanInstrumentation *dst,
+								   IndexScanInstrumentation *src)
+{
+	dst->nsearches += src->nsearches;
+	dst->ntabletuplefetches += src->ntabletuplefetches;
+
+	if (src->strategy_valid)
+	{
+		Assert(!dst->strategy_valid || dst->strategy == src->strategy);
+		dst->strategy = src->strategy;
+		dst->strategy_valid = true;
+	}
+}
 
 /*
  * Shared memory container for per-worker information
