@@ -178,6 +178,7 @@
 #include "storage/ipc.h"
 #include "storage/latch.h"
 #include "storage/lmgr.h"
+#include "storage/procarray.h"
 #include "storage/procsignal.h"
 #include "storage/subsystems.h"
 #include "tcop/tcopprot.h"
@@ -2596,6 +2597,7 @@ asyncQueueReadAllNotifications(void)
 {
 	QueuePosition pos;
 	QueuePosition head;
+	static SnapshotData snapshotData = {SNAPSHOT_MVCC};
 	Snapshot	snapshot;
 
 	/*
@@ -2656,9 +2658,15 @@ asyncQueueReadAllNotifications(void)
 	 * BecomeRegisteredListener has already added us to the listener array,
 	 * so no not-yet-committed messages can be removed from the queue
 	 * before we see them.
+	 *
+	 * We only use the snapshot to tell which transactions are still running,
+	 * so call GetSnapshotData() directly.  GetLatestSnapshot() would also
+	 * establish the transaction snapshot if there is none yet, which in a
+	 * SERIALIZABLE READ ONLY DEFERRABLE transaction means waiting for a safe
+	 * snapshot.
 	 *----------
 	 */
-	snapshot = RegisterSnapshot(GetLatestSnapshot());
+	snapshot = RegisterSnapshot(GetSnapshotData(&snapshotData));
 
 	/*
 	 * It is possible that we fail while trying to send a message to our
