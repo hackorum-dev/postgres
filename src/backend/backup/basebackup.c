@@ -1575,6 +1575,9 @@ sendDir(bbsink *sink, const char *path, int basepathlen, bool sizeonly,
  * If the whole file is to be sent, then incremental_blocks should be NULL,
  * and num_incremental_blocks can have any value, as it will be ignored.
  *
+ * If the file is not a relation file then statbuf is replaced with the stat of
+ * the file that was opened.
+ *
  * Returns true if the file was successfully sent, false if 'missing_ok',
  * and the file did not exist.
  */
@@ -1607,6 +1610,21 @@ sendFile(bbsink *sink, const char *readfilename, const char *tarfilename,
 				(errcode_for_file_access(),
 				 errmsg("could not open file \"%s\": %m", readfilename)));
 	}
+
+	/*
+	 * If this is not a relation file then use the stat of the file that was
+	 * actually opened rather than the caller's earlier stat. Some files, e.g.
+	 * postgresql.auto.conf, are written to a temp file and then renamed in
+	 * place. If the rename happened after the earlier stat then the opened
+	 * file may have a different size and sending the earlier size would
+	 * truncate or zero-pad the file. WAL replay will not repair these files.
+	 * Relation files are not replaced this way and any data added to relation
+	 * files after the earlier stat will be restored by WAL replay.
+	 */
+	if (!RelFileNumberIsValid(relfilenumber) && fstat(fd, statbuf) != 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not stat file \"%s\": %m", readfilename)));
 
 	_tarWriteHeader(sink, tarfilename, NULL, statbuf, false);
 
