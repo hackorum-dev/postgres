@@ -94,6 +94,7 @@
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
+#include "utils/injection_point.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/pg_lsn.h"
@@ -3619,6 +3620,8 @@ XLogSendPhysical(void)
 	enlargeStringInfo(&output_message, nbytes);
 
 retry:
+	INJECTION_POINT("walsender-before-wal-read", NULL);
+
 	/* attempt to read WAL from WAL buffers first */
 	rbytes = WALReadFromBuffers(&output_message.data[output_message.len],
 								startptr, nbytes, xlogreader->seg.ws_tli);
