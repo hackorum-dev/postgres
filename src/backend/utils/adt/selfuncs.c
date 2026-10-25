@@ -272,6 +272,10 @@ static bool get_actual_variable_endpoint(Relation heapRel,
 static RelOptInfo *find_join_input_rel(PlannerInfo *root, Relids relids);
 static double btcost_correlation(IndexOptInfo *index,
 								 VariableStatData *vardata);
+static RangeTblEntry *find_relation_rte(PlannerInfo *root, Var **var);
+static bool is_same_simple_base_var(PlannerInfo *root,
+									Node *leftnode, Node *rightnode,
+									bool *left_is_base_simple_var);
 
 /* Define support routines for MCV hash tables */
 #define SH_PREFIX				MCVHashTable
@@ -3291,6 +3295,297 @@ scalargejoinsel(PG_FUNCTION_ARGS)
 	PG_RETURN_FLOAT8(DEFAULT_INEQ_SEL);
 }
 
+/*
+ * find_relation_rte
+ *
+ * Find the RangeTblEntry for the base relation underlying a Var, if any.
+ *
+ * If the Var belongs to a plain relation RTE, return that RTE directly.
+ * Otherwise, try to trace the Var through a simple subquery or a
+ * non-recursive CTE to an underlying base relation.  As the Var is traced
+ * through subqueries, update *var to refer to the underlying Var.
+ *
+ * If the Var cannot be traced to a base relation, or if the query structure
+ * prevents reliable identification of the underlying relation, set *var to
+ * NULL and return NULL.
+ *
+ * This is used by is_same_simple_base_var() to determine whether Vars
+ * refer to the same base relation, even when they appear through a
+ * subquery or a non-recursive CTE.
+ */
+static RangeTblEntry *
+find_relation_rte(PlannerInfo *root, Var **var)
+{
+	RangeTblEntry *rte = root->simple_rte_array[(*var)->varno];
+
+	/*
+	 * The following logic is mainly based on how examine_simple_variable()
+	 * handles different RTE types.
+	 */
+
+	if (!rte || !IsA(rte, RangeTblEntry))
+	{
+		*var = NULL;
+		return NULL;
+	}
+
+	if (rte->rtekind == RTE_RELATION)
+		return rte;
+
+	if ((rte->rtekind == RTE_SUBQUERY && !rte->inh) ||
+		(rte->rtekind == RTE_CTE && !rte->self_reference))
+	{
+		/*
+		 * Plain subquery (not one that was converted to an appendrel) or
+		 * non-recursive CTE.  In either case, we can try to find out what the
+		 * Var refers to within the subquery.  We skip this for appendrel and
+		 * recursive-CTE cases because any column stats we did find would
+		 * likely not be very relevant.
+		 */
+		PlannerInfo *subroot;
+		Query	   *subquery;
+		List	   *subtlist;
+		TargetEntry *ste;
+
+		/*
+		 * Punt if this is a system column or a whole-row Var, rather than a
+		 * reference to a plain column.
+		 */
+		if ((*var)->varattno <= InvalidAttrNumber)
+		{
+			*var = NULL;
+			return NULL;
+		}
+
+		/*
+		 * Otherwise, find the subquery's planner subroot.
+		 */
+		if (rte->rtekind == RTE_SUBQUERY)
+		{
+			RelOptInfo *rel;
+
+			/*
+			 * Fetch RelOptInfo for subquery.  Note that we don't change the
+			 * rel returned in vardata, since caller expects it to be a rel of
+			 * the caller's query level.  Because we might already be
+			 * recursing, we can't use that rel pointer either, but have to
+			 * look up the Var's rel afresh.
+			 */
+			rel = find_base_rel(root, (*var)->varno);
+
+			subroot = rel->subroot;
+		}
+		else
+		{
+			/* CTE case is more difficult */
+			PlannerInfo *cteroot;
+			Index		levelsup;
+			int			ndx;
+			int			plan_id;
+			ListCell   *lc;
+
+			/*
+			 * Find the referenced CTE, and locate the subroot previously made
+			 * for it.
+			 */
+			levelsup = rte->ctelevelsup;
+			cteroot = root;
+			while (levelsup-- > 0)
+			{
+				cteroot = cteroot->parent_root;
+				if (!cteroot)	/* shouldn't happen */
+				{
+					*var = NULL;
+					return NULL;
+				}
+			}
+
+			/*
+			 * Note: cte_plan_ids can be shorter than cteList, if we are still
+			 * working on planning the CTEs (ie, this is a side-reference from
+			 * another CTE).  So we mustn't use forboth here.
+			 */
+			ndx = 0;
+			foreach(lc, cteroot->parse->cteList)
+			{
+				CommonTableExpr *cte = (CommonTableExpr *) lfirst(lc);
+
+				if (strcmp(cte->ctename, rte->ctename) == 0)
+					break;
+				ndx++;
+			}
+			if (lc == NULL)		/* shouldn't happen */
+			{
+				*var = NULL;
+				return NULL;
+			}
+			if (ndx >= list_length(cteroot->cte_plan_ids))
+			{
+				*var = NULL;
+				return NULL;
+			}
+			plan_id = list_nth_int(cteroot->cte_plan_ids, ndx);
+			if (plan_id <= 0)
+			{
+				*var = NULL;
+				return NULL;
+			}
+			subroot = list_nth(root->glob->subroots, plan_id - 1);
+		}
+
+		/* If the subquery hasn't been planned yet, we have to punt */
+		if (subroot == NULL || !IsA(subroot, PlannerInfo))
+		{
+			*var = NULL;
+			return NULL;
+		}
+
+		/*
+		 * We must use the subquery parsetree as mangled by the planner, not
+		 * the raw version from the RTE, because we need a Var that will refer
+		 * to the subroot's live RelOptInfos.  For instance, if any subquery
+		 * pullup happened during planning, Vars in the targetlist might have
+		 * gotten replaced, and we need to see the replacement expressions.
+		 */
+		subquery = subroot->parse;
+		if (!IsA(subquery, Query))
+		{
+			*var = NULL;
+			return NULL;
+		}
+
+		/* Get the subquery output expression referenced by the upper Var */
+		if (subquery->returningList)
+			subtlist = subquery->returningList;
+		else
+			subtlist = subquery->targetList;
+		ste = get_tle_by_resno(subtlist, (*var)->varattno);
+		if (ste == NULL || ste->resjunk)
+		{
+			*var = NULL;
+			return NULL;
+		}
+		(*var) = (Var *) ste->expr;
+
+		/* Can only handle a simple Var of subquery's query level */
+		if ((*var) && IsA((*var), Var) &&
+			(*var)->varlevelsup == 0)
+		{
+			/*
+			 * OK, recurse into the subquery.  Note that the original setting
+			 * of vardata->isunique (which will surely be false) is left
+			 * unchanged in this situation.  That's what we want, since even
+			 * if the underlying column is unique, the subquery may have
+			 * joined to other tables in a way that creates duplicates.
+			 */
+			return find_relation_rte(subroot, var);
+		}
+	}
+
+	*var = NULL;
+	return NULL;
+}
+
+/*
+ * is_same_simple_base_var
+ *
+ * Check whether two Vars refer to the same ordinary column of the same
+ * base relation, without inheritance expansion.
+ *
+ * The Vars may have different varno values, as when the same relation is
+ * referenced through different RTEs.  Simple subqueries and non-recursive
+ * CTEs can be followed to identify the underlying relation and column.
+ *
+ * Syntactic identifiers (varnosyn, varattnosyn) and parse locations are
+ * ignored.  The column number and other relevant semantic Var attributes
+ * must match after resolving the underlying Vars.
+ */
+static bool
+is_same_simple_base_var(PlannerInfo *root,
+						Node *leftnode, Node *rightnode,
+						bool *left_is_base_simple_var)
+{
+	Var		   *leftvar;
+	Var		   *rightvar;
+	RangeTblEntry *leftrte;
+	RangeTblEntry *rightrte;
+
+#define VAR_FIELD_NOT_EQ(field) (leftvar->field != rightvar->field)
+
+	/* Do not bypass a custom statistics hook. */
+	if (get_relation_stats_hook)
+		return false;
+
+	if (!leftnode || !rightnode ||
+		!IsA(leftnode, Var) || !IsA(rightnode, Var))
+		return false;
+
+	leftvar = (Var *) leftnode;
+	rightvar = (Var *) rightnode;
+
+	/*
+	 * First compare the Vars as they appear at the current query level.
+	 * Ignore varno, varattno, varnosyn, varattnosyn, and location, but
+	 * require the other relevant semantic attributes to match.
+	 */
+	if (leftvar->varattno <= 0 || rightvar->varattno <= 0 ||
+		VAR_FIELD_NOT_EQ(vartype) ||
+		VAR_FIELD_NOT_EQ(vartypmod) ||
+		VAR_FIELD_NOT_EQ(varcollid) ||
+		VAR_FIELD_NOT_EQ(varreturningtype))
+		return false;
+
+	leftrte = root->simple_rte_array[leftvar->varno];
+	rightrte = root->simple_rte_array[rightvar->varno];
+
+	if (!leftrte || !rightrte)
+		return false;
+
+	/*
+	 * At least one RTE is a base relation, meaning at least one Var is a
+	 * simple base Var.
+	 */
+	if (leftrte->rtekind != RTE_RELATION &&
+		rightrte->rtekind != RTE_RELATION)
+		return false;
+
+	/*
+	 * Resolve non-relation RTEs to their underlying base relations and Vars
+	 * where possible.
+	 */
+	if (leftrte->rtekind != RTE_RELATION)
+	{
+		*left_is_base_simple_var = false;
+		leftrte = find_relation_rte(root, &leftvar);
+	}
+	if (rightrte->rtekind != RTE_RELATION)
+		rightrte = find_relation_rte(root, &rightvar);
+
+	/* Require both Vars to resolve to the same ordinary relation. */
+	if (!leftrte || !rightrte ||
+		leftrte->relid != rightrte->relid ||
+		leftrte->rtekind != RTE_RELATION ||
+		rightrte->rtekind != RTE_RELATION ||
+		leftrte->inh || rightrte->inh)
+		return false;
+
+	/*
+	 * Now compare the resolved Vars.  Their column numbers must match, along
+	 * with the other relevant semantic attributes.  Ignore varno, varnosyn,
+	 * varattnosyn, and location.
+	 */
+	if (VAR_FIELD_NOT_EQ(varattno) ||
+		leftvar->varattno <= 0 || rightvar->varattno <= 0 ||
+		VAR_FIELD_NOT_EQ(vartype) ||
+		VAR_FIELD_NOT_EQ(vartypmod) ||
+		VAR_FIELD_NOT_EQ(varcollid) ||
+		VAR_FIELD_NOT_EQ(varreturningtype))
+		return false;
+
+#undef VAR_FIELD_NOT_EQ
+
+	return true;
+}
 
 /*
  * mergejoinscansel			- Scan selectivity of merge join.
@@ -3347,6 +3642,8 @@ mergejoinscansel(PlannerInfo *root, Node *clause,
 				rightmin,
 				rightmax;
 	double		selec;
+	bool		same_base_simple_var = false;
+	bool		left_is_base_simple_var = true;
 
 	/* Set default results if we can't figure anything out. */
 	/* XXX should default "start" fraction be a bit more than 0? */
@@ -3363,10 +3660,34 @@ mergejoinscansel(PlannerInfo *root, Node *clause,
 	if (!right)
 		return;					/* shouldn't happen */
 
-	/* Look for stats for the inputs */
-	examine_variable(root, left, 0, &leftvar);
-	examine_variable(root, right, 0, &rightvar);
+	same_base_simple_var = is_same_simple_base_var(root, left, right,
+												   &left_is_base_simple_var);
 
+	/* Look for stats for the inputs */
+	if (same_base_simple_var)
+	{
+		/*
+		 * If both Vars refer to the same underlying column, prefer the simple
+		 * base Var to fetch statistics, and reuse them for the other Var to
+		 * avoid fetching the statistics again. Release the statistics only
+		 * once below.
+		 */
+		if (left_is_base_simple_var)
+		{
+			examine_variable(root, left, 0, &leftvar);
+			rightvar = leftvar;
+		}
+		else
+		{
+			examine_variable(root, right, 0, &rightvar);
+			leftvar = rightvar;
+		}
+	}
+	else
+	{
+		examine_variable(root, left, 0, &leftvar);
+		examine_variable(root, right, 0, &rightvar);
+	}
 	opmethod = get_opfamily_method(opfamily);
 
 	/* Extract the operator's declared left/right datatypes */
@@ -3501,8 +3822,17 @@ mergejoinscansel(PlannerInfo *root, Node *clause,
 		if (!get_variable_range(root, &leftvar, lstatop, collation,
 								&leftmin, &leftmax))
 			goto fail;			/* no range available from stats */
-		if (!get_variable_range(root, &rightvar, rstatop, collation,
-								&rightmin, &rightmax))
+		if (same_base_simple_var && lstatop == rstatop)
+		{
+			/*
+			 * Both Vars refer to the same column, and both calls use the same
+			 * operator. Reuse the range computed above.
+			 */
+			rightmin = leftmin;
+			rightmax = leftmax;
+		}
+		else if (!get_variable_range(root, &rightvar, rstatop, collation,
+									 &rightmin, &rightmax))
 			goto fail;			/* no range available from stats */
 	}
 	else
@@ -3511,9 +3841,43 @@ mergejoinscansel(PlannerInfo *root, Node *clause,
 		if (!get_variable_range(root, &leftvar, lstatop, collation,
 								&leftmax, &leftmin))
 			goto fail;			/* no range available from stats */
-		if (!get_variable_range(root, &rightvar, rstatop, collation,
-								&rightmax, &rightmin))
+		if (same_base_simple_var && lstatop == rstatop)
+		{
+			/*
+			 * Both Vars refer to the same column, and both calls use the same
+			 * operator. Reuse the range computed above.
+			 */
+			rightmax = leftmax;
+			rightmin = leftmin;
+		}
+		else if (!get_variable_range(root, &rightvar, rstatop, collation,
+									 &rightmax, &rightmin))
 			goto fail;			/* no range available from stats */
+	}
+
+	if (same_base_simple_var &&
+		leop == revleop && rightmax == leftmax &&
+		ltop == revltop && rightmin == leftmin &&
+		op_righttype == op_lefttype)
+	{
+		/*
+		 * If these conditions are satisfied, the first and second calls to
+		 * scalarineqsel() have identical input arguments and therefore return
+		 * the same result, i.e., *leftend == *rightend. Thus, both remain
+		 * 1.0, which is the default value we initialized them to.
+		 *
+		 * Similarly, the third and fourth calls to scalarineqsel() have
+		 * identical input arguments and return the same result, i.e.,
+		 * *leftstart == *rightstart. Thus, both remain 0.0, which is the
+		 * default value we initialized them to.
+		 *
+		 * Therefore, in this case, we can skip the logic involving these four
+		 * calls and proceed with the rest of the code.
+		 */
+		if (nulls_first)
+			goto do_nulls_first;
+		else
+			goto fail;
 	}
 
 	/*
@@ -3527,8 +3891,19 @@ mergejoinscansel(PlannerInfo *root, Node *clause,
 		*leftend = selec;
 
 	/* And similarly for the right variable. */
-	selec = scalarineqsel(root, revleop, isgt, true, collation, &rightvar,
-						  leftmax, op_lefttype);
+	if (same_base_simple_var &&
+		leop == revleop && rightmax == leftmax &&
+		op_righttype == op_lefttype)
+	{
+		/*
+		 * Both calls have equivalent inputs, so reuse the previous
+		 * selectivity estimate.
+		 */
+		selec = selec;
+	}
+	else
+		selec = scalarineqsel(root, revleop, isgt, true, collation, &rightvar,
+							  leftmax, op_lefttype);
 	if (selec != DEFAULT_INEQ_SEL)
 		*rightend = selec;
 
@@ -3557,8 +3932,19 @@ mergejoinscansel(PlannerInfo *root, Node *clause,
 		*leftstart = selec;
 
 	/* And similarly for the right variable. */
-	selec = scalarineqsel(root, revltop, isgt, false, collation, &rightvar,
-						  leftmin, op_lefttype);
+	if (same_base_simple_var &&
+		ltop == revltop && rightmin == leftmin &&
+		op_righttype == op_lefttype)
+	{
+		/*
+		 * Both calls have equivalent inputs, so reuse the previous
+		 * selectivity estimate.
+		 */
+		selec = selec;
+	}
+	else
+		selec = scalarineqsel(root, revltop, isgt, false, collation, &rightvar,
+							  leftmin, op_lefttype);
 	if (selec != DEFAULT_INEQ_SEL)
 		*rightstart = selec;
 
@@ -3574,6 +3960,8 @@ mergejoinscansel(PlannerInfo *root, Node *clause,
 		*rightstart = 0.0;
 	else
 		*leftstart = *rightstart = 0.0;
+
+do_nulls_first:
 
 	/*
 	 * If the sort order is nulls-first, we're going to have to skip over any
@@ -3617,7 +4005,8 @@ mergejoinscansel(PlannerInfo *root, Node *clause,
 
 fail:
 	ReleaseVariableStats(leftvar);
-	ReleaseVariableStats(rightvar);
+	if (!same_base_simple_var)
+		ReleaseVariableStats(rightvar);
 }
 
 
