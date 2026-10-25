@@ -2271,6 +2271,36 @@ SELECT x,
 FROM generate_series(1,5) g(x)
 WINDOW w AS (ORDER BY x ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING);
 
+-- EXCLUDE GROUP/TIES without ORDER BY: every row is a peer of the current
+-- row, so the IGNORE NULLS scan must stop at the end of the partition
+SELECT x,
+       first_value(x) IGNORE NULLS OVER w,
+       nth_value(x, 2) IGNORE NULLS OVER w
+FROM (VALUES (1), (NULL), (3)) v(x)
+WINDOW w AS (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP)
+ORDER BY x;
+SELECT x,
+       first_value(x) IGNORE NULLS OVER w,
+       nth_value(x, 2) IGNORE NULLS OVER w
+FROM (VALUES (1), (NULL), (3)) v(x)
+WINDOW w AS (RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING EXCLUDE TIES)
+ORDER BY x;
+SELECT p, x,
+       first_value(x) IGNORE NULLS OVER w
+FROM (VALUES (1, 1), (1, NULL), (2, NULL)) v(p, x)
+WINDOW w AS (PARTITION BY p ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE TIES)
+ORDER BY p, x;
+
+-- last_value IGNORE NULLS scans backward; with EXCLUDE TIES and no ORDER BY
+-- the only in-frame row is the current row, and the scan must skip past the
+-- rows after the current row (which a later fix to row_is_in_frame might mark
+-- as out of frame with -1) rather than stopping there.
+SELECT x,
+       last_value(x) IGNORE NULLS OVER w
+FROM (VALUES (1), (2), (3)) v(x)
+WINDOW w AS (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE TIES)
+ORDER BY x;
+
 -- volatile arguments cannot use the IGNORE NULLS nullness cache
 CREATE TEMPORARY SEQUENCE null_treatment_seq;
 CREATE FUNCTION pg_temp.volatile_null(i int) RETURNS int
