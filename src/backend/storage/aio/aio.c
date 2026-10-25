@@ -474,6 +474,9 @@ pgaio_io_stage(PgAioHandle *ioh, PgAioOp op)
 	{
 		pgaio_io_prepare_submit(ioh);
 		pgaio_io_perform_synchronously(ioh);
+
+		/* this IO never goes through pgaio_submit_staged() */
+		ConditionVariableBroadcast(&pgaio_my_backend->submit_cv);
 	}
 
 	RESUME_INTERRUPTS();

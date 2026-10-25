@@ -8410,7 +8410,16 @@ buffer_stage_common(PgAioHandle *ioh, bool is_write, bool is_temp)
 			pg_atomic_unlocked_write_u64(&buf_hdr->state, buf_state);
 		}
 		else
+		{
 			UnlockBufHdrExt(buf_hdr, buf_state, 0, 0, 1);
+
+			/*
+			 * WaitIO() may have seen BM_IO_IN_PROGRESS before io_wref was
+			 * set, and gone to sleep on the CV.  Wake it up so it can wait
+			 * via io_wref, instead of depending on us to complete the IO.
+			 */
+			ConditionVariableBroadcast(BufferDescriptorGetIOCV(buf_hdr));
+		}
 
 		/*
 		 * Ensure the content lock that prevents buffer modifications while
