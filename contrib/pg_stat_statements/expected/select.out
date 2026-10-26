@@ -1059,15 +1059,27 @@ SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
 -------+-----------------------------------------------------------------------------------------
      0 | SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C"
      1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
-     6 | WITH RECURSIVE t AS (SELECT a, b FROM pgss_empty_tab UNION ALL SELECT a + $1, b FROM t)+
+     1 | WITH RECURSIVE t AS (SELECT a, b FROM pgss_empty_tab UNION ALL SELECT a + $1, b FROM t)+
+       |   CYCLE a SET is_cycle TO $2 DEFAULT $3 USING path SELECT * FROM t
+     3 | WITH RECURSIVE t AS (SELECT a, b FROM pgss_empty_tab UNION ALL SELECT a + $1, b FROM t)+
        |   CYCLE a SET is_cycle USING path SELECT * FROM t
      1 | WITH RECURSIVE t AS (SELECT a, b FROM pgss_empty_tab UNION ALL SELECT a + $1, b FROM t)+
+       |   CYCLE a, b SET is_cycle USING path SELECT * FROM t
+     1 | WITH RECURSIVE t AS (SELECT a, b FROM pgss_empty_tab UNION ALL SELECT a + $1, b FROM t)+
+       |   CYCLE b SET is_cycle USING path SELECT * FROM t
+     1 | WITH RECURSIVE t AS (SELECT a, b FROM pgss_empty_tab UNION ALL SELECT a + $1, b FROM t)+
+       |   SEARCH BREADTH FIRST BY a SET seq SELECT * FROM t
+     1 | WITH RECURSIVE t AS (SELECT a, b FROM pgss_empty_tab UNION ALL SELECT a + $1, b FROM t)+
        |   SEARCH DEPTH FIRST BY a SET seq CYCLE a SET is_cycle USING path SELECT * FROM t
-     5 | WITH RECURSIVE t AS (SELECT a, b FROM pgss_empty_tab UNION ALL SELECT a + $1, b FROM t)+
+     2 | WITH RECURSIVE t AS (SELECT a, b FROM pgss_empty_tab UNION ALL SELECT a + $1, b FROM t)+
        |   SEARCH DEPTH FIRST BY a SET seq SELECT * FROM t
      1 | WITH RECURSIVE t AS (SELECT a, b FROM pgss_empty_tab UNION ALL SELECT a + $1, b FROM t)+
+       |   SEARCH DEPTH FIRST BY a, b SET seq SELECT * FROM t
+     1 | WITH RECURSIVE t AS (SELECT a, b FROM pgss_empty_tab UNION ALL SELECT a + $1, b FROM t)+
+       |   SEARCH DEPTH FIRST BY b SET seq SELECT * FROM t
+     1 | WITH RECURSIVE t AS (SELECT a, b FROM pgss_empty_tab UNION ALL SELECT a + $1, b FROM t)+
        |   SELECT * FROM t
-(6 rows)
+(12 rows)
 
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
  t 
