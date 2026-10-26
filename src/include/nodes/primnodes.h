@@ -1483,7 +1483,7 @@ typedef struct RowCompareExpr
 	/* LT LE GE or GT, never EQ or NE */
 	CompareType cmptype;
 	/* OID list of pairwise comparison ops */
-	List	   *opnos pg_node_attr(query_jumble_ignore);
+	List	   *opnos;
 	/* OID list of containing operator families */
 	List	   *opfamilies pg_node_attr(query_jumble_ignore);
 	/* OID list of collations for comparisons */
