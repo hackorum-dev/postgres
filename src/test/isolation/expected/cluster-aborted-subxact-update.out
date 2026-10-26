@@ -1,0 +1,20 @@
+Parsed test spec with 2 sessions
+
+starting permutation: create_and_rollback_alter vacuum_full_pg_class commit check_pg_class
+step create_and_rollback_alter: 
+	BEGIN;
+	CREATE TABLE vacfull_tab (a int);
+	SAVEPOINT sp;
+	ALTER TABLE vacfull_tab ADD COLUMN b int;
+	ROLLBACK TO sp;
+
+step vacuum_full_pg_class: VACUUM FULL pg_class;
+step commit: COMMIT;
+step check_pg_class: 
+	SELECT relname, relnatts FROM pg_class WHERE relname = 'vacfull_tab';
+
+relname    |relnatts
+-----------+--------
+vacfull_tab|       1
+(1 row)
+
