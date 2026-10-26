@@ -131,12 +131,14 @@ SELECT XMLSERIALIZE(CONTENT x AS varchar(20)) FROM pgss_xml_tab;
 SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C", calls;
  calls |                              query                              
 -------+-----------------------------------------------------------------
-     4 | SELECT XMLPARSE(DOCUMENT t) FROM pgss_xml_tab
+     3 | SELECT XMLPARSE(CONTENT t) FROM pgss_xml_tab
+     1 | SELECT XMLPARSE(DOCUMENT t) FROM pgss_xml_tab
      1 | SELECT XMLSERIALIZE(CONTENT x AS text INDENT) FROM pgss_xml_tab
+     2 | SELECT XMLSERIALIZE(CONTENT x AS text) FROM pgss_xml_tab
      2 | SELECT XMLSERIALIZE(CONTENT x AS varchar(10)) FROM pgss_xml_tab
-     3 | SELECT XMLSERIALIZE(DOCUMENT x AS text) FROM pgss_xml_tab
+     1 | SELECT XMLSERIALIZE(DOCUMENT x AS text) FROM pgss_xml_tab
      1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
-(5 rows)
+(7 rows)
 
 -- XMLROOT
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
