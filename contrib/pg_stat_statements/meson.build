@@ -59,6 +59,7 @@ tests += {
       'plancache',
       'squashing',
       'sqljson',
+      'xml',
       'cleanup',
       'oldextversions',
     ],
