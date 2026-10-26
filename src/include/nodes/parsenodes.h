@@ -200,7 +200,7 @@ typedef struct Query
 	List	   *targetList;		/* target list (of TargetEntry) */
 
 	/* OVERRIDING clause */
-	OverridingKind override pg_node_attr(query_jumble_ignore);
+	OverridingKind override;
 
 	OnConflictExpr *onConflict; /* ON CONFLICT DO NOTHING/SELECT/UPDATE */
 

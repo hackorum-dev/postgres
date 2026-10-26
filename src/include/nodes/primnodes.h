@@ -2042,7 +2042,7 @@ typedef struct MergeAction
 	MergeMatchKind matchKind;	/* MATCHED/NOT MATCHED BY SOURCE/TARGET */
 	CmdType		commandType;	/* INSERT/UPDATE/DELETE/DO NOTHING */
 	/* OVERRIDING clause */
-	OverridingKind override pg_node_attr(query_jumble_ignore);
+	OverridingKind override;
 	Node	   *qual;			/* transformed WHEN conditions */
 	List	   *targetList;		/* the target list (of TargetEntry) */
 	/* target attribute numbers of an UPDATE */
