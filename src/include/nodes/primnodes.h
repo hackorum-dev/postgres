@@ -1439,7 +1439,7 @@ typedef struct RowExpr
 	List	   *args;			/* the fields */
 
 	/* RECORDOID or a composite type's ID */
-	Oid			row_typeid pg_node_attr(query_jumble_ignore);
+	Oid			row_typeid;
 
 	/*
 	 * row_typeid cannot be a domain over composite, only plain composite.  To

@@ -1279,13 +1279,15 @@ SELECT ROW(s, t) <= ROW('b', 'b') FROM (VALUES ('a', 'a')) AS v(s, t);
 SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
  calls |                                 query                                  
 -------+------------------------------------------------------------------------
-     2 | SELECT (ROW($1, $2)::pgss_pair1).*
-     2 | SELECT ROW($1, $2)
+     1 | SELECT (ROW($1, $2)::pgss_pair1).*
+     1 | SELECT (ROW($1, $2)::pgss_pair2).*
+     1 | SELECT ROW($1, $2)
+     1 | SELECT ROW($1, $2)::pgss_pair1
      2 | SELECT ROW(s, t) < ROW($1, $2) FROM (VALUES ($3, $4)) AS v(s, t)
      1 | SELECT ROW(s, t) <= ROW($1, $2) FROM (VALUES ($3, $4)) AS v(s, t)
      0 | SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C"
      1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
-(6 rows)
+(8 rows)
 
 DROP TYPE pgss_pair1, pgss_pair2;
 DROP TABLE pgss_empty_tab;
