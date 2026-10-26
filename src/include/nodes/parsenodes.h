@@ -1539,7 +1539,7 @@ typedef enum GroupingSetKind
 typedef struct GroupingSet
 {
 	NodeTag		type;
-	GroupingSetKind kind pg_node_attr(query_jumble_ignore);
+	GroupingSetKind kind;
 	List	   *content;
 	ParseLoc	location;
 } GroupingSet;
