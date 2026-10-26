@@ -1183,7 +1183,7 @@ typedef struct FieldStore
 	Expr	   *arg;			/* input tuple value */
 	List	   *newvals;		/* new value(s) for field(s) */
 	/* integer list of field attnums */
-	List	   *fieldnums pg_node_attr(query_jumble_ignore);
+	List	   *fieldnums;
 	/* type of result (same as type of arg) */
 	Oid			resulttype pg_node_attr(query_jumble_ignore);
 	/* Like RowExpr, we deliberately omit a typmod and collation here */
