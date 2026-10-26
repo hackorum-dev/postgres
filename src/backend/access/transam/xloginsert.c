@@ -721,8 +721,15 @@ XLogRecordAssemble(RmgrId rmid, uint8 info,
 		/*
 		 * If needs_backup is true or WAL checking is enabled for current
 		 * resource manager, log a full-page write for the current block.
+		 *
+		 * Do not force an image for a REGBUF_NO_CHANGE buffer.  It may be
+		 * held with only a pin, so the page could be modified concurrently
+		 * while the record is assembled, invalidating the record CRC.
 		 */
-		include_image = needs_backup || (info & XLR_CHECK_CONSISTENCY) != 0;
+		if (regbuf->flags & REGBUF_NO_CHANGE)
+			include_image = needs_backup;
+		else
+			include_image = needs_backup || (info & XLR_CHECK_CONSISTENCY) != 0;
 
 		if (include_image)
 		{
