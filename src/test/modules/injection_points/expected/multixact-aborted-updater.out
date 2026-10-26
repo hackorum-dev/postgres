@@ -82,3 +82,33 @@ id|filler
  2|initial
 (1 row)
 
+
+starting permutation: s1ddl s1abort s3brin wake
+step s1ddl: 
+	BEGIN;
+	INSERT INTO mxact_abort VALUES (2, 'v1');
+	SAVEPOINT sp;
+	UPDATE mxact_abort SET filler = 'v2' WHERE id = 2;
+	RELEASE SAVEPOINT sp;
+
+step s1abort: ROLLBACK; <waiting ...>
+step s3brin: 
+	SELECT brin_desummarize_range('mxact_brin_idx', 0);
+	ANALYZE mxact_abort;
+	SELECT brin_summarize_range('mxact_brin_idx', 0);
+
+brin_desummarize_range
+----------------------
+                      
+(1 row)
+
+brin_summarize_range
+--------------------
+                   1
+(1 row)
+
+step wake: 
+	SELECT FROM injection_points_detach('transaction-abort-after-clog');
+	SELECT FROM injection_points_wakeup('transaction-abort-after-clog');
+
+step s1abort: <... completed>
