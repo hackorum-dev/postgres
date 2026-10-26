@@ -304,12 +304,24 @@ SELECT * FROM pgss_xml_tab,
 (0 rows)
 
 SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C", calls;
- calls |                       query                        
--------+----------------------------------------------------
-     9 | SELECT * FROM pgss_xml_tab,                       +
+ calls |                                 query                                 
+-------+-----------------------------------------------------------------------
+     1 | SELECT * FROM pgss_xml_tab,                                          +
+       |   XMLTABLE($1 PASSING x COLUMNS a int PATH $2 DEFAULT $3 NOT NULL) xt
+     2 | SELECT * FROM pgss_xml_tab,                                          +
+       |   XMLTABLE($1 PASSING x COLUMNS a int PATH $2 DEFAULT $3) xt
+     1 | SELECT * FROM pgss_xml_tab,                                          +
+       |   XMLTABLE($1 PASSING x COLUMNS a int PATH $2 NOT NULL) xt
+     2 | SELECT * FROM pgss_xml_tab,                                          +
        |   XMLTABLE($1 PASSING x COLUMNS a int PATH $2) xt
+     1 | SELECT * FROM pgss_xml_tab,                                          +
+       |   XMLTABLE($1 PASSING x COLUMNS a text PATH $2) xt
+     1 | SELECT * FROM pgss_xml_tab,                                          +
+       |   XMLTABLE($1 PASSING x COLUMNS a varchar(3) PATH $2) xt
+     1 | SELECT * FROM pgss_xml_tab,                                          +
+       |   XMLTABLE($1 PASSING x COLUMNS a varchar(4) PATH $2) xt
      1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
-(2 rows)
+(8 rows)
 
 -- FOR ORDINALITY, column names and paths
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
@@ -377,10 +389,16 @@ SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C", calls;
        |   XMLTABLE($1 PASSING x COLUMNS a int PATH $2, b FOR ORDINALITY) xt
      2 | SELECT * FROM pgss_xml_tab,                                        +
        |   XMLTABLE($1 PASSING x COLUMNS a int PATH $2, b int PATH $3) xt
-     4 | SELECT * FROM pgss_xml_tab,                                        +
+     1 | SELECT * FROM pgss_xml_tab,                                        +
+       |   XMLTABLE($1 PASSING x COLUMNS a int, b int) xt
+     1 | SELECT * FROM pgss_xml_tab,                                        +
+       |   XMLTABLE($1 PASSING x COLUMNS a int, o FOR ORDINALITY) xt
+     1 | SELECT * FROM pgss_xml_tab,                                        +
+       |   XMLTABLE($1 PASSING x COLUMNS c int, d int) xt
+     1 | SELECT * FROM pgss_xml_tab,                                        +
        |   XMLTABLE($1 PASSING x COLUMNS o FOR ORDINALITY, a int) xt
      1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
-(5 rows)
+(8 rows)
 
 -- XMLNAMESPACES and PASSING
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
@@ -433,10 +451,16 @@ SELECT * FROM pgss_xml_tab,
 SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C", calls;
  calls |                       query                        
 -------+----------------------------------------------------
-     6 | SELECT * FROM pgss_xml_tab,                       +
+     3 | SELECT * FROM pgss_xml_tab,                       +
        |   XMLTABLE($1 PASSING x COLUMNS a int PATH $2) xt
+     2 | SELECT * FROM pgss_xml_tab,                       +
+       |   XMLTABLE(XMLNAMESPACES($1 AS n), $2             +
+       |     PASSING x COLUMNS a int PATH $3) xt
+     1 | SELECT * FROM pgss_xml_tab,                       +
+       |   XMLTABLE(XMLNAMESPACES($1 AS n, $2 AS m), $3    +
+       |     PASSING x COLUMNS a int PATH $4) xt
      1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
-(2 rows)
+(4 rows)
 
 DROP TABLE pgss_xml_tab;
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
