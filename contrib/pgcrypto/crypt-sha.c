@@ -186,7 +186,7 @@ px_crypt_shacrypt(const char *pw, const char *salt, char *passwd, unsigned dstle
 	{
 		const char *num = dec_salt_binary + sizeof(rounds_prefix) - 1;
 		char	   *endp;
-		int			srounds = strtoint(num, &endp, 10);
+		int64		srounds = strtoi64(num, &endp, 10);
 
 		if (*endp != '$')
 			ereport(ERROR,
@@ -210,8 +210,8 @@ px_crypt_shacrypt(const char *pw, const char *salt, char *passwd, unsigned dstle
 		{
 			ereport(NOTICE,
 					errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
-					errmsg("rounds=%d exceeds maximum supported value (%d), using %d instead",
-						   srounds, PX_SHACRYPT_ROUNDS_MAX,
+					errmsg("rounds=%.*s exceeds maximum supported value (%d), using %d instead",
+						   (int) (endp - num), num, PX_SHACRYPT_ROUNDS_MAX,
 						   PX_SHACRYPT_ROUNDS_MAX));
 			srounds = PX_SHACRYPT_ROUNDS_MAX;
 		}
@@ -219,8 +219,8 @@ px_crypt_shacrypt(const char *pw, const char *salt, char *passwd, unsigned dstle
 		{
 			ereport(NOTICE,
 					errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
-					errmsg("rounds=%d is below supported value (%d), using %d instead",
-						   srounds, PX_SHACRYPT_ROUNDS_MIN,
+					errmsg("rounds=%.*s is below supported value (%d), using %d instead",
+						   (int) (endp - num), num, PX_SHACRYPT_ROUNDS_MIN,
 						   PX_SHACRYPT_ROUNDS_MIN));
 			srounds = PX_SHACRYPT_ROUNDS_MIN;
 		}
