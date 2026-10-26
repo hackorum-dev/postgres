@@ -1611,15 +1611,15 @@ typedef struct XmlExpr
 	/* xml function ID */
 	XmlExprOp	op;
 	/* name in xml(NAME foo ...) syntaxes */
-	char	   *name pg_node_attr(query_jumble_ignore);
+	char	   *name;
 	/* non-XML expressions for xml_attributes */
 	List	   *named_args;
 	/* parallel list of String values */
-	List	   *arg_names pg_node_attr(query_jumble_ignore);
+	List	   *arg_names;
 	/* list of expressions */
 	List	   *args;
 	/* DOCUMENT or CONTENT */
-	XmlOptionType xmloption pg_node_attr(query_jumble_ignore);
+	XmlOptionType xmloption;
 	/* INDENT option for XMLSERIALIZE */
 	bool		indent;
 	/* target type/typmod for XMLSERIALIZE */
