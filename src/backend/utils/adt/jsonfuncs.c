@@ -3233,6 +3233,17 @@ populate_domain(DomainIOData *io,
 									colname, mcxt, PointerGetDatum(NULL),
 									jsv, isnull, escontext, omit_quotes);
 		Assert(!*isnull || SOFT_ERROR_OCCURRED(escontext));
+
+		/*
+		 * If the base type's conversion failed softly, don't check the
+		 * domain's constraints on the dummy result: a CHECK expression could
+		 * throw a hard error on it.
+		 */
+		if (SOFT_ERROR_OCCURRED(escontext))
+		{
+			*isnull = true;
+			return (Datum) 0;
+		}
 	}
 
 	if (!domain_check_safe(res, *isnull, typid, &io->domain_info, mcxt,
@@ -3616,6 +3627,10 @@ populate_record(TupleDesc tupdesc,
 										  &nulls[i],
 										  escontext,
 										  false);
+
+		/* Nothing more to do once a column failed softly. */
+		if (SOFT_ERROR_OCCURRED(escontext))
+			break;
 	}
 
 	res = heap_form_tuple(tupdesc, values, nulls);

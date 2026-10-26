@@ -3520,6 +3520,7 @@ ExecInitCoerceToDomain(ExprEvalStep *scratch, CoerceToDomain *ctest,
 	Datum	   *domainval = NULL;
 	bool	   *domainnull = NULL;
 	ListCell   *l;
+	List	   *skipjumps = NIL;
 
 	scratch->d.domaincheck.resulttype = ctest->resulttype;
 	/* we'll allocate workspace only if needed */
@@ -3569,6 +3570,24 @@ ExecInitCoerceToDomain(ExprEvalStep *scratch, CoerceToDomain *ctest,
 		bool	   *save_innermost_domainnull;
 
 		scratch->d.domaincheck.constraintname = con->name;
+
+		/*
+		 * CoerceToDomain may be evaluated softly, so the argument or an
+		 * earlier constraint may already have failed, leaving a dummy NULL.
+		 * In that case skip the remaining constraints: a CHECK expression
+		 * could throw a hard error on that NULL, and a NOT NULL constraint
+		 * would report it as a violation, replacing the saved error.
+		 */
+		if (state->escontext != NULL)
+		{
+			ExprEvalStep jump = {0};
+
+			jump.opcode = EEOP_JUMP_IF_NULL;
+			jump.resnull = &state->escontext->error_occurred;
+			jump.d.jump.jumpdone = -1;	/* set below */
+			skipjumps = lappend_int(skipjumps, state->steps_len);
+			ExprEvalPushStep(state, &jump);
+		}
 
 		switch (con->constrainttype)
 		{
@@ -3650,6 +3669,8 @@ ExecInitCoerceToDomain(ExprEvalStep *scratch, CoerceToDomain *ctest,
 				break;
 		}
 	}
+	foreach_int(jumpno, skipjumps)
+		state->steps[jumpno].d.jump.jumpdone = state->steps_len;
 }
 
 /*
@@ -4948,19 +4969,17 @@ ExecInitJsonExpr(JsonExpr *jsexpr, ExprState *state,
 								 resv, resnull);
 
 		/*
-		 * Add a COERCION_FINISH step to check for errors that may occur when
-		 * coercing and rethrow them.
+		 * Add a COERCION_FINISH step to rethrow errors reported softly.  This
+		 * must be done unconditionally, since not only the coercion but also
+		 * the ON ERROR expression itself is evaluated with escontext.
+		 *
+		 * XXX: maybe ExecInitJsonCoercion() should push this step itself.
 		 */
-		if (jsexpr->on_error->coerce ||
-			IsA(jsexpr->on_error->expr, CoerceViaIO) ||
-			IsA(jsexpr->on_error->expr, CoerceToDomain))
-		{
-			scratch->opcode = EEOP_JSONEXPR_COERCION_FINISH;
-			scratch->resvalue = resv;
-			scratch->resnull = resnull;
-			scratch->d.jsonexpr.jsestate = jsestate;
-			ExprEvalPushStep(state, scratch);
-		}
+		scratch->opcode = EEOP_JSONEXPR_COERCION_FINISH;
+		scratch->resvalue = resv;
+		scratch->resnull = resnull;
+		scratch->d.jsonexpr.jsestate = jsestate;
+		ExprEvalPushStep(state, scratch);
 
 		/* JUMP to end to skip the ON EMPTY steps added below. */
 		jumps_to_end = lappend_int(jumps_to_end, state->steps_len);
@@ -5011,20 +5030,17 @@ ExecInitJsonExpr(JsonExpr *jsexpr, ExprState *state,
 								 resv, resnull);
 
 		/*
-		 * Add a COERCION_FINISH step to check for errors that may occur when
-		 * coercing and rethrow them.
+		 * Add a COERCION_FINISH step to rethrow errors reported softly.  This
+		 * must be done unconditionally, since not only the coercion but also
+		 * the ON EMPTY expression itself is evaluated with escontext.
+		 *
+		 * XXX: maybe ExecInitJsonCoercion() should push this step itself.
 		 */
-		if (jsexpr->on_empty->coerce ||
-			IsA(jsexpr->on_empty->expr, CoerceViaIO) ||
-			IsA(jsexpr->on_empty->expr, CoerceToDomain))
-		{
-
-			scratch->opcode = EEOP_JSONEXPR_COERCION_FINISH;
-			scratch->resvalue = resv;
-			scratch->resnull = resnull;
-			scratch->d.jsonexpr.jsestate = jsestate;
-			ExprEvalPushStep(state, scratch);
-		}
+		scratch->opcode = EEOP_JSONEXPR_COERCION_FINISH;
+		scratch->resvalue = resv;
+		scratch->resnull = resnull;
+		scratch->d.jsonexpr.jsestate = jsestate;
+		ExprEvalPushStep(state, scratch);
 	}
 
 	foreach(lc, jumps_to_end)
