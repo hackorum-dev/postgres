@@ -79,6 +79,12 @@ static void _jumbleVariableSetStmt(JumbleState *jstate, Node *node);
 static void _jumbleRangeTblEntry_eref(JumbleState *jstate,
 									  RangeTblEntry *rte,
 									  Alias *expr);
+static void _jumbleTableFunc_colnames(JumbleState *jstate,
+									  TableFunc *tf,
+									  List *colnames);
+static void _jumbleTableFunc_notnulls(JumbleState *jstate,
+									  TableFunc *tf,
+									  Bitmapset *notnulls);
 
 /*
  * Given a possibly multi-statement source string, confine our attention to the
@@ -772,6 +778,59 @@ _jumbleRangeTblEntry_eref(JumbleState *jstate,
 	 * This includes only the table name, the list of column names is ignored.
 	 */
 	JUMBLE_STRING(aliasname);
+}
+
+/*
+ * Custom query jumble function for TableFunc.colnames.
+ */
+static void
+_jumbleTableFunc_colnames(JumbleState *jstate,
+						  TableFunc *tf,
+						  List *colnames)
+{
+	ListCell   *lc1;
+	ListCell   *lc2;
+	int			colno = 0;
+
+	/*
+	 * Like other column names, these are left out, except for an XMLTABLE
+	 * column without PATH, which uses its name as its path.
+	 */
+	if (tf->functype != TFT_XMLTABLE)
+		return;
+
+	forboth(lc1, colnames, lc2, tf->colexprs)
+	{
+		if (colno != tf->ordinalitycol && lfirst(lc2) == NULL)
+		{
+			char	   *colname = strVal(lfirst(lc1));
+
+			AppendJumble(jstate, (const unsigned char *) colname,
+						 strlen(colname) + 1);
+		}
+		colno++;
+	}
+}
+
+/*
+ * Custom query jumble function for TableFunc.notnulls.
+ */
+static void
+_jumbleTableFunc_notnulls(JumbleState *jstate,
+						  TableFunc *tf,
+						  Bitmapset *notnulls)
+{
+	int			colno = -1;
+
+	/* A Bitmapset can't be jumbled as a Node, so jumble its members */
+	if (notnulls == NULL)
+	{
+		AppendJumbleNull(jstate);
+		return;
+	}
+
+	while ((colno = bms_next_member(notnulls, colno)) >= 0)
+		AppendJumble32(jstate, (const unsigned char *) &colno);
 }
 
 /*
