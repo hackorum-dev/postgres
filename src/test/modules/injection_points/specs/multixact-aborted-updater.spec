@@ -20,6 +20,7 @@ setup
 	CREATE EXTENSION injection_points;
 
 	CREATE TABLE mxact_abort (id int PRIMARY KEY, filler text);
+	CREATE INDEX mxact_brin_idx ON mxact_abort USING brin (id);
 	INSERT INTO mxact_abort VALUES (1, 'initial');
 }
 
@@ -38,6 +39,13 @@ setup	{
 }
 step s1begin	{ BEGIN; }
 step s1update	{ UPDATE mxact_abort SET filler = 's1' WHERE id = 1; }
+step s1ddl	{
+	BEGIN;
+	INSERT INTO mxact_abort VALUES (2, 'v1');
+	SAVEPOINT sp;
+	UPDATE mxact_abort SET filler = 'v2' WHERE id = 2;
+	RELEASE SAVEPOINT sp;
+}
 step s1abort	{ ROLLBACK; }
 
 # Transaction 2 locks the row in KEY SHARE mode, to cause a multixact to be
@@ -52,6 +60,11 @@ step s3update	{ UPDATE mxact_abort SET filler = 's3' WHERE id = 1; }
 step s3delete	{ DELETE FROM mxact_abort WHERE id = 1; }
 step s3keyupdate	{ UPDATE mxact_abort SET id = 2 WHERE id = 1; }
 step s3check	{ SELECT * FROM mxact_abort ORDER BY id; }
+step s3brin		{
+	SELECT brin_desummarize_range('mxact_brin_idx', 0);
+	ANALYZE mxact_abort;
+	SELECT brin_summarize_range('mxact_brin_idx', 0);
+}
 
 session waker
 step wake		{
@@ -105,3 +118,9 @@ permutation
 	s3keyupdate
 	wake
 	s3check
+
+permutation
+	s1ddl
+	s1abort
+	s3brin
+	wake
