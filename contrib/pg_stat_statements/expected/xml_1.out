@@ -1,0 +1,445 @@
+--
+-- SQL/XML
+--
+SET pg_stat_statements.track_utility = FALSE;
+CREATE TABLE pgss_xml_tab (x xml, t text);
+--
+-- SQL/XML functions
+--
+-- XMLELEMENT, XMLATTRIBUTES, XMLFOREST and XMLPI names
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+SELECT XMLELEMENT(NAME foo) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+SELECT XMLELEMENT(NAME bar) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+SELECT XMLELEMENT(NAME foo, t) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+SELECT XMLELEMENT(NAME foo, XMLATTRIBUTES(t AS a)) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+SELECT XMLELEMENT(NAME foo, XMLATTRIBUTES(t AS b)) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+-- the attribute name defaults to the column name
+SELECT XMLELEMENT(NAME foo, XMLATTRIBUTES(t)) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+SELECT XMLELEMENT(NAME foo, XMLATTRIBUTES(t AS t)) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+SELECT XMLELEMENT(NAME foo, XMLATTRIBUTES(t AS a), t) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+SELECT XMLFOREST(t AS a) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+SELECT XMLFOREST(t AS b) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+-- the element name defaults to the column name
+SELECT XMLFOREST(t) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+SELECT XMLFOREST(t AS t) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+SELECT XMLFOREST(t AS a, x AS b) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+SELECT XMLPI(NAME foo) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+SELECT XMLPI(NAME bar) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+SELECT XMLPI(NAME foo, t) FROM pgss_xml_tab;
+ERROR:  unsupported XML feature
+DETAIL:  This functionality requires the server to be built with libxml support.
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C", calls;
+ calls |                       query                        
+-------+----------------------------------------------------
+     1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+(1 row)
+
+-- XMLPARSE and XMLSERIALIZE
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+SELECT XMLPARSE(DOCUMENT t) FROM pgss_xml_tab;
+ xmlparse 
+----------
+(0 rows)
+
+SELECT XMLPARSE(CONTENT t) FROM pgss_xml_tab;
+ xmlparse 
+----------
+(0 rows)
+
+-- STRIP WHITESPACE is the default
+SELECT XMLPARSE(CONTENT t STRIP WHITESPACE) FROM pgss_xml_tab;
+ xmlparse 
+----------
+(0 rows)
+
+SELECT XMLPARSE(CONTENT t PRESERVE WHITESPACE) FROM pgss_xml_tab;
+ xmlparse 
+----------
+(0 rows)
+
+SELECT XMLSERIALIZE(DOCUMENT x AS text) FROM pgss_xml_tab;
+ xmlserialize 
+--------------
+(0 rows)
+
+SELECT XMLSERIALIZE(CONTENT x AS text) FROM pgss_xml_tab;
+ xmlserialize 
+--------------
+(0 rows)
+
+-- NO INDENT is the default
+SELECT XMLSERIALIZE(CONTENT x AS text NO INDENT) FROM pgss_xml_tab;
+ xmlserialize 
+--------------
+(0 rows)
+
+SELECT XMLSERIALIZE(CONTENT x AS text INDENT) FROM pgss_xml_tab;
+ xmlserialize 
+--------------
+(0 rows)
+
+SELECT XMLSERIALIZE(CONTENT x AS varchar(10)) FROM pgss_xml_tab;
+ xmlserialize 
+--------------
+(0 rows)
+
+SELECT XMLSERIALIZE(CONTENT x AS varchar(20)) FROM pgss_xml_tab;
+ xmlserialize 
+--------------
+(0 rows)
+
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C", calls;
+ calls |                              query                              
+-------+-----------------------------------------------------------------
+     4 | SELECT XMLPARSE(DOCUMENT t) FROM pgss_xml_tab
+     1 | SELECT XMLSERIALIZE(CONTENT x AS text INDENT) FROM pgss_xml_tab
+     2 | SELECT XMLSERIALIZE(CONTENT x AS varchar(10)) FROM pgss_xml_tab
+     3 | SELECT XMLSERIALIZE(DOCUMENT x AS text) FROM pgss_xml_tab
+     1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+(5 rows)
+
+-- XMLROOT
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+SELECT XMLROOT(x, VERSION '1.0') FROM pgss_xml_tab;
+ xmlroot 
+---------
+(0 rows)
+
+SELECT XMLROOT(x, VERSION '1.1') FROM pgss_xml_tab;
+ xmlroot 
+---------
+(0 rows)
+
+SELECT XMLROOT(x, VERSION NO VALUE) FROM pgss_xml_tab;
+ xmlroot 
+---------
+(0 rows)
+
+SELECT XMLROOT(x, VERSION '1.0', STANDALONE YES) FROM pgss_xml_tab;
+ xmlroot 
+---------
+(0 rows)
+
+SELECT XMLROOT(x, VERSION '1.0', STANDALONE NO) FROM pgss_xml_tab;
+ xmlroot 
+---------
+(0 rows)
+
+SELECT XMLROOT(x, VERSION '1.0', STANDALONE NO VALUE) FROM pgss_xml_tab;
+ xmlroot 
+---------
+(0 rows)
+
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C", calls;
+ calls |                       query                        
+-------+----------------------------------------------------
+     6 | SELECT XMLROOT(x, VERSION $1) FROM pgss_xml_tab
+     1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+(2 rows)
+
+-- XMLCONCAT, IS DOCUMENT and XMLEXISTS
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+SELECT XMLCONCAT(x, x) FROM pgss_xml_tab;
+ xmlconcat 
+-----------
+(0 rows)
+
+SELECT XMLCONCAT(x, x, x) FROM pgss_xml_tab;
+ xmlconcat 
+-----------
+(0 rows)
+
+SELECT x IS DOCUMENT FROM pgss_xml_tab;
+ ?column? 
+----------
+(0 rows)
+
+SELECT x IS NOT DOCUMENT FROM pgss_xml_tab;
+ ?column? 
+----------
+(0 rows)
+
+SELECT XMLEXISTS('/r' PASSING x) FROM pgss_xml_tab;
+ xmlexists 
+-----------
+(0 rows)
+
+-- BY REF and BY VALUE are noise words
+SELECT XMLEXISTS('/r' PASSING BY REF x) FROM pgss_xml_tab;
+ xmlexists 
+-----------
+(0 rows)
+
+SELECT XMLEXISTS('/r' PASSING BY VALUE x BY VALUE) FROM pgss_xml_tab;
+ xmlexists 
+-----------
+(0 rows)
+
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C", calls;
+ calls |                       query                        
+-------+----------------------------------------------------
+     1 | SELECT XMLCONCAT(x, x) FROM pgss_xml_tab
+     1 | SELECT XMLCONCAT(x, x, x) FROM pgss_xml_tab
+     3 | SELECT XMLEXISTS($1 PASSING x) FROM pgss_xml_tab
+     1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+     1 | SELECT x IS DOCUMENT FROM pgss_xml_tab
+     1 | SELECT x IS NOT DOCUMENT FROM pgss_xml_tab
+(6 rows)
+
+--
+-- XMLTABLE
+--
+-- column types, defaults and NOT NULL
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a int PATH 'a') xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a text PATH 'a') xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a varchar(3) PATH 'a') xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a varchar(4) PATH 'a') xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a int PATH 'a' DEFAULT 1) xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a int PATH 'a' DEFAULT 2) xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a int PATH 'a' NOT NULL) xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+-- NULL is the default
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a int PATH 'a' NULL) xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a int PATH 'a' DEFAULT 1 NOT NULL) xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C", calls;
+ calls |                       query                        
+-------+----------------------------------------------------
+     9 | SELECT * FROM pgss_xml_tab,                       +
+       |   XMLTABLE($1 PASSING x COLUMNS a int PATH $2) xt
+     1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+(2 rows)
+
+-- FOR ORDINALITY, column names and paths
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a int PATH 'a', b int PATH 'b') xt;
+ x | t | a | b 
+---+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a FOR ORDINALITY, b int PATH 'b') xt;
+ x | t | a | b 
+---+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a int PATH 'a', b FOR ORDINALITY) xt;
+ x | t | a | b 
+---+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS o FOR ORDINALITY, a int) xt;
+ x | t | o | a 
+---+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a int, o FOR ORDINALITY) xt;
+ x | t | a | o 
+---+---+---+---
+(0 rows)
+
+-- only the column names and the paths differ
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS c int PATH 'c', d int PATH 'd') xt;
+ x | t | c | d 
+---+---+---+---
+(0 rows)
+
+-- without PATH, the path is the column name
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a int, b int) xt;
+ x | t | a | b 
+---+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS c int, d int) xt;
+ x | t | c | d 
+---+---+---+---
+(0 rows)
+
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C", calls;
+ calls |                                query                                
+-------+---------------------------------------------------------------------
+     1 | SELECT * FROM pgss_xml_tab,                                        +
+       |   XMLTABLE($1 PASSING x COLUMNS a FOR ORDINALITY, b int PATH $2) xt
+     1 | SELECT * FROM pgss_xml_tab,                                        +
+       |   XMLTABLE($1 PASSING x COLUMNS a int PATH $2, b FOR ORDINALITY) xt
+     2 | SELECT * FROM pgss_xml_tab,                                        +
+       |   XMLTABLE($1 PASSING x COLUMNS a int PATH $2, b int PATH $3) xt
+     4 | SELECT * FROM pgss_xml_tab,                                        +
+       |   XMLTABLE($1 PASSING x COLUMNS o FOR ORDINALITY, a int) xt
+     1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+(5 rows)
+
+-- XMLNAMESPACES and PASSING
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING x COLUMNS a int PATH 'a') xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE(XMLNAMESPACES('http://x' AS n), '/n:r'
+    PASSING x COLUMNS a int PATH 'n:a') xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+-- only the namespace, its name and the paths differ
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE(XMLNAMESPACES('http://y' AS m), '/m:r'
+    PASSING x COLUMNS a int PATH 'm:a') xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE(XMLNAMESPACES('http://x' AS n, 'http://y' AS m), '/n:r'
+    PASSING x COLUMNS a int PATH 'm:a') xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+-- BY REF and BY VALUE are noise words
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING BY REF x COLUMNS a int PATH 'a') xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+SELECT * FROM pgss_xml_tab,
+  XMLTABLE('/r' PASSING BY VALUE x BY VALUE COLUMNS a int PATH 'a') xt;
+ x | t | a 
+---+---+---
+(0 rows)
+
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C", calls;
+ calls |                       query                        
+-------+----------------------------------------------------
+     6 | SELECT * FROM pgss_xml_tab,                       +
+       |   XMLTABLE($1 PASSING x COLUMNS a int PATH $2) xt
+     1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+(2 rows)
+
+DROP TABLE pgss_xml_tab;
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
