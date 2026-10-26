@@ -47,6 +47,9 @@
 /* number of completions processed at once */
 #define PGAIO_MAX_LOCAL_COMPLETED_IO 32
 
+/* SMP cache line on x86_64 and aarch64 */
+#define PGAIO_URING_SMP_CACHE_BYTES 64
+
 
 /* Entry points for IoMethodOps. */
 static void pgaio_uring_shmem_request(void *arg);
@@ -138,6 +141,76 @@ pgaio_uring_procs(void)
 	return MaxBackends + NUM_AUXILIARY_PROCS - MAX_IO_WORKERS;
 }
 
+#if defined(HAVE_IO_URING_QUEUE_INIT_MEM) && defined(IORING_SETUP_NO_MMAP)
+/*
+ * Bytes to reserve for one ring after io_uring_queue_init_mem().
+ *
+ * reported is the size liburing returned.  Liburing before 2.7 does not
+ * count the io_rings header, so the ring can extend past that size into
+ * the next one.
+ *
+ * Follow the kernel's rings_size(): the CQE array, aligned to a cache
+ * line, then the SQ index array when the kernel created one.  cq_off.cqes
+ * is the start of that CQE array and already includes the header.  Take
+ * the further of this end and reported, then round up to a page.  The
+ * next ring has to start on a page boundary, because the kernel rejects
+ * a user address that does not.  When liburing already covered this
+ * layout, reported is unchanged.
+ *
+ * Returns that size, or -1 if the ring does not fit in buf_size.
+ */
+static int
+pgaio_uring_ring_space(const void *buf, size_t buf_size, int reported,
+					   const struct io_uring_params *p)
+{
+	uintptr_t	base = (uintptr_t) buf;
+	uintptr_t	rings = (uintptr_t) p->cq_off.user_addr;
+	uintptr_t	end;
+	uintptr_t	region_end;
+	long		page_size;
+	size_t		space;
+
+	Assert(reported > 0);
+
+	if ((size_t) reported > buf_size ||
+		rings < base || rings >= base + buf_size)
+		return -1;
+
+	region_end = (uintptr_t) p->cq_off.cqes +
+		(uintptr_t) p->cq_entries * sizeof(struct io_uring_cqe);
+	region_end = TYPEALIGN(PGAIO_URING_SMP_CACHE_BYTES, region_end);
+
+	/*
+	 * IORING_SETUP_NO_SQARRAY arrived in liburing 2.6.  Liburing 2.5 has
+	 * io_uring_queue_init_mem() but not this flag, and every such ring has an
+	 * SQ index array.  Count that array unless a newer liburing created the
+	 * ring without it.
+	 */
+#ifdef IORING_SETUP_NO_SQARRAY
+	if ((p->flags & IORING_SETUP_NO_SQARRAY) == 0)
+#endif
+	{
+		region_end += (uintptr_t) p->sq_entries * sizeof(uint32);
+	}
+
+	end = base + (uintptr_t) reported;
+	if (rings + region_end > end)
+	{
+		if (rings + region_end > base + buf_size)
+			return -1;
+
+		end = rings + region_end;
+	}
+
+	page_size = sysconf(_SC_PAGESIZE);
+	space = (size_t) TYPEALIGN(page_size, end - base);
+	if (space > buf_size || space > (size_t) INT_MAX)
+		return -1;
+
+	return (int) space;
+}
+#endif
+
 /*
  * Initializes pgaio_uring_caps, unless that's already done.
  */
@@ -193,11 +266,25 @@ pgaio_uring_check_capabilities(void)
 		ret = io_uring_queue_init_mem(io_max_concurrency, &test_ring, &p, ring_ptr, ring_size);
 		if (ret > 0)
 		{
-			pgaio_uring_caps.mem_init_size = ret;
+			int			space;
 
-			elog(DEBUG1,
-				 "can use combined memory mapping for io_uring, each ring needs %d bytes",
-				 ret);
+			space = pgaio_uring_ring_space(ring_ptr, ring_size, ret, &p);
+			if (space > 0)
+			{
+				pgaio_uring_caps.mem_init_size = space;
+
+				if (space != ret)
+					elog(DEBUG1,
+						 "can use combined memory mapping for io_uring, liburing reported %d bytes, reserving %d",
+						 ret, space);
+				else
+					elog(DEBUG1,
+						 "can use combined memory mapping for io_uring, each ring needs %d bytes",
+						 space);
+			}
+			else
+				elog(DEBUG1,
+					 "cannot use combined memory mapping for io_uring, ring does not fit in the probe buffer");
 
 			/* clean up the created ring, it was just for a test */
 			io_uring_queue_exit(&test_ring);
@@ -355,11 +442,33 @@ pgaio_uring_shmem_init(void *arg)
 		if (pgaio_uring_caps.mem_init_size > 0)
 		{
 			struct io_uring_params p = {0};
+			int			space;
 
 			ret = io_uring_queue_init_mem(io_max_concurrency, &context->io_uring_ring, &p, ring_mem_next, ring_mem_remain);
+			if (ret > 0)
+			{
+				space = pgaio_uring_ring_space(ring_mem_next, ring_mem_remain,
+											   ret, &p);
 
-			ring_mem_remain -= ret;
-			ring_mem_next += ret;
+				/*
+				 * Step by the reserved size, not by ret.  ret can be short of
+				 * the bytes the kernel shared with us.  See
+				 * pgaio_uring_ring_space().
+				 */
+				if (space < 0 ||
+					(size_t) pgaio_uring_caps.mem_init_size > ring_mem_remain)
+					ereport(ERROR,
+							errcode(ERRCODE_INTERNAL_ERROR),
+							errmsg("io_uring ring does not fit in reserved shared memory"));
+				else if (space > pgaio_uring_caps.mem_init_size)
+					ereport(ERROR,
+							errcode(ERRCODE_INTERNAL_ERROR),
+							errmsg("io_uring ring needs %d bytes, but %d were reserved",
+								   space, pgaio_uring_caps.mem_init_size));
+
+				ring_mem_remain -= pgaio_uring_caps.mem_init_size;
+				ring_mem_next += pgaio_uring_caps.mem_init_size;
+			}
 		}
 		else
 #endif
