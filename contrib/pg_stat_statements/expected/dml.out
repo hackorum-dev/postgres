@@ -199,12 +199,14 @@ DROP TYPE pgss_point;
 SELECT calls, rows, query FROM pg_stat_statements ORDER BY query COLLATE "C";
  calls | rows |                           query                            
 -------+------+------------------------------------------------------------
-     2 |    2 | INSERT INTO pgss_fieldstore_tab (c.x) VALUES ($1)
+     1 |    1 | INSERT INTO pgss_fieldstore_tab (c.x) VALUES ($1)
      1 |    1 | INSERT INTO pgss_fieldstore_tab (c.x, c.y) VALUES ($1, $2)
+     1 |    1 | INSERT INTO pgss_fieldstore_tab (c.y) VALUES ($1)
      1 |    1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
-     2 |    6 | UPDATE pgss_fieldstore_tab SET c.x = $1
+     1 |    3 | UPDATE pgss_fieldstore_tab SET c.x = $1
      1 |    3 | UPDATE pgss_fieldstore_tab SET c.x = $1, c.y = $2
-(5 rows)
+     1 |    3 | UPDATE pgss_fieldstore_tab SET c.y = $1
+(7 rows)
 
 -- check that [temp] table relation extensions are tracked as writes
 CREATE TABLE pgss_extend_tab (a int, b text);
