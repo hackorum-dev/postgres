@@ -508,7 +508,7 @@ typedef struct Aggref
 	 * true if variadic arguments have been combined into an array last
 	 * argument
 	 */
-	bool		aggvariadic pg_node_attr(query_jumble_ignore);
+	bool		aggvariadic;
 
 	/* aggregate kind (see pg_aggregate.h) */
 	char		aggkind pg_node_attr(query_jumble_ignore);
@@ -785,7 +785,7 @@ typedef struct FuncExpr
 	 * true if variadic arguments have been combined into an array last
 	 * argument
 	 */
-	bool		funcvariadic pg_node_attr(query_jumble_ignore);
+	bool		funcvariadic;
 	/* how to display this function call */
 	CoercionForm funcformat pg_node_attr(query_jumble_ignore);
 	/* OID of collation of result */
