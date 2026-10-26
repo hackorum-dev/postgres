@@ -1155,13 +1155,20 @@ SELECT * FROM ROWS FROM (json_to_record('{"a": 1}') AS (a int),
 SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
  calls |                                 query                                  
 -------+------------------------------------------------------------------------
-     2 | SELECT * FROM ROWS FROM (json_to_record($1) AS (a int),               +
+     1 | SELECT * FROM ROWS FROM (json_to_record($1) AS (a int),               +
        |   json_to_record($2) AS (b int)) AS t
-     7 | SELECT * FROM json_to_record($1) AS t(a int)
+     1 | SELECT * FROM ROWS FROM (json_to_record($1) AS (a int),               +
+       |   json_to_record($2) AS (b text)) AS t
+     2 | SELECT * FROM json_to_record($1) AS t(a int)
      1 | SELECT * FROM json_to_record($1) AS t(a int, b int)
+     1 | SELECT * FROM json_to_record($1) AS t(a text COLLATE "C")
+     1 | SELECT * FROM json_to_record($1) AS t(a text)
+     1 | SELECT * FROM json_to_record($1) AS t(a varchar(3))
+     1 | SELECT * FROM json_to_record($1) AS t(a varchar(4))
+     1 | SELECT * FROM json_to_record($1) AS t(b int)
      0 | SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C"
      1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
-(5 rows)
+(11 rows)
 
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
  t 
