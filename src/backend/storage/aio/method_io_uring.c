@@ -47,6 +47,9 @@
 /* number of completions processed at once */
 #define PGAIO_MAX_LOCAL_COMPLETED_IO 32
 
+/* SMP cache line on x86_64 and aarch64 */
+#define PGAIO_URING_SMP_CACHE_BYTES 64
+
 
 /* Entry points for IoMethodOps. */
 static void pgaio_uring_shmem_request(void *arg);
@@ -138,6 +141,32 @@ pgaio_uring_procs(void)
 	return MaxBackends + NUM_AUXILIARY_PROCS - MAX_IO_WORKERS;
 }
 
+#if defined(HAVE_IO_URING_QUEUE_INIT_MEM) && defined(IORING_SETUP_NO_MMAP)
+/*
+ * Bytes to step past one ring created with io_uring_queue_init_mem().
+ *
+ * reported is the size liburing returned. It is already a multiple of the
+ * page size. Liburing before 2.7 does not count the 64-byte io_rings header,
+ * so add it and round up to a page. The next ring has to start on a page
+ * boundary. Liburing 2.7 counts the header, and reported is unchanged.
+ */
+static int
+pgaio_uring_ring_space(int reported)
+{
+	long		page_size = sysconf(_SC_PAGESIZE);
+	size_t		bytes = (size_t) reported;
+
+	Assert(reported > 0);
+
+#if IO_URING_VERSION_MAJOR < 2 || \
+	(IO_URING_VERSION_MAJOR == 2 && IO_URING_VERSION_MINOR < 7)
+	bytes += PGAIO_URING_SMP_CACHE_BYTES;
+#endif
+
+	return (int) TYPEALIGN(page_size, bytes);
+}
+#endif
+
 /*
  * Initializes pgaio_uring_caps, unless that's already done.
  */
@@ -193,11 +222,19 @@ pgaio_uring_check_capabilities(void)
 		ret = io_uring_queue_init_mem(io_max_concurrency, &test_ring, &p, ring_ptr, ring_size);
 		if (ret > 0)
 		{
-			pgaio_uring_caps.mem_init_size = ret;
+			int			space;
 
-			elog(DEBUG1,
-				 "can use combined memory mapping for io_uring, each ring needs %d bytes",
-				 ret);
+			space = pgaio_uring_ring_space(ret);
+			pgaio_uring_caps.mem_init_size = space;
+
+			if (space != ret)
+				elog(DEBUG1,
+					 "can use combined memory mapping for io_uring, liburing reported %d bytes, reserving %d",
+					 ret, space);
+			else
+				elog(DEBUG1,
+					 "can use combined memory mapping for io_uring, each ring needs %d bytes",
+					 space);
 
 			/* clean up the created ring, it was just for a test */
 			io_uring_queue_exit(&test_ring);
@@ -355,11 +392,32 @@ pgaio_uring_shmem_init(void *arg)
 		if (pgaio_uring_caps.mem_init_size > 0)
 		{
 			struct io_uring_params p = {0};
+			int			space;
 
 			ret = io_uring_queue_init_mem(io_max_concurrency, &context->io_uring_ring, &p, ring_mem_next, ring_mem_remain);
+			if (ret > 0)
+			{
+				space = pgaio_uring_ring_space(ret);
 
-			ring_mem_remain -= ret;
-			ring_mem_next += ret;
+				/*
+				 * Step by the reserved size, not by ret. ret omits the
+				 * io_rings header on liburing before 2.7. See
+				 * pgaio_uring_ring_space().
+				 */
+				if ((size_t) space > ring_mem_remain ||
+					(size_t) pgaio_uring_caps.mem_init_size > ring_mem_remain)
+					ereport(ERROR,
+							errcode(ERRCODE_INTERNAL_ERROR),
+							errmsg("io_uring ring does not fit in reserved shared memory"));
+				else if (space > pgaio_uring_caps.mem_init_size)
+					ereport(ERROR,
+							errcode(ERRCODE_INTERNAL_ERROR),
+							errmsg("io_uring ring needs %d bytes, but %d were reserved",
+								   space, pgaio_uring_caps.mem_init_size));
+
+				ring_mem_remain -= pgaio_uring_caps.mem_init_size;
+				ring_mem_next += pgaio_uring_caps.mem_init_size;
+			}
 		}
 		else
 #endif
