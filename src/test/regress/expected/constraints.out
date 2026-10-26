@@ -1791,6 +1791,762 @@ COMMENT ON CONSTRAINT constr_parent2_a_not_null ON constr_parent2 IS 'this const
 COMMENT ON CONSTRAINT constr_parent2_a_not_null ON constr_child2 IS 'this constraint is valid';
 DEALLOCATE get_nnconstraint_info;
 -- end NOT NULL NOT VALID
+-- ALTER TABLE ... SET NOT NULL (and ALTER CONSTRAINT ... INHERIT) must not
+-- propagate a validated not-null constraint to a descendant that has an
+-- existing NOT VALID one, because the descendant might contain nulls.
+-- nnsv_info shows the state of the constraints involved; nnsv_snapshot() and
+-- nnsv_unchanged() check that a failed command left all of it untouched.
+CREATE VIEW nnsv_info AS
+  SELECT c.relname, a.attnotnull, co.conname, co.convalidated AS valid,
+         co.conenforced AS enforced, co.coninhcount AS inhcnt,
+         co.conislocal AS islocal, co.connoinherit AS noinherit
+  FROM pg_class c
+       JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'a'
+       LEFT JOIN pg_constraint co ON co.conrelid = c.oid AND co.contype = 'n'
+                                 AND co.conkey[1] = a.attnum
+  WHERE c.relname ~ '^nnsv_' AND c.relkind IN ('r', 'p')
+        AND pg_table_is_visible(c.oid)
+  ORDER BY c.relname, co.conname;
+CREATE TEMP TABLE nnsv_snap AS SELECT * FROM nnsv_info WITH NO DATA;
+CREATE PROCEDURE nnsv_snapshot() LANGUAGE plpgsql AS
+$$ BEGIN TRUNCATE nnsv_snap; INSERT INTO nnsv_snap SELECT * FROM nnsv_info; END $$;
+CREATE FUNCTION nnsv_unchanged() RETURNS bool LANGUAGE plpgsql AS
+$$ BEGIN
+  RETURN NOT EXISTS (SELECT * FROM nnsv_snap EXCEPT SELECT * FROM nnsv_info)
+     AND NOT EXISTS (SELECT * FROM nnsv_info EXCEPT SELECT * FROM nnsv_snap);
+END $$;
+-- inheritance, descendant has a null and a NOT VALID constraint
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+INSERT INTO nnsv_c VALUES (NULL);
+ALTER TABLE nnsv_c ADD CONSTRAINT nn NOT NULL a NOT VALID;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p ADD CONSTRAINT nn NOT NULL a;		-- error
+ERROR:  incompatible NOT VALID constraint "nn" on relation "nnsv_c"
+HINT:  You might need to validate it using ALTER TABLE ... VALIDATE CONSTRAINT.
+ALTER TABLE nnsv_p ALTER COLUMN a SET NOT NULL;			-- error
+ERROR:  incompatible NOT VALID constraint "nn" on relation "nnsv_c"
+HINT:  You might need to validate it using ALTER TABLE ... VALIDATE CONSTRAINT.
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn      | f     | t        |      0 | t       | f
+ nnsv_p  | f          |         |       |          |        |         | 
+(2 rows)
+
+SELECT count(*) FROM nnsv_p WHERE a IS NULL;			-- still finds the null
+ count 
+-------
+     1
+(1 row)
+
+-- after repairing the descendant, SET NOT NULL works and is idempotent
+DELETE FROM nnsv_c;
+ALTER TABLE nnsv_c VALIDATE CONSTRAINT nn;
+ALTER TABLE nnsv_p ALTER COLUMN a SET NOT NULL;
+SELECT * FROM nnsv_info;
+ relname | attnotnull |      conname      | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+-------------------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn                | t     | t        |      1 | t       | f
+ nnsv_p  | t          | nnsv_p_a_not_null | t     | t        |      0 | t       | f
+(2 rows)
+
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p ALTER COLUMN a SET NOT NULL;
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+DROP TABLE nnsv_p, nnsv_c;
+-- the other subcommands of a failing command are rolled back as well
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_c ADD CONSTRAINT nn NOT NULL a NOT VALID;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p ADD COLUMN b int, ALTER COLUMN a SET NOT NULL;	-- error
+ERROR:  incompatible NOT VALID constraint "nn" on relation "nnsv_c"
+HINT:  You might need to validate it using ALTER TABLE ... VALIDATE CONSTRAINT.
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+SELECT count(*) FROM pg_attribute
+  WHERE attrelid IN ('nnsv_p'::regclass, 'nnsv_c'::regclass) AND attname = 'b';
+ count 
+-------
+     0
+(1 row)
+
+DROP TABLE nnsv_p, nnsv_c;
+-- partitioning: the parent must not claim "no nulls" while a partition has some
+CREATE TABLE nnsv_pp (a int) PARTITION BY LIST (a);
+CREATE TABLE nnsv_pc PARTITION OF nnsv_pp DEFAULT;
+INSERT INTO nnsv_pc VALUES (NULL);
+ALTER TABLE nnsv_pc ADD CONSTRAINT nn NOT NULL a NOT VALID;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_pp ALTER COLUMN a SET NOT NULL;		-- error
+ERROR:  incompatible NOT VALID constraint "nn" on relation "nnsv_pc"
+HINT:  You might need to validate it using ALTER TABLE ... VALIDATE CONSTRAINT.
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_pc | t          | nn      | f     | t        |      0 | t       | f
+ nnsv_pp | f          |         |       |          |        |         | 
+(2 rows)
+
+SELECT tableoid::regclass, a FROM nnsv_pp;
+ tableoid | a 
+----------+---
+ nnsv_pc  |  
+(1 row)
+
+SELECT tableoid::regclass, a FROM nnsv_pp WHERE a IS NULL;
+ tableoid | a 
+----------+---
+ nnsv_pc  |  
+(1 row)
+
+DELETE FROM nnsv_pc;
+ALTER TABLE nnsv_pc VALIDATE CONSTRAINT nn;
+ALTER TABLE nnsv_pp ALTER COLUMN a SET NOT NULL;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_pp ALTER COLUMN a SET NOT NULL;
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+SELECT * FROM nnsv_info;
+ relname | attnotnull |      conname       | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+--------------------+-------+----------+--------+---------+-----------
+ nnsv_pc | t          | nn                 | t     | t        |      1 | t       | f
+ nnsv_pp | t          | nnsv_pp_a_not_null | t     | t        |      0 | t       | f
+(2 rows)
+
+INSERT INTO nnsv_pp VALUES (NULL);				-- error
+ERROR:  null value in column "a" of relation "nnsv_pc" violates not-null constraint
+DETAIL:  Failing row contains (null).
+-- ONLY is not possible for a partitioned table with partitions
+ALTER TABLE nnsv_pp ALTER COLUMN a DROP NOT NULL;
+CALL nnsv_snapshot();
+ALTER TABLE ONLY nnsv_pp ALTER COLUMN a SET NOT NULL;		-- error
+ERROR:  constraint must be added to child tables too
+HINT:  Do not specify the ONLY keyword.
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+DROP TABLE nnsv_pp;
+-- three levels: invalid constraint at the bottom, in the middle, or both
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_m (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_m);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_c ADD CONSTRAINT nn NOT NULL a NOT VALID;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p ALTER COLUMN a SET NOT NULL;			-- error, nnsv_m is new
+ERROR:  incompatible NOT VALID constraint "nn" on relation "nnsv_c"
+HINT:  You might need to validate it using ALTER TABLE ... VALIDATE CONSTRAINT.
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+ALTER TABLE nnsv_c VALIDATE CONSTRAINT nn;
+ALTER TABLE nnsv_p ALTER COLUMN a SET NOT NULL;
+SELECT * FROM nnsv_info;
+ relname | attnotnull |      conname      | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+-------------------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn                | t     | t        |      1 | t       | f
+ nnsv_m  | t          | nnsv_p_a_not_null | t     | t        |      1 | f       | f
+ nnsv_p  | t          | nnsv_p_a_not_null | t     | t        |      0 | t       | f
+(3 rows)
+
+DROP TABLE nnsv_p, nnsv_m, nnsv_c;
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_m (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_m);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_m ADD CONSTRAINT nn NOT NULL a NOT VALID;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p ALTER COLUMN a SET NOT NULL;			-- error
+ERROR:  incompatible NOT VALID constraint "nn" on relation "nnsv_m"
+HINT:  You might need to validate it using ALTER TABLE ... VALIDATE CONSTRAINT.
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn      | f     | t        |      1 | f       | f
+ nnsv_m  | t          | nn      | f     | t        |      0 | t       | f
+ nnsv_p  | f          |         |       |          |        |         | 
+(3 rows)
+
+DROP TABLE nnsv_p, nnsv_m, nnsv_c;
+-- diamond: a shared descendant and a further one below it
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_m1 () INHERITS (nnsv_p);
+CREATE TABLE nnsv_m2 () INHERITS (nnsv_p);
+CREATE TABLE nnsv_c () INHERITS (nnsv_m1, nnsv_m2);
+NOTICE:  merging multiple inherited definitions of column "a"
+CREATE TABLE nnsv_d () INHERITS (nnsv_c);
+ALTER TABLE nnsv_p ALTER COLUMN a SET NOT NULL;
+SELECT * FROM nnsv_info;		-- nnsv_c has two parents, nnsv_d one
+ relname | attnotnull |      conname      | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+-------------------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nnsv_p_a_not_null | t     | t        |      2 | f       | f
+ nnsv_d  | t          | nnsv_p_a_not_null | t     | t        |      1 | f       | f
+ nnsv_m1 | t          | nnsv_p_a_not_null | t     | t        |      1 | f       | f
+ nnsv_m2 | t          | nnsv_p_a_not_null | t     | t        |      1 | f       | f
+ nnsv_p  | t          | nnsv_p_a_not_null | t     | t        |      0 | t       | f
+(5 rows)
+
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p ALTER COLUMN a SET NOT NULL;
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+DROP TABLE nnsv_p, nnsv_m1, nnsv_m2, nnsv_c, nnsv_d;
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_m1 () INHERITS (nnsv_p);
+CREATE TABLE nnsv_m2 () INHERITS (nnsv_p);
+CREATE TABLE nnsv_c () INHERITS (nnsv_m1, nnsv_m2);
+NOTICE:  merging multiple inherited definitions of column "a"
+CREATE TABLE nnsv_d () INHERITS (nnsv_c);
+ALTER TABLE nnsv_d ADD CONSTRAINT nn NOT NULL a NOT VALID;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p ALTER COLUMN a SET NOT NULL;			-- error
+ERROR:  incompatible NOT VALID constraint "nn" on relation "nnsv_d"
+HINT:  You might need to validate it using ALTER TABLE ... VALIDATE CONSTRAINT.
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+ALTER TABLE nnsv_c ADD CONSTRAINT nn NOT NULL a NOT VALID;	-- now invalid in the middle, too
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p ALTER COLUMN a SET NOT NULL;			-- error
+ERROR:  incompatible NOT VALID constraint "nn" on relation "nnsv_c"
+HINT:  You might need to validate it using ALTER TABLE ... VALIDATE CONSTRAINT.
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn      | f     | t        |      0 | t       | f
+ nnsv_d  | t          | nn      | f     | t        |      1 | t       | f
+ nnsv_m1 | f          |         |       |          |        |         | 
+ nnsv_m2 | f          |         |       |          |        |         | 
+ nnsv_p  | f          |         |       |          |        |         | 
+(5 rows)
+
+DROP TABLE nnsv_p, nnsv_m1, nnsv_m2, nnsv_c, nnsv_d;
+-- diamond whose shared descendant already has a valid constraint
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_m1 () INHERITS (nnsv_p);
+CREATE TABLE nnsv_m2 () INHERITS (nnsv_p);
+CREATE TABLE nnsv_c (a int NOT NULL) INHERITS (nnsv_m1, nnsv_m2);
+NOTICE:  merging multiple inherited definitions of column "a"
+NOTICE:  merging column "a" with inherited definition
+CREATE TABLE nnsv_d () INHERITS (nnsv_c);
+ALTER TABLE nnsv_p ALTER COLUMN a SET NOT NULL;
+SELECT * FROM nnsv_info;
+ relname | attnotnull |      conname      | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+-------------------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nnsv_c_a_not_null | t     | t        |      2 | t       | f
+ nnsv_d  | t          | nnsv_c_a_not_null | t     | t        |      1 | f       | f
+ nnsv_m1 | t          | nnsv_p_a_not_null | t     | t        |      1 | f       | f
+ nnsv_m2 | t          | nnsv_p_a_not_null | t     | t        |      1 | f       | f
+ nnsv_p  | t          | nnsv_p_a_not_null | t     | t        |      0 | t       | f
+(5 rows)
+
+DROP TABLE nnsv_p, nnsv_m1, nnsv_m2, nnsv_c, nnsv_d;
+-- multiple direct parents: a failure must not change any inheritance count
+CREATE TABLE nnsv_p1 (a int);
+CREATE TABLE nnsv_p2 (a int);
+CREATE TABLE nnsv_c () INHERITS (nnsv_p1, nnsv_p2);
+NOTICE:  merging multiple inherited definitions of column "a"
+ALTER TABLE nnsv_c ADD CONSTRAINT nn NOT NULL a NOT VALID;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p1 ALTER COLUMN a SET NOT NULL;		-- error
+ERROR:  incompatible NOT VALID constraint "nn" on relation "nnsv_c"
+HINT:  You might need to validate it using ALTER TABLE ... VALIDATE CONSTRAINT.
+ALTER TABLE nnsv_p2 ALTER COLUMN a SET NOT NULL;		-- error
+ERROR:  incompatible NOT VALID constraint "nn" on relation "nnsv_c"
+HINT:  You might need to validate it using ALTER TABLE ... VALIDATE CONSTRAINT.
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+ALTER TABLE nnsv_c VALIDATE CONSTRAINT nn;
+ALTER TABLE nnsv_p1 ALTER COLUMN a SET NOT NULL;
+ALTER TABLE nnsv_p2 ALTER COLUMN a SET NOT NULL;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p1 ALTER COLUMN a SET NOT NULL;
+ALTER TABLE nnsv_p2 ALTER COLUMN a SET NOT NULL;
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+SELECT * FROM nnsv_info;
+ relname | attnotnull |      conname       | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+--------------------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn                 | t     | t        |      2 | t       | f
+ nnsv_p1 | t          | nnsv_p1_a_not_null | t     | t        |      0 | t       | f
+ nnsv_p2 | t          | nnsv_p2_a_not_null | t     | t        |      0 | t       | f
+(3 rows)
+
+DROP TABLE nnsv_p1, nnsv_p2, nnsv_c;
+-- ONLY, and NO INHERIT constraints on the descendant
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_c ADD CONSTRAINT nn NOT NULL a NOT VALID;
+ALTER TABLE ONLY nnsv_p ALTER COLUMN a SET NOT NULL;		-- ok, NO INHERIT
+SELECT * FROM nnsv_info;
+ relname | attnotnull |      conname      | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+-------------------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn                | f     | t        |      0 | t       | f
+ nnsv_p  | t          | nnsv_p_a_not_null | t     | t        |      0 | t       | t
+(2 rows)
+
+DROP TABLE nnsv_p, nnsv_c;
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_c ADD CONSTRAINT nn NOT NULL a NO INHERIT NOT VALID;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p ALTER COLUMN a SET NOT NULL;			-- error
+ERROR:  cannot change NO INHERIT status of NOT NULL constraint "nn" on relation "nnsv_c"
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+DROP TABLE nnsv_p, nnsv_c;
+-- ALTER CONSTRAINT ... INHERIT propagates the constraint the same way
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_p ADD CONSTRAINT nn NOT NULL a NO INHERIT;
+ALTER TABLE nnsv_p ALTER CONSTRAINT nn INHERIT;			-- child has none
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn      | t     | t        |      1 | f       | f
+ nnsv_p  | t          | nn      | t     | t        |      0 | t       | f
+(2 rows)
+
+DROP TABLE nnsv_p, nnsv_c;
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_c (a int NOT NULL) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_p ADD CONSTRAINT nn NOT NULL a NO INHERIT;
+ALTER TABLE nnsv_p ALTER CONSTRAINT nn INHERIT;			-- child is valid
+SELECT * FROM nnsv_info;
+ relname | attnotnull |      conname      | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+-------------------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nnsv_c_a_not_null | t     | t        |      1 | t       | f
+ nnsv_p  | t          | nn                | t     | t        |      0 | t       | f
+(2 rows)
+
+DROP TABLE nnsv_p, nnsv_c;
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+INSERT INTO nnsv_c VALUES (NULL);
+ALTER TABLE nnsv_c ADD CONSTRAINT nn2 NOT NULL a NOT VALID;
+ALTER TABLE nnsv_p ADD CONSTRAINT nn NOT NULL a NO INHERIT;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p ALTER CONSTRAINT nn INHERIT;			-- error
+ERROR:  incompatible NOT VALID constraint "nn2" on relation "nnsv_c"
+HINT:  You might need to validate it using ALTER TABLE ... VALIDATE CONSTRAINT.
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn2     | f     | t        |      0 | t       | f
+ nnsv_p  | t          | nn      | t     | t        |      0 | t       | t
+(2 rows)
+
+DROP TABLE nnsv_p, nnsv_c;
+-- a NOT VALID parent constraint may be inherited by NOT VALID or valid children
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+INSERT INTO nnsv_c VALUES (NULL);
+ALTER TABLE nnsv_c ADD CONSTRAINT nn2 NOT NULL a NOT VALID;
+ALTER TABLE nnsv_p ADD CONSTRAINT nn NOT NULL a NO INHERIT NOT VALID;
+ALTER TABLE nnsv_p ALTER CONSTRAINT nn INHERIT;
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn2     | f     | t        |      1 | t       | f
+ nnsv_p  | t          | nn      | f     | t        |      0 | t       | f
+(2 rows)
+
+DROP TABLE nnsv_p, nnsv_c;
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_c (a int NOT NULL) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_p ADD CONSTRAINT nn NOT NULL a NO INHERIT NOT VALID;
+ALTER TABLE nnsv_p ALTER CONSTRAINT nn INHERIT;
+SELECT * FROM nnsv_info;
+ relname | attnotnull |      conname      | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+-------------------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nnsv_c_a_not_null | t     | t        |      1 | t       | f
+ nnsv_p  | t          | nn                | f     | t        |      0 | t       | f
+(2 rows)
+
+DROP TABLE nnsv_p, nnsv_c;
+-- three levels, valid parent, no constraint in the middle
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_m (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_m);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_c ADD CONSTRAINT nn2 NOT NULL a NOT VALID;
+ALTER TABLE nnsv_p ADD CONSTRAINT nn NOT NULL a NO INHERIT;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p ALTER CONSTRAINT nn INHERIT;			-- error
+ERROR:  incompatible NOT VALID constraint "nn2" on relation "nnsv_c"
+HINT:  You might need to validate it using ALTER TABLE ... VALIDATE CONSTRAINT.
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+DROP TABLE nnsv_p, nnsv_m, nnsv_c;
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_m (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+CREATE TABLE nnsv_c (a int NOT NULL) INHERITS (nnsv_m);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_p ADD CONSTRAINT nn NOT NULL a NO INHERIT;
+ALTER TABLE nnsv_p ALTER CONSTRAINT nn INHERIT;
+SELECT * FROM nnsv_info;
+ relname | attnotnull |      conname      | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+-------------------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nnsv_c_a_not_null | t     | t        |      1 | t       | f
+ nnsv_m  | t          | nn                | t     | t        |      1 | f       | f
+ nnsv_p  | t          | nn                | t     | t        |      0 | t       | f
+(3 rows)
+
+DROP TABLE nnsv_p, nnsv_m, nnsv_c;
+-- A NOT VALID parent constraint, no constraint in the middle, NOT VALID leaf:
+-- the constraint created for the middle table is valid, so it cannot be
+-- inherited by the leaf, even though the parent's own constraint is not valid
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_m (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_m);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_c ADD CONSTRAINT leafnn NOT NULL a NOT VALID;
+ALTER TABLE nnsv_p ADD CONSTRAINT rootnn NOT NULL a NO INHERIT NOT VALID;
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | leafnn  | f     | t        |      0 | t       | f
+ nnsv_m  | f          |         |       |          |        |         | 
+ nnsv_p  | t          | rootnn  | f     | t        |      0 | t       | t
+(3 rows)
+
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p ALTER CONSTRAINT rootnn INHERIT;		-- error
+ERROR:  incompatible NOT VALID constraint "leafnn" on relation "nnsv_c"
+HINT:  You might need to validate it using ALTER TABLE ... VALIDATE CONSTRAINT.
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+SELECT * FROM nnsv_info;	-- nnsv_m still has no constraint, a is nullable
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | leafnn  | f     | t        |      0 | t       | f
+ nnsv_m  | f          |         |       |          |        |         | 
+ nnsv_p  | t          | rootnn  | f     | t        |      0 | t       | t
+(3 rows)
+
+DROP TABLE nnsv_p, nnsv_m, nnsv_c;
+-- same, with a null in the leaf
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_m (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_m);
+NOTICE:  merging column "a" with inherited definition
+INSERT INTO nnsv_c VALUES (NULL);
+ALTER TABLE nnsv_c ADD CONSTRAINT leafnn NOT NULL a NOT VALID;
+ALTER TABLE nnsv_p ADD CONSTRAINT rootnn NOT NULL a NO INHERIT NOT VALID;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_p ALTER CONSTRAINT rootnn INHERIT;		-- error
+ERROR:  incompatible NOT VALID constraint "leafnn" on relation "nnsv_c"
+HINT:  You might need to validate it using ALTER TABLE ... VALIDATE CONSTRAINT.
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | leafnn  | f     | t        |      0 | t       | f
+ nnsv_m  | f          |         |       |          |        |         | 
+ nnsv_p  | t          | rootnn  | f     | t        |      0 | t       | t
+(3 rows)
+
+SELECT count(*) FROM nnsv_p WHERE a IS NULL;
+ count 
+-------
+     1
+(1 row)
+
+DROP TABLE nnsv_p, nnsv_m, nnsv_c;
+-- with a valid leaf the same command works
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_m (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+CREATE TABLE nnsv_c (a int NOT NULL) INHERITS (nnsv_m);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_p ADD CONSTRAINT rootnn NOT NULL a NO INHERIT NOT VALID;
+ALTER TABLE nnsv_p ALTER CONSTRAINT rootnn INHERIT;
+SELECT * FROM nnsv_info;
+ relname | attnotnull |      conname      | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+-------------------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nnsv_c_a_not_null | t     | t        |      1 | t       | f
+ nnsv_m  | t          | rootnn            | t     | t        |      1 | f       | f
+ nnsv_p  | t          | rootnn            | f     | t        |      0 | t       | f
+(3 rows)
+
+DROP TABLE nnsv_p, nnsv_m, nnsv_c;
+-- SET NOT NULL on a table whose not-null constraint is inherited only and
+-- NOT VALID must validate it right away, while making it local as well
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_p ADD CONSTRAINT nn NOT NULL a NOT VALID;
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn      | f     | t        |      1 | f       | f
+ nnsv_p  | t          | nn      | f     | t        |      0 | t       | f
+(2 rows)
+
+ALTER TABLE nnsv_c ALTER COLUMN a SET NOT NULL;
+SELECT * FROM nnsv_info;	-- nnsv_c: valid, now local; nnsv_p is unchanged
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn      | t     | t        |      1 | t       | f
+ nnsv_p  | t          | nn      | f     | t        |      0 | t       | f
+(2 rows)
+
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_c ALTER COLUMN a SET NOT NULL;
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+DROP TABLE nnsv_p, nnsv_c;
+-- a failing validation must also undo the change to conislocal
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+INSERT INTO nnsv_c VALUES (NULL);
+ALTER TABLE nnsv_p ADD CONSTRAINT nn NOT NULL a NOT VALID;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_c ALTER COLUMN a SET NOT NULL;			-- error
+ERROR:  column "a" of relation "nnsv_c" contains null values
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn      | f     | t        |      1 | f       | f
+ nnsv_p  | t          | nn      | f     | t        |      0 | t       | f
+(2 rows)
+
+DROP TABLE nnsv_p, nnsv_c;
+-- the constraint of a table with descendants: all of them get validated,
+-- unless ONLY is given
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_m (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_m);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_p ADD CONSTRAINT nn NOT NULL a NOT VALID;
+CALL nnsv_snapshot();
+ALTER TABLE ONLY nnsv_m ALTER COLUMN a SET NOT NULL;		-- error
+ERROR:  constraint must be validated on child tables too
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+ALTER TABLE nnsv_m ALTER COLUMN a SET NOT NULL;
+SELECT * FROM nnsv_info;	-- only nnsv_p is still NOT VALID
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn      | t     | t        |      1 | f       | f
+ nnsv_m  | t          | nn      | t     | t        |      1 | t       | f
+ nnsv_p  | t          | nn      | f     | t        |      0 | t       | f
+(3 rows)
+
+DROP TABLE nnsv_p, nnsv_m, nnsv_c;
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_m (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_m);
+NOTICE:  merging column "a" with inherited definition
+INSERT INTO nnsv_c VALUES (NULL);
+ALTER TABLE nnsv_p ADD CONSTRAINT nn NOT NULL a NOT VALID;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_m ALTER COLUMN a SET NOT NULL;			-- error
+ERROR:  column "a" of relation "nnsv_c" contains null values
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+DROP TABLE nnsv_p, nnsv_m, nnsv_c;
+-- diamond: inheritance counts come from the parents, not from the validation
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_m1 () INHERITS (nnsv_p);
+CREATE TABLE nnsv_m2 () INHERITS (nnsv_p);
+CREATE TABLE nnsv_c () INHERITS (nnsv_m1, nnsv_m2);
+NOTICE:  merging multiple inherited definitions of column "a"
+CREATE TABLE nnsv_d () INHERITS (nnsv_c);
+ALTER TABLE nnsv_p ADD CONSTRAINT nn NOT NULL a NOT VALID;
+ALTER TABLE nnsv_c ALTER COLUMN a SET NOT NULL;
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn      | t     | t        |      2 | t       | f
+ nnsv_d  | t          | nn      | t     | t        |      1 | f       | f
+ nnsv_m1 | t          | nn      | f     | t        |      1 | f       | f
+ nnsv_m2 | t          | nn      | f     | t        |      1 | f       | f
+ nnsv_p  | t          | nn      | f     | t        |      0 | t       | f
+(5 rows)
+
+ALTER TABLE nnsv_m1 ALTER COLUMN a SET NOT NULL;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_m1 ALTER COLUMN a SET NOT NULL;
+ALTER TABLE nnsv_c ALTER COLUMN a SET NOT NULL;
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn      | t     | t        |      2 | t       | f
+ nnsv_d  | t          | nn      | t     | t        |      1 | f       | f
+ nnsv_m1 | t          | nn      | t     | t        |      1 | t       | f
+ nnsv_m2 | t          | nn      | f     | t        |      1 | f       | f
+ nnsv_p  | t          | nn      | f     | t        |      0 | t       | f
+(5 rows)
+
+DROP TABLE nnsv_p, nnsv_m1, nnsv_m2, nnsv_c, nnsv_d;
+-- a local NOT VALID constraint is validated as before
+CREATE TABLE nnsv_p (a int);
+CREATE TABLE nnsv_c (a int) INHERITS (nnsv_p);
+NOTICE:  merging column "a" with inherited definition
+ALTER TABLE nnsv_c ADD CONSTRAINT nn NOT NULL a NOT VALID;
+ALTER TABLE nnsv_c ALTER COLUMN a SET NOT NULL;
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_c  | t          | nn      | t     | t        |      0 | t       | f
+ nnsv_p  | f          |         |       |          |        |         | 
+(2 rows)
+
+DROP TABLE nnsv_p, nnsv_c;
+-- partitions
+CREATE TABLE nnsv_pp (a int) PARTITION BY LIST (a);
+CREATE TABLE nnsv_pc PARTITION OF nnsv_pp DEFAULT;
+INSERT INTO nnsv_pc VALUES (NULL);
+ALTER TABLE nnsv_pp ADD CONSTRAINT nn NOT NULL a NOT VALID;
+CALL nnsv_snapshot();
+ALTER TABLE nnsv_pc ALTER COLUMN a SET NOT NULL;		-- error
+ERROR:  column "a" of relation "nnsv_pc" contains null values
+SELECT nnsv_unchanged();
+ nnsv_unchanged 
+----------------
+ t
+(1 row)
+
+DELETE FROM nnsv_pc;
+ALTER TABLE nnsv_pc ALTER COLUMN a SET NOT NULL;
+SELECT * FROM nnsv_info;
+ relname | attnotnull | conname | valid | enforced | inhcnt | islocal | noinherit 
+---------+------------+---------+-------+----------+--------+---------+-----------
+ nnsv_pc | t          | nn      | t     | t        |      1 | t       | f
+ nnsv_pp | t          | nn      | f     | t        |      0 | t       | f
+(2 rows)
+
+DROP TABLE nnsv_pp;
+DROP FUNCTION nnsv_unchanged();
+DROP PROCEDURE nnsv_snapshot();
+DROP TABLE nnsv_snap;
+DROP VIEW nnsv_info;
 -- Comments
 -- Setup a low-level role to enforce non-superuser checks.
 CREATE ROLE regress_constraint_comments;
