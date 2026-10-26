@@ -1354,13 +1354,13 @@ typedef struct RangeTblFunction
 	int			funccolcount pg_node_attr(query_jumble_ignore);
 	/* These fields record the contents of a column definition list, if any: */
 	/* column names (list of String) */
-	List	   *funccolnames pg_node_attr(query_jumble_ignore);
+	List	   *funccolnames;
 	/* OID list of column type OIDs */
-	List	   *funccoltypes pg_node_attr(query_jumble_ignore);
+	List	   *funccoltypes;
 	/* integer list of column typmods */
-	List	   *funccoltypmods pg_node_attr(query_jumble_ignore);
+	List	   *funccoltypmods;
 	/* OID list of column collation OIDs */
-	List	   *funccolcollations pg_node_attr(query_jumble_ignore);
+	List	   *funccolcollations;
 
 	/* This is set during planning for use by the executor: */
 	/* PARAM_EXEC Param IDs affecting this func */
