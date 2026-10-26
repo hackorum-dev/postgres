@@ -170,14 +170,20 @@ SELECT a, b FROM pgss_identity_tab ORDER BY a;
 
 DROP TABLE pgss_identity_tab;
 SELECT calls, rows, query FROM pg_stat_statements ORDER BY query COLLATE "C";
- calls | rows |                            query                            
--------+------+-------------------------------------------------------------
-     3 |    3 | INSERT INTO pgss_identity_tab VALUES ($1, $2)
-     3 |    3 | MERGE INTO pgss_identity_tab USING (SELECT $1 AS b) s ON $2+
+ calls | rows |                                 query                                  
+-------+------+------------------------------------------------------------------------
+     1 |    1 | INSERT INTO pgss_identity_tab OVERRIDING SYSTEM VALUE VALUES ($1, $2)
+     1 |    1 | INSERT INTO pgss_identity_tab OVERRIDING USER VALUE VALUES ($1, $2)
+     1 |    1 | INSERT INTO pgss_identity_tab VALUES ($1, $2)
+     1 |    1 | MERGE INTO pgss_identity_tab USING (SELECT $1 AS b) s ON $2           +
+       |      |  WHEN NOT MATCHED THEN INSERT OVERRIDING SYSTEM VALUE VALUES ($3, s.b)
+     1 |    1 | MERGE INTO pgss_identity_tab USING (SELECT $1 AS b) s ON $2           +
+       |      |  WHEN NOT MATCHED THEN INSERT OVERRIDING USER VALUE VALUES ($3, s.b)
+     1 |    1 | MERGE INTO pgss_identity_tab USING (SELECT $1 AS b) s ON $2           +
        |      |  WHEN NOT MATCHED THEN INSERT VALUES ($3, s.b)
      1 |    6 | SELECT a, b FROM pgss_identity_tab ORDER BY a
      1 |    1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
-(4 rows)
+(8 rows)
 
 -- assignments to fields of a composite column
 CREATE TYPE pgss_point AS (x int, y int);
