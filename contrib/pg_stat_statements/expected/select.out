@@ -1217,11 +1217,13 @@ SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
  calls |                                 query                                  
 -------+------------------------------------------------------------------------
      0 | SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C"
-     2 | SELECT concat(VARIADIC ARRAY[$1 /*, ... */])
-     2 | SELECT format($1, VARIADIC ARRAY[$2 /*, ... */])
+     1 | SELECT concat(ARRAY[$1 /*, ... */])
+     1 | SELECT concat(VARIADIC ARRAY[$1 /*, ... */])
+     1 | SELECT format($1, ARRAY[$2 /*, ... */])
+     1 | SELECT format($1, VARIADIC ARRAY[$2 /*, ... */])
      2 | SELECT jsonb_extract_path($1, a::text, b::text) FROM pgss_empty_tab
      1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
-(5 rows)
+(7 rows)
 
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
  t 
