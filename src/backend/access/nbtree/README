@@ -1081,3 +1081,74 @@ item is irrelevant, and need not be stored at all.  This arrangement
 corresponds to the fact that an L&Y non-leaf page has one more pointer
 than key.  Suffix truncation's negative infinity attributes behave in
 the same way.
+
+Notes about leaf key prefix compression
+----------------------------------------
+
+With the prefix_compression storage parameter (default off) a leaf page may
+front-code the first key column of each of its data tuples against a per-page
+prefix, which shrinks indexes on keys that share long leading bytes (URLs,
+jsonb keys with common paths, zero-padded codes).  Like deduplication, this
+alters the physical representation of tuples without changing the logical
+contents of the index, and comparisons always operate on the reconstructed
+original values, so every collation and operator class is unaffected.
+
+A leaf that uses the technique carries the BTP_PREFIX page flag and one extra
+item, the PREFIX item, at the offset where its first data item would otherwise
+be (P_HIKEY on a rightmost page, P_FIRSTKEY otherwise); data items begin one
+offset later, which P_FIRSTDATAKEY() accounts for.  The PREFIX item is an
+IndexTupleData header followed by 1..BTREE_PREFIX_MAX prefix bytes, shaped so
+that code which walks a page's items by IndexTupleSize (such as
+_bt_restore_page) steps over it.  On such a page every non-pivot tuple (plain
+or posting) whose first key column is not NULL stores that column as a varlena
+whose payload begins with a one-byte count of how many leading bytes it shares
+with the page prefix, followed by the unshared remainder (or, for a value whose
+header is not the form index_form_tuple would reproduce, the whole value after
+a sentinel count).  Trailing key columns, INCLUDE columns, a posting list and
+alignment padding follow, moved to preserve alignment; padding that is only the
+key's closing zeros is dropped and restored on decode.  Pivots, NULL first
+columns and the high key are always stored uncompressed.  Coding and decoding
+depend only on the page prefix and the tuple, never the catalog, so WAL redo
+reproduces them and decoding yields the original tuple byte for byte.  All of
+nbtprefix.c implements this; _bt_getitem() is the one accessor through which
+readers obtain a decoded leaf data tuple.
+
+A page adopts a prefix only when it is written as a whole: a finished leaf
+during an index build, or either half of a leaf page split (built coded from
+the start by _bt_split_leaf_half, since a compressed leaf can hold more logical
+data than fits on a plain page, choosing each half's own prefix and falling
+back to a plain layout or the original page's prefix if its own does not fit).
+Crucially, no insert, VACUUM, deduplication or change of a page's key range
+ever rewrites a page to keep its prefix valid: a tuple that happens to share
+fewer bytes simply records a smaller shared count.  Because the format is a
+per-page opt-in flag with no btree version change, pages without the flag are
+read exactly as before, so pg_upgrade and physical/logical replication keep
+working and existing indexes continue to work with no REINDEX.  Turning the
+parameter on with ALTER INDEX does not rewrite anything; each leaf is converted
+the next time it is written whole, and compressed and uncompressed leaves
+coexist in the same index indefinitely.  Turning it off likewise rewrites
+nothing: existing BTP_PREFIX leaves keep their coded form (the flag is cleared
+only when a page is split, emptied or dedup-rewritten) and are still read back
+correctly with the parameter off, since every reader decodes based on the page
+flag, not on the current reloption.  Scan-time workspace that must hold decoded
+tuples (the index-only-scan currTuples/markTuples buffers, see
+BTTupleStorageSize) is therefore sized for a decoded page on every btree index,
+not just those whose parameter is currently on.
+
+The left half of a prefix split (block 0) is logged by full-page image
+whenever the pre-split original page was prefix-compressed -- a half may end up
+plain yet still be FPI-logged because its items were coded against the
+original page's prefix -- and the right half (block 1) is FPI-logged whenever
+it ends up prefix-compressed.  A deduplication rewrite of a prefix page is
+FPI-logged the same way.  Full-page images are used rather than replaying
+individual tuples because the coded physical layout a prefix page ends up with
+would not be reconstructed by _bt_restore_page's item-by-item replay; redo
+restores the image.  When VACUUM or page deletion empties a prefix leaf, the
+PREFIX item is removed and the flag cleared so that the invariant that an
+emptied leaf holds only its high key (relied on by page deletion) still holds.
+
+Deduplication and bottom-up index deletion are not currently applied to
+BTP_PREFIX pages (such a page splits instead): their in-place rewrite of a page
+cannot always be re-compressed within one page, and prefix compression already
+reclaims much of the space they target.  Composing them with prefix
+compression is future work.
