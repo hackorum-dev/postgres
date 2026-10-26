@@ -1676,7 +1676,7 @@ typedef struct CTESearchClause
 	NodeTag		type;
 	List	   *search_col_list;
 	bool		search_breadth_first;
-	char	   *search_seq_column;
+	char	   *search_seq_column pg_node_attr(query_jumble_ignore);
 	ParseLoc	location;
 } CTESearchClause;
 
@@ -1684,10 +1684,10 @@ typedef struct CTECycleClause
 {
 	NodeTag		type;
 	List	   *cycle_col_list;
-	char	   *cycle_mark_column;
+	char	   *cycle_mark_column pg_node_attr(query_jumble_ignore);
 	Node	   *cycle_mark_value;
 	Node	   *cycle_mark_default;
-	char	   *cycle_path_column;
+	char	   *cycle_path_column pg_node_attr(query_jumble_ignore);
 	ParseLoc	location;
 	/* These fields are set during parse analysis: */
 	Oid			cycle_mark_type;	/* common type of _value and _default */
@@ -1710,8 +1710,8 @@ typedef struct CommonTableExpr
 	CTEMaterialize ctematerialized; /* is this an optimization fence? */
 	/* SelectStmt/InsertStmt/etc before parse analysis, Query afterwards: */
 	Node	   *ctequery;		/* the CTE's subquery */
-	CTESearchClause *search_clause pg_node_attr(query_jumble_ignore);
-	CTECycleClause *cycle_clause pg_node_attr(query_jumble_ignore);
+	CTESearchClause *search_clause;
+	CTECycleClause *cycle_clause;
 	ParseLoc	location;		/* token location, or -1 if unknown */
 	/* These fields are set during parse analysis: */
 	/* is this CTE actually recursive? */
