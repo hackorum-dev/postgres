@@ -953,13 +953,18 @@ SELECT a, b, COUNT(*) FROM pgss_empty_tab GROUP BY GROUPING SETS (CUBE (a), ROLL
 SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
  calls |                                          query                                          
 -------+-----------------------------------------------------------------------------------------
-     2 | SELECT a, b, COUNT(*) FROM pgss_empty_tab GROUP BY GROUPING SETS (ROLLUP (a), CUBE (b))
-     2 | SELECT a, b, COUNT(*) FROM pgss_empty_tab GROUP BY ROLLUP ((a, b))
-     3 | SELECT a, b, COUNT(*) FROM pgss_empty_tab GROUP BY ROLLUP (a, b)
-     2 | SELECT a, b, COUNT(*) FROM pgss_empty_tab GROUP BY a, ROLLUP (b)
+     1 | SELECT a, b, COUNT(*) FROM pgss_empty_tab GROUP BY CUBE ((a, b))
+     1 | SELECT a, b, COUNT(*) FROM pgss_empty_tab GROUP BY CUBE (a, b)
+     1 | SELECT a, b, COUNT(*) FROM pgss_empty_tab GROUP BY GROUPING SETS (CUBE (a), ROLLUP (b))
+     1 | SELECT a, b, COUNT(*) FROM pgss_empty_tab GROUP BY GROUPING SETS (ROLLUP (a), CUBE (b))
+     1 | SELECT a, b, COUNT(*) FROM pgss_empty_tab GROUP BY GROUPING SETS (a, b)
+     1 | SELECT a, b, COUNT(*) FROM pgss_empty_tab GROUP BY ROLLUP ((a, b))
+     1 | SELECT a, b, COUNT(*) FROM pgss_empty_tab GROUP BY ROLLUP (a, b)
+     1 | SELECT a, b, COUNT(*) FROM pgss_empty_tab GROUP BY a, CUBE (b)
+     1 | SELECT a, b, COUNT(*) FROM pgss_empty_tab GROUP BY a, ROLLUP (b)
      0 | SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C"
      1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
-(6 rows)
+(11 rows)
 
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
  t 
