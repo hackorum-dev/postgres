@@ -109,6 +109,7 @@
 #include "storage/procarray.h"
 #include "storage/sinval.h"
 #include "utils/builtins.h"
+#include "utils/injection_point.h"
 #include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
@@ -2310,6 +2311,8 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 				curtxn = change->txn;
 				SetupCheckXidLive(curtxn->xid);
 			}
+
+			INJECTION_POINT("reorderbuffer-process-change", NULL);
 
 			switch (change->action)
 			{
