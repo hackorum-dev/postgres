@@ -843,8 +843,21 @@ extern void pgstat_unlock_entry(PgStat_EntryRef *entry_ref);
 extern bool pgstat_drop_entry(PgStat_Kind kind, Oid dboid, uint64 objid,
 							  bool missing_ok);
 extern void pgstat_drop_all_entries(void);
+
+/*
+ * Drop variable-numbered stats entries for which do_drop returns true.  If
+ * do_drop is NULL, drop all variable-numbered stats entries.
+ */
 extern void pgstat_drop_matching_entries(bool (*do_drop) (PgStatShared_HashEntry *, Datum),
 										 Datum match_data);
+
+/*
+ * Like pgstat_drop_matching_entries(), limited to entries of the specified
+ * stats kind.
+ */
+extern void pgstat_drop_matching_entries_of_kind(PgStat_Kind kind,
+												 bool (*do_drop) (PgStatShared_HashEntry *, Datum),
+												 Datum match_data);
 extern PgStat_EntryRef *pgstat_get_entry_ref_locked(PgStat_Kind kind, Oid dboid, uint64 objid,
 													bool nowait);
 extern void pgstat_reset_entry(PgStat_Kind kind, Oid dboid, uint64 objid, TimestampTz ts);

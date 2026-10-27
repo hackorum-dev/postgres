@@ -48,6 +48,10 @@ typedef struct PgStat_EntryRefHashEntry
 static void pgstat_drop_database_and_contents(Oid dboid);
 
 static void pgstat_free_entry(PgStatShared_HashEntry *shent, dshash_seq_status *hstat);
+static uint64 pgstat_drop_matching_entries_in_hash(dshash_table *hash,
+												   PgStat_Kind filter_kind,
+												   bool (*do_drop) (PgStatShared_HashEntry *, Datum),
+												   Datum match_data);
 
 static void pgstat_release_entry_ref(PgStat_HashKey key, PgStat_EntryRef *entry_ref, bool discard_pending);
 static bool pgstat_need_entry_refs_gc(void);
@@ -1235,38 +1239,84 @@ void
 pgstat_drop_matching_entries(bool (*do_drop) (PgStatShared_HashEntry *, Datum),
 							 Datum match_data)
 {
+	uint64		not_freed_count = 0;
+
+	for (int h = 0; h < pgStatLocal.num_var_hashes; h++)
+		not_freed_count +=
+			pgstat_drop_matching_entries_in_hash(pgStatLocal.var_hashes[h],
+												 PGSTAT_KIND_INVALID,
+												 do_drop, match_data);
+
+	if (not_freed_count > 0)
+		pgstat_request_entry_refs_gc();
+}
+
+static uint64
+pgstat_drop_matching_entries_in_hash(dshash_table *hash,
+									 PgStat_Kind filter_kind,
+									 bool (*do_drop) (PgStatShared_HashEntry *, Datum),
+									 Datum match_data)
+{
 	dshash_seq_status hstat;
 	PgStatShared_HashEntry *ps;
 	uint64		not_freed_count = 0;
 
-	for (int h = 0; h < pgStatLocal.num_var_hashes; h++)
+	/* entries are removed, take an exclusive lock */
+	dshash_seq_init(&hstat, hash, true);
+	while ((ps = dshash_seq_next(&hstat)) != NULL)
 	{
-		/* entries are removed, take an exclusive lock */
-		dshash_seq_init(&hstat, pgStatLocal.var_hashes[h], true);
-		while ((ps = dshash_seq_next(&hstat)) != NULL)
+		if (ps->dropped)
+			continue;
+
+		/*
+		 * For filtered scans, the requested kind may map to the shared
+		 * variable stats hash, where this scan can see entries for other
+		 * kinds.  Dedicated hashes contain only entries of the requested
+		 * kind.
+		 */
+		if (filter_kind != PGSTAT_KIND_INVALID &&
+			ps->key.kind != filter_kind)
+			continue;
+
+		if (do_drop != NULL && !do_drop(ps, match_data))
+			continue;
+
+		/* delete local reference */
+		if (pgStatEntryRefHash)
 		{
-			if (ps->dropped)
-				continue;
+			PgStat_EntryRefHashEntry *lohashent =
+				pgstat_entry_ref_hash_lookup(pgStatEntryRefHash, ps->key);
 
-			if (do_drop != NULL && !do_drop(ps, match_data))
-				continue;
-
-			/* delete local reference */
-			if (pgStatEntryRefHash)
-			{
-				PgStat_EntryRefHashEntry *lohashent =
-					pgstat_entry_ref_hash_lookup(pgStatEntryRefHash, ps->key);
-
-				if (lohashent)
-					pgstat_release_entry_ref(lohashent->key, lohashent->entry_ref,
-											 true);
-			}
-
-			if (!pgstat_drop_entry_internal(ps, &hstat))
-				not_freed_count++;
+			if (lohashent)
+				pgstat_release_entry_ref(lohashent->key, lohashent->entry_ref,
+										 true);
 		}
-		dshash_seq_term(&hstat);
+
+		if (!pgstat_drop_entry_internal(ps, &hstat))
+			not_freed_count++;
 	}
+	dshash_seq_term(&hstat);
+
+	return not_freed_count;
+}
+
+/*
+ * Scan through the hashtable containing the variable-numbered stats kind,
+ * dropping entries of that kind if approved by the optional do_drop() function.
+ */
+void
+pgstat_drop_matching_entries_of_kind(PgStat_Kind kind,
+									 bool (*do_drop) (PgStatShared_HashEntry *, Datum),
+									 Datum match_data)
+{
+	uint64		not_freed_count;
+
+	Assert(kind >= PGSTAT_KIND_MIN && kind <= PGSTAT_KIND_MAX);
+	Assert(pgStatLocal.kind_hash[kind] != NULL);
+
+	not_freed_count =
+		pgstat_drop_matching_entries_in_hash(pgStatLocal.kind_hash[kind],
+											 kind, do_drop, match_data);
 
 	if (not_freed_count > 0)
 		pgstat_request_entry_refs_gc();
