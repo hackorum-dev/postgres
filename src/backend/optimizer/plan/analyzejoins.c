@@ -33,6 +33,7 @@
 #include "optimizer/optimizer.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
+#include "optimizer/placeholder.h"
 #include "optimizer/planmain.h"
 #include "optimizer/prep.h"
 #include "optimizer/restrictinfo.h"
@@ -96,6 +97,9 @@ static void fixup_selfjoin_jointree(PlannerInfo *root, Node *jtnode, int relid,
 static List *fixup_selfjoin_quals(PlannerInfo *root, List *quals, int relid);
 static Node *replace_selfjoin_qual(Node *qual);
 static int	self_join_candidates_cmp(const void *a, const void *b);
+static bool self_join_has_dangerous_lateral_phv(PlannerInfo *root,
+											 int eval_relid,
+											 int referenced_relid);
 
 
 /*
@@ -1759,6 +1763,63 @@ match_unique_clauses(PlannerInfo *root, RelOptInfo *outer, List *uclauses,
 }
 
 /*
+ * Check whether a PHV evaluated at eval_relid depends laterally on a relation
+ * that in turn references referenced_relid.  Merging those two rels would
+ * turn that two-step dependency into a cycle.
+ */
+static bool
+self_join_has_dangerous_lateral_phv(PlannerInfo *root, int eval_relid,
+									int referenced_relid)
+{
+	ListCell   *lc;
+
+	foreach(lc, root->placeholder_list)
+	{
+		PlaceHolderInfo *phinfo = (PlaceHolderInfo *) lfirst(lc);
+		int			lateral_relid = -1;
+
+		if (!bms_is_member(eval_relid, phinfo->ph_eval_at))
+			continue;
+
+		while ((lateral_relid =
+				bms_next_member(phinfo->ph_lateral, lateral_relid)) >= 0)
+		{
+			RelOptInfo *lateral_rel;
+			ListCell   *lc2;
+
+			lateral_rel = find_base_rel_ignore_join(root, lateral_relid);
+			if (lateral_rel == NULL)
+				continue;
+
+			foreach(lc2, lateral_rel->lateral_vars)
+			{
+				Node	   *node = (Node *) lfirst(lc2);
+
+				if (IsA(node, Var))
+				{
+					if (((Var *) node)->varno == referenced_relid)
+						return true;
+				}
+				else if (IsA(node, PlaceHolderVar))
+				{
+					PlaceHolderInfo *lateral_phinfo;
+
+					lateral_phinfo =
+						find_placeholder_info(root, (PlaceHolderVar *) node);
+					if (bms_is_member(referenced_relid,
+									  lateral_phinfo->ph_eval_at))
+						return true;
+				}
+				else
+					Assert(false);
+			}
+		}
+	}
+
+	return false;
+}
+
+/*
  * Find and remove unique self-joins in a group of base relations that have
  * the same Oid.
  *
@@ -1861,8 +1922,12 @@ remove_self_joins_one_group(PlannerInfo *root, Relids relids)
 			joinrelids = bms_add_member(joinrelids, k);
 
 			/*
-			 * PHVs should not impose any constraints on removing self-joins.
+			 * Merging the two relations must not turn an indirect LATERAL
+			 * dependency through a PHV into a cycle.
 			 */
+			if (self_join_has_dangerous_lateral_phv(root, k, r) ||
+				self_join_has_dangerous_lateral_phv(root, r, k))
+				continue;
 
 			/*
 			 * At this stage, joininfo lists of inner and outer can contain
