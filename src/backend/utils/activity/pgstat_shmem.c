@@ -1229,23 +1229,44 @@ pgstat_drop_entry(PgStat_Kind kind, Oid dboid, uint64 objid,
 
 /*
  * Scan through the stats hashtables, dropping statistics if approved by the
- * optional do_drop() function.
+ * optional do_drop() function.  If do_drop is NULL, drop all matching entries.
+ * If kind is PGSTAT_KIND_INVALID, match all kinds; otherwise only entries of
+ * the given kind match.
  */
 void
-pgstat_drop_matching_entries(bool (*do_drop) (PgStatShared_HashEntry *, Datum),
+pgstat_drop_matching_entries(PgStat_Kind kind,
+							 bool (*do_drop) (PgStatShared_HashEntry *, Datum),
 							 Datum match_data)
 {
+	bool		filter_by_kind = (kind != PGSTAT_KIND_INVALID);
+	int			num_hashes = filter_by_kind ? 1 : pgStatLocal.num_var_hashes;
 	dshash_seq_status hstat;
 	PgStatShared_HashEntry *ps;
 	uint64		not_freed_count = 0;
 
-	for (int h = 0; h < pgStatLocal.num_var_hashes; h++)
+	if (filter_by_kind)
 	{
+		Assert(kind >= PGSTAT_KIND_MIN && kind <= PGSTAT_KIND_MAX);
+		Assert(pgStatLocal.kind_hash[kind] != NULL);
+	}
+
+	for (int h = 0; h < num_hashes; h++)
+	{
+		dshash_table *hash = filter_by_kind ?
+			pgStatLocal.kind_hash[kind] : pgStatLocal.var_hashes[h];
+
 		/* entries are removed, take an exclusive lock */
-		dshash_seq_init(&hstat, pgStatLocal.var_hashes[h], true);
+		dshash_seq_init(&hstat, hash, true);
 		while ((ps = dshash_seq_next(&hstat)) != NULL)
 		{
 			if (ps->dropped)
+				continue;
+
+			/*
+			 * A kind-specific scan may still use the shared hash, which can
+			 * contain entries for other kinds.
+			 */
+			if (filter_by_kind && ps->key.kind != kind)
 				continue;
 
 			if (do_drop != NULL && !do_drop(ps, match_data))
@@ -1278,7 +1299,7 @@ pgstat_drop_matching_entries(bool (*do_drop) (PgStatShared_HashEntry *, Datum),
 void
 pgstat_drop_all_entries(void)
 {
-	pgstat_drop_matching_entries(NULL, 0);
+	pgstat_drop_matching_entries(PGSTAT_KIND_INVALID, NULL, 0);
 }
 
 static void
