@@ -635,6 +635,12 @@ test_custom_stats_var_update(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
+static bool
+test_custom_stats_var_match_entry(PgStatShared_HashEntry *p, Datum match_data)
+{
+	return p->key.objid == DatumGetUInt64(match_data);
+}
+
 /*
  * test_custom_stats_var_drop
  *		Remove custom statistic entry
@@ -646,11 +652,11 @@ Datum
 test_custom_stats_var_drop(PG_FUNCTION_ARGS)
 {
 	char	   *stat_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	uint64		stat_idx = PGSTAT_CUSTOM_VAR_STATS_IDX(stat_name);
 
-	/* Drop entry and request GC if the entry could not be freed */
-	if (!pgstat_drop_entry(PGSTAT_KIND_TEST_CUSTOM_VAR_STATS, InvalidOid,
-						   PGSTAT_CUSTOM_VAR_STATS_IDX(stat_name), false))
-		pgstat_request_entry_refs_gc();
+	pgstat_drop_matching_entries_of_kind(PGSTAT_KIND_TEST_CUSTOM_VAR_STATS,
+										 test_custom_stats_var_match_entry,
+										 UInt64GetDatum(stat_idx));
 
 	PG_RETURN_VOID();
 }
