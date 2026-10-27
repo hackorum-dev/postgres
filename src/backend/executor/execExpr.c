@@ -4948,12 +4948,11 @@ ExecInitJsonExpr(JsonExpr *jsexpr, ExprState *state,
 								 resv, resnull);
 
 		/*
-		 * Add a COERCION_FINISH step to check for errors that may occur when
-		 * coercing and rethrow them.
+		 * If the ON ERROR expression was evaluated softly, add a
+		 * COERCION_FINISH step to throw any error saved while evaluating it
+		 * or coercing its result.
 		 */
-		if (jsexpr->on_error->coerce ||
-			IsA(jsexpr->on_error->expr, CoerceViaIO) ||
-			IsA(jsexpr->on_error->expr, CoerceToDomain))
+		if (escontext)
 		{
 			scratch->opcode = EEOP_JSONEXPR_COERCION_FINISH;
 			scratch->resvalue = resv;
@@ -5011,14 +5010,12 @@ ExecInitJsonExpr(JsonExpr *jsexpr, ExprState *state,
 								 resv, resnull);
 
 		/*
-		 * Add a COERCION_FINISH step to check for errors that may occur when
-		 * coercing and rethrow them.
+		 * If the ON EMPTY expression was evaluated softly, add a
+		 * COERCION_FINISH step to throw any error saved while evaluating it
+		 * or coercing its result.
 		 */
-		if (jsexpr->on_empty->coerce ||
-			IsA(jsexpr->on_empty->expr, CoerceViaIO) ||
-			IsA(jsexpr->on_empty->expr, CoerceToDomain))
+		if (escontext)
 		{
-
 			scratch->opcode = EEOP_JSONEXPR_COERCION_FINISH;
 			scratch->resvalue = resv;
 			scratch->resnull = resnull;
