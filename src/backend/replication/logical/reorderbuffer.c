@@ -2305,7 +2305,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 			 * required for the cases when we decode the changes before the
 			 * COMMIT record is processed.
 			 */
-			if (streaming || rbtxn_is_prepared(change->txn))
+			if (streaming || rbtxn_is_prepared(txn))
 			{
 				curtxn = change->txn;
 				SetupCheckXidLive(curtxn->xid);
