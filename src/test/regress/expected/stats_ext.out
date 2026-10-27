@@ -1763,6 +1763,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE 
          3 |    100
 (1 row)
 
+-- multiple clauses referencing the same expression
+SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE (a * 2) = 2 AND (a * 2) IN (2, 102) AND upper(b) = ''1''');
+ estimated | actual 
+-----------+--------
+         1 |     50
+(1 row)
+
 -- ANY
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE (a * 2) = ANY (ARRAY[2, 102]) AND upper(b) = ''1''');
  estimated | actual 

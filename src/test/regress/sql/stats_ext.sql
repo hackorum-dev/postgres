@@ -875,6 +875,9 @@ SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE 
 -- OR clauses referencing different attributes
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE ((a * 2) = 2 OR upper(b) = ''1'') AND upper(b) = ''1''');
 
+-- multiple clauses referencing the same expression
+SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE (a * 2) = 2 AND (a * 2) IN (2, 102) AND upper(b) = ''1''');
+
 -- ANY
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE (a * 2) = ANY (ARRAY[2, 102]) AND upper(b) = ''1''');
 
