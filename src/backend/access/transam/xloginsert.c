@@ -256,22 +256,13 @@ XLogRegisterBuffer(uint8 block_id, Buffer buffer, uint8 flags)
 	Assert(begininsert_called);
 
 	/*
-	 * Ordinarily, the buffer should be exclusive-locked (or share-exclusive
-	 * in case of hint bits) and marked dirty before we get here, otherwise we
-	 * could end up violating one of the rules in access/transam/README.
-	 *
-	 * Some callers intentionally register a clean page and never update that
-	 * page's LSN; in that case they can pass the flag REGBUF_NO_CHANGE to
-	 * bypass these checks.
+	 * The buffer must be exclusive-locked (or share-exclusive in case of hint
+	 * bits) and marked dirty before we get here, otherwise we could end up
+	 * violating one of the rules in access/transam/README.
 	 */
-#ifdef USE_ASSERT_CHECKING
-	if (!(flags & REGBUF_NO_CHANGE))
-	{
-		Assert(BufferIsDirty(buffer));
-		Assert(BufferIsLockedByMeInMode(buffer, BUFFER_LOCK_EXCLUSIVE) ||
-			   BufferIsLockedByMeInMode(buffer, BUFFER_LOCK_SHARE_EXCLUSIVE));
-	}
-#endif
+	Assert(BufferIsDirty(buffer));
+	Assert(BufferIsLockedByMeInMode(buffer, BUFFER_LOCK_EXCLUSIVE) ||
+		   BufferIsLockedByMeInMode(buffer, BUFFER_LOCK_SHARE_EXCLUSIVE));
 
 	if (block_id >= max_registered_block_id)
 	{
