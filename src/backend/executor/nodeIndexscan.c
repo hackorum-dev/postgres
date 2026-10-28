@@ -945,10 +945,7 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	/*
 	 * get the scan type from the relation descriptor.
 	 */
-	ExecInitScanTupleSlot(estate, &indexstate->ss,
-						  RelationGetDescr(currentRelation),
-						  table_slot_callbacks(currentRelation),
-						  TTS_FLAG_OBEYS_NOT_NULL_CONSTRAINTS);
+	ExecInitScanTupleSlotFromRel(estate, &indexstate->ss, currentRelation);
 
 	/*
 	 * Initialize result type and projection.

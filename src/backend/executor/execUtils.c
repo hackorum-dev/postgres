@@ -788,6 +788,27 @@ ExecOpenScanRelation(EState *estate, Index scanrelid, int eflags)
 	return rel;
 }
 
+/* ----------------------------------------------------------------
+ *		ExecInitScanTupleSlotFromRel
+ *
+ *		Create the scan slot for a base-level scan of rel.  The slot may
+ *		skip null checks for columns with valid not-null constraints, but
+ *		not if a snapshot older than those constraints could see nulls.
+ * ----------------------------------------------------------------
+ */
+void
+ExecInitScanTupleSlotFromRel(EState *estate, ScanState *scanstate,
+							 Relation rel)
+{
+	uint16		flags = 0;
+
+	if (RelationCanTrustNotNulls(rel, estate->es_snapshot))
+		flags |= TTS_FLAG_OBEYS_NOT_NULL_CONSTRAINTS;
+
+	ExecInitScanTupleSlot(estate, scanstate, RelationGetDescr(rel),
+						  table_slot_callbacks(rel), flags);
+}
+
 /*
  * ExecInitRangeTable
  *		Set up executor's range-table-related data

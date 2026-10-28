@@ -117,6 +117,8 @@ typedef struct RelationData
 	TriggerDesc *trigdesc;		/* Trigger info, or NULL if rel has none */
 	/* use "struct" here to avoid needing to include rowsecurity.h: */
 	struct RowSecurityDesc *rd_rsdesc;	/* row security policies, or NULL */
+	TransactionId rd_notnullxmin;	/* xmin of newest valid not-null
+									 * constraint of another xact, or 0 */
 
 	/* data managed by RelationGetFKeyList: */
 	List	   *rd_fkeylist;	/* list of ForeignKeyCacheInfo (see below) */

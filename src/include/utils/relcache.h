@@ -25,6 +25,7 @@
 #define RELCACHE_INIT_FILENAME	"pg_internal.init"
 
 typedef struct RelationData *Relation;
+struct SnapshotData;
 
 /* ----------------
  *		RelationPtr is used in the executor to support index scans
@@ -51,6 +52,8 @@ extern void RelationClose(Relation relation);
 /*
  * Routines to compute/retrieve additional cached information
  */
+extern bool RelationCanTrustNotNulls(Relation relation,
+									 struct SnapshotData *snapshot);
 extern List *RelationGetFKeyList(Relation relation);
 extern List *RelationGetIndexList(Relation relation);
 extern List *RelationGetStatExtList(Relation relation);
