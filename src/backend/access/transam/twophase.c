@@ -1894,8 +1894,6 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 			RecreateTwoPhaseFile(gxact->fxid, buf, len);
 			gxact->ondisk = true;
 			INJECTION_POINT("twophase-checkpoint-after-ondisk-set", NULL);
-			gxact->prepare_start_lsn = InvalidXLogRecPtr;
-			gxact->prepare_end_lsn = InvalidXLogRecPtr;
 			pfree(buf);
 			serialized_xacts++;
 		}
@@ -2767,6 +2765,7 @@ LookupGXact(const char *gid, XLogRecPtr prepare_end_lsn,
 				buf = ReadTwoPhaseFile(gxact->fxid, false);
 			else
 			{
+				INJECTION_POINT("twophase-lookup-after-ondisk-read", NULL);
 				Assert(gxact->prepare_start_lsn);
 				XlogReadTwoPhaseData(gxact->prepare_start_lsn, &buf, NULL);
 			}
