@@ -698,6 +698,8 @@ extern bool ExecRelationIsTargetRelation(EState *estate, Index scanrelid);
 extern bool ScanRelIsReadOnly(ScanState *ss);
 
 extern Relation ExecOpenScanRelation(EState *estate, Index scanrelid, int eflags);
+extern void ExecInitScanTupleSlotFromRel(EState *estate, ScanState *scanstate,
+										 Relation rel);
 
 extern void ExecInitRangeTable(EState *estate, List *rangeTable, List *permInfos,
 							   Bitmapset *unpruned_relids);

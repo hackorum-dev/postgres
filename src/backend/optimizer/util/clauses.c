@@ -61,6 +61,7 @@
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
+#include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
@@ -4958,7 +4959,10 @@ var_is_nonnullable(PlannerInfo *root, Var *var, NotNullSource source)
 				rel = table_open(rte->relid, NoLock);
 				attr = TupleDescCompactAttr(RelationGetDescr(rel),
 											var->varattno - 1);
-				result = (attr->attnullability == ATTNULLABLE_VALID);
+				result = (attr->attnullability == ATTNULLABLE_VALID &&
+						  RelationCanTrustNotNulls(rel,
+												   ActiveSnapshotSet() ?
+												   GetActiveSnapshot() : NULL));
 
 				/*
 				 * We cannot trust a NOT NULL constraint on a virtual

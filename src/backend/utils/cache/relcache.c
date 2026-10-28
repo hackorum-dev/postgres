@@ -4601,6 +4601,8 @@ CheckNNConstraintFetch(Relation relation)
 	HeapTuple	htup;
 	int			found = 0;
 
+	relation->rd_notnullxmin = InvalidTransactionId;
+
 	/* Allocate array with room for as many entries as expected, if needed */
 	if (ncheck > 0)
 		check = (ConstrCheck *)
@@ -4628,10 +4630,11 @@ CheckNNConstraintFetch(Relation relation)
 		/*
 		 * If this is a not-null constraint, then only look at it if it's
 		 * invalid, and if so, mark the TupleDesc entry as known invalid.
-		 * Otherwise move on.  We'll mark any remaining columns that are still
-		 * in UNKNOWN state as known valid later.  This allows us not to have
-		 * to extract the attnum from this constraint tuple in the vast
-		 * majority of cases.
+		 * Otherwise just remember the newest xmin of the valid ones, for
+		 * RelationCanTrustNotNulls.  We'll mark any remaining columns that
+		 * are still in UNKNOWN state as known valid later.  This allows us
+		 * not to have to extract the attnum from this constraint tuple in the
+		 * vast majority of cases.
 		 */
 		if (conform->contype == CONSTRAINT_NOTNULL)
 		{
@@ -4644,6 +4647,15 @@ CheckNNConstraintFetch(Relation relation)
 					   ATTNULLABLE_UNKNOWN);
 				relation->rd_att->compact_attrs[attnum - 1].attnullability =
 					ATTNULLABLE_INVALID;
+			}
+			else
+			{
+				TransactionId xmin = HeapTupleHeaderGetXmin(htup->t_data);
+
+				/* our own are always trusted, see RelationCanTrustNotNulls */
+				if (!TransactionIdIsCurrentTransactionId(xmin) &&
+					TransactionIdFollows(xmin, relation->rd_notnullxmin))
+					relation->rd_notnullxmin = xmin;
 			}
 
 			continue;
@@ -4714,6 +4726,31 @@ CheckConstraintCmp(const void *a, const void *b)
 	const ConstrCheck *cb = (const ConstrCheck *) b;
 
 	return strcmp(ca->ccname, cb->ccname);
+}
+
+/*
+ * RelationCanTrustNotNulls -- do the relation's valid not-null constraints
+ *		hold for every tuple that snapshot can see?
+ *
+ * The tuples with nulls were deleted before the constraint was validated, so
+ * they are invisible to any snapshot that sees the constraint committed.  A
+ * snapshot taken earlier can still see them.  A NULL snapshot asks about every
+ * snapshot of this backend.  Constraints added by the current transaction
+ * are not in rd_notnullxmin: the snapshots of its later commands cannot see
+ * the nulls they replaced.
+ */
+bool
+RelationCanTrustNotNulls(Relation relation, Snapshot snapshot)
+{
+	TransactionId xmin = relation->rd_notnullxmin;
+
+	if (!TransactionIdIsValid(xmin) ||
+		TransactionIdPrecedes(xmin, TransactionXmin))
+		return true;
+
+	return snapshot != NULL &&
+		snapshot->snapshot_type == SNAPSHOT_MVCC &&
+		!XidInMVCCSnapshot(xmin, snapshot);
 }
 
 /*
