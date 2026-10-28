@@ -30,6 +30,8 @@ OBJS = \
 	timeline.o \
 	xlogreader.o
 
+EXTRA_INSTALL = contrib/pageinspect contrib/pg_buffercache
+
 EXTRA_CLEAN = xlogreader.c
 
 all: pg_rewind
