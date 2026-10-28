@@ -918,7 +918,10 @@ CAST ( '<replaceable>string</replaceable>' AS <replaceable>type</replaceable> )
     <listitem>
      <para>
       The asterisk (<literal>*</literal>) is used in some contexts to denote
-      all the fields of a table row or composite value.  It also
+      all the fields of a table row or composite value.  System columns
+      are not included and must be selected by name, as in
+      <literal>SELECT ctid, * FROM t</literal>.  (See <xref
+      linkend="ddl-system-columns"/>.)  The asterisk also
       has a special meaning when used as the argument of an
       aggregate function, namely that the aggregate does not require
       any explicit parameter.
