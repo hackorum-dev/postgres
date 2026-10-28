@@ -318,6 +318,22 @@ kill_bgchild_atexit(void)
 #endif
 
 /*
+ * Drop the lingering slot created by PrepareLogStreamer() if we fail before the
+ * background WAL receiver has taken over its connection.  Only registered
+ * once the slot exists, so a pre-existing slot of the same name should never
+ * be dropped.
+ */
+static void
+drop_lingering_replication_slot_atexit(void)
+{
+	/* Check that we have a good state */
+	if (success || in_log_streamer || bgchild > 0)
+		return;
+
+	(void) DropReplicationSlot(bgconn, replication_slot);
+}
+
+/*
  * Split argument into old_dir and new_dir and append to tablespace mapping
  * list.
  */
@@ -646,6 +662,13 @@ PrepareLogStreamer(void)
 								   temp_replication_slot, true, true, false,
 								   false, false))
 			exit(1);
+
+		/*
+		 * Only register atexit function if create_slot is true. Temporary
+		 * slots go away with connection
+		 */
+		if (create_slot)
+			atexit(drop_lingering_replication_slot_atexit);
 
 		if (verbose)
 		{
