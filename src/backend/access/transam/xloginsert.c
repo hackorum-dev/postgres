@@ -39,6 +39,7 @@
 #include "replication/origin.h"
 #include "storage/bufmgr.h"
 #include "storage/proc.h"
+#include "utils/injection_point.h"
 #include "utils/memutils.h"
 #include "utils/pgstat_internal.h"
 #include "utils/rel.h"
@@ -630,6 +631,7 @@ XLogRecordAssemble(RmgrId rmid, uint8 info,
 	XLogRecData *rdt;
 	uint64		total_len = 0;
 	int			block_id;
+	int			nochange_bufs = 0;
 	pg_crc32c	rdata_crc;
 	registered_buffer *prev_regbuf = NULL;
 	XLogRecData *rdt_datas_last;
@@ -723,6 +725,9 @@ XLogRecordAssemble(RmgrId rmid, uint8 info,
 		 * resource manager, log a full-page write for the current block.
 		 */
 		include_image = needs_backup || (info & XLR_CHECK_CONSISTENCY) != 0;
+
+		if ((regbuf->flags & REGBUF_NO_CHANGE) != 0)
+			nochange_bufs++;
 
 		if (include_image)
 		{
@@ -985,6 +990,24 @@ XLogRecordAssemble(RmgrId rmid, uint8 info,
 	COMP_CRC32C(rdata_crc, hdr_scratch + SizeOfXLogRecord, hdr_rdt.len - SizeOfXLogRecord);
 	for (rdt = hdr_rdt.next; rdt != NULL; rdt = rdt->next)
 		COMP_CRC32C(rdata_crc, rdt->data, rdt->len);
+
+	/*
+	 * Test hook: lets a test change a buffer after the CRC was computed but
+	 * before the record is copied into the WAL buffers.  The argument names
+	 * the record as "rmid/info/nochange_bufs" so that a test can pick one
+	 * kind of record without waiting on every record.  This runs in critical
+	 * sections, so it must not allocate; it only fires in a backend that
+	 * loaded the point beforehand.
+	 */
+#ifdef USE_INJECTION_POINTS
+	{
+		char		pointarg[24];
+
+		snprintf(pointarg, sizeof(pointarg), "%d/%02X/%d",
+				 rmid, info, nochange_bufs);
+		INJECTION_POINT_CACHED("xlog-assemble-after-crc", pointarg);
+	}
+#endif
 
 	/*
 	 * Ensure that the XLogRecord is not too large.
