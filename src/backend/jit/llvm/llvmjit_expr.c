@@ -406,7 +406,8 @@ llvm_compile_expr(ExprState *state)
 						l_jit_deform =
 							slot_compile_deform(context, desc,
 												tts_ops,
-												op->d.fetch.last_var);
+												op->d.fetch.last_var,
+												op->d.fetch.notnull_trusted);
 						INSTR_TIME_SET_CURRENT(deform_endtime);
 						INSTR_TIME_ACCUM_DIFF(context->base.instr.deform_counter,
 											  deform_endtime, deform_starttime);
