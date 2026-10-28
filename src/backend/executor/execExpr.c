@@ -3059,6 +3059,7 @@ ExecComputeSlotInfo(ExprState *state, ExprEvalStep *op)
 	TupleDesc	desc = NULL;
 	const TupleTableSlotOps *tts_ops = NULL;
 	bool		isfixed = false;
+	bool		notnull_trusted = false;
 	ExprEvalOp	opcode = op->opcode;
 
 	Assert(opcode == EEOP_INNER_FETCHSOME ||
@@ -3127,7 +3128,28 @@ ExecComputeSlotInfo(ExprState *state, ExprEvalStep *op)
 			tts_ops = parent->scanops;
 
 		if (parent->scanopsset)
+		{
 			isfixed = parent->scanopsfixed;
+
+			/*
+			 * scanopsset is only set by ScanState nodes, whose scan slot is
+			 * ss_ScanTupleSlot.  Only that slot records whether its tuples
+			 * are known to obey the descriptor's not-null constraints, which
+			 * is not the case when a snapshot older than a constraint is in
+			 * use.  SubqueryScan scans another node's slot instead, but its
+			 * own slot does not carry the flag, so this stays conservative.
+			 */
+			if (opcode == EEOP_SCAN_FETCHSOME)
+			{
+				TupleTableSlot *slot = ((ScanState *) parent)->ss_ScanTupleSlot;
+
+				if (slot != NULL && TTS_OBEYS_NOT_NULL_CONSTRAINTS(slot))
+				{
+					Assert(slot->tts_tupleDescriptor == desc);
+					notnull_trusted = true;
+				}
+			}
+		}
 	}
 
 	if (isfixed && desc != NULL && tts_ops != NULL)
@@ -3135,12 +3157,14 @@ ExecComputeSlotInfo(ExprState *state, ExprEvalStep *op)
 		op->d.fetch.fixed = true;
 		op->d.fetch.kind = tts_ops;
 		op->d.fetch.known_desc = desc;
+		op->d.fetch.notnull_trusted = notnull_trusted;
 	}
 	else
 	{
 		op->d.fetch.fixed = false;
 		op->d.fetch.kind = NULL;
 		op->d.fetch.known_desc = NULL;
+		op->d.fetch.notnull_trusted = false;
 	}
 
 	/* if the slot is known to always virtual we never need to deform */

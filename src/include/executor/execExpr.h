@@ -329,6 +329,12 @@ typedef struct ExprEvalStep
 			TupleDesc	known_desc;
 			/* type of slot, can only be relied upon if fixed is set */
 			const TupleTableSlotOps *kind;
+
+			/*
+			 * can tuples in the slot be assumed to obey known_desc's valid
+			 * not-null constraints?  Only set if fixed is set.
+			 */
+			bool		notnull_trusted;
 		}			fetch;
 
 		/* for EEOP_INNER/OUTER/SCAN/OLD/NEW_[SYS]VAR */
