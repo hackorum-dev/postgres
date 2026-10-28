@@ -1158,6 +1158,9 @@ EXCLUDE NO OTHERS
     shorthand for the columns coming from just that table.  In these
     cases it is not possible to specify new names with <literal>AS</literal>;
     the output column names will be the same as the table columns' names.
+    Neither form includes system columns; they must be listed by name,
+    as in <literal>SELECT ctid, * FROM t</literal>.  (See <xref
+    linkend="ddl-system-columns"/>.)
    </para>
 
    <para>
