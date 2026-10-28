@@ -2146,8 +2146,19 @@ self_join_candidates_cmp(const void *a, const void *b)
 bool
 remove_useless_self_joins(PlannerInfo *root, List *joinlist)
 {
-	/* Skip if SJE is disabled, or if the joinlist has less than 2 members. */
-	if (!enable_self_join_elimination || joinlist == NIL ||
+	/*
+	 * Skip if SJE is disabled, if the query uses grouping sets, or if the
+	 * joinlist has less than 2 members.
+	 *
+	 * When grouping sets are present, each grouping set can independently
+	 * replace grouping items with NULLs.  Replacing references to a removed
+	 * relation with references to the kept relation can cause distinct
+	 * grouping items to appear identical, leading downstream pathkey
+	 * deduplication to drop valid ORDER BY keys as redundant.
+	 */
+	if (!enable_self_join_elimination ||
+		root->parse->groupingSets != NIL ||
+		joinlist == NIL ||
 		(list_length(joinlist) == 1 && !IsA(linitial(joinlist), List)))
 		return false;
 
