@@ -679,6 +679,26 @@ get_relation_foreign_keys(PlannerInfo *root, RelOptInfo *rel,
 }
 
 /*
+ * notnull_constraints_usable -
+ *	  May the planner rely on the relation's not-null constraints?
+ *
+ * The plan runs under the active snapshot or a later one.  If the constraints
+ * are too new for it, the plan is marked transient so that it gets rebuilt
+ * once they are old enough, as for indexes with indcheckxmin set.
+ */
+static bool
+notnull_constraints_usable(PlannerInfo *root, Relation relation)
+{
+	Snapshot	snapshot = ActiveSnapshotSet() ? GetActiveSnapshot() : NULL;
+
+	if (RelationCanTrustNotNulls(relation, snapshot))
+		return true;
+
+	root->glob->transientPlan = true;
+	return false;
+}
+
+/*
  * get_relation_notnullatts -
  *	  Retrieves column not-null constraint information for a given relation.
  *
@@ -693,9 +713,10 @@ get_relation_notnullatts(PlannerInfo *root, Relation relation)
 	bool		found;
 	Bitmapset  *notnullattnums = NULL;
 
-	/* bail out if the relation has no not-null constraints */
+	/* bail out if the relation has no not-null constraints we can use */
 	if (relation->rd_att->constr == NULL ||
-		!relation->rd_att->constr->has_not_null)
+		!relation->rd_att->constr->has_not_null ||
+		!notnull_constraints_usable(root, relation))
 		return;
 
 	/* create the hash table if it hasn't been created yet */
@@ -1589,7 +1610,8 @@ get_relation_constraints(PlannerInfo *root,
 		}
 
 		/* Add NOT NULL constraints in expression form, if requested */
-		if (include_notnull && constr->has_not_null)
+		if (include_notnull && constr->has_not_null &&
+			notnull_constraints_usable(root, relation))
 		{
 			int			natts = relation->rd_att->natts;
 
