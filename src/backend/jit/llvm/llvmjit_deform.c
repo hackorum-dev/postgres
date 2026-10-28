@@ -29,10 +29,16 @@
 
 /*
  * Create a function that deforms a tuple of type desc up to natts columns.
+ *
+ * Only if notnull_trusted is set may the tuples in the slot be assumed to
+ * obey desc's valid not-null constraints.  A snapshot older than a constraint
+ * can still see nulls in that column, and then the null bitmap must be
+ * consulted for every column.
  */
 LLVMValueRef
 slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
-					const TupleTableSlotOps *ops, int natts)
+					const TupleTableSlotOps *ops, int natts,
+					bool notnull_trusted)
 {
 	char	   *funcname;
 
@@ -111,6 +117,8 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 	{
 		CompactAttribute *catt = TupleDescCompactAttr(desc, attnum);
 		Form_pg_attribute attr = TupleDescAttr(desc, attnum);
+		bool		attnotnull = notnull_trusted &&
+			catt->attnullability == ATTNULLABLE_VALID;
 
 		/*
 		 * If the column is declared NOT NULL then it must be present in every
@@ -126,7 +134,7 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 		 * combination of attisdropped && attnotnull combination shouldn't
 		 * exist.
 		 */
-		if (catt->attnullability == ATTNULLABLE_VALID &&
+		if (attnotnull &&
 			!catt->atthasmissing &&
 			!catt->attisdropped &&
 			attr->attgenerated != ATTRIBUTE_GENERATED_VIRTUAL)
@@ -398,6 +406,8 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 	{
 		CompactAttribute *att = TupleDescCompactAttr(desc, attnum);
 		Form_pg_attribute attr = TupleDescAttr(desc, attnum);
+		bool		attnotnull = notnull_trusted &&
+			att->attnullability == ATTNULLABLE_VALID;
 
 		LLVMValueRef v_incby;
 		int			alignto = att->attalignby;
@@ -445,7 +455,7 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 		 * present in the tuple, virtual generated columns are always stored
 		 * as NULL, so we must always perform NULL checks for these.
 		 */
-		if (att->attnullability != ATTNULLABLE_VALID ||
+		if (!attnotnull ||
 			attr->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
 		{
 			LLVMBasicBlockRef b_ifnotnull;
@@ -612,7 +622,7 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 			known_alignment = -1;
 			attguaranteedalign = false;
 		}
-		else if (att->attnullability == ATTNULLABLE_VALID &&
+		else if (attnotnull &&
 				 attguaranteedalign && known_alignment >= 0)
 		{
 			/*
@@ -623,7 +633,7 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 			Assert(att->attlen > 0);
 			known_alignment += att->attlen;
 		}
-		else if (att->attnullability == ATTNULLABLE_VALID &&
+		else if (attnotnull &&
 				 attr->attgenerated != ATTRIBUTE_GENERATED_VIRTUAL &&
 				 (att->attlen % alignto) == 0)
 		{
