@@ -873,6 +873,14 @@ NextCopyFromRawFieldsInternal(CopyFromState cstate, char ***fields, int *nfields
 			return false;
 	}
 
+	/*
+	 * Clear the current attribute for error messages.  A row skipped by
+	 * ON_ERROR leaves it set, with cur_attval pointing into attribute_buf,
+	 * which is about to be reset and possibly enlarged.
+	 */
+	cstate->cur_attname = NULL;
+	cstate->cur_attval = NULL;
+
 	cstate->cur_lineno++;
 
 	/* Actually read the line into memory here */
