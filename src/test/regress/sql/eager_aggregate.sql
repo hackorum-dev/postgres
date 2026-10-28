@@ -233,6 +233,34 @@ GROUP BY s1.a;
 DROP TABLE eager_agg_s1;
 DROP TABLE eager_agg_s2;
 
+-- Ensure the partial aggregation can use an index scan that differs in sort
+-- direction from the ordering that the grouping keys took from ORDER BY
+CREATE TABLE eager_agg_d1 (a int, b int, c int);
+CREATE TABLE eager_agg_d2 (a int);
+INSERT INTO eager_agg_d1
+  SELECT i % 10, (i / 10) % 100, i FROM generate_series(1, 10000) i;
+INSERT INTO eager_agg_d2 SELECT i FROM generate_series(0, 9) i;
+CREATE INDEX eager_agg_d1_a_b_idx ON eager_agg_d1 (a, b);
+ANALYZE eager_agg_d1, eager_agg_d2;
+
+SET enable_hashagg TO off;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT d1.a, d1.b, sum(d1.c)
+  FROM eager_agg_d1 d1
+  JOIN eager_agg_d2 d2 ON d1.a = d2.a
+GROUP BY d1.a, d1.b ORDER BY d1.a, d1.b DESC LIMIT 5;
+
+SELECT d1.a, d1.b, sum(d1.c)
+  FROM eager_agg_d1 d1
+  JOIN eager_agg_d2 d2 ON d1.a = d2.a
+GROUP BY d1.a, d1.b ORDER BY d1.a, d1.b DESC LIMIT 5;
+
+RESET enable_hashagg;
+
+DROP TABLE eager_agg_d1;
+DROP TABLE eager_agg_d2;
+
 DROP TABLE eager_agg_t1;
 DROP TABLE eager_agg_t2;
 DROP TABLE eager_agg_t3;

@@ -1474,6 +1474,48 @@ SELECT count(*) FROM btg GROUP BY w, x, z, y ORDER BY y, x, z, w;
 EXPLAIN (COSTS OFF)
 SELECT count(*) FROM btg GROUP BY w, x, y, z ORDER BY x*x, z;
 
+-- Utilize the ordering of index scan even if it differs in sort direction
+-- from the ordering that the GROUP BY keys took from ORDER BY
+CREATE TABLE btg_dir AS
+  SELECT i % 4 AS x, i % 5 AS y, i AS w FROM generate_series(1, 1000) AS i;
+CREATE INDEX btg_dir_x_y_idx ON btg_dir(x, y);
+ANALYZE btg_dir;
+EXPLAIN (COSTS OFF)
+SELECT x, y, count(*) FROM btg_dir GROUP BY x, y ORDER BY x, y DESC;
+SELECT x, y, count(*) FROM btg_dir GROUP BY x, y ORDER BY x, y DESC LIMIT 6;
+
+-- Likewise for a backward index scan that also provides the ordering
+-- required by the aggregate
+EXPLAIN (COSTS OFF)
+SELECT x, array_agg(y ORDER BY y DESC) FROM btg_dir GROUP BY x;
+SELECT x, array_agg(DISTINCT y ORDER BY y DESC) FROM btg_dir GROUP BY x ORDER BY x;
+DROP TABLE btg_dir;
+
+-- An index scan in the direction that the operator class has no operator for
+-- must not cause an error, though such an operator class is not valid
+BEGIN;
+CREATE TYPE btg_color AS ENUM ('r', 'g', 'b');
+CREATE FUNCTION btg_color_lt(btg_color, btg_color) RETURNS bool
+  LANGUAGE internal IMMUTABLE STRICT AS 'enum_lt';
+CREATE FUNCTION btg_color_eq(btg_color, btg_color) RETURNS bool
+  LANGUAGE internal IMMUTABLE STRICT AS 'enum_eq';
+CREATE FUNCTION btg_color_cmp(btg_color, btg_color) RETURNS int
+  LANGUAGE internal IMMUTABLE STRICT AS 'enum_cmp';
+CREATE OPERATOR <<< (LEFTARG = btg_color, RIGHTARG = btg_color,
+  FUNCTION = btg_color_lt);
+CREATE OPERATOR === (LEFTARG = btg_color, RIGHTARG = btg_color,
+  FUNCTION = btg_color_eq);
+CREATE OPERATOR CLASS btg_color_ops DEFAULT FOR TYPE btg_color USING btree AS
+  OPERATOR 1 <<<, OPERATOR 3 ===,
+  FUNCTION 1 btg_color_cmp(btg_color, btg_color);
+CREATE TABLE btg_color_tab AS
+  SELECT (ARRAY['r', 'g', 'b'])[1 + i % 3]::btg_color AS c
+  FROM generate_series(1, 300) AS i;
+CREATE INDEX ON btg_color_tab (c);
+ANALYZE btg_color_tab;
+SELECT c, count(*) FROM btg_color_tab GROUP BY c ORDER BY c;
+ROLLBACK;
+
 -- Test the case where the number of incoming subtree path keys is more than
 -- the number of grouping keys.
 CREATE INDEX btg_y_x_w_idx ON btg(y, x, w);
