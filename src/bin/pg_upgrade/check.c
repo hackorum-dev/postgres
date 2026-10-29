@@ -14,6 +14,7 @@
 #include "catalog/pg_am_d.h"
 #include "catalog/pg_authid_d.h"
 #include "catalog/pg_class_d.h"
+#include "catalog/pg_type_d.h"
 #include "fe_utils/string_utils.h"
 #include "mb/pg_wchar.h"
 #include "pg_upgrade.h"
@@ -30,6 +31,8 @@ static void check_for_incompatible_polymorphics(ClusterInfo *cluster);
 static void check_for_tables_with_oids(ClusterInfo *cluster);
 static void check_for_not_null_inheritance(ClusterInfo *cluster);
 static void check_for_gist_inet_ops(ClusterInfo *cluster);
+static void check_for_nonstandard_string_settings(ClusterInfo *cluster);
+static void check_for_uuid_bytea_casts(ClusterInfo *cluster);
 static void check_for_new_tablespace_dir(void);
 static void check_for_user_defined_encoding_conversions(ClusterInfo *cluster);
 static void check_for_unicode_update(ClusterInfo *cluster);
@@ -687,6 +690,23 @@ check_and_dump_old_cluster(void)
 	 */
 	if (GET_MAJOR_VERSION(old_cluster.major_version) <= 1800)
 		check_for_gist_inet_ops(&old_cluster);
+
+	/*
+	 * PG 19 removed escape_string_warning and no longer accepts
+	 * standard_conforming_strings = off, so restoring a role, database or
+	 * function that sets either of them fails.  Verify there are none, iff
+	 * applicable.
+	 */
+	if (GET_MAJOR_VERSION(old_cluster.major_version) <= 1800)
+		check_for_nonstandard_string_settings(&old_cluster);
+
+	/*
+	 * PG 19 added built-in casts between uuid and bytea, so restoring a
+	 * user-defined cast between them fails.  Verify there are none, iff
+	 * applicable.
+	 */
+	if (GET_MAJOR_VERSION(old_cluster.major_version) <= 1800)
+		check_for_uuid_bytea_casts(&old_cluster);
 
 	/*
 	 * While not a check option, we do this now because this is the only time
@@ -1806,6 +1826,208 @@ check_for_gist_inet_ops(ClusterInfo *cluster)
 				 "binary-upgraded.  Replace them with indexes that use the built-in GiST\n"
 				 "inet_ops operator class.\n"
 				 "A list of indexes with the problem is in the file:\n"
+				 "    %s", report.path);
+	}
+	else
+		check_ok();
+}
+
+/*
+ * SQL condition matching a setconfig or proconfig entry that sets
+ * standard_conforming_strings to any spelling of off, or sets
+ * escape_string_warning to anything.
+ */
+#define NONSTANDARD_STRING_SETTING(c) \
+	"(pg_catalog.lower(" c ") ~ " \
+	"'^standard_conforming_strings=(0|f|fa|fal|fals|false|n|no|of|off)$' " \
+	" OR pg_catalog.split_part(" c ", '=', 1) = 'escape_string_warning')"
+
+/*
+ * Callback function for processing results of query for
+ * check_for_nonstandard_string_settings()'s UpgradeTask.  If the query
+ * returned any rows (i.e., the check failed), write the details to the report
+ * file.
+ */
+static void
+process_nonstandard_string_settings(DbInfo *dbinfo, PGresult *res, void *arg)
+{
+	UpgradeTaskReport *report = (UpgradeTaskReport *) arg;
+	int			ntups = PQntuples(res);
+	int			i_proc = PQfnumber(res, "proc");
+	int			i_setting = PQfnumber(res, "setting");
+
+	if (ntups == 0)
+		return;
+
+	if (report->file == NULL &&
+		(report->file = fopen_priv(report->path, "w")) == NULL)
+		pg_fatal("could not open file \"%s\": %m", report->path);
+
+	fprintf(report->file, "In database: %s\n", dbinfo->db_name);
+
+	for (int rowno = 0; rowno < ntups; rowno++)
+		fprintf(report->file, "  function %s: %s\n",
+				PQgetvalue(res, rowno, i_proc),
+				PQgetvalue(res, rowno, i_setting));
+}
+
+/*
+ * check_for_nonstandard_string_settings()
+ *
+ * Verify that no role, database or function sets standard_conforming_strings
+ * to off or sets escape_string_warning.  Since 19, the former is rejected and
+ * the latter no longer exists, so restoring them would fail.
+ */
+static void
+check_for_nonstandard_string_settings(ClusterInfo *cluster)
+{
+	UpgradeTaskReport report;
+	UpgradeTask *task;
+	PGconn	   *conn;
+	PGresult   *res;
+	const char *query;
+
+	prep_status("Checking for non-standard string settings");
+
+	report.file = NULL;
+	snprintf(report.path, sizeof(report.path), "%s/%s",
+			 log_opts.basedir,
+			 "nonstandard_string_settings.txt");
+
+	/*
+	 * Role and database settings are cluster-wide, so look them up once.
+	 * Settings for all roles in all databases are not dumped, so skip them.
+	 */
+	conn = connectToServer(cluster, "template1");
+	res = executeQueryOrDie(conn,
+							"SELECT d.datname, r.rolname, s.setting "
+							"FROM (SELECT setdatabase, setrole, "
+							"             pg_catalog.unnest(setconfig) AS setting "
+							"      FROM pg_catalog.pg_db_role_setting "
+							"      WHERE setdatabase <> 0 OR setrole <> 0) s "
+							"     LEFT JOIN pg_catalog.pg_database d "
+							"            ON d.oid = s.setdatabase "
+							"     LEFT JOIN pg_catalog.pg_roles r "
+							"            ON r.oid = s.setrole "
+							"WHERE " NONSTANDARD_STRING_SETTING("s.setting"));
+
+	if (PQntuples(res) > 0 &&
+		(report.file = fopen_priv(report.path, "w")) == NULL)
+		pg_fatal("could not open file \"%s\": %m", report.path);
+
+	for (int rowno = 0; rowno < PQntuples(res); rowno++)
+	{
+		const char *datname = PQgetvalue(res, rowno, 0);
+		const char *rolname = PQgetvalue(res, rowno, 1);
+		const char *setting = PQgetvalue(res, rowno, 2);
+
+		if (PQgetisnull(res, rowno, 1))
+			fprintf(report.file, "database %s: %s\n", datname, setting);
+		else if (PQgetisnull(res, rowno, 0))
+			fprintf(report.file, "role %s: %s\n", rolname, setting);
+		else
+			fprintf(report.file, "role %s in database %s: %s\n",
+					rolname, datname, setting);
+	}
+
+	PQclear(res);
+	PQfinish(conn);
+
+	/* Function settings are per-database. */
+	query = "SELECT p.oid::pg_catalog.regprocedure AS proc, p.setting "
+		"FROM (SELECT oid, pg_catalog.unnest(proconfig) AS setting "
+		"      FROM pg_catalog.pg_proc "
+		"      WHERE proconfig IS NOT NULL) p "
+		"WHERE " NONSTANDARD_STRING_SETTING("p.setting");
+
+	task = upgrade_task_create();
+	upgrade_task_add_step(task, query, process_nonstandard_string_settings,
+						  true, &report);
+	upgrade_task_run(task, cluster);
+	upgrade_task_free(task);
+
+	if (report.file)
+	{
+		fclose(report.file);
+		pg_log(PG_REPORT, "fatal");
+		pg_fatal("Your installation contains roles, databases, or functions that set\n"
+				 "standard_conforming_strings to off or set escape_string_warning.\n"
+				 "These settings are no longer supported, so the upgrade would fail.\n"
+				 "Remove them with ALTER ... RESET and restart the upgrade.\n"
+				 "A list of the settings is in the file:\n"
+				 "    %s", report.path);
+	}
+	else
+		check_ok();
+}
+
+/*
+ * Callback function for processing results of query for
+ * check_for_uuid_bytea_casts()'s UpgradeTask.  If the query returned any rows
+ * (i.e., the check failed), write the details to the report file.
+ */
+static void
+process_uuid_bytea_casts(DbInfo *dbinfo, PGresult *res, void *arg)
+{
+	UpgradeTaskReport *report = (UpgradeTaskReport *) arg;
+	int			ntups = PQntuples(res);
+	int			i_source = PQfnumber(res, "source");
+	int			i_target = PQfnumber(res, "target");
+
+	if (ntups == 0)
+		return;
+
+	if (report->file == NULL &&
+		(report->file = fopen_priv(report->path, "w")) == NULL)
+		pg_fatal("could not open file \"%s\": %m", report->path);
+
+	fprintf(report->file, "In database: %s\n", dbinfo->db_name);
+
+	for (int rowno = 0; rowno < ntups; rowno++)
+		fprintf(report->file, "  cast from %s to %s\n",
+				PQgetvalue(res, rowno, i_source),
+				PQgetvalue(res, rowno, i_target));
+}
+
+/*
+ * check_for_uuid_bytea_casts()
+ *
+ * Verify that there are no user-defined casts between uuid and bytea.  Since
+ * 19 these casts are built in, so restoring them would fail.
+ */
+static void
+check_for_uuid_bytea_casts(ClusterInfo *cluster)
+{
+	UpgradeTaskReport report;
+	UpgradeTask *task = upgrade_task_create();
+	const char *query = "SELECT c.castsource::pg_catalog.regtype AS source, "
+		"       c.casttarget::pg_catalog.regtype AS target "
+		"FROM   pg_catalog.pg_cast c "
+		"WHERE  (c.castsource = " CppAsString2(UUIDOID)
+		"        AND c.casttarget = " CppAsString2(BYTEAOID) ")"
+		"       OR (c.castsource = " CppAsString2(BYTEAOID)
+		"           AND c.casttarget = " CppAsString2(UUIDOID) ")";
+
+	prep_status("Checking for user-defined casts between uuid and bytea");
+
+	report.file = NULL;
+	snprintf(report.path, sizeof(report.path), "%s/%s",
+			 log_opts.basedir,
+			 "uuid_bytea_casts.txt");
+
+	upgrade_task_add_step(task, query, process_uuid_bytea_casts,
+						  true, &report);
+	upgrade_task_run(task, cluster);
+	upgrade_task_free(task);
+
+	if (report.file)
+	{
+		fclose(report.file);
+		pg_log(PG_REPORT, "fatal");
+		pg_fatal("Your installation contains user-defined casts between uuid and bytea.\n"
+				 "The new cluster has built-in casts between these types, so the upgrade\n"
+				 "would fail.  Drop these casts and restart the upgrade.\n"
+				 "A list of the casts is in the file:\n"
 				 "    %s", report.path);
 	}
 	else

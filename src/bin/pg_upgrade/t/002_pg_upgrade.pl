@@ -599,6 +599,83 @@ $oldnode->start;
 $oldnode->safe_psql('postgres', 'DROP DATABASE regression_invalid');
 $oldnode->stop;
 
+# Check that pg_upgrade aborts on settings and casts that 19 cannot restore.
+# These checks only run for old clusters of version 18 or older.
+SKIP:
+{
+	skip "only applies to upgrades from 18 or older", 9
+	  if $oldnode->pg_version >= '19devel';
+
+	my @check_command = (
+		'pg_upgrade', '--no-sync',
+		'--old-datadir' => $oldnode->data_dir,
+		'--new-datadir' => $newnode->data_dir,
+		'--old-bindir' => $oldbindir,
+		'--new-bindir' => $newbindir,
+		'--socketdir' => $newnode->host,
+		'--old-port' => $oldnode->port,
+		'--new-port' => $newnode->port,
+		$mode, '--check',);
+
+	# standard_conforming_strings = on is still fine, so only the role
+	# regress_scs_off and the function should be reported.
+	$oldnode->start;
+	$oldnode->safe_psql(
+		'postgres', qq(
+  CREATE ROLE regress_scs_off;
+  ALTER ROLE regress_scs_off SET standard_conforming_strings = off;
+  CREATE ROLE regress_scs_on;
+  ALTER ROLE regress_scs_on SET standard_conforming_strings = on;
+  CREATE FUNCTION regress_esw() RETURNS int LANGUAGE sql
+    SET escape_string_warning = off AS 'SELECT 1';
+));
+	$oldnode->stop;
+
+	command_checks_all(
+		\@check_command,
+		1,
+		[qr/standard_conforming_strings to off or set escape_string_warning/],
+		[qr/^$/],
+		'non-standard string settings cause failure');
+
+	my ($report) = glob($newnode->data_dir
+		  . "/pg_upgrade_output.d/*/nonstandard_string_settings.txt");
+	my $contents = slurp_file($report);
+	like(
+		$contents,
+		qr/^role regress_scs_off: standard_conforming_strings=off$/m,
+		'role setting is reported');
+	like(
+		$contents,
+		qr/^  function .*regress_esw\(\): escape_string_warning=off$/m,
+		'function setting is reported');
+	unlike($contents, qr/regress_scs_on/,
+		'standard_conforming_strings = on is not reported');
+	rmtree($newnode->data_dir . "/pg_upgrade_output.d");
+
+	$oldnode->start;
+	$oldnode->safe_psql(
+		'postgres', qq(
+  DROP ROLE regress_scs_off;
+  DROP ROLE regress_scs_on;
+  DROP FUNCTION regress_esw();
+  CREATE CAST (uuid AS bytea) WITH FUNCTION uuid_send(uuid);
+));
+	$oldnode->stop;
+
+	command_checks_all(
+		\@check_command,
+		1,
+		[qr/user-defined casts between uuid and bytea/],
+		[qr/^$/],
+		'cast from uuid to bytea causes failure');
+	rmtree($newnode->data_dir . "/pg_upgrade_output.d");
+
+	$oldnode->start;
+	$oldnode->safe_psql('postgres', 'DROP CAST (uuid AS bytea)');
+	$oldnode->stop;
+}
+
 # --check command works here, cleans up pg_upgrade_output.d.
 command_ok(
 	[
