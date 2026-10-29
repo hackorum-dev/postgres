@@ -2503,6 +2503,16 @@ RecordTransactionAbortPrepared(TransactionId xid,
 	START_CRIT_SECTION();
 
 	/*
+	 * Keep a concurrent checkpoint from setting its redo pointer after our
+	 * abort record until pg_xact is updated.  Unlike a regular abort, losing
+	 * the abort of a prepared transaction is not harmless: the checkpoint may
+	 * write out our two-phase state file, and without the abort in pg_xact
+	 * the transaction would come back as prepared after a crash.
+	 */
+	Assert((MyProc->delayChkptFlags & DELAY_CHKPT_START) == 0);
+	MyProc->delayChkptFlags |= DELAY_CHKPT_START;
+
+	/*
 	 * Emit the XLOG commit record. Note that we mark 2PC aborts as
 	 * potentially having AccessExclusiveLocks since we don't know whether or
 	 * not they do.
@@ -2523,10 +2533,13 @@ RecordTransactionAbortPrepared(TransactionId xid,
 	XLogFlush(recptr);
 
 	/*
-	 * Mark the transaction aborted in clog.  This is not absolutely necessary
-	 * but we may as well do it while we are here.
+	 * Mark the transaction aborted in clog.  Recovery relies on this to
+	 * discard a state file that a checkpoint wrote before we removed it.
 	 */
 	TransactionIdAbortTree(xid, nchildren, children);
+
+	/* Checkpoint can proceed now */
+	MyProc->delayChkptFlags &= ~DELAY_CHKPT_START;
 
 	END_CRIT_SECTION();
 
