@@ -447,6 +447,16 @@ $node_subscriber->safe_psql('postgres',
 $node_subscriber->poll_query_until('postgres',
 	"SELECT count(*) = 0 FROM pg_stat_activity WHERE backend_type = 'logical replication apply worker'"
 );
+
+# Verify that setting two_phase to true when it is already enabled does not
+# overwrite subtwophasestate to 'p' (pending).
+$node_subscriber->safe_psql('postgres',
+	"ALTER SUBSCRIPTION tap_sub_copy SET (two_phase = true);");
+$result = $node_subscriber->safe_psql('postgres',
+	"SELECT subtwophasestate FROM pg_subscription WHERE subname = 'tap_sub_copy';"
+);
+is($result, qq(e), 'two-phase subscription option remains enabled');
+
 $node_subscriber->safe_psql(
 	'postgres', "
     ALTER SUBSCRIPTION tap_sub_copy SET (two_phase = false);
