@@ -1328,6 +1328,16 @@ PQsocketPoll(int sock, int forRead, int forWrite, pg_usec_time_t end_time)
 	if (!forRead && !forWrite)
 		return 0;
 
+	/*
+	 * On platforms where we must use select(2), fail cleanly instead of
+	 * overrunning the fd_set if the socket's descriptor is too large.
+	 */
+	if ((int) sock >= FD_SETSIZE)
+	{
+		SOCK_ERRNO_SET(EINVAL);
+		return -1;
+	}
+
 	FD_ZERO(&input_mask);
 	FD_ZERO(&output_mask);
 	FD_ZERO(&except_mask);
