@@ -667,6 +667,7 @@ static void RememberAllDependentForRebuilding(AlteredTableInfo *tab, AlterTableT
 static void RememberWholeRowDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype, Relation rel);
 static void RememberConstraintForRebuilding(Oid conoid, AlteredTableInfo *tab);
 static void RememberIndexForRebuilding(Oid indoid, AlteredTableInfo *tab);
+static void RememberFKsOnIndexForRebuilding(Oid indoid, AlteredTableInfo *tab);
 static void RememberStatisticsForRebuilding(Oid stxoid, AlteredTableInfo *tab);
 static void ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab,
 								   LOCKMODE lockmode);
@@ -16002,6 +16003,7 @@ RememberConstraintForRebuilding(Oid conoid, AlteredTableInfo *tab)
 		{
 			RememberReplicaIdentityForRebuilding(indoid, tab);
 			RememberClusterOnForRebuilding(indoid, tab);
+			RememberFKsOnIndexForRebuilding(indoid, tab);
 		}
 	}
 }
@@ -16053,8 +16055,56 @@ RememberIndexForRebuilding(Oid indoid, AlteredTableInfo *tab)
 			 */
 			RememberReplicaIdentityForRebuilding(indoid, tab);
 			RememberClusterOnForRebuilding(indoid, tab);
+			RememberFKsOnIndexForRebuilding(indoid, tab);
 		}
 	}
+}
+
+/*
+ * Subroutine for ATExecAlterColumnType: remember any foreign key constraints
+ * that depend on the given index, which we are about to rebuild.
+ *
+ * A foreign key constraint has a dependency on the unique index supporting
+ * its referenced columns.  Usually such a constraint gets remembered anyway,
+ * because it also depends on the referenced columns themselves.  But if the
+ * column being altered is only an INCLUDE column of that index, the foreign
+ * key does not depend on it, and dropping the index in
+ * ATPostAlterTypeCleanup() would fail.  So we must rebuild the foreign key
+ * along with the index.
+ */
+static void
+RememberFKsOnIndexForRebuilding(Oid indoid, AlteredTableInfo *tab)
+{
+	Relation	depRel;
+	ScanKeyData key[2];
+	SysScanDesc scan;
+	HeapTuple	depTup;
+
+	depRel = table_open(DependRelationId, AccessShareLock);
+
+	ScanKeyInit(&key[0],
+				Anum_pg_depend_refclassid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(RelationRelationId));
+	ScanKeyInit(&key[1],
+				Anum_pg_depend_refobjid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(indoid));
+
+	scan = systable_beginscan(depRel, DependReferenceIndexId, true,
+							  NULL, 2, key);
+
+	while (HeapTupleIsValid(depTup = systable_getnext(scan)))
+	{
+		Form_pg_depend foundDep = (Form_pg_depend) GETSTRUCT(depTup);
+
+		if (foundDep->classid == ConstraintRelationId &&
+			get_constraint_type(foundDep->objid) == CONSTRAINT_FOREIGN)
+			RememberConstraintForRebuilding(foundDep->objid, tab);
+	}
+
+	systable_endscan(scan);
+	table_close(depRel, AccessShareLock);
 }
 
 /*
