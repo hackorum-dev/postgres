@@ -104,6 +104,7 @@
 #include "storage/proc.h"
 #include "storage/procarray.h"
 #include "storage/subsystems.h"
+#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/injection_point.h"
 #include "utils/memutils.h"
@@ -589,11 +590,21 @@ LockGXact(const char *gid, Oid user)
 					 errmsg("prepared transaction with identifier \"%s\" is busy",
 							gid)));
 
-		if (user != gxact->owner && !superuser_arg(user))
+		/*
+		 * Lock the entry before checking permissions, so it cannot disappear
+		 * while we access the catalogs without holding TwoPhaseStateLock.
+		 * AtAbort_Twophase() will unlock it if either check below fails.
+		 */
+		gxact->locking_backend = MyProcNumber;
+		MyLockedGxact = gxact;
+
+		LWLockRelease(TwoPhaseStateLock);
+
+		if (!has_privs_of_role(user, gxact->owner))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("permission denied to finish prepared transaction"),
-					 errhint("Must be superuser or the user that prepared the transaction.")));
+					 errhint("Must have privileges of the role that prepared the transaction.")));
 
 		/*
 		 * Note: it probably would be possible to allow committing from
@@ -606,12 +617,6 @@ LockGXact(const char *gid, Oid user)
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("prepared transaction belongs to another database"),
 					 errhint("Connect to the database where the transaction was prepared to finish it.")));
-
-		/* OK for me to lock it */
-		gxact->locking_backend = MyProcNumber;
-		MyLockedGxact = gxact;
-
-		LWLockRelease(TwoPhaseStateLock);
 
 		return gxact;
 	}
