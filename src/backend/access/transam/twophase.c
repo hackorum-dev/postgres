@@ -2500,6 +2500,9 @@ RecordTransactionAbortPrepared(TransactionId xid,
 		elog(PANIC, "cannot abort transaction %u, it was already committed",
 			 xid);
 
+	/* Load the injection point before entering the critical section */
+	INJECTION_POINT_LOAD("abort-prepared-before-clog");
+
 	START_CRIT_SECTION();
 
 	/*
@@ -2531,6 +2534,8 @@ RecordTransactionAbortPrepared(TransactionId xid,
 
 	/* Always flush, since we're about to remove the 2PC state file */
 	XLogFlush(recptr);
+
+	INJECTION_POINT_CACHED("abort-prepared-before-clog", NULL);
 
 	/*
 	 * Mark the transaction aborted in clog.  Recovery relies on this to
