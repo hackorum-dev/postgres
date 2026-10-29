@@ -54,9 +54,11 @@ COMMIT PREPARED <replaceable class="parameter">transaction_id</replaceable>
   <title>Notes</title>
 
   <para>
-   To commit a prepared transaction, you must be either the same user that
-   executed the transaction originally, or a superuser.  But you do not
-   have to be in the same session that executed the transaction.
+   To commit a prepared transaction, you must have the privileges of the role
+   that prepared the transaction, or be a superuser.  These privileges can be
+   inherited through <link linkend="role-membership">role membership</link>.
+   You must connect to the database in which the transaction was prepared,
+   but you do not have to use the same session.
   </para>
 
   <para>
