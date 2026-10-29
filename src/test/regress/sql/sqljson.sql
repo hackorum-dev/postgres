@@ -232,6 +232,29 @@ SELECT JSON_ARRAY(SELECT 1 WHERE FALSE RETURNING varchar(1));
 SELECT JSON_ARRAY(SELECT 1 RETURNING varchar(3));
 SELECT JSON_ARRAY(SELECT 1 WHERE FALSE RETURNING varchar(2));
 
+-- JSON_ARRAY(subquery) RETURNING a domain: its constraints are checked on
+-- the empty array at run time, and only if it is used
+CREATE DOMAIN sqljson_nonempty_arr AS jsonb
+  CHECK (jsonb_array_length(VALUE) > 0);
+-- Should work
+SELECT JSON_ARRAY(SELECT 1 RETURNING sqljson_nonempty_arr);
+-- Should fail
+SELECT JSON_ARRAY(SELECT 1 WHERE FALSE RETURNING sqljson_nonempty_arr);
+CREATE DOMAIN sqljson_arr AS jsonb;
+CREATE VIEW sqljson_arr_view AS
+  SELECT JSON_ARRAY(SELECT 1 WHERE FALSE RETURNING sqljson_arr) AS a;
+-- Should work
+SELECT * FROM sqljson_arr_view;
+ALTER DOMAIN sqljson_arr ADD CONSTRAINT sqljson_arr_nonempty
+  CHECK (jsonb_array_length(VALUE) > 0);
+-- Should fail
+SELECT * FROM sqljson_arr_view;
+DROP VIEW sqljson_arr_view;
+DROP DOMAIN sqljson_nonempty_arr, sqljson_arr;
+
+CREATE DOMAIN sqljsonb_not_null AS jsonb NOT NULL;
+SELECT JSON_ARRAY(SELECT 1 WHERE false RETURNING sqljsonb_not_null); -- ok
+
 -- Should fail
 SELECT JSON_ARRAY(SELECT FROM (VALUES (1)) foo(i));
 SELECT JSON_ARRAY(SELECT i, i FROM (VALUES (1)) foo(i));
@@ -766,3 +789,5 @@ SELECT i % 2 AS g,
 FROM generate_series(1, 3) i
 GROUP BY i % 2
 ORDER BY count(*);
+
+DROP DOMAIN sqljsonb_not_null;
