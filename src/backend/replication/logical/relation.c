@@ -182,6 +182,7 @@ logicalrep_relmap_update(LogicalRepRelation *remoterel)
 		logicalrep_relmap_free_entry(entry);
 
 	memset(entry, 0, sizeof(LogicalRepRelMapEntry));
+	entry->last_unapplied_state = SUBREL_STATE_INIT_LAST_UNAPPLIED;
 
 	/* Make cached copy of the data */
 	oldctx = MemoryContextSwitchTo(LogicalRepRelMapContext);
@@ -681,6 +682,7 @@ logicalrep_partition_open(LogicalRepRelMapEntry *root,
 	{
 		memset(part_entry, 0, sizeof(LogicalRepPartMapEntry));
 		part_entry->partoid = partOid;
+		entry->last_unapplied_state = SUBREL_STATE_INIT_LAST_UNAPPLIED;
 	}
 
 	/* Release the no-longer-useful attrmap, if any. */

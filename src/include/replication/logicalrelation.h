@@ -16,6 +16,9 @@
 #include "catalog/index.h"
 #include "replication/logicalproto.h"
 
+/* Value of last_unapplied_state before anything has been reported */
+#define SUBREL_STATE_INIT_LAST_UNAPPLIED	'?'
+
 typedef struct LogicalRepRelMapEntry
 {
 	LogicalRepRelation remoterel;	/* key is remoterel.remoteid */
@@ -40,6 +43,13 @@ typedef struct LogicalRepRelMapEntry
 
 	/* Sync state. */
 	char		state;
+
+	/*
+	 * Sync state for which report_unapplied_change() last reported, or
+	 * SUBREL_STATE_INIT_LAST_UNAPPLIED if it has not reported yet.  This must
+	 * be set whenever the entry is zeroed, as zero is SUBREL_STATE_UNKNOWN.
+	 */
+	char		last_unapplied_state;
 	XLogRecPtr	statelsn;
 } LogicalRepRelMapEntry;
 
