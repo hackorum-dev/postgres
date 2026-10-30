@@ -34,6 +34,7 @@
 #include "miscadmin.h"
 #include "port/pg_bitutils.h"
 #include "storage/predicate.h"
+#include "storage/proc.h"
 #include "storage/smgr.h"
 #include "utils/injection_point.h"
 #include "utils/rel.h"
@@ -1025,16 +1026,31 @@ _hash_alloc_buckets(Relation rel, BlockNumber firstblock, uint32 nblocks)
 	ovflopaque->hasho_flag = LH_UNUSED_PAGE;
 	ovflopaque->hasho_page_id = HASHO_PAGE_ID;
 
+	/*
+	 * Prevent a checkpoint from starting between the WAL record and the
+	 * extension.  Recovery from such a checkpoint would not replay the
+	 * record, while the checkpoint might not fsync the new block, and a base
+	 * backup started by it might be copied without the new block.  The file
+	 * would then be shorter than the metapage says.
+	 */
 	if (RelationNeedsWAL(rel))
+	{
+		Assert((MyProc->delayChkptFlags & DELAY_CHKPT_START) == 0);
+		MyProc->delayChkptFlags |= DELAY_CHKPT_START;
+
 		log_newpage(&rel->rd_locator,
 					MAIN_FORKNUM,
 					lastblock,
 					zerobuf.data,
 					true);
+	}
 
 	PageSetChecksum(page, lastblock);
 	smgrextend(RelationGetSmgr(rel), MAIN_FORKNUM, lastblock, zerobuf.data,
 			   false);
+
+	if (RelationNeedsWAL(rel))
+		MyProc->delayChkptFlags &= ~DELAY_CHKPT_START;
 
 	return true;
 }
