@@ -2076,17 +2076,15 @@ sni_clienthello_cb(SSL *ssl, int *al, void *arg)
 		else
 		{
 			/*
-			 * Reaching here means that we didn't get a hostname in the TLS
-			 * extension and the server has been configured to not allow any
-			 * connections without a specified hostname.
-			 *
-			 * The error message for a missing server_name should, according
-			 * to RFC 8446, be missing_extension. This isn't entirely ideal
-			 * since the user won't be able to tell which extension the server
-			 * considered missing.  Sending unrecognized_name would be a more
-			 * helpful error, but for now we stick to the RFC.
+			 * No server_name extension, and no fallback. RFC 8446 specifies
+			 * missing_extension for this case. This callback runs before
+			 * OpenSSL selects a protocol version, so the alert is translated
+			 * with the TLS 1.2 table. OpenSSL 1.1.1 has no mapping for
+			 * missing_extension and closes the connection without an alert.
+			 * OpenSSL 3 rewrites it to handshake_failure. Send
+			 * handshake_failure so both versions send an alert.
 			 */
-			*al = SSL_AD_MISSING_EXTENSION;
+			*al = SSL_AD_HANDSHAKE_FAILURE;
 
 			ereport(COMMERROR,
 					(errcode(ERRCODE_PROTOCOL_VIOLATION),
@@ -2104,7 +2102,7 @@ sni_clienthello_cb(SSL *ssl, int *al, void *arg)
 		if (tlsext_hostname)
 			*al = SSL_AD_UNRECOGNIZED_NAME;
 		else
-			*al = SSL_AD_MISSING_EXTENSION;
+			*al = SSL_AD_HANDSHAKE_FAILURE;
 		return SSL_CLIENT_HELLO_ERROR;
 	}
 
