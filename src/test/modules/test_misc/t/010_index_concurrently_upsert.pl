@@ -117,7 +117,7 @@ wakeup_injection_point($node,
 # Wakeup s2 (exec-insert-before-insert-speculative)
 wakeup_injection_point($node, 'exec-insert-before-insert-speculative');
 
-clean_safe_quit_ok($s1, $s2, $s3);
+clean_safe_quit_ok($node, $s1, $s2, $s3);
 
 # Cleanup test 1
 $node->safe_psql('postgres', 'TRUNCATE TABLE test.tblpk');
@@ -177,7 +177,7 @@ wakeup_injection_point($node, 'exec-insert-before-insert-speculative');
 wakeup_injection_point($node,
 	'check-exclusion-or-unique-constraint-no-conflict');
 
-clean_safe_quit_ok($s1, $s2, $s3);
+clean_safe_quit_ok($node, $s1, $s2, $s3);
 
 $node->safe_psql('postgres', 'TRUNCATE TABLE test.tblpk');
 
@@ -238,7 +238,7 @@ wakeup_injection_point($node,
 	'reindex-relation-concurrently-before-set-dead');
 wakeup_injection_point($node, 'exec-insert-before-insert-speculative');
 
-clean_safe_quit_ok($s1, $s2, $s3);
+clean_safe_quit_ok($node, $s1, $s2, $s3);
 
 $node->safe_psql('postgres', 'TRUNCATE TABLE test.tblpk');
 
@@ -298,7 +298,7 @@ wakeup_injection_point($node,
 	'check-exclusion-or-unique-constraint-no-conflict');
 wakeup_injection_point($node, 'exec-insert-before-insert-speculative');
 
-clean_safe_quit_ok($s1, $s2, $s3);
+clean_safe_quit_ok($node, $s1, $s2, $s3);
 
 $node->safe_psql('postgres', 'TRUNCATE TABLE test.tblpk');
 
@@ -357,7 +357,7 @@ wakeup_injection_point($node, 'exec-insert-before-insert-speculative');
 wakeup_injection_point($node,
 	'check-exclusion-or-unique-constraint-no-conflict');
 
-clean_safe_quit_ok($s1, $s2, $s3);
+clean_safe_quit_ok($node, $s1, $s2, $s3);
 
 $node->safe_psql('postgres', 'TRUNCATE TABLE test.tblpk');
 
@@ -418,7 +418,7 @@ wakeup_injection_point($node,
 	'reindex-relation-concurrently-before-set-dead');
 wakeup_injection_point($node, 'exec-insert-before-insert-speculative');
 
-clean_safe_quit_ok($s1, $s2, $s3);
+clean_safe_quit_ok($node, $s1, $s2, $s3);
 
 $node->safe_psql('postgres', 'TRUNCATE TABLE test.tblpk');
 
@@ -478,7 +478,7 @@ wakeup_injection_point($node,
 	'check-exclusion-or-unique-constraint-no-conflict');
 wakeup_injection_point($node, 'exec-insert-before-insert-speculative');
 
-clean_safe_quit_ok($s1, $s2, $s3);
+clean_safe_quit_ok($node, $s1, $s2, $s3);
 
 $node->safe_psql('postgres', 'TRUNCATE TABLE test.tblparted');
 
@@ -537,7 +537,7 @@ wakeup_injection_point($node, 'exec-insert-before-insert-speculative');
 wakeup_injection_point($node,
 	'check-exclusion-or-unique-constraint-no-conflict');
 
-clean_safe_quit_ok($s1, $s2, $s3);
+clean_safe_quit_ok($node, $s1, $s2, $s3);
 
 $node->safe_psql('postgres', 'TRUNCATE TABLE test.tblparted');
 
@@ -598,7 +598,7 @@ wakeup_injection_point($node,
 	'reindex-relation-concurrently-before-set-dead');
 wakeup_injection_point($node, 'exec-insert-before-insert-speculative');
 
-clean_safe_quit_ok($s1, $s2, $s3);
+clean_safe_quit_ok($node, $s1, $s2, $s3);
 
 $node->safe_psql('postgres', 'TRUNCATE TABLE test.tblparted');
 
@@ -645,7 +645,7 @@ wakeup_injection_point($node, 'reindex-relation-concurrently-before-swap');
 wakeup_injection_point($node,
 	'exec-init-partition-after-get-partition-ancestors');
 
-clean_safe_quit_ok($s1, $s2, $s3);
+clean_safe_quit_ok($node, $s1, $s2, $s3);
 
 $node->safe_psql('postgres', 'TRUNCATE TABLE test.tblparted');
 
@@ -739,7 +739,7 @@ wakeup_injection_point($node, 'exec-insert-before-insert-speculative');
 wakeup_injection_point($node,
 	'check-exclusion-or-unique-constraint-no-conflict');
 
-clean_safe_quit_ok($s1, $s2, $s3);
+clean_safe_quit_ok($node, $s1, $s2, $s3);
 
 $node->safe_psql('postgres', 'TRUNCATE TABLE test.tblparted');
 
@@ -828,7 +828,7 @@ wakeup_injection_point($node, 'exec-insert-before-insert-speculative');
 wakeup_injection_point($node,
 	'check-exclusion-or-unique-constraint-no-conflict');
 
-clean_safe_quit_ok($s1, $s2, $s3);
+clean_safe_quit_ok($node, $s1, $s2, $s3);
 
 $node->safe_psql('postgres', 'TRUNCATE TABLE test.tblexpr');
 
@@ -921,7 +921,7 @@ SELECT injection_points_wakeup('$point_name');
 }
 
 # Wait for any pending query to complete, capture stderr, and close the session.
-# Returns the stderr output (excluding internal markers).
+# Returns the stderr output (excluding internal markers) and the backend PID.
 sub safe_quit
 {
 	my ($session) = @_;
@@ -943,18 +943,41 @@ sub safe_quit
 	my $stderr = $session->{stderr};
 	$stderr =~ s/$banner_match//;
 
+	# The session is idle now, so its backend PID can be queried safely.
+	$session->{stdout} = '';
+	$session->{stderr} = '';
+	my $pid = $session->query_safe('SELECT pg_backend_pid()', verbose => 0);
+	chomp $pid;
+
 	# Close the session
 	$session->quit;
 
-	return $stderr;
+	return ($stderr, $pid);
 }
 
-# Helper function: verify that the given sessions exit cleanly.
+# Helper function: verify that the given sessions exit cleanly, then wait for
+# their server backends to finish. This ensures that injection points are
+# cleaned up by a before_shmem_exit callback.
 sub clean_safe_quit_ok
 {
+	my $node = shift;
+	my @backend_pids;
 	my $i = 1;
 	foreach my $session (@_)
 	{
-		is(safe_quit($session), '', "session " . $i++ . " quit cleanly");
+		my ($stderr, $pid) = safe_quit($session);
+
+		is($stderr, '', "session " . $i++ . " quit cleanly");
+		die "invalid backend PID: $pid" unless $pid =~ /^\d+$/;
+		push @backend_pids, $pid;
 	}
+
+	# Confirmed all sessions are closed. Ensure all related backends have
+	# exited.
+	my $pid_list = join(',', @backend_pids);
+
+	$node->poll_query_until(
+		'postgres',
+		"SELECT count(*) = 0 FROM pg_stat_activity WHERE pid IN ($pid_list)")
+	  or die "timed out waiting for backends $pid_list to exit";
 }
