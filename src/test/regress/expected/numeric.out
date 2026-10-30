@@ -2208,6 +2208,45 @@ SELECT to_char(1234.56::float8, '99999V99');
    123456
 (1 row)
 
+-- V on float4/float8 keeps a representable product and errors on overflow
+SELECT to_char(1e-300::float8, 'FM9V' || repeat('9', 309));
+  to_char   
+------------
+ 1000000000
+(1 row)
+
+SELECT to_char((-1e-300)::float8, 'FM9V' || repeat('9', 309));
+   to_char   
+-------------
+ -1000000000
+(1 row)
+
+SELECT to_char(0::float8, 'FM9V' || repeat('9', 309));
+ to_char 
+---------
+ 0
+(1 row)
+
+SELECT to_char(1e308::float8, 'FM9V9999999');
+ERROR:  value out of range: overflow
+SELECT to_char((-1e308)::float8, 'FM9V9999999');
+ERROR:  value out of range: overflow
+SELECT to_char(1e308::float8, 'FM9V999999');
+ERROR:  value out of range: overflow
+SELECT to_char(0::float4, 'FM9V' || repeat('9', 39));
+ to_char 
+---------
+ 0
+(1 row)
+
+SELECT to_char(1e-30::float4, 'FM9V' || repeat('9', 39));
+  to_char   
+------------
+ 1000000000
+(1 row)
+
+SELECT to_char(1::float4, 'FM9V' || repeat('9', 39));
+ERROR:  "1000000000000000000000000000000000000000" is out of range for type real
 -- Check parsing of literal text in a format string
 SELECT to_char('100'::numeric, 'foo999');
  to_char 

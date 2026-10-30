@@ -77,6 +77,7 @@
 #include "utils/builtins.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
+#include "utils/float.h"
 #include "utils/formatting.h"
 #include "utils/memutils.h"
 #include "utils/numeric.h"
@@ -6680,6 +6681,28 @@ int8_to_char(PG_FUNCTION_ARGS)
 }
 
 /*
+ * 10^multi is computed in numeric.  A float power of ten is Inf past
+ * FLT_MAX_10_EXP or DBL_MAX_10_EXP.
+ */
+static Numeric
+scale_numeric_v(Numeric nval, int multi, int32 round_digits)
+{
+	Numeric		a = int64_to_numeric(10);
+	Numeric		b = int64_to_numeric(multi);
+	Numeric		x;
+
+	x = DatumGetNumeric(DirectFunctionCall2(numeric_power,
+											NumericGetDatum(a),
+											NumericGetDatum(b)));
+	nval = DatumGetNumeric(DirectFunctionCall2(numeric_mul,
+											   NumericGetDatum(nval),
+											   NumericGetDatum(x)));
+	return DatumGetNumeric(DirectFunctionCall2(numeric_round,
+											   NumericGetDatum(nval),
+											   Int32GetDatum(round_digits)));
+}
+
+/*
  * FLOAT4 to_char()
  */
 Datum
@@ -6743,9 +6766,16 @@ float4_to_char(PG_FUNCTION_ARGS)
 
 		if (IS_MULTI(&Num))
 		{
-			float		multi = pow((double) 10, (double) Num.multi);
+			if (!isnan(val) && !isinf(val))
+			{
+				Numeric		nval;
 
-			val = value * multi;
+				nval = DatumGetNumeric(DirectFunctionCall1(float4_numeric,
+														   Float4GetDatum(val)));
+				nval = scale_numeric_v(nval, Num.multi, Num.post);
+				val = DatumGetFloat4(DirectFunctionCall1(numeric_float4,
+														 NumericGetDatum(nval)));
+			}
 			Num.pre += Num.multi;
 		}
 
@@ -6855,9 +6885,18 @@ float8_to_char(PG_FUNCTION_ARGS)
 
 		if (IS_MULTI(&Num))
 		{
-			double		multi = pow((double) 10, (double) Num.multi);
+			if (!isnan(val) && !isinf(val))
+			{
+				Numeric		nval;
 
-			val = value * multi;
+				nval = DatumGetNumeric(DirectFunctionCall1(float8_numeric,
+														   Float8GetDatum(val)));
+				nval = scale_numeric_v(nval, Num.multi, Num.post);
+				val = DatumGetFloat8(DirectFunctionCall1(numeric_float8_no_overflow,
+														 NumericGetDatum(nval)));
+				if (isinf(val) || isnan(val))
+					float_overflow_error();
+			}
 			Num.pre += Num.multi;
 		}
 
