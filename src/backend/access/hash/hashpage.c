@@ -636,6 +636,8 @@ _hash_expandtable(Relation rel, Buffer metabuf)
 
 restart_expand:
 
+	INJECTION_POINT("hash-expandtable-start", NULL);
+
 	/*
 	 * Write-lock the meta page.  It used to be necessary to acquire a
 	 * heavyweight lock to begin a split, but that is no longer required.
@@ -1044,6 +1046,8 @@ _hash_alloc_buckets(Relation rel, BlockNumber firstblock, uint32 nblocks)
 					zerobuf.data,
 					true);
 	}
+
+	INJECTION_POINT("hash-alloc-buckets-after-wal", NULL);
 
 	PageSetChecksum(page, lastblock);
 	smgrextend(RelationGetSmgr(rel), MAIN_FORKNUM, lastblock, zerobuf.data,
