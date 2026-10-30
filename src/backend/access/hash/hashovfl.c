@@ -656,8 +656,8 @@ _hash_freeovflpage(Relation rel, Buffer bucketbuf, Buffer ovflbuf,
 	if (RelationNeedsWAL(rel))
 	{
 		xl_hash_squeeze_page xlrec;
+		BlockNumber bucket_blkno = BufferGetBlockNumber(bucketbuf);
 
-		xlrec.bucket_blkno = BufferGetBlockNumber(bucketbuf);
 		xlrec.prevblkno = prevblkno;
 		xlrec.nextblkno = nextblkno;
 		xlrec.ntups = nitups;
@@ -670,9 +670,12 @@ _hash_freeovflpage(Relation rel, Buffer bucketbuf, Buffer ovflbuf,
 		/*
 		 * Register only the pages this record changes.  The primary bucket
 		 * page is registered only if it is the write page and is modified;
-		 * otherwise we may hold only a pin on it, and replay takes a cleanup
-		 * lock on bucket_blkno instead.
+		 * otherwise we may hold only a pin on it, so append its block number
+		 * and replay takes a cleanup lock on it.
 		 */
+		if (!(is_prim_bucket_same_wrt && mod_wbuf))
+			XLogRegisterData(&bucket_blkno, sizeof(BlockNumber));
+
 		if (mod_wbuf)
 		{
 			XLogRegisterBuffer(1, wbuf, REGBUF_STANDARD);
@@ -971,7 +974,6 @@ readpage:
 					{
 						xl_hash_move_page_contents xlrec;
 
-						xlrec.bucket_blkno = bucket_blkno;
 						xlrec.ntups = nitups;
 						xlrec.is_prim_bucket_same_wrt = (wbuf == bucket_buf);
 
@@ -981,9 +983,12 @@ readpage:
 						/*
 						 * If wbuf is an overflow page, the primary bucket
 						 * page is not changed and we hold only a pin on it,
-						 * so it is not registered.  Replay takes a cleanup
-						 * lock on bucket_blkno instead.
+						 * so it is not registered.  Append its block number
+						 * instead, and replay takes a cleanup lock on it.
 						 */
+						if (!xlrec.is_prim_bucket_same_wrt)
+							XLogRegisterData(&bucket_blkno, sizeof(BlockNumber));
+
 						XLogRegisterBuffer(1, wbuf, REGBUF_STANDARD);
 						XLogRegisterBufData(1, itup_offsets,
 											nitups * sizeof(OffsetNumber));
