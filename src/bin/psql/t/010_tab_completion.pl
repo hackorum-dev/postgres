@@ -422,6 +422,36 @@ check_completion(
 
 clear_line();
 
+# check COPY FORMAT json completion: supported for TO but not for FROM
+check_completion(
+	"COPY foo TO stdout WITH ( FORMAT j\t",
+	qr/json /,
+	"COPY TO with FORMAT json completion");
+
+clear_line();
+
+check_completion(
+	"COPY foo FROM stdin WITH ( FORMAT \t\t",
+	qr/binary\s+csv\s+text\s+postgres=# /i,
+	"COPY FROM FORMAT completion does not offer json");
+
+clear_line();
+
+# check COPY HEADER match completion: supported for FROM but not for TO
+check_completion(
+	"COPY foo FROM stdin WITH ( HEADER M\t",
+	qr/MATCH /,
+	"COPY FROM with HEADER MATCH completion");
+
+clear_line();
+
+check_completion(
+	"COPY foo TO stdout WITH ( HEADER \t\t",
+	qr/false\s+true\s+postgres=# /i,
+	"COPY TO HEADER completion does not offer MATCH");
+
+clear_line();
+
 # send psql an explicit \q to shut it down, else pty won't close properly
 $h->quit or die "psql returned $?";
 

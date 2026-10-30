@@ -3429,7 +3429,13 @@ match_previous_words(int pattern_id,
 
 			/* Complete COPY <sth> FROM|TO filename WITH (FORMAT */
 			else if (TailMatches("FORMAT"))
-				COMPLETE_WITH("binary", "csv", "text", "json");
+			{
+				/* json is supported for COPY TO only */
+				if (HeadMatches("COPY|\\copy", MatchAny, "FROM"))
+					COMPLETE_WITH("binary", "csv", "text");
+				else
+					COMPLETE_WITH("binary", "csv", "text", "json");
+			}
 
 			/* Complete COPY <sth> FROM|TO filename WITH (FREEZE */
 			else if (TailMatches("FREEZE"))
@@ -3437,7 +3443,13 @@ match_previous_words(int pattern_id,
 
 			/* Complete COPY <sth> FROM|TO filename WITH (HEADER */
 			else if (TailMatches("HEADER"))
-				COMPLETE_WITH("true", "false", "MATCH");
+			{
+				/* MATCH is supported for COPY FROM only */
+				if (HeadMatches("COPY|\\copy", MatchAny, "FROM"))
+					COMPLETE_WITH("true", "false", "MATCH");
+				else
+					COMPLETE_WITH("true", "false");
+			}
 
 			/* Complete COPY <sth> FROM filename WITH (ON_ERROR */
 			else if (TailMatches("ON_ERROR"))
