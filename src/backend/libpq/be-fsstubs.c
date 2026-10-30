@@ -494,7 +494,7 @@ be_lo_export(PG_FUNCTION_ARGS)
 	text	   *filename = PG_GETARG_TEXT_PP(1);
 	int			fd;
 	int			nbytes;
-	char		buf[BUFSIZE];
+	char	   *buf;
 	char		fnamebuf[MAXPGPATH];
 	LargeObjectDesc *lobj;
 	mode_t		oumask;
@@ -531,6 +531,13 @@ be_lo_export(PG_FUNCTION_ARGS)
 						fnamebuf)));
 
 	/*
+	 * The buffer is allocated rather than declared on the stack. A frame
+	 * larger than 4kB that contains a PG_TRY() can be miscompiled by GCC on
+	 * SPARC.
+	 */
+	buf = palloc(BUFSIZE);
+
+	/*
 	 * read in from the inversion file and write to the filesystem
 	 */
 	while ((nbytes = inv_read(lobj, buf, BUFSIZE)) > 0)
@@ -544,6 +551,8 @@ be_lo_export(PG_FUNCTION_ARGS)
 					 errmsg("could not write server file \"%s\": %m",
 							fnamebuf)));
 	}
+
+	pfree(buf);
 
 	if (CloseTransientFile(fd) != 0)
 		ereport(ERROR,
