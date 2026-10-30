@@ -1052,6 +1052,17 @@ SELECT to_char(1234.56::numeric, '99999V99');
 SELECT to_char(1234.56::float4, '99999V99');
 SELECT to_char(1234.56::float8, '99999V99');
 
+-- V on float4/float8 keeps a representable product and errors on overflow
+SELECT to_char(1e-300::float8, 'FM9V' || repeat('9', 309));
+SELECT to_char((-1e-300)::float8, 'FM9V' || repeat('9', 309));
+SELECT to_char(0::float8, 'FM9V' || repeat('9', 309));
+SELECT to_char(1e308::float8, 'FM9V9999999');
+SELECT to_char((-1e308)::float8, 'FM9V9999999');
+SELECT to_char(1e308::float8, 'FM9V999999');
+SELECT to_char(0::float4, 'FM9V' || repeat('9', 39));
+SELECT to_char(1e-30::float4, 'FM9V' || repeat('9', 39));
+SELECT to_char(1::float4, 'FM9V' || repeat('9', 39));
+
 -- Check parsing of literal text in a format string
 SELECT to_char('100'::numeric, 'foo999');
 SELECT to_char('100'::numeric, 'f\oo999');
