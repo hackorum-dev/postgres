@@ -442,6 +442,11 @@ void		transfer_all_new_dbs(DbInfoArr *old_db_arr,
 								 DbInfoArr *new_db_arr, char *old_pgdata, char *new_pgdata,
 								 char *old_tablespace, char *new_tablespace);
 
+/* settings.c */
+
+void		get_stored_settings(void);
+void		check_stored_settings(void);
+
 /* tablespace.c */
 
 void		init_tablespaces(void);

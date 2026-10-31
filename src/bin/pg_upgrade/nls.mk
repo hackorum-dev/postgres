@@ -14,6 +14,7 @@ GETTEXT_FILES    = check.c \
                    pg_upgrade.c \
                    relfilenumber.c \
                    server.c \
+                   settings.c \
                    slru_io.c \
                    tablespace.c \
                    task.c \

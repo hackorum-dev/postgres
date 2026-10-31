@@ -15,6 +15,7 @@ pg_upgrade_sources = files(
   'pg_upgrade.c',
   'relfilenumber.c',
   'server.c',
+  'settings.c',
   'slru_io.c',
   'tablespace.c',
   'task.c',
@@ -69,6 +70,7 @@ tests += {
       't/006_transfer_modes.pl',
       't/007_multixact_conversion.pl',
       't/008_extension_control_path.pl',
+      't/009_stored_settings.pl',
     ],
     'deps': [test_ext],
     'test_kwargs': {'priority': 40}, # pg_upgrade tests are slow

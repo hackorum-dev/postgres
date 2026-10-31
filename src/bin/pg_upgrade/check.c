@@ -601,6 +601,8 @@ check_and_dump_old_cluster(void)
 
 	get_loadable_libraries();
 
+	get_stored_settings();
+
 
 	/*
 	 * Check for various failure cases
@@ -708,6 +710,8 @@ check_new_cluster(void)
 	check_new_cluster_is_empty();
 
 	check_loadable_libraries();
+
+	check_stored_settings();
 
 	switch (user_opts.transfer_mode)
 	{

@@ -3001,6 +3001,8 @@ StdRdOptToastValueType
 StdRdOptions
 Step
 StopList
+StoredSetting
+StoredSettingArr
 StrategyNumber
 StreamCtl
 StreamStopReason

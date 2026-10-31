@@ -25,6 +25,7 @@ OBJS = \
 	pg_upgrade.o \
 	relfilenumber.o \
 	server.o \
+	settings.o \
 	slru_io.o \
 	tablespace.o \
 	task.o \
