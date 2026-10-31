@@ -2104,10 +2104,18 @@ ReorderBufferApplyMessage(ReorderBuffer *rb, ReorderBufferTXN *txn,
 						  ReorderBufferChange *change, bool streaming)
 {
 	if (streaming)
-		rb->stream_message(rb, txn, change->lsn, true,
+	{
+		/*
+		 * Pass the change's transaction entry (which could be a
+		 * subtransaction) so that the output plugin can associate the message
+		 * with it and discard the message if the subtransaction is aborted
+		 * later.
+		 */
+		rb->stream_message(rb, change->txn, change->lsn, true,
 						   change->data.msg.prefix,
 						   change->data.msg.message_size,
 						   change->data.msg.message);
+	}
 	else
 		rb->message(rb, txn, change->lsn, true,
 					change->data.msg.prefix,

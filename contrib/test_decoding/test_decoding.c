@@ -961,11 +961,18 @@ pg_decode_stream_message(LogicalDecodingContext *ctx,
 	if (transactional)
 	{
 		TestDecodingData *data = ctx->output_plugin_private;
-		TestDecodingTxnData *txndata = txn->output_plugin_private;
+
+		/*
+		 * stream_message_cb can be called for an individual subtransaction
+		 * but we maintain the output_plugin_private only under the toptxn so
+		 * if this is not the toptxn then fetch the toptxn.
+		 */
+		ReorderBufferTXN *toptxn = rbtxn_get_toptxn(txn);
+		TestDecodingTxnData *txndata = toptxn->output_plugin_private;
 
 		if (data->skip_empty_xacts && !txndata->stream_wrote_changes)
 		{
-			pg_output_stream_start(ctx, data, txn, false);
+			pg_output_stream_start(ctx, data, toptxn, false);
 		}
 		txndata->xact_wrote_changes = txndata->stream_wrote_changes = true;
 	}
