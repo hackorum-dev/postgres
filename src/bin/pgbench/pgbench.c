@@ -4630,6 +4630,96 @@ getResultString(bool tx_skipped, EStatus estatus)
 		return "failed";
 }
 
+static void
+printAggInterval(FILE *logfile, const StatsData *agg)
+{
+	double		lag_sum = 0.0;
+	double		lag_sum2 = 0.0;
+	double		lag_min = 0.0;
+	double		lag_max = 0.0;
+	int64		cnt_skipped = 0;
+	int64		serialization_failures = 0;
+	int64		deadlock_failures = 0;
+	int64		other_sql_failures = 0;
+	int64		retried = 0;
+	int64		retries = 0;
+
+	/* print aggregated report to logfile */
+	fprintf(logfile, INT64_FORMAT " " INT64_FORMAT " %.0f %.0f %.0f %.0f",
+			agg->start_time / 1000000,	/* seconds since Unix epoch */
+			agg->cnt,
+			agg->latency.sum,
+			agg->latency.sum2,
+			agg->latency.min,
+			agg->latency.max);
+
+	if (throttle_delay)
+	{
+		lag_sum = agg->lag.sum;
+		lag_sum2 = agg->lag.sum2;
+		lag_min = agg->lag.min;
+		lag_max = agg->lag.max;
+	}
+	fprintf(logfile, " %.0f %.0f %.0f %.0f",
+			lag_sum,
+			lag_sum2,
+			lag_min,
+			lag_max);
+
+	if (latency_limit)
+		cnt_skipped = agg->cnt_skipped;
+	fprintf(logfile, " " INT64_FORMAT, cnt_skipped);
+
+	if (max_tries != 1)
+	{
+		retried = agg->retried;
+		retries = agg->retries;
+	}
+	fprintf(logfile, " " INT64_FORMAT " " INT64_FORMAT, retried, retries);
+
+	if (failures_detailed)
+	{
+		serialization_failures = agg->serialization_failures;
+		deadlock_failures = agg->deadlock_failures;
+		other_sql_failures = agg->other_sql_failures;
+	}
+	fprintf(logfile, " " INT64_FORMAT " " INT64_FORMAT " " INT64_FORMAT,
+			serialization_failures,
+			deadlock_failures,
+			other_sql_failures);
+
+	fputc('\n', logfile);
+}
+
+/*
+ * Whether the current aggregation interval has collected any data.
+ */
+static bool
+aggIntervalHasData(const StatsData *agg)
+{
+	return (agg->cnt > 0 || agg->cnt_skipped > 0 || agg->retried > 0 ||
+			agg->retries > 0 || agg->serialization_failures > 0 ||
+			agg->deadlock_failures > 0 || agg->other_sql_failures > 0);
+}
+
+/*
+ * Empty intervals in between are printed as well (this may happen with
+ * very low tps, e.g. --rate=0.1).
+ */
+static void
+flushElapsedAggIntervals(FILE *logfile, StatsData *agg, pg_time_usec_t now)
+{
+	pg_time_usec_t next;
+
+	while ((next = agg->start_time + agg_interval * INT64CONST(1000000)) <= now)
+	{
+		printAggInterval(logfile, agg);
+
+		/* reset data and move to next interval */
+		initStats(agg, next);
+	}
+}
+
 /*
  * Print log entry after completing one transaction.
  *
@@ -4659,76 +4749,8 @@ doLog(TState *thread, CState *st,
 	/* should we aggregate the results or not? */
 	if (agg_interval > 0)
 	{
-		pg_time_usec_t next;
-
-		/*
-		 * Loop until we reach the interval of the current moment, and print
-		 * any empty intervals in between (this may happen with very low tps,
-		 * e.g. --rate=0.1).
-		 */
-
-		while ((next = agg->start_time + agg_interval * INT64CONST(1000000)) <= now)
-		{
-			double		lag_sum = 0.0;
-			double		lag_sum2 = 0.0;
-			double		lag_min = 0.0;
-			double		lag_max = 0.0;
-			int64		cnt_skipped = 0;
-			int64		serialization_failures = 0;
-			int64		deadlock_failures = 0;
-			int64		other_sql_failures = 0;
-			int64		retried = 0;
-			int64		retries = 0;
-
-			/* print aggregated report to logfile */
-			fprintf(logfile, INT64_FORMAT " " INT64_FORMAT " %.0f %.0f %.0f %.0f",
-					agg->start_time / 1000000,	/* seconds since Unix epoch */
-					agg->cnt,
-					agg->latency.sum,
-					agg->latency.sum2,
-					agg->latency.min,
-					agg->latency.max);
-
-			if (throttle_delay)
-			{
-				lag_sum = agg->lag.sum;
-				lag_sum2 = agg->lag.sum2;
-				lag_min = agg->lag.min;
-				lag_max = agg->lag.max;
-			}
-			fprintf(logfile, " %.0f %.0f %.0f %.0f",
-					lag_sum,
-					lag_sum2,
-					lag_min,
-					lag_max);
-
-			if (latency_limit)
-				cnt_skipped = agg->cnt_skipped;
-			fprintf(logfile, " " INT64_FORMAT, cnt_skipped);
-
-			if (max_tries != 1)
-			{
-				retried = agg->retried;
-				retries = agg->retries;
-			}
-			fprintf(logfile, " " INT64_FORMAT " " INT64_FORMAT, retried, retries);
-
-			if (failures_detailed)
-			{
-				serialization_failures = agg->serialization_failures;
-				deadlock_failures = agg->deadlock_failures;
-				other_sql_failures = agg->other_sql_failures;
-			}
-			fprintf(logfile, " " INT64_FORMAT " " INT64_FORMAT " " INT64_FORMAT,
-					serialization_failures,
-					deadlock_failures,
-					other_sql_failures);
-
-			fputc('\n', logfile);
-
-			/* reset data and move to next interval */
-			initStats(agg, next);
-		}
+		/* print and reset any fully elapsed interval */
+		flushElapsedAggIntervals(logfile, agg, now);
 
 		/* accumulate the current transaction */
 		accumStats(agg, tx_skipped, latency, lag, st->estatus, st->tries);
@@ -7824,8 +7846,13 @@ done:
 	{
 		if (agg_interval > 0)
 		{
+			pg_time_usec_t now = pg_time_now() + epoch_shift;
+
 			/* log aggregated but not yet reported transactions */
-			doLog(thread, state, &aggs, false, 0, 0);
+			flushElapsedAggIntervals(thread->logfile, &aggs, now);
+
+			if (aggIntervalHasData(&aggs))
+				printAggInterval(thread->logfile, &aggs);
 		}
 		fclose(thread->logfile);
 		thread->logfile = NULL;

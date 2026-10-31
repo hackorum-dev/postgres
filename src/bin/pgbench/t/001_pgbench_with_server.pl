@@ -1598,6 +1598,22 @@ $node->pgbench(
 check_pgbench_logs($bdir, '001_pgbench_log_3', 1, 10, 10,
 	qr{^0 \d{1,2} \d+ \d \d+ \d+$});
 
+# Log all possible parts of tail
+$node->pgbench(
+	"-n -b select-only -t 10 -l --aggregate-interval=3600", 0,
+	[ qr{select only}, qr{processed: 10/10} ], [qr{^$}],
+	'pgbench aggregate-interval logs the final partial interval', undef,
+	"--log-prefix=$bdir/001_pgbench_log_4");
+{
+	my @logs = list_files($bdir, qr{^001_pgbench_log_4\..*$});
+	is(scalar(@logs), 1, "aggregate log file");
+	my $log_line = slurp_file($logs[0]);
+	like(
+		$log_line,
+		qr{^\d+ 10 \d+ \d+ \d+ \d+ 0 0 0 0 0 0 0 0 0 0\s*$}ms,
+		'one final partial interval row with all transactions');
+}
+
 # abortion of the client if the script contains an incomplete transaction block
 $node->pgbench(
 	'--no-vacuum',
