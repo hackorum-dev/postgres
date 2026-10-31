@@ -8277,7 +8277,22 @@ add_foreign_ordered_paths(PlannerInfo *root, RelOptInfo *input_rel,
 	if (input_rel->reloptkind == RELOPT_BASEREL ||
 		input_rel->reloptkind == RELOPT_JOINREL)
 	{
-		Assert(root->query_pathkeys == root->sort_pathkeys);
+		/*
+		 * The exception is a subquery planned as an input of a set operation
+		 * whose ORDER BY keys are all redundant (for instance, constants, or
+		 * columns that the WHERE clause equates to constants).  Then
+		 * sort_pathkeys is NIL and query_pathkeys is the setop_pathkeys.
+		 * There is no final sort to do, so nothing here is unsafe to push
+		 * down.  qp_is_pushdown_safe doesn't apply, since it was computed for
+		 * the setop_pathkeys.
+		 */
+		if (root->query_pathkeys != root->sort_pathkeys)
+		{
+			Assert(root->sort_pathkeys == NIL &&
+				   root->query_pathkeys == root->setop_pathkeys);
+			fpinfo->pushdown_safe = true;
+			return;
+		}
 
 		/* Safe to push down if the query_pathkeys is safe to push down */
 		fpinfo->pushdown_safe = ifpinfo->qp_is_pushdown_safe;

@@ -542,6 +542,15 @@ SELECT * FROM (
     SELECT 2 AS type,c1 FROM ft2
 ) a ORDER BY type;
 
+-- A set operation's input whose ORDER BY keys are all redundant has no sort
+-- to push down, though query_pathkeys holds the set operation's pathkeys.
+(SELECT c1, c2 FROM ft1 WHERE c1 = 1 ORDER BY c1) UNION (SELECT 2, 3) ORDER BY 1;
+(SELECT t1.c1, t2.c2 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) WHERE t1.c1 = 1 ORDER BY t1.c1)
+UNION (SELECT 2, 3) ORDER BY 1;
+(SELECT c1, c2 FROM ft1 WHERE c1 = 1 ORDER BY c1 LIMIT 1) UNION (SELECT 2, 3) ORDER BY 1;
+(SELECT 1 AS x, c2 FROM ft1 WHERE c1 <= 3 ORDER BY 1) EXCEPT (SELECT 1, 2) ORDER BY 2;
+(SELECT c1, c2 FROM ft1 WHERE c1 = 1 ORDER BY c1) INTERSECT (SELECT 1, 1);
+
 -- ===================================================================
 -- JOIN queries
 -- ===================================================================
