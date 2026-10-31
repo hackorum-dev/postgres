@@ -903,6 +903,112 @@ SplitGUCList(char *rawstring, char separator,
 	return true;
 }
 
+/*
+ * Detect whether the given GUC variable is of GUC_LIST_QUOTE type.
+ *
+ * It'd be better if we could inquire this directly from the backend; but even
+ * if there were a function for that, it could only tell us about variables
+ * currently known to guc.c, so that it'd be unsafe for extensions to declare
+ * GUC_LIST_QUOTE variables anyway.  Lacking a solution for that, it doesn't
+ * seem worth the work to do more than have this list, which must be kept in
+ * sync with the variables actually marked GUC_LIST_QUOTE in guc_parameters.dat.
+ */
+bool
+variable_is_guc_list_quote(const char *name)
+{
+	if (pg_strcasecmp(name, "local_preload_libraries") == 0 ||
+		pg_strcasecmp(name, "oauth_validator_libraries") == 0 ||
+		pg_strcasecmp(name, "output_plugin_libraries") == 0 ||
+		pg_strcasecmp(name, "search_path") == 0 ||
+		pg_strcasecmp(name, "session_preload_libraries") == 0 ||
+		pg_strcasecmp(name, "shared_preload_libraries") == 0 ||
+		pg_strcasecmp(name, "temp_tablespaces") == 0 ||
+		pg_strcasecmp(name, "unix_socket_directories") == 0)
+		return true;
+	else
+		return false;
+}
+
+/*
+ * Helper function for dumping "ALTER DATABASE/ROLE SET ..." commands.
+ *
+ * Parse the contents of configitem (a "name=value" string), wrap it in
+ * a complete ALTER command, and append it to buf.
+ *
+ * type is DATABASE or ROLE, and name is the name of the database or role.
+ * If we need an "IN" clause, type2 and name2 similarly define what to put
+ * there; otherwise they should be NULL.
+ * conn is used only to determine string-literal quoting conventions.
+ */
+void
+makeAlterConfigCommand(PGconn *conn, const char *configitem,
+					   const char *type, const char *name,
+					   const char *type2, const char *name2,
+					   PQExpBuffer buf)
+{
+	char	   *mine;
+	char	   *pos;
+
+	/* Parse the configitem.  If we can't find an "=", silently do nothing. */
+	mine = pg_strdup(configitem);
+	pos = strchr(mine, '=');
+	if (pos == NULL)
+	{
+		pg_free(mine);
+		return;
+	}
+	*pos++ = '\0';
+
+	/* Build the command, with suitable quoting for everything. */
+	appendPQExpBuffer(buf, "ALTER %s %s ", type, fmtId(name));
+	if (type2 != NULL && name2 != NULL)
+		appendPQExpBuffer(buf, "IN %s %s ", type2, fmtId(name2));
+	appendPQExpBuffer(buf, "SET %s TO ", fmtId(mine));
+
+	/*
+	 * Variables that are marked GUC_LIST_QUOTE were already fully quoted by
+	 * flatten_set_variable_args() before they were put into the setconfig
+	 * array.  However, because the quoting rules used there aren't exactly
+	 * like SQL's, we have to break the list value apart and then quote the
+	 * elements as string literals.  (The elements may be double-quoted as-is,
+	 * but we can't just feed them to the SQL parser; it would do the wrong
+	 * thing with elements that are zero-length or longer than NAMEDATALEN.)
+	 * Also, we need a special case for empty lists.
+	 *
+	 * Variables that are not so marked should just be emitted as simple
+	 * string literals.  If the variable is not known to
+	 * variable_is_guc_list_quote(), we'll do that; this makes it unsafe to
+	 * use GUC_LIST_QUOTE for extension variables.
+	 */
+	if (variable_is_guc_list_quote(mine))
+	{
+		char	  **namelist;
+		char	  **nameptr;
+
+		/* Parse string into list of identifiers */
+		/* this shouldn't fail really */
+		if (SplitGUCList(pos, ',', &namelist))
+		{
+			/* Special case: represent an empty list as NULL */
+			if (*namelist == NULL)
+				appendPQExpBufferStr(buf, "NULL");
+			for (nameptr = namelist; *nameptr; nameptr++)
+			{
+				if (nameptr != namelist)
+					appendPQExpBufferStr(buf, ", ");
+				appendStringLiteralConn(buf, *nameptr, conn);
+			}
+		}
+		pg_free(namelist);
+	}
+	else
+		appendStringLiteralConn(buf, pos, conn);
+
+	appendPQExpBufferStr(buf, ";\n");
+
+	pg_free(mine);
+}
+
 
 /*
  * Deconstruct the text representation of a 1-dimensional Postgres array

@@ -55,12 +55,6 @@ extern void buildShSecLabelQuery(const char *catalog_name,
 extern void emitShSecLabels(PGconn *conn, PGresult *res,
 							PQExpBuffer buffer, const char *objtype, const char *objname);
 
-extern bool variable_is_guc_list_quote(const char *name);
-
-extern void makeAlterConfigCommand(PGconn *conn, const char *configitem,
-								   const char *type, const char *name,
-								   const char *type2, const char *name2,
-								   PQExpBuffer buf);
 extern void create_or_open_dir(const char *dirname);
 
 extern char *generate_restrict_key(void);

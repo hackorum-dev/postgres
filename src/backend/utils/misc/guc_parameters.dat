@@ -31,7 +31,7 @@
 # 6. Don't forget to document the option (at least in config.sgml).
 #
 # 7. If it's a new GUC_LIST_QUOTE option, you must add it to
-#    variable_is_guc_list_quote() in src/bin/pg_dump/dumputils.c.
+#    variable_is_guc_list_quote() in src/fe_utils/string_utils.c.
 
 # This setting itself cannot be set by ALTER SYSTEM to avoid an
 # operator turning this setting off by using ALTER SYSTEM, without a

@@ -49,6 +49,11 @@ extern void appendConnStrVal(PQExpBuffer buf, const char *str);
 extern void appendPsqlMetaConnect(PQExpBuffer buf, const char *dbname);
 
 extern bool SplitGUCList(char *rawstring, char separator, char ***namelist);
+extern bool variable_is_guc_list_quote(const char *name);
+extern void makeAlterConfigCommand(PGconn *conn, const char *configitem,
+								   const char *type, const char *name,
+								   const char *type2, const char *name2,
+								   PQExpBuffer buf);
 
 extern bool parsePGArray(const char *atext, char ***itemarray, int *nitems);
 extern void appendPGArray(PQExpBuffer buffer, const char *value);
