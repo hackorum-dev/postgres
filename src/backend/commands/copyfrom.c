@@ -1541,6 +1541,27 @@ BeginCopyFrom(ParseState *pstate,
 			  List *attnamelist,
 			  List *options)
 {
+	return BeginCopyFromExtended(pstate, rel, whereClause, filename,
+								 is_program, data_source_cb, attnamelist,
+								 options, false);
+}
+
+/*
+ * Like BeginCopyFrom(), but if attnamelist_is_explicit is true, a NIL
+ * attnamelist means zero input columns rather than all target columns.
+ * This is needed when a logical replication source has no columns.
+ */
+CopyFromState
+BeginCopyFromExtended(ParseState *pstate,
+					  Relation rel,
+					  Node *whereClause,
+					  const char *filename,
+					  bool is_program,
+					  copy_data_source_cb data_source_cb,
+					  List *attnamelist,
+					  List *options,
+					  bool attnamelist_is_explicit)
+{
 	CopyFromState cstate;
 	bool		pipe = (filename == NULL);
 	TupleDesc	tupDesc;
@@ -1590,7 +1611,10 @@ BeginCopyFrom(ParseState *pstate,
 	/* process common options or initialization */
 
 	/* Generate or convert list of attributes to process */
-	cstate->attnumlist = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
+	if (attnamelist_is_explicit && attnamelist == NIL)
+		cstate->attnumlist = NIL;
+	else
+		cstate->attnumlist = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
 
 	num_phys_attrs = tupDesc->natts;
 
