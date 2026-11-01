@@ -752,14 +752,14 @@ Indexes:
    When <literal>CREATE INDEX</literal> is invoked on a partitioned
    table, the default behavior is to recurse to all partitions to ensure
    they all have matching indexes.
-   Each partition is first checked to determine whether an equivalent
+   Each partition is first checked to determine whether a valid equivalent
    index already exists, and if so, that index will become attached as a
    partition index to the index being created, which will become its
    parent index.
-   If no matching index exists, a new index will be created and
+   If no matching valid index exists, a new index will be created and
    automatically attached; the name of the new index in each partition
    will be determined as if no index name had been specified in the
-   command.
+   command.  Invalid indexes on the partitions are skipped.
    If the <literal>ONLY</literal> option is specified, no recursion
    is done, and the index is marked invalid.
    (<command>ALTER INDEX ... ATTACH PARTITION</command> marks the index

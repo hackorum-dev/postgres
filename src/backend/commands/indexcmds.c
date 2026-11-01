@@ -1339,7 +1339,6 @@ DefineIndex(ParseState *pstate,
 		{
 			int			nparts = partdesc->nparts;
 			Oid		   *part_oids = palloc_array(Oid, nparts);
-			bool		invalidate_parent = false;
 			Relation	parentIndex;
 			TupleDesc	parentDesc;
 
@@ -1391,9 +1390,9 @@ DefineIndex(ParseState *pstate,
 			parentDesc = RelationGetDescr(rel);
 
 			/*
-			 * For each partition, scan all existing indexes; if one matches
-			 * our index definition and is not already attached to some other
-			 * parent index, attach it to the one we just created.
+			 * For each partition, scan all existing indexes; if one is valid,
+			 * matches our index definition, and is not already attached to
+			 * some other parent index, attach it to the one we just created.
 			 *
 			 * If none matches, build a new index by calling ourselves
 			 * recursively with the same options (except for the index name).
@@ -1458,6 +1457,14 @@ DefineIndex(ParseState *pstate,
 						continue;
 
 					cldidx = index_open(cldidxid, lockmode);
+
+					/* If this index is invalid, can't use it */
+					if (!cldidx->rd_index->indisvalid)
+					{
+						index_close(cldidx, lockmode);
+						continue;
+					}
+
 					cldIdxInfo = BuildIndexInfo(cldidx);
 					if (CompareIndexInfo(cldIdxInfo, indexInfo,
 										 cldidx->rd_indcollation,
@@ -1496,9 +1503,6 @@ DefineIndex(ParseState *pstate,
 														  createdConstraintId,
 														  childRelid);
 
-						if (!cldidx->rd_index->indisvalid)
-							invalidate_parent = true;
-
 						found = true;
 
 						/*
@@ -1532,7 +1536,6 @@ DefineIndex(ParseState *pstate,
 				if (!found)
 				{
 					IndexStmt  *childStmt;
-					ObjectAddress childAddr;
 
 					/*
 					 * Build an IndexStmt describing the desired child index
@@ -1553,62 +1556,23 @@ DefineIndex(ParseState *pstate,
 					Assert(GetUserId() == child_save_userid);
 					SetUserIdAndSecContext(root_save_userid,
 										   root_save_sec_context);
-					childAddr =
-						DefineIndex(NULL,	/* original pstate not applicable */
-									childRelid, childStmt,
-									InvalidOid, /* no predefined OID */
-									indexRelationId,	/* this is our child */
-									createdConstraintId,
-									-1,
-									is_alter_table, check_rights,
-									check_not_in_use,
-									skip_build, quiet);
+					DefineIndex(NULL,	/* original pstate not applicable */
+								childRelid, childStmt,
+								InvalidOid, /* no predefined OID */
+								indexRelationId,	/* this is our child */
+								createdConstraintId,
+								-1,
+								is_alter_table, check_rights,
+								check_not_in_use,
+								skip_build, quiet);
 					SetUserIdAndSecContext(child_save_userid,
 										   child_save_sec_context);
-
-					/*
-					 * Check if the index just created is valid or not, as it
-					 * could be possible that it has been switched as invalid
-					 * when recursing across multiple partition levels.
-					 */
-					if (!get_index_isvalid(childAddr.objectId))
-						invalidate_parent = true;
 				}
 
 				free_attrmap(attmap);
 			}
 
 			index_close(parentIndex, lockmode);
-
-			/*
-			 * The pg_index row we inserted for this index was marked
-			 * indisvalid=true.  But if we attached an existing index that is
-			 * invalid, this is incorrect, so update our row to invalid too.
-			 */
-			if (invalidate_parent)
-			{
-				Relation	pg_index = table_open(IndexRelationId, RowExclusiveLock);
-				HeapTuple	tup,
-							newtup;
-
-				tup = SearchSysCache1(INDEXRELID,
-									  ObjectIdGetDatum(indexRelationId));
-				if (!HeapTupleIsValid(tup))
-					elog(ERROR, "cache lookup failed for index %u",
-						 indexRelationId);
-				newtup = heap_copytuple(tup);
-				((Form_pg_index) GETSTRUCT(newtup))->indisvalid = false;
-				CatalogTupleUpdate(pg_index, &tup->t_self, newtup);
-				ReleaseSysCache(tup);
-				table_close(pg_index, RowExclusiveLock);
-				heap_freetuple(newtup);
-
-				/*
-				 * CCI here to make this update visible, in case this recurses
-				 * across multiple partition levels.
-				 */
-				CommandCounterIncrement();
-			}
 		}
 
 		/*
