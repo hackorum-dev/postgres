@@ -19,6 +19,7 @@
 #include "access/htup_details.h"
 #include "access/multixact.h"
 #include "access/tableam.h"
+#include "access/toast_dictionary.h"
 #include "access/xact.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
@@ -352,6 +353,14 @@ RefreshMatViewByOid(Oid matviewOid, bool is_create, bool skipData,
 	else
 	{
 		refresh_by_heap_swap(matviewOid, OIDNewHeap, relpersistence);
+
+		/*
+		 * The new contents replace the old ones, as after TRUNCATE, so the
+		 * row count recorded with a compression dictionary no longer applies.
+		 * finish_heap_swap() has already retired the unused dictionaries;
+		 * this pass resets that count.
+		 */
+		toast_dictionary_retire(matviewOid, true);
 
 		/*
 		 * Inform cumulative stats system about our activity: basically, we
