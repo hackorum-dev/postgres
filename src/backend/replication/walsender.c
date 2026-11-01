@@ -3122,7 +3122,22 @@ WalSndLoop(WalSndSendDataCallback send_data)
 		 * caught up.
 		 */
 		if (!pq_is_send_pending())
+		{
+			static int	race_delay_us = -1;
+
 			send_data();
+
+			/* Test only: widen the window between reading the flush pointer and WalSndWait() */
+			if (race_delay_us < 0)
+			{
+				const char *s = getenv("WALSND_RACE_DELAY_US");
+
+				race_delay_us = s ? atoi(s) : 0;
+			}
+			if (race_delay_us > 0 && WalSndCaughtUp &&
+				MyWalSnd->kind == REPLICATION_KIND_PHYSICAL)
+				pg_usleep(race_delay_us);
+		}
 		else
 			WalSndCaughtUp = false;
 
