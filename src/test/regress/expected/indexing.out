@@ -292,18 +292,8 @@ create table idxpart21 partition of idxpart2 for values from (100) to (200);
 create table idxpart22 partition of idxpart2 for values from (200) to (300);
 create index on idxpart22 (a);
 create index on only idxpart2 (a);
-create index on idxpart (a);
--- Here we expect that idxpart1 and idxpart2 have a new index, but idxpart21
--- does not; also, idxpart22 is not attached.
-\d idxpart1
-              Table "public.idxpart1"
- Column |  Type   | Collation | Nullable | Default 
---------+---------+-----------+----------+---------
- a      | integer |           |          | 
-Partition of: idxpart FOR VALUES FROM (0) TO (100)
-Indexes:
-    "idxpart1_a_idx" btree (a)
-
+-- Here we expect that idxpart2 has a new index, but idxpart21 does not;
+-- also, idxpart22 is not attached.
 \d idxpart2
         Partitioned table "public.idxpart2"
  Column |  Type   | Collation | Nullable | Default 
@@ -326,13 +316,11 @@ select indexrelid::regclass, indrelid::regclass, inhparent::regclass
   from pg_index idx left join pg_inherits inh on (idx.indexrelid = inh.inhrelid)
 where indexrelid::regclass::text like 'idxpart%'
   order by indexrelid::regclass::text collate "C";
-   indexrelid    | indrelid  |   inhparent   
------------------+-----------+---------------
- idxpart1_a_idx  | idxpart1  | idxpart_a_idx
+   indexrelid    | indrelid  | inhparent 
+-----------------+-----------+-----------
  idxpart22_a_idx | idxpart22 | 
- idxpart2_a_idx  | idxpart2  | idxpart_a_idx
- idxpart_a_idx   | idxpart   | 
-(4 rows)
+ idxpart2_a_idx  | idxpart2  | 
+(2 rows)
 
 alter index idxpart2_a_idx attach partition idxpart22_a_idx;
 select indexrelid::regclass, indrelid::regclass, inhparent::regclass
@@ -341,11 +329,9 @@ where indexrelid::regclass::text like 'idxpart%'
   order by indexrelid::regclass::text collate "C";
    indexrelid    | indrelid  |   inhparent    
 -----------------+-----------+----------------
- idxpart1_a_idx  | idxpart1  | idxpart_a_idx
  idxpart22_a_idx | idxpart22 | idxpart2_a_idx
- idxpart2_a_idx  | idxpart2  | idxpart_a_idx
- idxpart_a_idx   | idxpart   | 
-(4 rows)
+ idxpart2_a_idx  | idxpart2  | 
+(2 rows)
 
 -- attaching idxpart22 is not enough to set idxpart22_a_idx valid ...
 alter index idxpart2_a_idx attach partition idxpart22_a_idx;
@@ -373,6 +359,20 @@ Partition key: RANGE (a)
 Indexes:
     "idxpart2_a_idx" btree (a)
 Number of partitions: 2 (Use \d+ to list them.)
+
+create index on idxpart (a);
+select indexrelid::regclass, indrelid::regclass, inhparent::regclass
+  from pg_index idx left join pg_inherits inh on (idx.indexrelid = inh.inhrelid)
+where indexrelid::regclass::text like 'idxpart%'
+  order by indexrelid::regclass::text collate "C";
+   indexrelid    | indrelid  |   inhparent    
+-----------------+-----------+----------------
+ idxpart1_a_idx  | idxpart1  | idxpart_a_idx
+ idxpart21_a_idx | idxpart21 | idxpart2_a_idx
+ idxpart22_a_idx | idxpart22 | idxpart2_a_idx
+ idxpart2_a_idx  | idxpart2  | idxpart_a_idx
+ idxpart_a_idx   | idxpart   | 
+(5 rows)
 
 drop table idxpart;
 -- When a table is attached a partition and it already has an index, a
@@ -1661,9 +1661,8 @@ select indexrelid::regclass, indisvalid,
 (5 rows)
 
 drop table parted_inval_tab;
--- Check setup of indisvalid across a complex partition tree on index
--- creation.  If one index in a partition index is invalid, so should its
--- partitioned index.
+-- Check that invalid indexes are not selected when creating an index on a
+-- partitioned table.
 create table parted_isvalid_tab (a int, b int) partition by range (a);
 create table parted_isvalid_tab_1 partition of parted_isvalid_tab
   for values from (1) to (10) partition by range (a);
@@ -1674,26 +1673,38 @@ create table parted_isvalid_tab_11 partition of parted_isvalid_tab_1
 create table parted_isvalid_tab_12 partition of parted_isvalid_tab_1
   for values from (5) to (10);
 -- create an invalid index on one of the partitions.
-insert into parted_isvalid_tab_11 values (1, 0);
-create index concurrently parted_isvalid_idx_11 on parted_isvalid_tab_11 ((a/b));
-ERROR:  division by zero
--- The previous invalid index is selected, invalidating all the indexes up to
--- the top-most parent.
-create index parted_isvalid_idx on parted_isvalid_tab ((a/b));
+insert into parted_isvalid_tab_11 values (1, 1), (1, 1);
+create unique index concurrently parted_isvalid_idx_11 on parted_isvalid_tab_11 (a);
+ERROR:  could not create unique index "parted_isvalid_idx_11"
+DETAIL:  Key (a)=(1) is duplicated.
+-- The previous invalid index is skipped, so attempting to build a new index
+-- on the partitioned table fails on the duplicate rows.
+create unique index parted_isvalid_idx on parted_isvalid_tab (a);
+ERROR:  could not create unique index "parted_isvalid_tab_11_a_idx"
+DETAIL:  Key (a)=(1) is duplicated.
+delete from parted_isvalid_tab_11;
+-- Now creating the index on the partitioned table succeeds and creates new
+-- valid indexes, discarding the invalid index created previously.
+create unique index parted_isvalid_idx on parted_isvalid_tab (a);
+-- Uniqueness is enforced on the partition:
+insert into parted_isvalid_tab values (1, 1), (1, 2);
+ERROR:  duplicate key value violates unique constraint "parted_isvalid_tab_11_a_idx"
+DETAIL:  Key (a)=(1) already exists.
 select indexrelid::regclass, indisvalid,
        indrelid::regclass, inhparent::regclass
   from pg_index idx left join
        pg_inherits inh on (idx.indexrelid = inh.inhrelid)
   where indexrelid::regclass::text like 'parted_isvalid%'
   order by indexrelid::regclass::text collate "C";
-          indexrelid           | indisvalid |       indrelid        |          inhparent           
--------------------------------+------------+-----------------------+------------------------------
- parted_isvalid_idx            | f          | parted_isvalid_tab    | 
- parted_isvalid_idx_11         | f          | parted_isvalid_tab_11 | parted_isvalid_tab_1_a_b_idx
- parted_isvalid_tab_12_a_b_idx | t          | parted_isvalid_tab_12 | parted_isvalid_tab_1_a_b_idx
- parted_isvalid_tab_1_a_b_idx  | f          | parted_isvalid_tab_1  | parted_isvalid_idx
- parted_isvalid_tab_2_a_b_idx  | t          | parted_isvalid_tab_2  | parted_isvalid_idx
-(5 rows)
+         indexrelid          | indisvalid |       indrelid        |         inhparent          
+-----------------------------+------------+-----------------------+----------------------------
+ parted_isvalid_idx          | t          | parted_isvalid_tab    | 
+ parted_isvalid_idx_11       | f          | parted_isvalid_tab_11 | 
+ parted_isvalid_tab_11_a_idx | t          | parted_isvalid_tab_11 | parted_isvalid_tab_1_a_idx
+ parted_isvalid_tab_12_a_idx | t          | parted_isvalid_tab_12 | parted_isvalid_tab_1_a_idx
+ parted_isvalid_tab_1_a_idx  | t          | parted_isvalid_tab_1  | parted_isvalid_idx
+ parted_isvalid_tab_2_a_idx  | t          | parted_isvalid_tab_2  | parted_isvalid_idx
+(6 rows)
 
 drop table parted_isvalid_tab;
 -- Check state of replica indexes when attaching a partition.
