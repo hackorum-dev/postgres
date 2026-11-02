@@ -3969,6 +3969,8 @@ l2:
 
 		LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
 
+		INJECTION_POINT("heap_update-toast-unlocked", NULL);
+
 		/*
 		 * Let the toaster do its thing, if needed.
 		 *
@@ -4225,6 +4227,12 @@ l2:
 	oldtup.t_data->t_infomask &= ~(HEAP_XMAX_BITS | HEAP_MOVED);
 	oldtup.t_data->t_infomask2 &= ~HEAP_KEYS_UPDATED;
 	/* ... and store info about transaction updating this tuple */
+	/*
+	 * FIXME: These values were computed before temporarily released the
+	 * lock. If the tuple was locked in FOR KEY SHARE mode while we were not
+	 * holding the lock, these do not contain the locker's XID, and the lock
+	 * is lost.
+	 */
 	Assert(TransactionIdIsValid(xmax_old_tuple));
 	HeapTupleHeaderSetXmax(oldtup.t_data, xmax_old_tuple);
 	oldtup.t_data->t_infomask |= infomask_old_tuple;
