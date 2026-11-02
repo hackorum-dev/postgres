@@ -74,6 +74,7 @@ test: aborted-keyrevoke
 test: multixact-no-deadlock
 test: multixact-no-forget
 test: multixact-stats
+test: multixact-expand-savepoint
 test: lock-committed-update
 test: lock-committed-keyupdate
 test: update-locked-tuple
