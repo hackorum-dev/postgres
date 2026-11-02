@@ -738,6 +738,16 @@ pull_exec_params_walker(Node *node, List **params)
 			*params = lappend(*params, param);
 		return false;
 	}
+	if (IsA(node, SubPlan))
+	{
+		/*
+		 * The Params in a SubPlan's testexpr stand for the subplan's own
+		 * output, which it sets itself; they are not supplied from above, so
+		 * they must not become cache keys.  Only the args are evaluated in our
+		 * context.
+		 */
+		return pull_exec_params_walker((Node *) ((SubPlan *) node)->args, params);
+	}
 	return expression_tree_walker(node, pull_exec_params_walker, params);
 }
 

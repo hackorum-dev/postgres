@@ -736,3 +736,37 @@ SELECT * FROM tab_anti t1 WHERE t1.a IN
 (10 rows)
 
 DROP TABLE tab_anti;
+-- A SubPlan in the memoized relation's quals sets the Params of its own
+-- output; they must not be made cache keys
+SET enable_hashjoin TO off;
+SET enable_mergejoin TO off;
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*) FROM tenk1 t1 INNER JOIN tenk1 t2 ON t1.twenty = t2.unique1
+WHERE 5 > ALL (SELECT t2.unique1) AND t1.unique1 < 1000;
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Aggregate
+   ->  Nested Loop
+         ->  Bitmap Heap Scan on tenk1 t1
+               Recheck Cond: (unique1 < 1000)
+               ->  Bitmap Index Scan on tenk1_unique1
+                     Index Cond: (unique1 < 1000)
+         ->  Memoize
+               Cache Key: t1.twenty
+               Cache Mode: logical
+               ->  Index Only Scan using tenk1_unique1 on tenk1 t2
+                     Index Cond: (unique1 = t1.twenty)
+                     Filter: (ALL (5 > (SubPlan all_1).col1))
+                     SubPlan all_1
+                       ->  Result
+(14 rows)
+
+SELECT COUNT(*) FROM tenk1 t1 INNER JOIN tenk1 t2 ON t1.twenty = t2.unique1
+WHERE 5 > ALL (SELECT t2.unique1) AND t1.unique1 < 1000;
+ count 
+-------
+   250
+(1 row)
+
+RESET enable_hashjoin;
+RESET enable_mergejoin;
