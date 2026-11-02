@@ -19,6 +19,7 @@
 #include "miscadmin.h"
 #include "nodes/execnodes.h"
 #include "storage/bufmgr.h"
+#include "storage/bulk_write.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 
@@ -130,7 +131,7 @@ blbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 			 RelationGetRelationName(index));
 
 	/* Initialize the meta page */
-	BloomInitMetapage(index, MAIN_FORKNUM);
+	BloomInitMetapage(index);
 
 	/* Initialize the bloom build state */
 	memset(&buildstate, 0, sizeof(buildstate));
@@ -164,8 +165,17 @@ blbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 void
 blbuildempty(Relation index)
 {
-	/* Initialize the meta page */
-	BloomInitMetapage(index, INIT_FORKNUM);
+	BulkWriteState *bulkstate;
+	BulkWriteBuffer metabuf;
+
+	bulkstate = smgr_bulk_start_rel(index, INIT_FORKNUM);
+
+	/* Construct metapage. */
+	metabuf = smgr_bulk_get_buf(bulkstate);
+	BloomFillMetapage(index, (Page) metabuf);
+	smgr_bulk_write(bulkstate, BLOOM_METAPAGE_BLKNO, metabuf, true);
+
+	smgr_bulk_finish(bulkstate);
 }
 
 /*

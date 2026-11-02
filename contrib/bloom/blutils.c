@@ -449,7 +449,7 @@ BloomFillMetapage(Relation index, Page metaPage)
  * Initialize metapage for bloom index.
  */
 void
-BloomInitMetapage(Relation index, ForkNumber forknum)
+BloomInitMetapage(Relation index)
 {
 	Buffer		metaBuffer;
 	Page		metaPage;
@@ -460,7 +460,7 @@ BloomInitMetapage(Relation index, ForkNumber forknum)
 	 * block number 0 (BLOOM_METAPAGE_BLKNO).  No need to hold the extension
 	 * lock because there cannot be concurrent inserters yet.
 	 */
-	metaBuffer = ReadBufferExtended(index, forknum, P_NEW, RBM_NORMAL, NULL);
+	metaBuffer = ReadBuffer(index, P_NEW);
 	LockBuffer(metaBuffer, BUFFER_LOCK_EXCLUSIVE);
 	Assert(BufferGetBlockNumber(metaBuffer) == BLOOM_METAPAGE_BLKNO);
 

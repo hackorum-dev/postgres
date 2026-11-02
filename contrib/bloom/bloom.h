@@ -174,7 +174,7 @@ typedef BloomScanOpaqueData *BloomScanOpaque;
 /* blutils.c */
 extern void initBloomState(BloomState *state, Relation index);
 extern void BloomFillMetapage(Relation index, Page metaPage);
-extern void BloomInitMetapage(Relation index, ForkNumber forknum);
+extern void BloomInitMetapage(Relation index);
 extern void BloomInitPage(Page page, uint16 flags);
 extern Buffer BloomNewBuffer(Relation index);
 extern void signValue(BloomState *state, BloomSignatureWord *sign, Datum value, int attno);
