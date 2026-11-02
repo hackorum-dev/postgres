@@ -1055,6 +1055,7 @@ typedef enum RTEKind
 								 * RTEs are added by the planner, they're not
 								 * present during parsing or rewriting */
 	RTE_GROUP,					/* the grouping step */
+	RTE_SETOP,					/* output of a set operation */
 } RTEKind;
 
 typedef struct RangeTblEntry
@@ -1234,7 +1235,8 @@ typedef struct RangeTblEntry
 	bool		self_reference pg_node_attr(query_jumble_ignore);
 
 	/*
-	 * Fields valid for CTE, VALUES, ENR, and TableFunc RTEs (else NIL):
+	 * Fields valid for CTE, VALUES, ENR, TableFunc, and SetOp RTEs (else
+	 * NIL):
 	 *
 	 * We need these for CTE RTEs so that the types of self-referential
 	 * columns are well-defined.  For VALUES RTEs, storing these explicitly
@@ -1242,9 +1244,9 @@ typedef struct RangeTblEntry
 	 * ENRs, we store the types explicitly here (we could get the information
 	 * from the catalogs if 'relid' was supplied, but we'd still need these
 	 * for TupleDesc-based ENRs, so we might as well always store the type
-	 * info here).  For TableFuncs, these fields are redundant with data in
-	 * the TableFunc node, but keeping them here allows some code sharing with
-	 * the other cases.
+	 * info here).  For TableFuncs and SetOps, these fields are redundant with
+	 * data in the TableFunc or SetOperationStmt node, but keeping them here
+	 * allows some code sharing with the other cases.
 	 *
 	 * For ENRs only, we have to consider the possibility of dropped columns.
 	 * A dropped column is included in these lists, but it will have zeroes in
@@ -2304,7 +2306,11 @@ typedef struct SetOperationStmt
 	Node	   *rarg;			/* right child */
 	/* Eventually add fields for CORRESPONDING spec here */
 
-	/* Fields derived during parse analysis: */
+	/*
+	 * Fields derived during parse analysis.  The RTE_SETOP entry at rtindex
+	 * holds copies of colTypes, colTypmods and colCollations, so anything
+	 * that changes these must update that entry too.
+	 */
 	/* OID list of output column type OIDs */
 	List	   *colTypes pg_node_attr(query_jumble_ignore);
 	/* integer list of output column typmods */
@@ -2314,6 +2320,8 @@ typedef struct SetOperationStmt
 	/* a list of SortGroupClause's */
 	List	   *groupClauses pg_node_attr(query_jumble_ignore);
 	/* groupClauses is NIL if UNION ALL, but must be set otherwise */
+	/* RT index of the RTE_SETOP entry representing this node's output */
+	int			rtindex pg_node_attr(query_jumble_ignore);
 } SetOperationStmt;
 
 

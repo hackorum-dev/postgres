@@ -2089,15 +2089,16 @@ cost_incremental_sort(Path *path,
 	/*
 	 * Extract presorted keys as list of expressions.
 	 *
-	 * We need to be careful about Vars containing "varno 0" which might have
-	 * been introduced by generate_append_tlist, which would confuse
-	 * estimate_num_groups (in fact it'd fail for such expressions). See
+	 * We need to be careful about Vars referencing an RTE_SETOP entry, which
+	 * might have been introduced by generate_append_tlist, and which would
+	 * confuse estimate_num_groups (in fact it'd fail for such expressions,
+	 * since there is no RelOptInfo for such an entry).  See
 	 * recurse_set_operations which has to deal with the same issue.
 	 *
 	 * Unlike recurse_set_operations we can't access the original target list
 	 * here, and even if we could it's not very clear how useful would that be
 	 * for a set operation combining multiple tables. So we simply detect if
-	 * there are any expressions with "varno 0" and use the default
+	 * there are any expressions with RTE_SETOP Vars and use the default
 	 * DEFAULT_NUM_DISTINCT in that case.
 	 *
 	 * We might also use either 1.0 (a single group) or input_tuples (each row
@@ -2113,18 +2114,25 @@ cost_incremental_sort(Path *path,
 		PathKey    *key = (PathKey *) lfirst(l);
 		EquivalenceMember *member = (EquivalenceMember *)
 			linitial(key->pk_eclass->ec_members);
+		Relids		varnos = pull_varnos(root, (Node *) member->em_expr);
+		int			varno = -1;
 
 		/*
-		 * Check if the expression contains Var with "varno 0" so that we
-		 * don't call estimate_num_groups in that case.
+		 * Check if the expression contains a Var referencing an RTE_SETOP
+		 * entry so that we don't call estimate_num_groups in that case.
 		 */
-		if (bms_is_member(0, pull_varnos(root, (Node *) member->em_expr)))
+		while ((varno = bms_next_member(varnos, varno)) >= 0)
 		{
-			unknown_varno = true;
-			break;
+			if (planner_rt_fetch(varno, root)->rtekind == RTE_SETOP)
+			{
+				unknown_varno = true;
+				break;
+			}
 		}
+		if (unknown_varno)
+			break;
 
-		/* expression not containing any Vars with "varno 0" */
+		/* expression not containing any RTE_SETOP Vars */
 		presortedExprs = lappend(presortedExprs, member->em_expr);
 
 		if (foreach_current_index(l) + 1 >= presorted_keys)

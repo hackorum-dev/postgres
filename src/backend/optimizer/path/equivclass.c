@@ -883,9 +883,10 @@ get_eclass_for_sort_expr(PlannerInfo *root,
 			if (i == root->group_rtindex)
 				continue;
 
-			if (rel == NULL)	/* must be an outer join */
+			if (rel == NULL)	/* must be an outer join or a set operation */
 			{
-				Assert(bms_is_member(i, root->outer_join_rels));
+				Assert(bms_is_member(i, root->outer_join_rels) ||
+					   root->simple_rte_array[i]->rtekind == RTE_SETOP);
 				continue;
 			}
 
@@ -3226,6 +3227,123 @@ add_setop_child_rel_equivalences(PlannerInfo *root, RelOptInfo *child_rel,
 	 */
 	child_rel->eclass_indexes = bms_add_range(child_rel->eclass_indexes, 0,
 											  list_length(root->eq_classes) - 1);
+}
+
+/*
+ * add_setop_output_equivalences
+ *		Add the output Vars of a set operation to the EquivalenceClasses that
+ *		already contain the same output column of another set operation in
+ *		this query level.
+ *
+ * Nested set operations are planned within one PlannerInfo.  A parent can
+ * only make use of a child set operation's sorted paths if both refer to
+ * their output columns through the same EquivalenceClasses, so whenever a
+ * Var in 'tlist' matches the RTE_SETOP Var of another set operation's output
+ * column (same column number, type, typmod and collation), we add it to each
+ * EquivalenceClass containing that Var.  This must be done before building
+ * any pathkeys from 'tlist'.  Entries of 'tlist' that are not RTE_SETOP Vars
+ * are ignored.
+ */
+void
+add_setop_output_equivalences(PlannerInfo *root, List *tlist)
+{
+	int			ncols = list_length(tlist);
+	Var		  **vars;
+	EquivalenceMember **match;
+	bool	   *present;
+	bool		found = false;
+
+	/* Index our output Vars by column number */
+	vars = palloc0_array(Var *, ncols + 1);
+	foreach_node(TargetEntry, tle, tlist)
+	{
+		Var		   *var = (Var *) tle->expr;
+
+		/* Only output columns of set operations are of interest */
+		if (!IsA(var, Var) || var->varlevelsup != 0 ||
+			var->varattno < 1 || var->varattno > ncols ||
+			root->simple_rte_array[var->varno]->rtekind != RTE_SETOP)
+			continue;
+		/* Callers build 'tlist' so that each column number appears once */
+		Assert(vars[var->varattno] == NULL);
+		vars[var->varattno] = var;
+		found = true;
+	}
+	if (!found)
+		return;
+
+	match = palloc0_array(EquivalenceMember *, ncols + 1);
+	present = palloc0_array(bool, ncols + 1);
+
+	foreach_node(EquivalenceClass, ec, root->eq_classes)
+	{
+		List	   *seen = NIL;
+
+		if (ec->ec_has_volatile)
+			continue;
+
+		/*
+		 * For each of our columns, find the first member that is the same
+		 * output column of another set operation, and note whether our own
+		 * Var is already a member.
+		 */
+		foreach_node(EquivalenceMember, em, ec->ec_members)
+		{
+			Expr	   *expr = em->em_expr;
+			Var		   *emvar;
+			Var		   *var;
+
+			/* Look through any RelabelType added by canonicalization */
+			while (IsA(expr, RelabelType))
+				expr = ((RelabelType *) expr)->arg;
+			if (!IsA(expr, Var))
+				continue;
+			emvar = (Var *) expr;
+			if (emvar->varlevelsup != 0 ||
+				emvar->varattno < 1 || emvar->varattno > ncols)
+				continue;
+			var = vars[emvar->varattno];
+			if (var == NULL ||
+				root->simple_rte_array[emvar->varno]->rtekind != RTE_SETOP ||
+				emvar->vartype != var->vartype ||
+				emvar->vartypmod != var->vartypmod ||
+				emvar->varcollid != var->varcollid)
+				continue;
+
+			if (match[var->varattno] == NULL && !present[var->varattno])
+				seen = lappend_int(seen, var->varattno);
+			if (emvar->varno == var->varno)
+				present[var->varattno] = true;
+			else if (match[var->varattno] == NULL)
+				match[var->varattno] = em;
+		}
+
+		/* Add a copy of each match that uses our varno, then reset */
+		foreach_int(attno, seen)
+		{
+			if (match[attno] != NULL && !present[attno])
+			{
+				Expr	   *newexpr = copyObject(match[attno]->em_expr);
+				Expr	   *expr = newexpr;
+
+				while (IsA(expr, RelabelType))
+					expr = ((RelabelType *) expr)->arg;
+				((Var *) expr)->varno = vars[attno]->varno;
+
+				add_eq_member(ec, newexpr,
+							  bms_make_singleton(vars[attno]->varno),
+							  match[attno]->em_jdomain,
+							  match[attno]->em_datatype);
+			}
+			match[attno] = NULL;
+			present[attno] = false;
+		}
+		list_free(seen);
+	}
+
+	pfree(vars);
+	pfree(match);
+	pfree(present);
 }
 
 /*

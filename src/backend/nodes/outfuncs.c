@@ -571,6 +571,11 @@ _outRangeTblEntry(StringInfo str, const RangeTblEntry *node)
 		case RTE_GROUP:
 			WRITE_NODE_FIELD(groupexprs);
 			break;
+		case RTE_SETOP:
+			WRITE_NODE_FIELD(coltypes);
+			WRITE_NODE_FIELD(coltypmods);
+			WRITE_NODE_FIELD(colcollations);
+			break;
 		default:
 			elog(ERROR, "unrecognized RTE kind: %d", (int) node->rtekind);
 			break;

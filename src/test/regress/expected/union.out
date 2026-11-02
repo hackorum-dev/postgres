@@ -1486,6 +1486,119 @@ EXCEPT
          One-Time Filter: false
 (8 rows)
 
+-- Also check a dummy set operation that has no child plan at all.  Here the
+-- Result's targetlist holds the set operation's output Vars directly; the
+-- coercion is done in the leaf.
+EXPLAIN (COSTS OFF, VERBOSE)
+SELECT two FROM tenk1 WHERE 1=2
+UNION ALL
+SELECT ten::int8 FROM tenk1 WHERE 1=2;
+                          QUERY PLAN                           
+---------------------------------------------------------------
+ Result
+   Output: unnamed_subquery.two
+   Replaces: Aggregate on unnamed_subquery, unnamed_subquery_1
+   One-Time Filter: false
+(4 rows)
+
+-- Ensure a nested set operation whose output is coerced by its parent
+-- refers to the right child output
+EXPLAIN (COSTS OFF, VERBOSE)
+(SELECT two FROM tenk1 t1
+ UNION
+ SELECT four FROM tenk1 t2)
+INTERSECT
+SELECT ten::int8 FROM tenk1 t3
+ORDER BY 1;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Sort
+   Output: ((t1.two)::bigint)
+   Sort Key: ((t1.two)::bigint)
+   ->  HashSetOp Intersect
+         Output: ((t1.two)::bigint)
+         ->  HashAggregate
+               Output: t1.two
+               Group Key: t1.two
+               ->  Append
+                     ->  Seq Scan on public.tenk1 t1
+                           Output: t1.two
+                     ->  Seq Scan on public.tenk1 t2
+                           Output: t2.four
+         ->  Seq Scan on public.tenk1 t3
+               Output: (t3.ten)::bigint
+(15 rows)
+
+(SELECT two FROM tenk1 t1
+ UNION
+ SELECT four FROM tenk1 t2)
+INTERSECT
+SELECT ten::int8 FROM tenk1 t3
+ORDER BY 1;
+ two 
+-----
+   0
+   1
+   2
+   3
+(4 rows)
+
+-- Ensure the sort order of a nested set operation is recognized by its
+-- parent
+SET enable_hashagg TO off;
+EXPLAIN (COSTS OFF)
+SELECT unique1 FROM tenk1 INTERSECT SELECT unique2 FROM tenk1
+UNION
+SELECT unique1 FROM tenk1 WHERE unique1 < 5;
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Unique
+   ->  Merge Append
+         Sort Key: tenk1.unique1
+         ->  SetOp Intersect
+               ->  Index Only Scan using tenk1_unique1 on tenk1
+               ->  Index Only Scan using tenk1_unique2 on tenk1 tenk1_1
+         ->  Index Only Scan using tenk1_unique1 on tenk1 tenk1_2
+               Index Cond: (unique1 < 5)
+(8 rows)
+
+EXPLAIN (COSTS OFF)
+(SELECT unique1 FROM tenk1 UNION SELECT unique2 FROM tenk1)
+EXCEPT
+(SELECT unique1 FROM tenk1 INTERSECT SELECT unique2 FROM tenk1 WHERE unique2 > 9990)
+ORDER BY 1;
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ SetOp Except
+   ->  Unique
+         ->  Merge Append
+               Sort Key: tenk1.unique1
+               ->  Index Only Scan using tenk1_unique1 on tenk1
+               ->  Index Only Scan using tenk1_unique2 on tenk1 tenk1_1
+   ->  SetOp Intersect
+         ->  Index Only Scan using tenk1_unique2 on tenk1 tenk1_2
+               Index Cond: (unique2 > 9990)
+         ->  Index Only Scan using tenk1_unique1 on tenk1 tenk1_3
+(10 rows)
+
+EXPLAIN (COSTS OFF)
+(SELECT unique1 FROM tenk1 UNION ALL SELECT unique2 FROM tenk1)
+EXCEPT
+SELECT unique1 FROM tenk1 WHERE unique1 < 5
+ORDER BY 1;
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ SetOp Except
+   ->  Sort
+         Sort Key: tenk1.unique1
+         ->  Append
+               ->  Index Only Scan using tenk1_unique1 on tenk1
+               ->  Index Only Scan using tenk1_unique2 on tenk1 tenk1_1
+   ->  Index Only Scan using tenk1_unique1 on tenk1 tenk1_2
+         Index Cond: (unique1 < 5)
+(8 rows)
+
+RESET enable_hashagg;
 -- Test constraint exclusion of UNION ALL subqueries
 explain (costs off)
  SELECT * FROM
@@ -1770,7 +1883,7 @@ on true limit 1;
                ->  Result
 (6 rows)
 
--- Test handling of Vars with varno 0 in estimate_array_length
+-- Test handling of RTE_SETOP Vars in estimate_array_length
 explain (verbose, costs off)
 select null::int[] union all select null::int[] union all select null::bigint[];
                  QUERY PLAN                  

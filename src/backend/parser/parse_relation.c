@@ -2668,6 +2668,51 @@ addRangeTableEntryForGroup(ParseState *pstate,
 	return nsitem;
 }
 
+/*
+ * Add an entry for the output of a set operation to the pstate's range table
+ * (p_rtable), and return its RT index.
+ *
+ * Nothing can refer to a set operation's output by name, so unlike the other
+ * functions here we don't build a ParseNamespaceItem.
+ */
+Index
+addRangeTableEntryForSetOp(ParseState *pstate,
+						   List *colnames,
+						   List *coltypes,
+						   List *coltypmods,
+						   List *colcollations)
+{
+	RangeTblEntry *rte = makeNode(RangeTblEntry);
+
+	Assert(pstate != NULL);
+	Assert(list_length(colnames) == list_length(coltypes));
+
+	rte->rtekind = RTE_SETOP;
+	rte->alias = NULL;
+	rte->eref = makeAlias("*SETOP*", copyObject(colnames));
+	rte->coltypes = coltypes;
+	rte->coltypmods = coltypmods;
+	rte->colcollations = colcollations;
+
+	/*
+	 * Set flags.
+	 *
+	 * A set operation's output is never checked for access rights, so no need
+	 * to perform addRTEPermissionInfo().
+	 */
+	rte->lateral = false;
+	rte->inFromCl = false;
+
+	/*
+	 * Add completed RTE to pstate's range table list, so that we know its
+	 * index.  But we don't add it to the join list --- caller must do that if
+	 * appropriate.
+	 */
+	pstate->p_rtable = lappend(pstate->p_rtable, rte);
+
+	return list_length(pstate->p_rtable);
+}
+
 
 /*
  * Has the specified refname been selected FOR UPDATE/FOR SHARE?
@@ -3059,8 +3104,9 @@ expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 		case RTE_VALUES:
 		case RTE_CTE:
 		case RTE_NAMEDTUPLESTORE:
+		case RTE_SETOP:
 			{
-				/* Tablefunc, Values, CTE, or ENR RTE */
+				/* Tablefunc, Values, CTE, ENR, or SetOp RTE */
 				ListCell   *aliasp_item = list_head(rte->eref->colnames);
 				ListCell   *lct;
 				ListCell   *lcm;
@@ -3443,10 +3489,11 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 		case RTE_VALUES:
 		case RTE_CTE:
 		case RTE_GROUP:
+		case RTE_SETOP:
 
 			/*
-			 * Subselect, Table Functions, Values, CTE, GROUP RTEs never have
-			 * dropped columns
+			 * Subselect, Table Functions, Values, CTE, GROUP, SetOp RTEs
+			 * never have dropped columns
 			 */
 			result = false;
 			break;
