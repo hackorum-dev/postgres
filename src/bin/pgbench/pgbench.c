@@ -4963,7 +4963,9 @@ initCreateTables(PGconn *con)
 
 		/* Construct new create table statement. */
 		printfPQExpBuffer(&query, "create%s table %s(%s)",
-						  (unlogged_tables && partition_method == PART_NONE) ? " unlogged" : "",
+						  (unlogged_tables &&
+						   (partition_method == PART_NONE ||
+							strcmp(ddl->table, "pgbench_accounts") != 0)) ? " unlogged" : "",
 						  ddl->table,
 						  (scale >= SCALE_32BIT_THRESHOLD) ? ddl->bigcols : ddl->smcols);
 
@@ -5290,9 +5292,10 @@ initCreatePKeys(PGconn *con)
 static void
 initCreateFKeys(PGconn *con)
 {
+	PQExpBufferData query;
+
 	static const char *const DDLKEYs[] = {
 		"alter table pgbench_tellers add constraint pgbench_tellers_bid_fkey foreign key (bid) references pgbench_branches",
-		"alter table pgbench_accounts add constraint pgbench_accounts_bid_fkey foreign key (bid) references pgbench_branches",
 		"alter table pgbench_history add constraint pgbench_history_bid_fkey foreign key (bid) references pgbench_branches",
 		"alter table pgbench_history add constraint pgbench_history_tid_fkey foreign key (tid) references pgbench_tellers",
 		"alter table pgbench_history add constraint pgbench_history_aid_fkey foreign key (aid) references pgbench_accounts"
@@ -5303,6 +5306,35 @@ initCreateFKeys(PGconn *con)
 	{
 		executeStatement(con, DDLKEYs[i]);
 	}
+
+	/*
+	 * The accounts -> branches foreign key cannot be declared on the
+	 * partitioned parent when unlogged tables are used: the parent stays
+	 * PERMANENT while pgbench_branches is unlogged, and constraints on
+	 * permanent tables may reference only permanent tables.  Declare it on
+	 * each partition instead, which is allowed as the partitions themselves
+	 * are unlogged.
+	 */
+	if (unlogged_tables && partition_method != PART_NONE)
+	{
+		initPQExpBuffer(&query);
+
+		for (int p = 1; p <= partitions; p++)
+		{
+			printfPQExpBuffer(&query,
+							  "alter table pgbench_accounts_%d add constraint "
+							  "pgbench_accounts_bid_fkey "
+							  "foreign key (bid) references pgbench_branches", p);
+			executeStatement(con, query.data);
+		}
+
+		termPQExpBuffer(&query);
+	}
+	else
+		executeStatement(con,
+						 "alter table pgbench_accounts add constraint "
+						 "pgbench_accounts_bid_fkey "
+						 "foreign key (bid) references pgbench_branches");
 }
 
 /*
