@@ -2757,6 +2757,9 @@ TruncateMultiXact(MultiXactId newOldestMulti, Oid newOldestMultiDB)
 		 newOldestOffset,
 		 MXOffsetToMemberSegment(newOldestOffset));
 
+	/* Test hook, loaded here as it is run inside the critical section. */
+	INJECTION_POINT_LOAD("multixact-truncate-after-record");
+
 	/*
 	 * Do truncation, and the WAL logging of the truncation, in a critical
 	 * section. That way offsets/members cannot get out of sync anymore, i.e.
@@ -2776,6 +2779,9 @@ TruncateMultiXact(MultiXactId newOldestMulti, Oid newOldestMultiDB)
 
 	/* WAL log truncation */
 	WriteMTruncateXlogRec(newOldestMultiDB, newOldestMulti, newOldestOffset);
+
+	/* The record is written; the in-memory limits are not updated yet. */
+	INJECTION_POINT_CACHED("multixact-truncate-after-record", NULL);
 
 	/*
 	 * Update in-memory limits before performing the truncation, while inside
