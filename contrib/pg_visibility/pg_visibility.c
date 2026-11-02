@@ -13,6 +13,7 @@
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/visibilitymap.h"
+#include "access/xlog.h"
 #include "access/xloginsert.h"
 #include "catalog/pg_type.h"
 #include "catalog/storage_xlog.h"
@@ -918,7 +919,7 @@ tuple_all_visible(HeapTuple tup, TransactionId OldestXmin, Buffer buffer)
 
 /*
  * check_relation_relkind - convenience routine to check that relation
- * is of the relkind supported by the callers
+ * is of the relkind supported by the callers and can be accessed
  */
 static void
 check_relation_relkind(Relation rel)
@@ -929,4 +930,10 @@ check_relation_relkind(Relation rel)
 				 errmsg("relation \"%s\" is of wrong relation kind",
 						RelationGetRelationName(rel)),
 				 errdetail_relkind_not_supported(rel->rd_rel->relkind)));
+
+	/* Temporary and unlogged relations are inaccessible during recovery. */
+	if (!RelationIsPermanent(rel) && RecoveryInProgress())
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot access temporary or unlogged relations during recovery")));
 }
