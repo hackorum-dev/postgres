@@ -356,3 +356,15 @@ SELECT * FROM tab_anti t1 WHERE t1.a IN
   (SELECT t1.b FROM tab_anti t3 WHERE t2.a > 1 OFFSET 0));
 
 DROP TABLE tab_anti;
+
+-- A SubPlan in the memoized relation's quals sets the Params of its own
+-- output; they must not be made cache keys
+SET enable_hashjoin TO off;
+SET enable_mergejoin TO off;
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*) FROM tenk1 t1 INNER JOIN tenk1 t2 ON t1.twenty = t2.unique1
+WHERE 5 > ALL (SELECT t2.unique1) AND t1.unique1 < 1000;
+SELECT COUNT(*) FROM tenk1 t1 INNER JOIN tenk1 t2 ON t1.twenty = t2.unique1
+WHERE 5 > ALL (SELECT t2.unique1) AND t1.unique1 < 1000;
+RESET enable_hashjoin;
+RESET enable_mergejoin;
