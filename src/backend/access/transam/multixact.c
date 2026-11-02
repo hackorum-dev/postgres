@@ -454,22 +454,6 @@ MultiXactIdExpand(MultiXactId multi, TransactionId xid, MultiXactStatus status)
 	}
 
 	/*
-	 * If the TransactionId is already a member of the MultiXactId with the
-	 * same status, just return the existing MultiXactId.
-	 */
-	for (i = 0; i < nmembers; i++)
-	{
-		if (TransactionIdEquals(members[i].xid, xid) &&
-			(members[i].status == status))
-		{
-			debug_elog4(DEBUG2, "Expand: %u is already a member of %u",
-						xid, multi);
-			pfree(members);
-			return multi;
-		}
-	}
-
-	/*
 	 * Determine which of the members of the MultiXactId are still of
 	 * interest. This is any running transaction, and also any transaction
 	 * that grabbed something stronger than just a lock and was committed. (An
@@ -492,6 +476,37 @@ MultiXactIdExpand(MultiXactId multi, TransactionId xid, MultiXactStatus status)
 		{
 			newMembers[j].xid = members[i].xid;
 			newMembers[j++].status = members[i].status;
+		}
+	}
+
+	/*
+	 * If the TransactionId is already a member of the MultiXactId with the
+	 * same status, we need not add it again.  Return the existing
+	 * MultiXactId as-is if no member was dropped above; otherwise create a
+	 * new one from the members that remain, because handing back the
+	 * existing one would preserve members that are of no interest anymore.
+	 * (For instance, an aborted update of a subtransaction kept there made
+	 * the temporary locking of the old tuple in heap_update fail its
+	 * assertion that the xmax it computes be locked-only.)
+	 */
+	for (i = 0; i < j; i++)
+	{
+		if (TransactionIdEquals(newMembers[i].xid, xid) &&
+			(newMembers[i].status == status))
+		{
+			if (j == nmembers)
+			{
+				debug_elog4(DEBUG2, "Expand: %u is already a member of %u",
+							xid, multi);
+				pfree(members);
+				pfree(newMembers);
+				return multi;
+			}
+			newMulti = MultiXactIdCreateFromMembers(j, newMembers);
+			pfree(members);
+			pfree(newMembers);
+			debug_elog3(DEBUG2, "Expand: returning new multi %u", newMulti);
+			return newMulti;
 		}
 	}
 
