@@ -1671,6 +1671,7 @@ pull_up_simple_subquery(PlannerInfo *root, Node *jtnode, RangeTblEntry *rte,
 				case RTE_NAMEDTUPLESTORE:
 				case RTE_RESULT:
 				case RTE_GROUP:
+				case RTE_SETOP:
 					/* these can't contain any lateral references */
 					break;
 			}
@@ -1822,13 +1823,19 @@ pull_up_simple_union_all(PlannerInfo *root, Node *jtnode, RangeTblEntry *rte)
 		{
 			RangeTblEntry *child_rte = (RangeTblEntry *) lfirst(rt);
 
+			/* RTE_SETOP entries can't contain any lateral references */
+			if (child_rte->rtekind == RTE_SETOP)
+				continue;
 			Assert(child_rte->rtekind == RTE_SUBQUERY);
 			child_rte->lateral = true;
 		}
 	}
 
 	/*
-	 * Append child RTEs (and their perminfos) to parent rtable.
+	 * Append child RTEs (and their perminfos) to parent rtable.  This also
+	 * brings along the subquery's RTE_SETOP entries.  Nothing in the parent
+	 * will reference them, since the setOperations tree is not pulled up, so
+	 * they are harmless dead entries.
 	 */
 	CombineRangeTables(&root->parse->rtable, &root->parse->rteperminfos,
 					   rtable, subquery->rteperminfos);
@@ -2774,6 +2781,7 @@ replace_vars_in_jointree(Node *jtnode,
 					case RTE_NAMEDTUPLESTORE:
 					case RTE_RESULT:
 					case RTE_GROUP:
+					case RTE_SETOP:
 						/* these shouldn't be marked LATERAL */
 						Assert(false);
 						break;

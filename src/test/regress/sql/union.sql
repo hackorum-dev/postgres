@@ -567,6 +567,52 @@ EXCEPT
  EXCEPT ALL
  SELECT ten FROM tenk1 t2);
 
+-- Also check a dummy set operation that has no child plan at all.  Here the
+-- Result's targetlist holds the set operation's output Vars directly; the
+-- coercion is done in the leaf.
+EXPLAIN (COSTS OFF, VERBOSE)
+SELECT two FROM tenk1 WHERE 1=2
+UNION ALL
+SELECT ten::int8 FROM tenk1 WHERE 1=2;
+
+-- Ensure a nested set operation whose output is coerced by its parent
+-- refers to the right child output
+EXPLAIN (COSTS OFF, VERBOSE)
+(SELECT two FROM tenk1 t1
+ UNION
+ SELECT four FROM tenk1 t2)
+INTERSECT
+SELECT ten::int8 FROM tenk1 t3
+ORDER BY 1;
+
+(SELECT two FROM tenk1 t1
+ UNION
+ SELECT four FROM tenk1 t2)
+INTERSECT
+SELECT ten::int8 FROM tenk1 t3
+ORDER BY 1;
+
+-- Ensure the sort order of a nested set operation is recognized by its
+-- parent
+SET enable_hashagg TO off;
+EXPLAIN (COSTS OFF)
+SELECT unique1 FROM tenk1 INTERSECT SELECT unique2 FROM tenk1
+UNION
+SELECT unique1 FROM tenk1 WHERE unique1 < 5;
+
+EXPLAIN (COSTS OFF)
+(SELECT unique1 FROM tenk1 UNION SELECT unique2 FROM tenk1)
+EXCEPT
+(SELECT unique1 FROM tenk1 INTERSECT SELECT unique2 FROM tenk1 WHERE unique2 > 9990)
+ORDER BY 1;
+
+EXPLAIN (COSTS OFF)
+(SELECT unique1 FROM tenk1 UNION ALL SELECT unique2 FROM tenk1)
+EXCEPT
+SELECT unique1 FROM tenk1 WHERE unique1 < 5
+ORDER BY 1;
+RESET enable_hashagg;
+
 -- Test constraint exclusion of UNION ALL subqueries
 explain (costs off)
  SELECT * FROM
@@ -701,7 +747,7 @@ left join lateral
   (select t1.tenthous from tenk2 t2 union all (values(1)))
 on true limit 1;
 
--- Test handling of Vars with varno 0 in estimate_array_length
+-- Test handling of RTE_SETOP Vars in estimate_array_length
 explain (verbose, costs off)
 select null::int[] union all select null::int[] union all select null::bigint[];
 

@@ -208,7 +208,8 @@ rewriteSearchAndCycle(CommonTableExpr *cte)
 				rti2;
 	RangeTblEntry *rte1,
 			   *rte2,
-			   *newrte;
+			   *newrte,
+			   *setoprte;
 	Query	   *newq1,
 			   *newq2;
 	Query	   *newsubquery;
@@ -625,6 +626,26 @@ rewriteSearchAndCycle(CommonTableExpr *cte)
 			sos->groupClauses = lappend(sos->groupClauses,
 										makeSortGroupClauseForSetOp(RECORDARRAYOID, true));
 	}
+
+	/*
+	 * Likewise for the RTE_SETOP entry representing the SetOperationStmt's
+	 * output
+	 */
+	setoprte = rt_fetch(sos->rtindex, ctequery->rtable);
+	Assert(setoprte->rtekind == RTE_SETOP);
+	if (cte->search_clause)
+		setoprte->eref->colnames = lappend(setoprte->eref->colnames,
+										   makeString(cte->search_clause->search_seq_column));
+	if (cte->cycle_clause)
+	{
+		setoprte->eref->colnames = lappend(setoprte->eref->colnames,
+										   makeString(cte->cycle_clause->cycle_mark_column));
+		setoprte->eref->colnames = lappend(setoprte->eref->colnames,
+										   makeString(cte->cycle_clause->cycle_path_column));
+	}
+	setoprte->coltypes = list_copy(sos->colTypes);
+	setoprte->coltypmods = list_copy(sos->colTypmods);
+	setoprte->colcollations = list_copy(sos->colCollations);
 
 	/*
 	 * Add the additional columns to the CTE query's target list

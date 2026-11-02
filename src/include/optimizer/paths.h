@@ -191,6 +191,7 @@ extern void add_setop_child_rel_equivalences(PlannerInfo *root,
 											 RelOptInfo *child_rel,
 											 List *child_tlist,
 											 List *setop_pathkeys);
+extern void add_setop_output_equivalences(PlannerInfo *root, List *tlist);
 extern void setup_eclass_member_iterator(EquivalenceMemberIterator *it,
 										 EquivalenceClass *ec,
 										 Relids child_relids);

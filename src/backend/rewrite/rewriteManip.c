@@ -372,7 +372,8 @@ CombineRangeTables(List **dst_rtable, List **dst_perminfos,
  * Find all Var nodes in the given tree with varlevelsup == sublevels_up,
  * and increment their varno fields (rangetable indexes) by 'offset'.
  * The varnosyn fields are adjusted similarly.  Also, adjust other nodes
- * that contain rangetable indexes, such as RangeTblRef and JoinExpr.
+ * that contain rangetable indexes, such as RangeTblRef, JoinExpr and
+ * SetOperationStmt.
  *
  * NOTE: although this has the form of a walker, we cheat and modify the
  * nodes in-place.  The given expression tree should have been copied
@@ -427,6 +428,14 @@ OffsetVarNodes_walker(Node *node, OffsetVarNodes_context *context)
 
 		if (j->rtindex && context->sublevels_up == 0)
 			j->rtindex += context->offset;
+		/* fall through to examine children */
+	}
+	if (IsA(node, SetOperationStmt))
+	{
+		SetOperationStmt *op = (SetOperationStmt *) node;
+
+		if (op->rtindex && context->sublevels_up == 0)
+			op->rtindex += context->offset;
 		/* fall through to examine children */
 	}
 	if (IsA(node, PlaceHolderVar))
@@ -531,7 +540,7 @@ OffsetVarNodes(Node *node, int offset, int sublevels_up)
  * (identified by sublevels_up and rt_index), and change their varno fields
  * to 'new_index', and update varnosyn and varnullingrels fields similarly.
  * Also adjust other nodes that contain rangetable indexes, such as
- * RangeTblRef and JoinExpr.
+ * RangeTblRef, JoinExpr and SetOperationStmt.
  *
  * Also, new_index can be INVALID_VAR to indicate that we are deleting the
  * given relid from the tree.  In this case we expect to find rt_index only
@@ -612,6 +621,18 @@ ChangeVarNodes_walker(Node *node, ChangeVarNodes_context *context)
 		{
 			Assert(context->new_index != INVALID_VAR);
 			j->rtindex = context->new_index;
+		}
+		/* fall through to examine children */
+	}
+	if (IsA(node, SetOperationStmt))
+	{
+		SetOperationStmt *op = (SetOperationStmt *) node;
+
+		if (context->sublevels_up == 0 &&
+			op->rtindex == context->rt_index)
+		{
+			Assert(context->new_index != INVALID_VAR);
+			op->rtindex = context->new_index;
 		}
 		/* fall through to examine children */
 	}
@@ -1033,6 +1054,15 @@ rangeTableEntry_used_walker(Node *node,
 		JoinExpr   *j = (JoinExpr *) node;
 
 		if (j->rtindex == context->rt_index &&
+			context->sublevels_up == 0)
+			return true;
+		/* fall through to examine children */
+	}
+	if (IsA(node, SetOperationStmt))
+	{
+		SetOperationStmt *op = (SetOperationStmt *) node;
+
+		if (op->rtindex == context->rt_index &&
 			context->sublevels_up == 0)
 			return true;
 		/* fall through to examine children */

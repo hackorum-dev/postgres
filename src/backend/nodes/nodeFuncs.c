@@ -2877,6 +2877,7 @@ range_table_entry_walker_impl(RangeTblEntry *rte,
 		case RTE_CTE:
 		case RTE_NAMEDTUPLESTORE:
 		case RTE_RESULT:
+		case RTE_SETOP:
 			/* nothing to do */
 			break;
 		case RTE_GROUP:
@@ -3932,6 +3933,7 @@ range_table_mutator_impl(List *rtable,
 			case RTE_CTE:
 			case RTE_NAMEDTUPLESTORE:
 			case RTE_RESULT:
+			case RTE_SETOP:
 				/* nothing to do */
 				break;
 			case RTE_GROUP:

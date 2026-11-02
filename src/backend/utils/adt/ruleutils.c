@@ -8468,6 +8468,14 @@ get_name_for_var_field(Var *var, int fieldno,
 			 * expressions.
 			 */
 			break;
+		case RTE_SETOP:
+
+			/*
+			 * We couldn't get here: Vars that reference an RTE_SETOP RTE
+			 * appear only in plan trees, where they have been replaced by
+			 * references to the child plan's output.
+			 */
+			break;
 	}
 
 	/*

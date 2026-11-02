@@ -2267,15 +2267,18 @@ estimate_array_length(PlannerInfo *root, Node *arrayexpr)
 		double		nelem = 0;
 
 		/*
-		 * Skip calling examine_variable for Var with varno 0, which has no
-		 * valid relation entry and would error in find_base_rel.  Such a Var
-		 * can appear when a nested set operation's output type doesn't match
-		 * the parent's expected type, because recurse_set_operations builds a
-		 * projection target list using generate_setop_tlist with varno 0, and
-		 * if the required type coercion involves an ArrayCoerceExpr, we can
-		 * be called on that Var.
+		 * Skip calling examine_variable for a Var referencing an RTE_SETOP
+		 * entry, which has no RelOptInfo and would error in find_base_rel.
+		 * Such a Var can appear when a nested set operation's output type
+		 * doesn't match the parent's expected type, because
+		 * recurse_set_operations builds a projection target list using
+		 * generate_setop_tlist, and if the required type coercion involves an
+		 * ArrayCoerceExpr, we can be called on that Var.
 		 */
-		if (IsA(arrayexpr, Var) && ((Var *) arrayexpr)->varno == 0)
+		if (IsA(arrayexpr, Var) &&
+			((Var *) arrayexpr)->varlevelsup == 0 &&
+			!IS_SPECIAL_VARNO(((Var *) arrayexpr)->varno) &&
+			planner_rt_fetch(((Var *) arrayexpr)->varno, root)->rtekind == RTE_SETOP)
 			return 10;			/* default guess, should match scalararraysel */
 
 		examine_variable(root, arrayexpr, 0, &vardata);

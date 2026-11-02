@@ -792,6 +792,7 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 			/* RESULT RTEs, in themselves, are no problem. */
 			break;
 		case RTE_GROUP:
+		case RTE_SETOP:
 			/* Shouldn't happen; we're only considering baserels here. */
 			Assert(false);
 			return;

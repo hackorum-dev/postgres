@@ -26,6 +26,7 @@
 #include "optimizer/subselect.h"
 #include "optimizer/tlist.h"
 #include "parser/parse_relation.h"
+#include "parser/parsetree.h"
 #include "rewrite/rewriteManip.h"
 #include "tcop/utility.h"
 #include "utils/syscache.h"
@@ -95,6 +96,13 @@ typedef struct
 	Query	   *query;
 } flatten_rtes_walker_context;
 
+/* Context info for fix_dummy_setop_vars_mutator() */
+typedef struct
+{
+	PlannerInfo *root;
+	int			first_child_relid;
+} fix_dummy_setop_vars_context;
+
 /*
  * Selecting the best alternative in an AlternativeSubPlan expression requires
  * estimating how many times that expression will be evaluated.  For an
@@ -156,7 +164,8 @@ static Plan *set_mergeappend_references(PlannerInfo *root,
 static void set_hash_references(PlannerInfo *root, Plan *plan, int rtoffset);
 static Relids offset_relid_set(Relids relids, int rtoffset);
 static List *offset_relid_set_list(List *relid_sets, int rtoffset);
-static Node *fix_dummy_setop_vars_mutator(Node *node, int *first_child_relid);
+static Node *fix_dummy_setop_vars_mutator(Node *node,
+										  fix_dummy_setop_vars_context *context);
 static Node *fix_scan_expr(PlannerInfo *root, Node *node,
 						   int rtoffset, double num_exec);
 static Node *fix_scan_expr_mutator(Node *node, fix_scan_expr_context *context);
@@ -1044,7 +1053,7 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 					set_upper_references(root, plan, rtoffset);
 				else
 				{
-					int			first_child_relid;
+					fix_dummy_setop_vars_context dsv_context;
 
 					/*
 					 * The tlist of a childless Result could contain
@@ -1060,21 +1069,24 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 					 *
 					 * We also must handle the case where set operations have
 					 * been proven empty, resulting in a dummy Result node.
-					 * Because prepunion.c uses varno 0 for setop targetlists,
-					 * that's what we'll find here.  Replace such Vars with
-					 * Vars pointing at the Result's lowest-numbered replaced
-					 * rel, which will be its leftmost set-op child.  While we
-					 * can assume that ROWID_VARs are at top level, varno 0
-					 * Vars might be buried in coercion expressions, so that
-					 * needs a recursive traversal.  Without this, EXPLAIN
-					 * will have trouble displaying targetlists of dummy set
+					 * Because prepunion.c makes setop targetlists out of Vars
+					 * that reference RTE_SETOP entries, that's what we'll
+					 * find here.  Replace such Vars with Vars pointing at the
+					 * Result's lowest-numbered replaced rel, which will be
+					 * its leftmost set-op child.  While we can assume that
+					 * ROWID_VARs are at top level, RTE_SETOP Vars might be
+					 * buried in coercion expressions, so that needs a
+					 * recursive traversal.  Without this, EXPLAIN would show
+					 * the RTE_SETOP entry's name in targetlists of dummy set
 					 * operations.
 					 *
 					 * Note that some Results have empty relids, leading to
 					 * first_child_relid being negative.  We assume such
-					 * Results can't contain any varno 0 Vars.
+					 * Results can't contain any RTE_SETOP Vars.
 					 */
-					first_child_relid = bms_next_member(splan->relids, -1);
+					dsv_context.root = root;
+					dsv_context.first_child_relid =
+						bms_next_member(splan->relids, -1);
 					foreach(l, splan->plan.targetlist)
 					{
 						TargetEntry *tle = (TargetEntry *) lfirst(l);
@@ -1084,10 +1096,10 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 							tle->expr = (Expr *) makeNullConst(var->vartype,
 															   var->vartypmod,
 															   var->varcollid);
-						else if (first_child_relid > 0)
+						else if (dsv_context.first_child_relid > 0)
 							tle->expr = (Expr *)
 								fix_dummy_setop_vars_mutator((Node *) tle->expr,
-															 &first_child_relid);
+															 &dsv_context);
 					}
 
 					splan->plan.targetlist =
@@ -2282,10 +2294,14 @@ fix_alternative_subplan(PlannerInfo *root, AlternativeSubPlan *asplan,
 
 /*
  * fix_dummy_setop_vars_mutator
- *		Change the varno 0 Vars made by prepunion.c to varno *first_child_relid.
+ *		Change the Vars made by prepunion.c that reference an RTE_SETOP entry
+ *		to varno context->first_child_relid.
+ *
+ * This runs before the rtable is flattened, so Vars still carry their
+ * subquery-local varnos.
  */
 static Node *
-fix_dummy_setop_vars_mutator(Node *node, int *first_child_relid)
+fix_dummy_setop_vars_mutator(Node *node, fix_dummy_setop_vars_context *context)
 {
 	if (node == NULL)
 		return NULL;
@@ -2293,8 +2309,9 @@ fix_dummy_setop_vars_mutator(Node *node, int *first_child_relid)
 	{
 		Var		   *var = (Var *) node;
 
-		if (var->varno == 0)
-			return (Node *) makeVar(*first_child_relid,
+		if (var->varlevelsup == 0 && !IS_SPECIAL_VARNO(var->varno) &&
+			planner_rt_fetch(var->varno, context->root)->rtekind == RTE_SETOP)
+			return (Node *) makeVar(context->first_child_relid,
 									var->varattno,
 									var->vartype,
 									var->vartypmod,
@@ -2303,7 +2320,7 @@ fix_dummy_setop_vars_mutator(Node *node, int *first_child_relid)
 		return node;
 	}
 	return expression_tree_mutator(node, fix_dummy_setop_vars_mutator,
-								   first_child_relid);
+								   context);
 }
 
 /*

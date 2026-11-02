@@ -844,3 +844,36 @@ SELECT * FROM (SELECT * FROM creatures OFFSET 0) ss;
  Unprunable RTIs: 2 3 4 5 6
 (50 rows)
 
+-- test display of the RTE_SETOP entry for a set operation
+EXPLAIN (RANGE_TABLE, COSTS OFF)
+SELECT 1 AS a UNION SELECT 2 AS b;
+                     QUERY PLAN                     
+----------------------------------------------------
+ Unique
+   ->  Sort
+         Sort Key: (1)
+         ->  Append
+               Append RTIs: 1 2
+               Child Append RTIs: none
+               ->  Result
+                     RTIs: 4
+                     Elided Node Type: SubqueryScan
+                     Elided Node RTIs: 1
+               ->  Result
+                     RTIs: 5
+                     Elided Node Type: SubqueryScan
+                     Elided Node RTIs: 2
+ RTI 1 (subquery):
+   Eref: unnamed_subquery (a)
+ RTI 2 (subquery):
+   Eref: unnamed_subquery (b)
+ RTI 3 (setop):
+   Eref: "*SETOP*" (a)
+ RTI 4 (result):
+   Subplan: setop_1
+   Eref: "*RESULT*" ()
+ RTI 5 (result):
+   Subplan: setop_2
+   Eref: "*RESULT*" ()
+(26 rows)
+
