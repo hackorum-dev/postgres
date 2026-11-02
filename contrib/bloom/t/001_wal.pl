@@ -81,4 +81,26 @@ for my $i (1 .. 10)
 	test_index_replay("insert $i");
 }
 
+# The init fork of an unlogged index must survive a crash before the next
+# checkpoint, and must reach the standby.
+$node_primary->safe_psql("postgres",
+	"CREATE UNLOGGED TABLE tst_unlogged (i int4, t text);");
+$node_primary->safe_psql("postgres",
+	"CREATE INDEX bloomidx_unlogged ON tst_unlogged USING bloom (i, t);");
+$node_primary->wait_for_catchup($node_standby);
+
+my $unlogged_queries = qq(INSERT INTO tst_unlogged VALUES (1, 'a');
+SET enable_seqscan=off;
+SELECT count(*) FROM tst_unlogged WHERE i = 1;
+);
+
+$node_primary->stop('immediate');
+$node_primary->start;
+is($node_primary->safe_psql("postgres", $unlogged_queries),
+	'1', 'unlogged index usable after crash recovery');
+
+$node_standby->promote;
+is($node_standby->safe_psql("postgres", $unlogged_queries),
+	'1', 'unlogged index usable after standby promotion');
+
 done_testing();
