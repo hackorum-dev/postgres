@@ -389,11 +389,27 @@ MultiXactIdCreate(TransactionId xid1, MultiXactStatus status1,
 }
 
 /*
+ * MultiXactMemberStillOfInterest
+ *		Any running transaction is still of interest.  So is a transaction
+ *		that grabbed something stronger than just a lock and committed.
+ */
+static bool
+MultiXactMemberStillOfInterest(MultiXactMember *member)
+{
+	return TransactionIdIsInProgress(member->xid) ||
+		(ISUPDATE_from_mxstatus(member->status) &&
+		 TransactionIdDidCommit(member->xid));
+}
+
+/*
  * MultiXactIdExpand
  *		Add a TransactionId to a pre-existing MultiXactId.
  *
  * If the TransactionId is already a member of the passed MultiXactId with the
- * same status, just return it as-is.
+ * same status, and every member is still of interest, return that
+ * MultiXactId as-is.  If some member is no longer of interest, create a new
+ * MultiXactId from the members that remain.  Do not add the TransactionId
+ * again when it is still among them.
  *
  * Note that we do NOT actually modify the membership of a pre-existing
  * MultiXactId; instead we create a new one.  This is necessary to avoid
@@ -454,22 +470,6 @@ MultiXactIdExpand(MultiXactId multi, TransactionId xid, MultiXactStatus status)
 	}
 
 	/*
-	 * If the TransactionId is already a member of the MultiXactId with the
-	 * same status, just return the existing MultiXactId.
-	 */
-	for (i = 0; i < nmembers; i++)
-	{
-		if (TransactionIdEquals(members[i].xid, xid) &&
-			(members[i].status == status))
-		{
-			debug_elog4(DEBUG2, "Expand: %u is already a member of %u",
-						xid, multi);
-			pfree(members);
-			return multi;
-		}
-	}
-
-	/*
 	 * Determine which of the members of the MultiXactId are still of
 	 * interest. This is any running transaction, and also any transaction
 	 * that grabbed something stronger than just a lock and was committed. (An
@@ -486,12 +486,41 @@ MultiXactIdExpand(MultiXactId multi, TransactionId xid, MultiXactStatus status)
 
 	for (i = 0, j = 0; i < nmembers; i++)
 	{
-		if (TransactionIdIsInProgress(members[i].xid) ||
-			(ISUPDATE_from_mxstatus(members[i].status) &&
-			 TransactionIdDidCommit(members[i].xid)))
+		if (MultiXactMemberStillOfInterest(&members[i]))
 		{
 			newMembers[j].xid = members[i].xid;
 			newMembers[j++].status = members[i].status;
+		}
+	}
+
+	/*
+	 * If the TransactionId is already a member with the same status, do not
+	 * add it again.  The loop above only copies or skips members, so equal
+	 * counts mean nothing was dropped and the existing MultiXactId is still
+	 * the right set.  Otherwise build a new one from the members that remain.
+	 */
+	for (i = 0; i < j; i++)
+	{
+		if (TransactionIdEquals(newMembers[i].xid, xid) &&
+			(newMembers[i].status == status))
+		{
+			if (j == nmembers)
+			{
+				debug_elog4(DEBUG2, "Expand: %u is already a member of %u",
+							xid, multi);
+				pfree(members);
+				pfree(newMembers);
+				return multi;
+			}
+
+			newMulti = MultiXactIdCreateFromMembers(j, newMembers);
+
+			pfree(members);
+			pfree(newMembers);
+
+			debug_elog3(DEBUG2, "Expand: returning new multi %u", newMulti);
+
+			return newMulti;
 		}
 	}
 
