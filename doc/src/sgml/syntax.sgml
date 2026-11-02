@@ -2518,6 +2518,30 @@ SELECT somefunc() OR true;
    </para>
 
    <para>
+    The same applies across the clauses of a query.  The logical order in
+    which a query is described (<literal>FROM</literal> and joins, then
+    <literal>WHERE</literal>, then <literal>GROUP BY</literal> and
+    <literal>HAVING</literal>, then the output list and
+    <literal>ORDER BY</literal>) defines the query's result, not the order
+    in which its expressions are evaluated.
+    <productname>PostgreSQL</productname> does not guarantee that an
+    expression is evaluated only for rows that satisfy the query's join and
+    <literal>WHERE</literal> conditions.  The planner may evaluate an
+    expression below a join, and therefore on rows that the join will
+    eliminate and that never appear in the result.  For example,
+    a <literal>WHERE</literal> condition that mentions only one table can be
+    checked while scanning that table; a sort required by
+    <literal>ORDER BY</literal> can be performed on one input of a join,
+    computing the sort key for every row of that input; and aggregation can
+    be partially performed before a join (see
+    <xref linkend="guc-enable-eager-aggregate"/>), so that aggregate
+    arguments are evaluated, and aggregate transition functions are called,
+    for rows that the join will remove.  If such an expression can fail for
+    some input values, the query can raise an error even though none of the
+    offending rows would have been part of its result.
+   </para>
+
+   <para>
     When it is essential to force evaluation order, a <literal>CASE</literal>
     construct (see <xref linkend="functions-conditional"/>) can be
     used.  For example, this is an untrustworthy way of trying to
