@@ -181,6 +181,24 @@ SELECT corr(0.1, 'NaN'), regr_r2(0.1, 'NaN') FROM generate_series(1, 30) g;
 SELECT corr('NaN', 0.1), regr_r2('NaN', 0.1) FROM generate_series(1, 30) g;
 SELECT corr('NaN', 'NaN'), regr_r2('NaN', 'NaN') FROM generate_series(1, 30) g;
 
+-- constant inputs must give the same results when partial aggregation
+-- states are combined (float8_regr_combine)
+CREATE TABLE regr_const (k int, x float8) PARTITION BY LIST (k);
+CREATE TABLE regr_const_1 PARTITION OF regr_const FOR VALUES IN (1);
+CREATE TABLE regr_const_2 PARTITION OF regr_const FOR VALUES IN (2);
+CREATE TABLE regr_const_3 PARTITION OF regr_const FOR VALUES IN (3);
+INSERT INTO regr_const SELECT 1 + g % 3, 1.0 / 3 FROM generate_series(1, 80) g;
+ANALYZE regr_const;
+SET enable_partitionwise_aggregate = on;
+EXPLAIN (COSTS OFF)
+SELECT corr(x, x) FROM regr_const;
+SELECT corr(x, x), regr_r2(x, x), regr_slope(x, x), regr_sxx(x, x), regr_syy(x, x)
+FROM regr_const;
+RESET enable_partitionwise_aggregate;
+SELECT corr(x, x), regr_r2(x, x), regr_slope(x, x), regr_sxx(x, x), regr_syy(x, x)
+FROM regr_const;
+DROP TABLE regr_const;
+
 -- test accum and combine functions directly
 CREATE TABLE regr_test (x float8, y float8);
 INSERT INTO regr_test VALUES (10,150),(20,250),(30,350),(80,540),(100,200);

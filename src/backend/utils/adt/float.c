@@ -3650,18 +3650,7 @@ float8_regr_combine(PG_FUNCTION_ARGS)
 	{
 		N = N1 + N2;
 		Sx = float8_pl(Sx1, Sx2);
-		tmp1 = Sx1 / N1 - Sx2 / N2;
-		Sxx = Sxx1 + Sxx2 + N1 * N2 * tmp1 * tmp1 / N;
-		if (unlikely(isinf(Sxx)) && !isinf(Sxx1) && !isinf(Sxx2))
-			float_overflow_error();
 		Sy = float8_pl(Sy1, Sy2);
-		tmp2 = Sy1 / N1 - Sy2 / N2;
-		Syy = Syy1 + Syy2 + N1 * N2 * tmp2 * tmp2 / N;
-		if (unlikely(isinf(Syy)) && !isinf(Syy1) && !isinf(Syy2))
-			float_overflow_error();
-		Sxy = Sxy1 + Sxy2 + N1 * N2 * tmp1 * tmp2 / N;
-		if (unlikely(isinf(Sxy)) && !isinf(Sxy1) && !isinf(Sxy2))
-			float_overflow_error();
 		if (float8_eq(Cx1, Cx2))
 			Cx = Cx1;
 		else
@@ -3670,6 +3659,37 @@ float8_regr_combine(PG_FUNCTION_ARGS)
 			Cy = Cy1;
 		else
 			Cy = get_float8_nan();
+
+		/*
+		 * As in float8_regr_accum, if all inputs seen so far have the same
+		 * X (or Y) value, the corresponding sums of squares must remain
+		 * exactly what they were (zero, or NaN): Sx1/N1 and Sx2/N2 are only
+		 * approximately equal because of roundoff, so adding the correction
+		 * term would make the final functions miss a constant input.
+		 */
+		Sxx = Sxx1 + Sxx2;
+		Syy = Syy1 + Syy2;
+		Sxy = Sxy1 + Sxy2;
+		tmp1 = Sx1 / N1 - Sx2 / N2;
+		tmp2 = Sy1 / N1 - Sy2 / N2;
+		if (isnan(Cx))
+		{
+			Sxx += N1 * N2 * tmp1 * tmp1 / N;
+			if (unlikely(isinf(Sxx)) && !isinf(Sxx1) && !isinf(Sxx2))
+				float_overflow_error();
+		}
+		if (isnan(Cy))
+		{
+			Syy += N1 * N2 * tmp2 * tmp2 / N;
+			if (unlikely(isinf(Syy)) && !isinf(Syy1) && !isinf(Syy2))
+				float_overflow_error();
+		}
+		if (isnan(Cx) && isnan(Cy))
+		{
+			Sxy += N1 * N2 * tmp1 * tmp2 / N;
+			if (unlikely(isinf(Sxy)) && !isinf(Sxy1) && !isinf(Sxy2))
+				float_overflow_error();
+		}
 	}
 
 	/*
