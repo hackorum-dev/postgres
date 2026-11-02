@@ -429,6 +429,11 @@ _readRangeTblEntry(ReadNodeContext *ctx)
 		case RTE_GROUP:
 			READ_NODE_FIELD(groupexprs);
 			break;
+		case RTE_SETOP:
+			READ_NODE_FIELD(coltypes);
+			READ_NODE_FIELD(coltypmods);
+			READ_NODE_FIELD(colcollations);
+			break;
 		default:
 			elog(ERROR, "unrecognized RTE kind: %d",
 				 (int) local_node->rtekind);

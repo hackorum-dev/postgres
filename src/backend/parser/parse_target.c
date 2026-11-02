@@ -422,6 +422,9 @@ markTargetListOrigin(ParseState *pstate, TargetEntry *tle,
 		case RTE_GROUP:
 			/* We couldn't get here: the RTE_GROUP RTE has not been added */
 			break;
+		case RTE_SETOP:
+			/* We couldn't get here: no Var in a parse tree references it */
+			break;
 	}
 }
 
@@ -1689,6 +1692,13 @@ expandRecordVariable(ParseState *pstate, Var *var, int levelsup)
 
 			/*
 			 * We couldn't get here: the RTE_GROUP RTE has not been added.
+			 */
+			break;
+		case RTE_SETOP:
+
+			/*
+			 * We couldn't get here: no Var in a parse tree references an
+			 * RTE_SETOP RTE.
 			 */
 			break;
 	}
