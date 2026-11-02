@@ -79,6 +79,7 @@ static Query *transformValuesClause(ParseState *pstate, SelectStmt *stmt);
 static Query *transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt);
 static Node *transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
 									   bool isTopLevel, List **targetlist);
+static List *addSetOpRTEs(ParseState *pstate, Node *node);
 static void constructSetOpTargetlist(ParseState *pstate, SetOperationStmt *op,
 									 const List *ltargetlist, const List *rtargetlist,
 									 List **targetlist, const char *context, bool recursive);
@@ -1888,6 +1889,9 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 	Assert(sostmt);
 	qry->setOperations = (Node *) sostmt;
 
+	/* Add an RTE_SETOP entry for each set operation in the tree */
+	(void) addSetOpRTEs(pstate, (Node *) sostmt);
+
 	/*
 	 * Re-find leftmost SELECT (now it's a sub-query in rangetable)
 	 */
@@ -2083,6 +2087,50 @@ makeSortGroupClauseForSetOp(Oid rescoltype, bool require_hash)
 	grpcl->hashable = hashable;
 
 	return grpcl;
+}
+
+/*
+ * addSetOpRTEs
+ *		Add an RTE_SETOP range table entry for each node of a set-op tree
+ *
+ * This is done after transformSetOperationTree has added RTEs for all the
+ * leaf subqueries, so the RTE_SETOP entries come after all the leaves, in
+ * postorder.  Each node's rtindex is set to the index of its entry.
+ *
+ * Returns the output column names of the given node, which are those of its
+ * leftmost leaf.
+ */
+static List *
+addSetOpRTEs(ParseState *pstate, Node *node)
+{
+	/* Guard against stack overflow due to overly complex setop nests */
+	check_stack_depth();
+
+	if (IsA(node, RangeTblRef))
+	{
+		RangeTblRef *rtr = (RangeTblRef *) node;
+
+		return rt_fetch(rtr->rtindex, pstate->p_rtable)->eref->colnames;
+	}
+	else if (IsA(node, SetOperationStmt))
+	{
+		SetOperationStmt *op = (SetOperationStmt *) node;
+		List	   *colnames;
+
+		colnames = addSetOpRTEs(pstate, op->larg);
+		(void) addSetOpRTEs(pstate, op->rarg);
+
+		op->rtindex = addRangeTableEntryForSetOp(pstate,
+												 colnames,
+												 list_copy(op->colTypes),
+												 list_copy(op->colTypmods),
+												 list_copy(op->colCollations));
+
+		return colnames;
+	}
+
+	elog(ERROR, "unrecognized node type: %d", (int) nodeTag(node));
+	return NIL;					/* keep compiler quiet */
 }
 
 /*

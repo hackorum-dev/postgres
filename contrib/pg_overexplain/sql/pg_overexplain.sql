@@ -159,3 +159,7 @@ SELECT * FROM vegetables v,
 -- test display of child append RTIs
 EXPLAIN (RANGE_TABLE, COSTS OFF)
 SELECT * FROM (SELECT * FROM creatures OFFSET 0) ss;
+
+-- test display of the RTE_SETOP entry for a set operation
+EXPLAIN (RANGE_TABLE, COSTS OFF)
+SELECT 1 AS a UNION SELECT 2 AS b;

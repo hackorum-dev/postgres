@@ -524,6 +524,9 @@ overexplain_range_table(PlannedStmt *plannedstmt, ExplainState *es)
 			case RTE_GROUP:
 				kind = "group";
 				break;
+			case RTE_SETOP:
+				kind = "setop";
+				break;
 		}
 
 		/* Begin group for this specific RTE */
