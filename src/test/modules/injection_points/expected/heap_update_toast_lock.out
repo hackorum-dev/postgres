@@ -1,0 +1,26 @@
+Parsed test spec with 3 sessions
+
+starting permutation: s1update s2begin s2keyshare wake s1keyupdate s2commit s1check
+step s1update: UPDATE t SET val = bigstring() WHERE id = 1; <waiting ...>
+step s2begin: BEGIN;
+step s2keyshare: SELECT id FROM t WHERE id = 1 FOR KEY SHARE;
+id
+--
+ 1
+(1 row)
+
+step wake: 
+        SELECT FROM injection_points_detach('heap_update-toast-unlocked');
+        SELECT FROM injection_points_wakeup('heap_update-toast-unlocked');
+ <waiting ...>
+step s1update: <... completed>
+step wake: <... completed>
+step s1keyupdate: UPDATE t SET id = id + 1; <waiting ...>
+step s2commit: COMMIT;
+step s1keyupdate: <... completed>
+step s1check: SELECT id, length(val), other FROM t;
+id|length|other
+--+------+-----
+ 2|  6400|    0
+(1 row)
+
