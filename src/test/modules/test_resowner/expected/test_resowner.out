@@ -195,3 +195,28 @@ ERROR:  ResourceOwnerEnlarge called after release started
 SELECT test_resowner_forget_between_phases();
 ERROR:  ResourceOwnerForget called for test resource after release started
 reset client_min_messages;
+-- Reuse an auxiliary resource owner with and without a hash table.
+SELECT test_resowner_aux(16);
+ test_resowner_aux 
+-------------------
+ 
+(1 row)
+
+SELECT test_resowner_aux(64);
+ test_resowner_aux 
+-------------------
+ 
+(1 row)
+
+SELECT test_resowner_aux(65);
+ test_resowner_aux 
+-------------------
+ 
+(1 row)
+
+SELECT test_resowner_aux(1024);
+ test_resowner_aux 
+-------------------
+ 
+(1 row)
+
