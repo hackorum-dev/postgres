@@ -931,6 +931,16 @@ check_relation_relkind(Relation rel)
 						RelationGetRelationName(rel)),
 				 errdetail_relkind_not_supported(rel->rd_rel->relkind)));
 
+	/*
+	 * Reject attempts to read non-local temporary relations; we would be
+	 * likely to get wrong data since we have no visibility into the owning
+	 * session's local buffers.
+	 */
+	if (RELATION_IS_OTHER_TEMP(rel))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot access temporary tables of other sessions")));
+
 	/* Temporary and unlogged relations are inaccessible during recovery. */
 	if (!RelationIsPermanent(rel) && RecoveryInProgress())
 		ereport(ERROR,
