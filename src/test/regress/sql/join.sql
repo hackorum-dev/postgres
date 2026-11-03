@@ -4575,6 +4575,17 @@ select * from
            where f1 = any (select unique1 from tenk1
                            where unique2 = v.x offset 0)) ss;
 
+-- Relation with only parameterized paths, gets no presorted path.
+explain (costs off)
+select x.u
+from int8_tbl a, int8_tbl b, lateral unnest(array[a.q1, a.q2]) as x(u)
+where x.u = b.q1
+order by x.u;
+select x.u
+from int8_tbl a, int8_tbl b, lateral unnest(array[a.q1, a.q2]) as x(u)
+where x.u = b.q1
+order by x.u;
+
 -- check proper extParam/allParam handling (this isn't exactly a LATERAL issue,
 -- but we can make the test case much more compact with LATERAL)
 explain (verbose, costs off)
@@ -5074,5 +5085,32 @@ FROM (VALUES (1)) AS v(z) LEFT JOIN
    WHERE t1.f1 NOT IN (SELECT t2.unique1 FROM tenk1 t2
                        WHERE t2.unique1 IS NOT NULL)) s ON true
 WHERE s.x = s.c;
+
+ROLLBACK;
+
+--
+-- Test sort-ahead: a relation without an index on the ORDER BY key is
+-- sorted below the join, instead of sorting the join result
+--
+BEGIN;
+
+CREATE TEMP TABLE sa_outer AS
+  SELECT g AS id, (g * 7919) % 1000 AS v FROM generate_series(1, 1000) g;
+CREATE TEMP TABLE sa_inner AS
+  SELECT g % 1000 + 1 AS oid, g AS x FROM generate_series(1, 20000) g;
+CREATE INDEX ON sa_inner (oid);
+ANALYZE sa_outer, sa_inner;
+
+-- The outer side is sorted on the ORDER BY prefix that it can provide, and
+-- an Incremental Sort above the join completes the order
+EXPLAIN (COSTS OFF)
+SELECT o.v, i.x FROM sa_outer o JOIN sa_inner i ON i.oid = o.id
+ORDER BY o.v, i.x LIMIT 5;
+SELECT o.v, i.x FROM sa_outer o JOIN sa_inner i ON i.oid = o.id
+ORDER BY o.v, i.x LIMIT 5;
+
+-- With a single relation there is no join to sort below
+EXPLAIN (COSTS OFF)
+SELECT * FROM sa_outer ORDER BY v LIMIT 5;
 
 ROLLBACK;
