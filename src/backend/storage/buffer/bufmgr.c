@@ -700,7 +700,7 @@ PrefetchSharedBuffer(SMgrRelation smgr_reln,
 					 ForkNumber forkNum,
 					 BlockNumber blockNum)
 {
-	PrefetchBufferResult result = {InvalidBuffer, false};
+	PrefetchBufferResult result = {InvalidBuffer, false, false};
 	BufferTag	newTag;			/* identity of requested block */
 	uint32		newHash;		/* hash value for newTag */
 	LWLock	   *newPartitionLock;	/* buffer partition lock for it */
@@ -725,14 +725,19 @@ PrefetchSharedBuffer(SMgrRelation smgr_reln,
 	if (buf_id < 0)
 	{
 #ifdef USE_PREFETCH
+		int			prefetch_error = 0;
+
 		/*
 		 * Try to initiate an asynchronous read.  This returns false in
 		 * recovery if the relation file doesn't exist.
 		 */
 		if ((io_direct_flags & IO_DIRECT_DATA) == 0 &&
-			smgrprefetch(smgr_reln, forkNum, blockNum, 1))
+			smgrprefetch(smgr_reln, forkNum, blockNum, 1, &prefetch_error))
 		{
-			result.initiated_io = true;
+			if (prefetch_error == 0)
+				result.initiated_io = true;
+			else
+				result.prefetch_failed = true;
 		}
 #endif							/* USE_PREFETCH */
 	}
@@ -768,7 +773,7 @@ PrefetchSharedBuffer(SMgrRelation smgr_reln,
  * buffer.  Instead it tries to ensure that a future ReadBuffer for the given
  * block will not be delayed by the I/O.  Prefetching is optional.
  *
- * There are three possible outcomes:
+ * There are four possible outcomes:
  *
  * 1.  If the block is already cached, the result includes a valid buffer that
  * could be used by the caller to avoid the need for a later buffer lookup, but
@@ -779,7 +784,10 @@ PrefetchSharedBuffer(SMgrRelation smgr_reln,
  * the kernel and therefore didn't really initiate I/O, and no way to know when
  * the I/O completes other than using synchronous ReadBuffer().
  *
- * 3.  Otherwise, the buffer wasn't already cached by PostgreSQL, and
+ * 3.  If read-ahead advice failed, the prefetch_failed member is true.  The
+ * caller can still read the block normally.
+ *
+ * 4.  Otherwise, the buffer wasn't already cached by PostgreSQL, and
  * USE_PREFETCH is not defined (this build doesn't support prefetching due to
  * lack of a kernel facility), direct I/O is enabled, or the underlying
  * relation file wasn't found and we are in recovery.  (If the relation file
@@ -1578,7 +1586,8 @@ StartReadBuffersImpl(ReadBuffersOperation *operation,
 			smgrprefetch(operation->smgr,
 						 operation->forknum,
 						 blockNum,
-						 actual_nblocks);
+						 actual_nblocks,
+						 NULL);
 		}
 
 		/*

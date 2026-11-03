@@ -94,7 +94,8 @@ extern void smgrextend(SMgrRelation reln, ForkNumber forknum,
 extern void smgrzeroextend(SMgrRelation reln, ForkNumber forknum,
 						   BlockNumber blocknum, int nblocks, bool skipFsync);
 extern bool smgrprefetch(SMgrRelation reln, ForkNumber forknum,
-						 BlockNumber blocknum, int nblocks);
+						 BlockNumber blocknum, int nblocks,
+						 int *prefetch_error);
 extern uint32 smgrmaxcombine(SMgrRelation reln, ForkNumber forknum,
 							 BlockNumber blocknum);
 extern void smgrreadv(SMgrRelation reln, ForkNumber forknum,

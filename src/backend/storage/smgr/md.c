@@ -39,6 +39,7 @@
 #include "storage/relfilelocator.h"
 #include "storage/smgr.h"
 #include "storage/sync.h"
+#include "utils/injection_point.h"
 #include "utils/memutils.h"
 #include "utils/wait_event.h"
 
@@ -742,13 +743,21 @@ mdclose(SMgrRelation reln, ForkNumber forknum)
 
 /*
  * mdprefetch() -- Initiate asynchronous read of the specified blocks of a relation
+ *
+ * If prefetch_error is not NULL, report the first read-ahead advice failure.
  */
 bool
 mdprefetch(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
-		   int nblocks)
+		   int nblocks, int *prefetch_error)
 {
 #ifdef USE_PREFETCH
+	int			first_error = 0;
+#endif
 
+	if (prefetch_error != NULL)
+		*prefetch_error = 0;
+
+#ifdef USE_PREFETCH
 	Assert((io_direct_flags & IO_DIRECT_DATA) == 0);
 
 	if ((uint64) blocknum + nblocks > (uint64) MaxBlockNumber + 1)
@@ -759,6 +768,7 @@ mdprefetch(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 		pgoff_t		seekpos;
 		MdfdVec    *v;
 		int			nblocks_this_segment;
+		int			result;
 
 		v = _mdfd_getseg(reln, forknum, blocknum, false,
 						 InRecovery ? EXTENSION_RETURN_NULL : EXTENSION_FAIL);
@@ -773,12 +783,23 @@ mdprefetch(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 			Min(nblocks,
 				RELSEG_SIZE - (blocknum % ((BlockNumber) RELSEG_SIZE)));
 
-		(void) FilePrefetch(v->mdfd_vfd, seekpos, BLCKSZ * nblocks_this_segment,
-							WAIT_EVENT_DATA_FILE_PREFETCH);
+#ifdef USE_INJECTION_POINTS
+		if (IS_INJECTION_POINT_ATTACHED("md-prefetch-failure"))
+			result = EIO;
+		else
+#endif
+			result = FilePrefetch(v->mdfd_vfd, seekpos,
+								  BLCKSZ * nblocks_this_segment,
+								  WAIT_EVENT_DATA_FILE_PREFETCH);
+		if (first_error == 0)
+			first_error = result;
 
 		blocknum += nblocks_this_segment;
 		nblocks -= nblocks_this_segment;
 	}
+
+	if (prefetch_error != NULL)
+		*prefetch_error = first_error;
 #endif							/* USE_PREFETCH */
 
 	return true;

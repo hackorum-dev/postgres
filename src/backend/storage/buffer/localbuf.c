@@ -72,7 +72,7 @@ PrefetchBufferResult
 PrefetchLocalBuffer(SMgrRelation smgr, ForkNumber forkNum,
 					BlockNumber blockNum)
 {
-	PrefetchBufferResult result = {InvalidBuffer, false};
+	PrefetchBufferResult result = {InvalidBuffer, false, false};
 	BufferTag	newTag;			/* identity of requested block */
 	LocalBufferLookupEnt *hresult;
 
@@ -94,11 +94,16 @@ PrefetchLocalBuffer(SMgrRelation smgr, ForkNumber forkNum,
 	else
 	{
 #ifdef USE_PREFETCH
+		int			prefetch_error = 0;
+
 		/* Not in buffers, so initiate prefetch */
 		if ((io_direct_flags & IO_DIRECT_DATA) == 0 &&
-			smgrprefetch(smgr, forkNum, blockNum, 1))
+			smgrprefetch(smgr, forkNum, blockNum, 1, &prefetch_error))
 		{
-			result.initiated_io = true;
+			if (prefetch_error == 0)
+				result.initiated_io = true;
+			else
+				result.prefetch_failed = true;
 		}
 #endif							/* USE_PREFETCH */
 	}

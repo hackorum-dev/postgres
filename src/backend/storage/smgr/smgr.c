@@ -101,7 +101,8 @@ typedef struct f_smgr
 	void		(*smgr_zeroextend) (SMgrRelation reln, ForkNumber forknum,
 									BlockNumber blocknum, int nblocks, bool skipFsync);
 	bool		(*smgr_prefetch) (SMgrRelation reln, ForkNumber forknum,
-								  BlockNumber blocknum, int nblocks);
+								  BlockNumber blocknum, int nblocks,
+								  int *prefetch_error);
 	uint32		(*smgr_maxcombine) (SMgrRelation reln, ForkNumber forknum,
 									BlockNumber blocknum);
 	void		(*smgr_readv) (SMgrRelation reln, ForkNumber forknum,
@@ -673,15 +674,19 @@ smgrzeroextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  * In recovery only, this can return false to indicate that a file
  * doesn't exist (presumably it has been dropped by a later WAL
  * record).
+ *
+ * If prefetch_error is not NULL, it is set to zero if the read-ahead advice
+ * succeeded, or to a nonzero result from the underlying operation otherwise.
  */
 bool
 smgrprefetch(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
-			 int nblocks)
+			 int nblocks, int *prefetch_error)
 {
 	bool		ret;
 
 	HOLD_INTERRUPTS();
-	ret = smgrsw[reln->smgr_which].smgr_prefetch(reln, forknum, blocknum, nblocks);
+	ret = smgrsw[reln->smgr_which].smgr_prefetch(reln, forknum, blocknum,
+												 nblocks, prefetch_error);
 	RESUME_INTERRUPTS();
 
 	return ret;

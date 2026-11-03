@@ -34,7 +34,8 @@ extern void mdextend(SMgrRelation reln, ForkNumber forknum,
 extern void mdzeroextend(SMgrRelation reln, ForkNumber forknum,
 						 BlockNumber blocknum, int nblocks, bool skipFsync);
 extern bool mdprefetch(SMgrRelation reln, ForkNumber forknum,
-					   BlockNumber blocknum, int nblocks);
+					   BlockNumber blocknum, int nblocks,
+					   int *prefetch_error);
 extern uint32 mdmaxcombine(SMgrRelation reln, ForkNumber forknum,
 						   BlockNumber blocknum);
 extern void mdreadv(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,

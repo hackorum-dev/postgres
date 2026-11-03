@@ -60,6 +60,7 @@ typedef struct PrefetchBufferResult
 {
 	Buffer		recent_buffer;	/* If valid, a hit (recheck needed!) */
 	bool		initiated_io;	/* If true, a miss resulting in async I/O */
+	bool		prefetch_failed;	/* If true, read-ahead advice failed */
 } PrefetchBufferResult;
 
 /*

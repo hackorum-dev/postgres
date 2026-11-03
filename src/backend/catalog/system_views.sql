@@ -1050,6 +1050,7 @@ CREATE VIEW pg_stat_recovery_prefetch AS
     SELECT
             s.stats_reset,
             s.prefetch,
+            s.prefetch_failed,
             s.hit,
             s.skip_init,
             s.skip_new,

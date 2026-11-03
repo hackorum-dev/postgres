@@ -175,6 +175,7 @@ typedef struct XLogPrefetchStats
 {
 	pg_atomic_uint64 reset_time;	/* Time of last reset. */
 	pg_atomic_uint64 prefetch;	/* Prefetches initiated. */
+	pg_atomic_uint64 prefetch_failed;	/* Prefetch advice failures. */
 	pg_atomic_uint64 hit;		/* Blocks already in cache. */
 	pg_atomic_uint64 skip_init; /* Zero-inited blocks skipped. */
 	pg_atomic_uint64 skip_new;	/* New/missing blocks filtered. */
@@ -315,6 +316,7 @@ XLogPrefetchShmemInit(void *arg)
 {
 	pg_atomic_init_u64(&SharedStats->reset_time, GetCurrentTimestamp());
 	pg_atomic_init_u64(&SharedStats->prefetch, 0);
+	pg_atomic_init_u64(&SharedStats->prefetch_failed, 0);
 	pg_atomic_init_u64(&SharedStats->hit, 0);
 	pg_atomic_init_u64(&SharedStats->skip_init, 0);
 	pg_atomic_init_u64(&SharedStats->skip_new, 0);
@@ -330,6 +332,7 @@ XLogPrefetchResetStats(void)
 {
 	pg_atomic_write_u64(&SharedStats->reset_time, GetCurrentTimestamp());
 	pg_atomic_write_u64(&SharedStats->prefetch, 0);
+	pg_atomic_write_u64(&SharedStats->prefetch_failed, 0);
 	pg_atomic_write_u64(&SharedStats->hit, 0);
 	pg_atomic_write_u64(&SharedStats->skip_init, 0);
 	pg_atomic_write_u64(&SharedStats->skip_new, 0);
@@ -784,6 +787,15 @@ XLogPrefetcherNextBlock(uintptr_t pgsr_private, XLogRecPtr *lsn)
 				block->prefetch_buffer = InvalidBuffer;
 				return LRQ_NEXT_IO;
 			}
+			else if (result.prefetch_failed)
+			{
+				/*
+				 * Read-ahead advice is best-effort.  Replay will read the
+				 * block normally when it reaches this record.
+				 */
+				XLogPrefetchIncrement(&SharedStats->prefetch_failed);
+				return LRQ_NEXT_NO_IO;
+			}
 			else if ((io_direct_flags & IO_DIRECT_DATA) == 0)
 			{
 				/*
@@ -829,7 +841,7 @@ XLogPrefetcherNextBlock(uintptr_t pgsr_private, XLogRecPtr *lsn)
 Datum
 pg_stat_get_recovery_prefetch(PG_FUNCTION_ARGS)
 {
-#define PG_STAT_GET_RECOVERY_PREFETCH_COLS 10
+#define PG_STAT_GET_RECOVERY_PREFETCH_COLS 11
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	Datum		values[PG_STAT_GET_RECOVERY_PREFETCH_COLS];
 	bool		nulls[PG_STAT_GET_RECOVERY_PREFETCH_COLS];
@@ -841,14 +853,15 @@ pg_stat_get_recovery_prefetch(PG_FUNCTION_ARGS)
 
 	values[0] = TimestampTzGetDatum(pg_atomic_read_u64(&SharedStats->reset_time));
 	values[1] = Int64GetDatum(pg_atomic_read_u64(&SharedStats->prefetch));
-	values[2] = Int64GetDatum(pg_atomic_read_u64(&SharedStats->hit));
-	values[3] = Int64GetDatum(pg_atomic_read_u64(&SharedStats->skip_init));
-	values[4] = Int64GetDatum(pg_atomic_read_u64(&SharedStats->skip_new));
-	values[5] = Int64GetDatum(pg_atomic_read_u64(&SharedStats->skip_fpw));
-	values[6] = Int64GetDatum(pg_atomic_read_u64(&SharedStats->skip_rep));
-	values[7] = Int32GetDatum(SharedStats->wal_distance);
-	values[8] = Int32GetDatum(SharedStats->block_distance);
-	values[9] = Int32GetDatum(SharedStats->io_depth);
+	values[2] = Int64GetDatum(pg_atomic_read_u64(&SharedStats->prefetch_failed));
+	values[3] = Int64GetDatum(pg_atomic_read_u64(&SharedStats->hit));
+	values[4] = Int64GetDatum(pg_atomic_read_u64(&SharedStats->skip_init));
+	values[5] = Int64GetDatum(pg_atomic_read_u64(&SharedStats->skip_new));
+	values[6] = Int64GetDatum(pg_atomic_read_u64(&SharedStats->skip_fpw));
+	values[7] = Int64GetDatum(pg_atomic_read_u64(&SharedStats->skip_rep));
+	values[8] = Int32GetDatum(SharedStats->wal_distance);
+	values[9] = Int32GetDatum(SharedStats->block_distance);
+	values[10] = Int32GetDatum(SharedStats->io_depth);
 	tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
 
 	return (Datum) 0;
