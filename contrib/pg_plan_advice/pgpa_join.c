@@ -134,7 +134,7 @@ pgpa_unroll_join(pgpa_plan_walker_context *walker, Plan *plan,
 	 * join tree where the planner decided to initiate parallelism,
 	 *
 	 * (3) Sort and IncrementalSort nodes, which can occur beneath MergeJoin
-	 * or GatherMerge,
+	 * or GatherMerge, or on the outer side of a NestLoop,
 	 *
 	 * (4) Agg and Unique nodes, which can occur when we decide to make the
 	 * nullable side of a semijoin unique and then join the result, and
@@ -309,9 +309,9 @@ pgpa_destroy_join_unroller(pgpa_join_unroller *join_unroller)
  * for all intents and purposes the real inner input is the Hash node's child,
  * not the Hash node itself.
  *
- * Likewise, a Merge Join may have Sort node on the inner or outer side; if
- * it does, the real input to the join is the Sort node's child, not the
- * Sort node itself.
+ * Likewise, a Merge Join may have Sort node on the inner or outer side, and
+ * a Nested Loop may have one on the outer side; if it does, the real input
+ * to the join is the Sort node's child, not the Sort node itself.
  *
  * In addition, with a Merge Join or a Nested Loop, the join planning code
  * may add additional nodes such as Materialize or Memoize. We regard these
@@ -407,6 +407,15 @@ pgpa_decompose_join(pgpa_plan_walker_context *walker, Plan *plan,
 			}
 			else
 				strategy = JSTRAT_NESTED_LOOP_PLAIN;
+
+			/*
+			 * The planner may also have sorted the outer subplan, so that the
+			 * NestLoop delivers its output in the order required above it.
+			 * Such a Sort is not part of the join strategy, so look through
+			 * it to find the real outer subplan.
+			 */
+			if (elidedouter == NULL && is_sorting_plan(outerplan))
+				elidedouter = pgpa_descend_node(pstmt, &outerplan);
 			break;
 
 		case T_HashJoin:
