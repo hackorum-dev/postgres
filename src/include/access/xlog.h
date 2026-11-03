@@ -220,10 +220,12 @@ typedef enum WALAvailability
 	WALAVAIL_REMOVED,			/* WAL segment has been removed */
 } WALAvailability;
 
+struct XLogRecord;
 struct XLogRecData;
 struct XLogReaderState;
 
-extern XLogRecPtr XLogInsertRecord(struct XLogRecData *rdata,
+extern XLogRecPtr XLogInsertRecord(struct XLogRecord *rechdr,
+								   struct XLogRecData *rdata,
 								   XLogRecPtr fpw_lsn,
 								   uint8 flags,
 								   int num_fpi,
