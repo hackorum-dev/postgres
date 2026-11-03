@@ -1431,7 +1431,7 @@ MakeTupleTableSlot(TupleDesc tupleDesc,
 
 	slot = palloc0(allocsz);
 	/* const for optimization purposes, OK to modify at allocation time */
-	*((const TupleTableSlotOps **) &slot->tts_ops) = tts_ops;
+	*(unconstify_pointee(const TupleTableSlotOps *, &slot->tts_ops)) = tts_ops;
 	slot->type = T_TupleTableSlot;
 	slot->tts_flags = TTS_FLAG_EMPTY | flags;
 	if (tupleDesc != NULL)
