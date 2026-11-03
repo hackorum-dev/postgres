@@ -1,0 +1,48 @@
+Parsed test spec with 2 sessions
+
+starting permutation: vacuum_root drop_victim wakeup
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step vacuum_root: VACUUM root; <waiting ...>
+step drop_victim: DROP TABLE victim;
+step wakeup: 
+	SELECT injection_points_wakeup('find-all-inheritors-before-scan');
+
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step vacuum_root: <... completed>
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+
+starting permutation: lock_root drop_victim wakeup commit
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step lock_root: BEGIN; LOCK TABLE root IN ACCESS SHARE MODE; <waiting ...>
+step drop_victim: DROP TABLE victim;
+step wakeup: 
+	SELECT injection_points_wakeup('find-all-inheritors-before-scan');
+
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step lock_root: <... completed>
+step commit: COMMIT;
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
