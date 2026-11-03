@@ -1642,6 +1642,8 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	char		workmembuf[32];
 	int			spi_result;
 	SPIPlanPtr	qplan;
+	Oid			save_userid;
+	int			save_sec_context;
 
 	riinfo = ri_FetchConstraintInfo(trigger, fk_rel, false);
 
@@ -1815,6 +1817,11 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 
 	SPI_connect();
 
+	/* Like the RI triggers, ignore FORCE ROW LEVEL SECURITY */
+	GetUserIdAndSecContext(&save_userid, &save_sec_context);
+	SetUserIdAndSecContext(save_userid,
+						   save_sec_context | SECURITY_NOFORCE_RLS);
+
 	/*
 	 * Generate the plan.  We don't need to cache it, and there are no
 	 * arguments to the plan.
@@ -1837,6 +1844,8 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 									  GetLatestSnapshot(),
 									  InvalidSnapshot,
 									  true, false, 1);
+
+	SetUserIdAndSecContext(save_userid, save_sec_context);
 
 	/* Check result */
 	if (spi_result != SPI_OK_SELECT)
@@ -1932,6 +1941,8 @@ RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	int			spi_result;
 	SPIPlanPtr	qplan;
 	int			i;
+	Oid			save_userid;
+	int			save_sec_context;
 
 	riinfo = ri_FetchConstraintInfo(trigger, fk_rel, false);
 
@@ -2054,6 +2065,11 @@ RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 
 	SPI_connect();
 
+	/* Like the RI triggers, ignore FORCE ROW LEVEL SECURITY */
+	GetUserIdAndSecContext(&save_userid, &save_sec_context);
+	SetUserIdAndSecContext(save_userid,
+						   save_sec_context | SECURITY_NOFORCE_RLS);
+
 	/*
 	 * Generate the plan.  We don't need to cache it, and there are no
 	 * arguments to the plan.
@@ -2076,6 +2092,8 @@ RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 									  GetLatestSnapshot(),
 									  InvalidSnapshot,
 									  true, false, 1);
+
+	SetUserIdAndSecContext(save_userid, save_sec_context);
 
 	/* Check result */
 	if (spi_result != SPI_OK_SELECT)
