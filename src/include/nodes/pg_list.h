@@ -374,10 +374,10 @@ list_cell_number(const List *l, const ListCell *c)
 static inline ListCell *
 lnext(const List *l, const ListCell *c)
 {
-	Assert(c >= &l->elements[0] && c < &l->elements[l->length]);
-	c++;
-	if (c < &l->elements[l->length])
-		return (ListCell *) c;
+	int			n = list_cell_number(l, c) + 1;
+
+	if (n < l->length)
+		return &l->elements[n];
 	else
 		return NULL;
 }
