@@ -978,7 +978,7 @@ show_all_settings(PG_FUNCTION_ARGS)
 	while (call_cntr < max_calls)	/* do when there is more left to send */
 	{
 		struct config_generic *conf = guc_vars[call_cntr];
-		char	   *values[NUM_PG_SETTINGS_ATTS];
+		const char *values[NUM_PG_SETTINGS_ATTS];
 		HeapTuple	tuple;
 		Datum		result;
 
@@ -991,10 +991,15 @@ show_all_settings(PG_FUNCTION_ARGS)
 		}
 
 		/* extract values for the current variable */
-		GetConfigOptionValues(conf, (const char **) values);
+		GetConfigOptionValues(conf, values);
 
-		/* build a tuple */
-		tuple = BuildTupleFromCStrings(attinmeta, values);
+		/*
+		 * build a tuple
+		 *
+		 * (BuildTupleFromCStrings() takes char ** but does not modify the
+		 * strings, so it's safe to cast away const here.)
+		 */
+		tuple = BuildTupleFromCStrings(attinmeta, unconstify(char **, values));
 
 		/* make the tuple into a datum */
 		result = HeapTupleGetDatum(tuple);
