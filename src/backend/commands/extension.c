@@ -511,9 +511,11 @@ is_extension_script_filename(const char *filename)
 
 /*
  * Return a list of directories declared in the extension_control_path GUC.
+ * If skip_invalid_path is true, ignore empty elements instead of reporting an
+ * error.  This is useful when looking for extensions only to provide a hint.
  */
 static List *
-get_extension_control_directories(void)
+get_extension_control_directories(bool skip_invalid_path)
 {
 #define EXTENSION_SYSTEM_MACRO  "$system"
 	char		sharepath[MAXPGPATH];
@@ -541,9 +543,7 @@ get_extension_control_directories(void)
 		for (;;)
 		{
 			int			len;
-			char	   *mangled;
 			char	   *piece = first_path_var_separator(ecp);
-			ExtensionLocation *location = palloc_object(ExtensionLocation);
 
 			/* Get the length of the next path on ecp */
 			if (piece == NULL)
@@ -551,30 +551,45 @@ get_extension_control_directories(void)
 			else
 				len = piece - ecp;
 
-			/* Copy the next path found on ecp */
-			piece = palloc(len + 1);
-			strlcpy(piece, ecp, len + 1);
-
-			/*
-			 * Substitute the path macro if needed or append "extension"
-			 * suffix if it is a custom extension control path.
-			 */
-			if (strcmp(piece, EXTENSION_SYSTEM_MACRO) == 0)
+			if (len == 0)
 			{
-				location->macro = pstrdup(piece);
-				mangled = substitute_path_macro(piece, EXTENSION_SYSTEM_MACRO, system_dir);
+				/* Reject empty path elements if required */
+				if (!skip_invalid_path)
+					ereport(ERROR,
+							errcode(ERRCODE_INVALID_NAME),
+							errmsg("zero-length component in parameter \"%s\"",
+								   "extension_control_path"));
 			}
 			else
 			{
-				location->macro = NULL;
-				mangled = psprintf("%s/extension", piece);
-			}
-			pfree(piece);
+				char	   *mangled;
+				ExtensionLocation *location = palloc_object(ExtensionLocation);
 
-			/* Canonicalize the path based on the OS and add to the list */
-			canonicalize_path(mangled);
-			location->loc = mangled;
-			paths = lappend(paths, location);
+				/* Copy the next path found on ecp */
+				piece = palloc(len + 1);
+				strlcpy(piece, ecp, len + 1);
+
+				/*
+				 * Substitute the path macro if needed or append "extension"
+				 * suffix if it is a custom extension control path.
+				 */
+				if (strcmp(piece, EXTENSION_SYSTEM_MACRO) == 0)
+				{
+					location->macro = pstrdup(piece);
+					mangled = substitute_path_macro(piece, EXTENSION_SYSTEM_MACRO, system_dir);
+				}
+				else
+				{
+					location->macro = NULL;
+					mangled = psprintf("%s/extension", piece);
+				}
+				pfree(piece);
+
+				/* Canonicalize the path based on the OS and add to the list */
+				canonicalize_path(mangled);
+				location->loc = mangled;
+				paths = lappend(paths, location);
+			}
 
 			/* Break if ecp is empty or move to the next path on ecp */
 			if (ecp[len] == '\0')
@@ -604,7 +619,7 @@ find_extension_control_filename(ExtensionControlFile *control)
 
 	basename = psprintf("%s.control", control->name);
 
-	paths = get_extension_control_directories();
+	paths = get_extension_control_directories(false);
 	result = find_in_paths(basename, paths);
 
 	if (result)
@@ -2527,7 +2542,7 @@ pg_available_extensions(PG_FUNCTION_ARGS)
 	/* Build tuplestore to hold the result rows */
 	InitMaterializedSRF(fcinfo, 0);
 
-	locations = get_extension_control_directories();
+	locations = get_extension_control_directories(false);
 
 	foreach_ptr(ExtensionLocation, location, locations)
 	{
@@ -2629,7 +2644,7 @@ pg_available_extension_versions(PG_FUNCTION_ARGS)
 	/* Build tuplestore to hold the result rows */
 	InitMaterializedSRF(fcinfo, 0);
 
-	locations = get_extension_control_directories();
+	locations = get_extension_control_directories(false);
 
 	foreach_ptr(ExtensionLocation, location, locations)
 	{
@@ -2821,7 +2836,7 @@ extension_file_exists(const char *extensionName)
 	DIR		   *dir;
 	struct dirent *de;
 
-	locations = get_extension_control_directories();
+	locations = get_extension_control_directories(true);
 
 	foreach_ptr(ExtensionLocation, location, locations)
 	{
