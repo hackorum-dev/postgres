@@ -82,3 +82,16 @@ SET LOCAL pg_plan_advice.advice = 'NESTED_LOOP_PLAIN(f d)';
 EXPLAIN (COSTS OFF, PLAN_ADVICE)
 	SELECT * FROM join_fact f JOIN join_dim d ON f.dim_id = d.id;
 COMMIT;
+
+-- The planner may sort the outer side of a nested loop to deliver the
+-- ORDER BY.  That Sort is not part of the join strategy: advice must still
+-- be generated for such a plan, and must be applicable back to it.
+EXPLAIN (COSTS OFF, PLAN_ADVICE)
+	SELECT * FROM join_dim d JOIN join_fact f ON f.dim_id = d.id
+	ORDER BY d.dim LIMIT 10;
+BEGIN;
+SET LOCAL pg_plan_advice.advice = 'JOIN_ORDER(d f) NESTED_LOOP_PLAIN(f)';
+EXPLAIN (COSTS OFF, PLAN_ADVICE)
+	SELECT * FROM join_dim d JOIN join_fact f ON f.dim_id = d.id
+	ORDER BY d.dim LIMIT 10;
+COMMIT;
