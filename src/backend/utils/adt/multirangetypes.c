@@ -68,11 +68,11 @@ typedef enum
  * Macros for accessing past MultirangeType parts of multirange: items, flags
  * and boundaries.
  */
-#define MultirangeGetItemsPtr(mr) ((uint32 *) ((char *) (mr) + \
+#define MultirangeGetItemsPtr(mr) ((uint32 *) (unconstify(char *, (const char *) (mr)) + \
 	sizeof(MultirangeType)))
-#define MultirangeGetFlagsPtr(mr) ((uint8 *) ((char *) (mr) + \
+#define MultirangeGetFlagsPtr(mr) ((uint8 *) (unconstify(char *, (const char *) (mr)) + \
 	sizeof(MultirangeType) + ((mr)->rangeCount - 1) * sizeof(uint32)))
-#define MultirangeGetBoundariesPtr(mr, align) ((char *) (mr) + \
+#define MultirangeGetBoundariesPtr(mr, align) (unconstify(char *, (const char *) (mr)) + \
 	att_align_nominal(sizeof(MultirangeType) + \
 		((mr)->rangeCount - 1) * sizeof(uint32) + \
 		(mr)->rangeCount * sizeof(uint8), (align)))

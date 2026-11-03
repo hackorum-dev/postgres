@@ -292,14 +292,14 @@ typedef struct ArrayIteratorData *ArrayIterator;
 #define ARR_ELEMTYPE(a)			((a)->elemtype)
 
 #define ARR_DIMS(a) \
-		((int *) (((char *) (a)) + sizeof(ArrayType)))
+		((int *) ((unconstify(char *, (const char *) (a))) + sizeof(ArrayType)))
 #define ARR_LBOUND(a) \
-		((int *) (((char *) (a)) + sizeof(ArrayType) + \
+		((int *) ((unconstify(char *, (const char *) (a))) + sizeof(ArrayType) + \
 				  sizeof(int) * ARR_NDIM(a)))
 
 #define ARR_NULLBITMAP(a) \
 		(ARR_HASNULL(a) ? \
-		 (uint8 *) (((char *) (a)) + sizeof(ArrayType) + \
+		 (uint8 *) ((unconstify(char *, (const char *) (a))) + sizeof(ArrayType) + \
 					2 * sizeof(int) * ARR_NDIM(a)) \
 		 : (uint8 *) NULL)
 
@@ -320,7 +320,7 @@ typedef struct ArrayIteratorData *ArrayIterator;
  * Returns a pointer to the actual array data.
  */
 #define ARR_DATA_PTR(a) \
-		(((char *) (a)) + ARR_DATA_OFFSET(a))
+		((unconstify(char *, (const char *) (a))) + ARR_DATA_OFFSET(a))
 
 /*
  * Macros for working with AnyArrayType inputs.  Beware multiple references!
