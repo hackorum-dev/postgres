@@ -117,7 +117,7 @@ typedef TSVectorData *TSVector;
 #define ARRPTR(tsv)	( (tsv)->entries )
 
 /* pointer to start of a tsvector's lexeme storage */
-#define STRPTR(tsv)	( (char *) &(tsv)->entries[(tsv)->size] )
+#define STRPTR(tsv)	( unconstify(char *, (const char *) &(tsv)->entries[(tsv)->size]) )
 
 /* pointer to WordEntryPosVector for a WordEntry */
 #define _POSVECPTR(tsv,we) ((WordEntryPosVector *) \
