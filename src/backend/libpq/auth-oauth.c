@@ -109,6 +109,7 @@ static void *
 oauth_init(Port *port, const char *selected_mech, const char *shadow_pass)
 {
 	struct oauth_ctx *ctx;
+	char	   *err_msg;
 
 	if (strcmp(selected_mech, OAUTHBEARER_NAME) != 0)
 		ereport(ERROR,
@@ -126,6 +127,13 @@ oauth_init(Port *port, const char *selected_mech, const char *shadow_pass)
 	Assert(port->hba);
 	ctx->issuer = port->hba->oauth_issuer;
 	ctx->scope = port->hba->oauth_scope;
+
+	/*
+	 * If a change to oauth_validator_libraries caused the last reload to
+	 * fail, we're still using the old HBA lines, and their validator may no
+	 * longer be permitted. Check again before loading it.
+	 */
+	check_oauth_validator(port->hba, COMMERROR, &err_msg);
 
 	load_validator_library(port->hba->oauth_validator);
 

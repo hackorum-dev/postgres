@@ -143,6 +143,16 @@ $log_start = $node->wait_for_log(
 	$log_start);
 $bgconn->query_safe('SELECT 1');
 
+# The failed reload leaves the old HBA lines in place, but their validator is
+# no longer allowed so the connection shall be refused.
+$node->connect_fails(
+	"user=test dbname=postgres oauth_issuer=$issuer oauth_client_id=f02c6361-0635",
+	"validator removed from oauth_validator_libraries is not used",
+	expected_stderr => qr/could not fetch OpenID discovery document/,
+	log_like => [
+		qr/parameter "oauth_validator_libraries" must be set for authentication method "oauth"/
+	]);
+
 $node->append_conf('postgresql.conf',
 	"oauth_validator_libraries = 'validator'");
 $node->reload;
