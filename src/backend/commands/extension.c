@@ -541,13 +541,22 @@ get_extension_control_directories(void)
 			int			len;
 			char	   *mangled;
 			char	   *piece = first_path_var_separator(ecp);
-			ExtensionLocation *location = palloc_object(ExtensionLocation);
+			ExtensionLocation *location;
 
 			/* Get the length of the next path on ecp */
 			if (piece == NULL)
 				len = strlen(ecp);
 			else
 				len = piece - ecp;
+
+			/* Reject empty path elements before appending the suffix. */
+			if (len == 0)
+				ereport(ERROR,
+						errcode(ERRCODE_INVALID_NAME),
+						errmsg("empty element in parameter \"%s\"",
+							   "extension_control_path"));
+
+			location = palloc_object(ExtensionLocation);
 
 			/* Copy the next path found on ecp */
 			piece = palloc(len + 1);

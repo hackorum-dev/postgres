@@ -115,6 +115,22 @@ is($ret, "\$system",
 	"\$system location is shown correctly in pg_available_extensions with empty extension_control_path"
 );
 
+# Empty path elements are rejected, rather than expanded to /extension.
+for my $path (
+	"$sep$ext_dir_canonicalized",
+	"$ext_dir_canonicalized$sep",
+	$sep)
+{
+	my ($code, $stdout, $stderr) = $node->psql(
+		'postgres',
+		"set extension_control_path = '$path';
+		 select count(*) from pg_available_extensions");
+	is($code, 3, "empty element is rejected in path '$path'");
+	like($stderr,
+		qr/ERROR:  empty element in parameter "extension_control_path"/,
+		"error identifies the empty path element");
+}
+
 # Test with an extension that does not exists
 my ($code, $stdout, $stderr) =
   $node->psql('postgres', "CREATE EXTENSION invalid");
