@@ -103,6 +103,10 @@ static void set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 static void set_plain_rel_size(PlannerInfo *root, RelOptInfo *rel,
 							   RangeTblEntry *rte);
 static void create_plain_partial_paths(PlannerInfo *root, RelOptInfo *rel);
+static List *get_useful_pathkeys_for_relation(PlannerInfo *root,
+											  RelOptInfo *rel,
+											  bool require_parallel_safe);
+static void generate_presorted_paths(PlannerInfo *root, RelOptInfo *rel);
 static void set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 									  RangeTblEntry *rte);
 static void set_plain_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
@@ -606,6 +610,13 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	if (rel->reloptkind == RELOPT_BASEREL &&
 		!bms_equal(rel->relids, root->all_query_rels))
 		generate_useful_gather_paths(root, rel, false);
+
+	/*
+	 * Offer an explicitly sorted path on a prefix of query_pathkeys.  With a
+	 * single base relation there is no join to push the sort below.
+	 */
+	if (bms_membership(root->all_baserels) == BMS_MULTIPLE)
+		generate_presorted_paths(root, rel);
 
 	/* Now find the cheapest of the paths for this rel */
 	set_cheapest(rel);
@@ -3380,6 +3391,48 @@ get_useful_pathkeys_for_relation(PlannerInfo *root, RelOptInfo *rel,
 	}
 
 	return useful_pathkeys_list;
+}
+
+/*
+ * generate_presorted_paths
+ *		Add an explicitly sorted path on a useful prefix of query_pathkeys.
+ *
+ * query_pathkeys stands for whatever ordering the upper planner wants first:
+ * GROUP BY, window, DISTINCT or ORDER BY.  A relation sorted on a prefix of
+ * it pays off wherever a consumer above can exploit an existing order.
+ *
+ * Index paths with such an ordering already survive in the pathlist.  This
+ * provides the same for relations with no suitable index, or that are not plain
+ * tables at all.
+ */
+static void
+generate_presorted_paths(PlannerInfo *root, RelOptInfo *rel)
+{
+	List	   *useful_pathkeys_list;
+	Path	   *cheapest;
+
+	/* Nothing to order, or the rel is proven empty */
+	if (root->query_pathkeys == NIL || IS_DUMMY_REL(rel))
+		return;
+
+	useful_pathkeys_list = get_useful_pathkeys_for_relation(root, rel, false);
+	if (useful_pathkeys_list == NIL)
+		return;
+
+	/* rel->cheapest_total_path is not set yet; set_cheapest() comes later */
+	cheapest = get_cheapest_path_for_pathkeys(rel->pathlist, NIL, NULL,
+											  TOTAL_COST, false);
+	if (cheapest == NULL)
+		return;
+
+	foreach_ptr(List, useful_pathkeys, useful_pathkeys_list)
+	{
+		if (pathkeys_contained_in(useful_pathkeys, cheapest->pathkeys))
+			continue;
+
+		add_path(rel, (Path *) create_sort_path(root, rel, cheapest,
+												useful_pathkeys, -1.0));
+	}
 }
 
 /*
