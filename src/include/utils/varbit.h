@@ -68,7 +68,7 @@ VarBitPGetDatum(const VarBit *X)
 /* Number of bits in this bit string */
 #define VARBITLEN(PTR)		(((VarBit *) (PTR))->bit_len)
 /* Pointer to the first byte containing bit string data */
-#define VARBITS(PTR)		(((VarBit *) (PTR))->bit_dat)
+#define VARBITS(PTR)		((unconstify(VarBit *, (const VarBit *) (PTR)))->bit_dat)
 /* Number of bytes in the data section of a bit string */
 #define VARBITBYTES(PTR)	(VARSIZE(PTR) - VARHDRSZ - VARBITHDRSZ)
 /* Padding of the bit string at the end (in bits) */

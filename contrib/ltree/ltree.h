@@ -48,7 +48,7 @@ typedef struct
 } ltree;
 
 #define LTREE_HDRSIZE	MAXALIGN( offsetof(ltree, data) )
-#define LTREE_FIRST(x)	( (ltree_level*)( ((char*)(x))+LTREE_HDRSIZE ) )
+#define LTREE_FIRST(x)	( (ltree_level*)( unconstify(char *, (const char*)(x))+LTREE_HDRSIZE ) )
 #define LTREE_MAX_LEVELS	PG_UINT16_MAX	/* ltree.numlevel is uint16 */
 
 
@@ -121,7 +121,7 @@ typedef struct
 } lquery;
 
 #define LQUERY_HDRSIZE	 MAXALIGN( offsetof(lquery, data) )
-#define LQUERY_FIRST(x)   ( (lquery_level*)( ((char*)(x))+LQUERY_HDRSIZE ) )
+#define LQUERY_FIRST(x)   ( (lquery_level*)( unconstify(char *, (const char*)(x))+LQUERY_HDRSIZE ) )
 #define LQUERY_MAX_LEVELS	PG_UINT16_MAX	/* lquery.numlevel is uint16 */
 
 #define LQUERY_HASNOT		0x01

@@ -305,10 +305,10 @@ typedef struct
 
 #endif							/* WORDS_BIGENDIAN */
 
-#define VARDATA_4B(PTR)		(((varattrib_4b *) (PTR))->va_4byte.va_data)
-#define VARDATA_4B_C(PTR)	(((varattrib_4b *) (PTR))->va_compressed.va_data)
-#define VARDATA_1B(PTR)		(((varattrib_1b *) (PTR))->va_data)
-#define VARDATA_1B_E(PTR)	(((varattrib_1b_e *) (PTR))->va_data)
+#define VARDATA_4B(PTR)		(unconstify(varattrib_4b *, (const varattrib_4b *) (PTR))->va_4byte.va_data)
+#define VARDATA_4B_C(PTR)	(unconstify(varattrib_4b *, (const varattrib_4b *) (PTR))->va_compressed.va_data)
+#define VARDATA_1B(PTR)		(unconstify(varattrib_1b *, (const varattrib_1b *) (PTR))->va_data)
+#define VARDATA_1B_E(PTR)	(unconstify(varattrib_1b_e *, (const varattrib_1b_e *) (PTR))->va_data)
 
 /*
  * Externally visible TOAST functions and macros begin here.  All of these
