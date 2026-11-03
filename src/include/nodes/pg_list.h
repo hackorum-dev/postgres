@@ -421,7 +421,7 @@ lnext(const List *l, const ListCell *c)
  * active foreach or foreach_* loop's list in any other way!
  */
 #define foreach_delete_current(lst, var_or_cell)	\
-	((List *) (var_or_cell##__state.l = list_delete_nth_cell(lst, var_or_cell##__state.i--)))
+	foreach_delete_current_impl(lst, &var_or_cell##__state)
 
 /*
  * foreach_current_index -
@@ -714,5 +714,15 @@ extern void list_sort(List *list, list_sort_comparator cmp);
 
 extern int	list_int_cmp(const ListCell *p1, const ListCell *p2);
 extern int	list_oid_cmp(const ListCell *p1, const ListCell *p2);
+
+/* support for foreach_delete_current() */
+pg_nodiscard static inline List *
+foreach_delete_current_impl(List *lst, ForEachState *state)
+{
+	List	   *result = list_delete_nth_cell(lst, state->i--);
+
+	state->l = result;
+	return result;
+}
 
 #endif							/* PG_LIST_H */
