@@ -480,7 +480,7 @@ copy header_copytest (c, b, a) from stdin with (header match);
 ERROR:  column name mismatch in header line field 1: got "a", expected "c"
 CONTEXT:  COPY header_copytest, line 1: "a	b	c"
 copy header_copytest from stdin with (header match);
-ERROR:  column name mismatch in header line field 3: got null value ("\N"), expected "c"
+ERROR:  column name mismatch in header line field 3: got "N", expected "c"
 CONTEXT:  COPY header_copytest, line 1: "a	b	\N"
 copy header_copytest from stdin with (header match);
 ERROR:  wrong number of fields in header line: got 2, expected 3

@@ -146,8 +146,8 @@ static const char BinarySignature[11] = "PGCOPY\n\377\r\n\0";
 static bool CopyReadLine(CopyFromState cstate, bool is_csv);
 static pg_always_inline bool CopyReadLineText(CopyFromState cstate,
 											  bool is_csv);
-static int	CopyReadAttributesText(CopyFromState cstate);
-static int	CopyReadAttributesCSV(CopyFromState cstate);
+static int	CopyReadAttributesText(CopyFromState cstate, bool is_header);
+static int	CopyReadAttributesCSV(CopyFromState cstate, bool is_header);
 static Datum CopyReadBinaryAttribute(CopyFromState cstate, FmgrInfo *flinfo,
 									 Oid typioparam, int32 typmod,
 									 bool *isnull);
@@ -833,9 +833,9 @@ NextCopyFromRawFieldsInternal(CopyFromState cstate, char ***fields, int *nfields
 			int			fldnum;
 
 			if (is_csv)
-				fldct = CopyReadAttributesCSV(cstate);
+				fldct = CopyReadAttributesCSV(cstate, true);
 			else
-				fldct = CopyReadAttributesText(cstate);
+				fldct = CopyReadAttributesText(cstate, true);
 
 			if (fldct != list_length(cstate->attnumlist))
 				ereport(ERROR,
@@ -853,11 +853,7 @@ NextCopyFromRawFieldsInternal(CopyFromState cstate, char ***fields, int *nfields
 				Assert(fldnum < cstate->max_fields);
 
 				colName = cstate->raw_fields[fldnum++];
-				if (colName == NULL)
-					ereport(ERROR,
-							(errcode(ERRCODE_BAD_COPY_FILE_FORMAT),
-							 errmsg("column name mismatch in header line field %d: got null value (\"%s\"), expected \"%s\"",
-									fldnum, cstate->opts.null_print, NameStr(attr->attname))));
+				Assert(colName != NULL);
 
 				if (namestrcmp(&attr->attname, colName) != 0)
 				{
@@ -888,9 +884,9 @@ NextCopyFromRawFieldsInternal(CopyFromState cstate, char ***fields, int *nfields
 
 	/* Parse the line into de-escaped field values */
 	if (is_csv)
-		fldct = CopyReadAttributesCSV(cstate);
+		fldct = CopyReadAttributesCSV(cstate, false);
 	else
-		fldct = CopyReadAttributesText(cstate);
+		fldct = CopyReadAttributesText(cstate, false);
 
 	*fields = cstate->raw_fields;
 	*nfields = fldct;
@@ -1837,7 +1833,7 @@ GetDecimalFromHex(char hex)
  *
  * The input is in line_buf.  We use attribute_buf to hold the result
  * strings.  cstate->raw_fields[k] is set to point to the k'th attribute
- * string, or NULL when the input matches the null marker string.
+ * string, or NULL when a data field matches the null marker string.
  * This array is expanded as necessary.
  *
  * (Note that the caller cannot check for nulls since the returned
@@ -1848,10 +1844,13 @@ GetDecimalFromHex(char hex)
  * null_print is the null marker string.  Note that this is compared to
  * the pre-de-escaped input string.
  *
+ * If is_header is true, fields are column names, so NULL and DEFAULT
+ * markers are not recognized.
+ *
  * The return value is the number of fields actually read.
  */
 static int
-CopyReadAttributesText(CopyFromState cstate)
+CopyReadAttributesText(CopyFromState cstate, bool is_header)
 {
 	char		delimc = cstate->opts.delim[0];
 	int			fieldno;
@@ -2036,11 +2035,11 @@ CopyReadAttributesText(CopyFromState cstate)
 
 		/* Check whether raw input matched null marker */
 		input_len = end_ptr - start_ptr;
-		if (input_len == cstate->opts.null_print_len &&
+		if (!is_header && input_len == cstate->opts.null_print_len &&
 			strncmp(start_ptr, cstate->opts.null_print, input_len) == 0)
 			cstate->raw_fields[fieldno] = NULL;
 		/* Check whether raw input matched default marker */
-		else if (fieldno < list_length(cstate->attnumlist) &&
+		else if (!is_header && fieldno < list_length(cstate->attnumlist) &&
 				 cstate->opts.default_print &&
 				 input_len == cstate->opts.default_print_len &&
 				 strncmp(start_ptr, cstate->opts.default_print, input_len) == 0)
@@ -2105,7 +2104,7 @@ CopyReadAttributesText(CopyFromState cstate)
  * "standard" (i.e. common) CSV usage.
  */
 static int
-CopyReadAttributesCSV(CopyFromState cstate)
+CopyReadAttributesCSV(CopyFromState cstate, bool is_header)
 {
 	char		delimc = cstate->opts.delim[0];
 	char		quotec = cstate->opts.quote[0];
@@ -2251,11 +2250,12 @@ endfield:
 
 		/* Check whether raw input matched null marker */
 		input_len = end_ptr - start_ptr;
-		if (!saw_quote && input_len == cstate->opts.null_print_len &&
+		if (!is_header && !saw_quote &&
+			input_len == cstate->opts.null_print_len &&
 			strncmp(start_ptr, cstate->opts.null_print, input_len) == 0)
 			cstate->raw_fields[fieldno] = NULL;
 		/* Check whether raw input matched default marker */
-		else if (fieldno < list_length(cstate->attnumlist) &&
+		else if (!is_header && fieldno < list_length(cstate->attnumlist) &&
 				 cstate->opts.default_print &&
 				 input_len == cstate->opts.default_print_len &&
 				 strncmp(start_ptr, cstate->opts.default_print, input_len) == 0)

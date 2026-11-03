@@ -819,5 +819,65 @@ select id, text_value, ts_value from copy_default;
 
 truncate copy_default;
 
+-- DEFAULT with HEADER MATCH where header field matches DEFAULT marker
+copy copy_default from stdin with (format csv, header match, default 'id');
+id,text_value,ts_value
+1,hello,2022-07-04
+\.
+
+select id, text_value, ts_value from copy_default;
+
+truncate copy_default;
+
+copy copy_default from stdin with (format csv, header match, default 'text_value');
+id,text_value,ts_value
+1,hello,2022-07-04
+2,text_value,2022-07-03
+\.
+
+select id, text_value, ts_value from copy_default;
+
+truncate copy_default;
+
+copy copy_default from stdin with (format text, header match, default 'id');
+id	text_value	ts_value
+1	hello	2022-07-04
+\.
+
+select id, text_value, ts_value from copy_default;
+
+truncate copy_default;
+
+copy copy_default from stdin with (format text, header match, default 'text_value');
+id	text_value	ts_value
+1	hello	2022-07-04
+2	text_value	2022-07-03
+\.
+
+select id, text_value, ts_value from copy_default;
+
+truncate copy_default;
+
 -- DEFAULT cannot be used in COPY TO
 copy (select 1 as test) TO stdout with (default '\D');
+
+-- HEADER MATCH must treat NULL markers as column names.
+create temp table copy_header (
+	id integer,
+	a text
+);
+
+copy copy_header from stdin with (header match, null 'a');
+id	a
+1	hello
+2	a
+\.
+
+copy copy_header from stdin with (format csv, header match, null 'a');
+id,a
+3,hello
+4,a
+5,"a"
+\.
+
+select id, a, a is null as a_is_null from copy_header order by id;

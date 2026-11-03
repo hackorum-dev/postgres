@@ -1009,6 +1009,58 @@ select id, text_value, ts_value from copy_default;
 (3 rows)
 
 truncate copy_default;
+-- DEFAULT with HEADER MATCH where header field matches DEFAULT marker
+copy copy_default from stdin with (format csv, header match, default 'id');
+select id, text_value, ts_value from copy_default;
+ id | text_value |         ts_value         
+----+------------+--------------------------
+  1 | hello      | Mon Jul 04 00:00:00 2022
+(1 row)
+
+truncate copy_default;
+copy copy_default from stdin with (format csv, header match, default 'text_value');
+select id, text_value, ts_value from copy_default;
+ id | text_value |         ts_value         
+----+------------+--------------------------
+  1 | hello      | Mon Jul 04 00:00:00 2022
+  2 | test       | Sun Jul 03 00:00:00 2022
+(2 rows)
+
+truncate copy_default;
+copy copy_default from stdin with (format text, header match, default 'id');
+select id, text_value, ts_value from copy_default;
+ id | text_value |         ts_value         
+----+------------+--------------------------
+  1 | hello      | Mon Jul 04 00:00:00 2022
+(1 row)
+
+truncate copy_default;
+copy copy_default from stdin with (format text, header match, default 'text_value');
+select id, text_value, ts_value from copy_default;
+ id | text_value |         ts_value         
+----+------------+--------------------------
+  1 | hello      | Mon Jul 04 00:00:00 2022
+  2 | test       | Sun Jul 03 00:00:00 2022
+(2 rows)
+
+truncate copy_default;
 -- DEFAULT cannot be used in COPY TO
 copy (select 1 as test) TO stdout with (default '\D');
 ERROR:  COPY DEFAULT cannot be used with COPY TO
+-- HEADER MATCH must treat NULL markers as column names.
+create temp table copy_header (
+	id integer,
+	a text
+);
+copy copy_header from stdin with (header match, null 'a');
+copy copy_header from stdin with (format csv, header match, null 'a');
+select id, a, a is null as a_is_null from copy_header order by id;
+ id |   a   | a_is_null 
+----+-------+-----------
+  1 | hello | f
+  2 |       | t
+  3 | hello | f
+  4 |       | t
+  5 | a     | f
+(5 rows)
+
