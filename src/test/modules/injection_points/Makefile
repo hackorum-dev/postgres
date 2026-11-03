@@ -36,6 +36,7 @@ ISOLATION = basic \
 	    syscache-update-pruned \
 	    $(WAIT_CLEANUP_TST) \
 	    heap_lock_update \
+	    partition-tree-concurrent-drop \
 	    on_conflict_probe_window \
 	    multixact-aborted-updater
 
