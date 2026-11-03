@@ -115,6 +115,39 @@ is($ret, "\$system",
 	"\$system location is shown correctly in pg_available_extensions with empty extension_control_path"
 );
 
+# Empty path elements are rejected, rather than expanded to /extension.
+for my $path (
+	"$sep$ext_dir_canonicalized",
+	"$ext_dir_canonicalized$sep",
+	$sep)
+{
+	my ($code, $stdout, $stderr) = $node->psql(
+		'postgres',
+		"set extension_control_path = '$path';
+		 select count(*) from pg_available_extensions");
+	is($code, 3, "empty element is rejected in path '$path'");
+	like($stderr,
+		qr/ERROR:  zero-length component in parameter "extension_control_path"/,
+		"error identifies the empty path element");
+}
+
+# Empty elements must not replace an unknown-language error or prevent a hint
+# from being found using the remaining directories.
+for my $sql (
+	"create function test_invalid_language() returns int language $ext_name as 'x'",
+	"do language $ext_name 'x'")
+{
+	my ($code, $stdout, $stderr) = $node->psql(
+		'postgres',
+		"set extension_control_path = '$sep$ext_dir_canonicalized$sep'; $sql");
+	is($code, 3, "unknown language is rejected by $sql");
+	like($stderr, qr/ERROR:  language "\Q$ext_name\E" does not exist/,
+		"invalid path does not replace the unknown-language error");
+	like($stderr,
+		qr/HINT:  Use CREATE EXTENSION to load the language into the database\./,
+		"remaining directory provides the extension hint");
+}
+
 # Test with an extension that does not exists
 my ($code, $stdout, $stderr) =
   $node->psql('postgres', "CREATE EXTENSION invalid");
