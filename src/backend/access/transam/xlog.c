@@ -824,9 +824,11 @@ static XLogRecPtr XLogChecksums(uint32 new_type);
  * current subtransaction. See XLogRecordAssemble().
  *
  * The first XLogRecData in the chain must be for the record header, and its
- * data must be MAXALIGNed.  XLogInsertRecord fills in the xl_prev and
- * xl_crc fields in the header, the rest of the header must already be filled
- * by the caller.
+ * data must be MAXALIGNed.  'rechdr' must point to that same record header;
+ * it is passed separately because the data pointers in the chain are const.
+ * XLogInsertRecord fills in the xl_prev and xl_crc fields in the header
+ * through 'rechdr', the rest of the header must already be filled by the
+ * caller.
  *
  * Returns XLOG pointer to end of record (beginning of next record).
  * This can be used as LSN for data pages affected by the logged action.
@@ -835,7 +837,8 @@ static XLogRecPtr XLogChecksums(uint32 new_type);
  * WAL rule "write the log before the data".)
  */
 XLogRecPtr
-XLogInsertRecord(XLogRecData *rdata,
+XLogInsertRecord(XLogRecord *rechdr,
+				 XLogRecData *rdata,
 				 XLogRecPtr fpw_lsn,
 				 uint8 flags,
 				 int num_fpi,
@@ -845,7 +848,6 @@ XLogInsertRecord(XLogRecData *rdata,
 	XLogCtlInsert *Insert = &XLogCtl->Insert;
 	pg_crc32c	rdata_crc;
 	bool		inserted;
-	XLogRecord *rechdr = (XLogRecord *) rdata->data;
 	uint8		info = rechdr->xl_info & ~XLR_INFO_MASK;
 	WalInsertClass class = WALINSERT_NORMAL;
 	XLogRecPtr	StartPos;
@@ -863,6 +865,7 @@ XLogInsertRecord(XLogRecData *rdata,
 	}
 
 	/* we assume that all of the record header is in the first chunk */
+	Assert(rdata->data == rechdr);
 	Assert(rdata->len >= SizeOfXLogRecord);
 
 	/* cross-check on whether we should be here or not */

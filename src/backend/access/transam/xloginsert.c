@@ -534,7 +534,8 @@ XLogInsert(RmgrId rmid, uint8 info)
 								 &fpw_lsn, &num_fpi, &fpi_bytes,
 								 &topxid_included);
 
-		EndPos = XLogInsertRecord(rdt, fpw_lsn, curinsert_flags, num_fpi,
+		EndPos = XLogInsertRecord((XLogRecord *) hdr_scratch, rdt, fpw_lsn,
+								  curinsert_flags, num_fpi,
 								  fpi_bytes, topxid_included);
 	} while (!XLogRecPtrIsValid(EndPos));
 
