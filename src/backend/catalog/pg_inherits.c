@@ -29,6 +29,7 @@
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/hsearch.h"
+#include "utils/injection_point.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 
@@ -288,6 +289,16 @@ find_all_inheritors(Oid parentrelId, LOCKMODE lockmode, List **numparents)
 		Oid			currentrel = lfirst_oid(l);
 		List	   *currentchildren;
 		ListCell   *lc;
+
+#ifdef USE_INJECTION_POINTS
+		if (IS_INJECTION_POINT_ATTACHED("find-all-inheritors-before-scan"))
+		{
+			char		currentrelstr[MAXINT8LEN + 1];
+
+			snprintf(currentrelstr, sizeof(currentrelstr), "%u", currentrel);
+			INJECTION_POINT("find-all-inheritors-before-scan", currentrelstr);
+		}
+#endif
 
 		/* Get the direct children of this rel */
 		currentchildren = find_inheritance_children(currentrel, lockmode);
