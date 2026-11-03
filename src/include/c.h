@@ -1439,11 +1439,11 @@ typedef struct PGAlignedXLogBlock PGAlignedXLogBlock;
  * will fail.  In the C++ implementation, const_cast will error for
  * non-pointers.)
  *
- * Please note IT IS NOT SAFE to cast constness away if the result will ever
- * be modified (it would be undefined behaviour). Doing so anyway can cause
- * compiler misoptimizations or runtime crashes (modifying readonly memory).
- * It is only safe to use when the result will not be modified, but API
- * design or language restrictions prevent you from declaring that
+ * Please note IT IS NOT SAFE to modify an object through the result if the
+ * object itself was defined as const (it would be undefined behaviour).
+ * Doing so anyway can cause compiler misoptimizations or runtime crashes
+ * (modifying readonly memory).  These macros are meant for when API design
+ * or language restrictions prevent you from declaring the actual constness
  * (e.g. because a function returns both const and non-const variables).
  *
  * unconstify_constexpr is for contexts where a constant expression is
@@ -1454,15 +1454,28 @@ typedef struct PGAlignedXLogBlock PGAlignedXLogBlock;
  *
  * (An unvolatize_constexpr doesn't seem necessary, but it could be added if
  * required.)
+ *
+ * unconstify checks that expr has type "const underlying_type", with const
+ * prepended textually.  So the const binds to the base type spelled first,
+ * for example, unconstify(char **, x) casts a "const char **" to "char **".
+ * That means it cannot remove a const that qualifies a pointer type spelled
+ * with "*", as in "char *const *".  For that, use unconstify_pointee, which
+ * takes the pointed-to type and turns a "pointee_type const *" into a
+ * "pointee_type *".  For example, unconstify_pointee(char *, argv) casts a
+ * "char *const *" to "char **".
  */
 #if defined(__cplusplus)
 #define unconstify(underlying_type, expr) const_cast<underlying_type>(expr)
+#define unconstify_pointee(pointee_type, expr) const_cast<pointee_type *>(expr)
 #define unconstify_constexpr(underlying_type, expr) const_cast<underlying_type>(expr)
 #define unvolatize(underlying_type, expr) const_cast<underlying_type>(expr)
 #else							/* !__cplusplus */
 #define unconstify(underlying_type, expr) \
 	(StaticAssertVariableIsOfTypeMacro(expr, const underlying_type), \
 	 (underlying_type) (expr))
+#define unconstify_pointee(pointee_type, expr) \
+	(StaticAssertVariableIsOfTypeMacro(expr, pointee_type const *), \
+	 (pointee_type *) (expr))
 #define unvolatize(underlying_type, expr) \
 	(StaticAssertVariableIsOfTypeMacro(expr, volatile underlying_type), \
 	 (underlying_type) (expr))

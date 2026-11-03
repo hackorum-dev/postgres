@@ -71,7 +71,7 @@ getopt_long(int argc, char *const argv[],
 
 	if (!*place)
 	{							/* update scanning pointer */
-		char	  **args = (char **) argv;
+		char	  **args = unconstify_pointee(char *, argv);
 
 retry:
 
