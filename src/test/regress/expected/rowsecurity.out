@@ -4689,6 +4689,34 @@ TABLE r2;
 
 DROP TABLE r2;
 DROP TABLE r1;
+-- Ensure adding a foreign key sees rows hidden by FORCE RLS
+CREATE TABLE r1 (a int PRIMARY KEY);
+CREATE TABLE r2 (a int);
+INSERT INTO r1 VALUES (10);
+INSERT INTO r2 VALUES (10), (30);
+CREATE POLICY p1 ON r2 USING (a <> 30);
+ALTER TABLE r2 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE r2 FORCE ROW LEVEL SECURITY;
+ALTER TABLE r2 ADD CONSTRAINT r2_a_fkey FOREIGN KEY (a) REFERENCES r1; -- error
+ERROR:  insert or update on table "r2" violates foreign key constraint "r2_a_fkey"
+DETAIL:  Key is not present in table "r1".
+DROP TABLE r2;
+DROP TABLE r1;
+-- Ensure detaching a referenced partition sees rows hidden by FORCE RLS
+CREATE TABLE r1 (a int PRIMARY KEY) PARTITION BY LIST (a);
+CREATE TABLE r1_1 PARTITION OF r1 FOR VALUES IN (10);
+CREATE TABLE r1_2 PARTITION OF r1 FOR VALUES IN (20);
+CREATE TABLE r2 (a int REFERENCES r1);
+INSERT INTO r1 VALUES (10), (20);
+INSERT INTO r2 VALUES (10), (20);
+CREATE POLICY p1 ON r2 USING (a <> 20);
+ALTER TABLE r2 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE r2 FORCE ROW LEVEL SECURITY;
+ALTER TABLE r1 DETACH PARTITION r1_2; -- error
+ERROR:  removing partition "r1_2" violates foreign key constraint "r2_a_fkey_2"
+DETAIL:  Key (a)=(20) is still referenced from table "r2".
+DROP TABLE r2;
+DROP TABLE r1;
 --
 -- Test INSERT+RETURNING applies SELECT policies as
 -- WithCheckOptions (meaning an error is thrown)
