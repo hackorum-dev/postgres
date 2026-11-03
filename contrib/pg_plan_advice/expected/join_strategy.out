@@ -337,3 +337,52 @@ EXPLAIN (COSTS OFF, PLAN_ADVICE)
 (14 rows)
 
 COMMIT;
+-- The planner may sort the outer side of a nested loop to deliver the
+-- ORDER BY.  That Sort is not part of the join strategy: advice must still
+-- be generated for such a plan, and must be applicable back to it.
+EXPLAIN (COSTS OFF, PLAN_ADVICE)
+	SELECT * FROM join_dim d JOIN join_fact f ON f.dim_id = d.id
+	ORDER BY d.dim LIMIT 10;
+                          QUERY PLAN                          
+--------------------------------------------------------------
+ Limit
+   ->  Nested Loop
+         ->  Sort
+               Sort Key: d.dim
+               ->  Seq Scan on join_dim d
+         ->  Index Scan using join_fact_dim_id on join_fact f
+               Index Cond: (dim_id = d.id)
+ Generated Plan Advice:
+   JOIN_ORDER(d f)
+   NESTED_LOOP_PLAIN(f)
+   SEQ_SCAN(d)
+   INDEX_SCAN(f public.join_fact_dim_id)
+   NO_GATHER(d f)
+(13 rows)
+
+BEGIN;
+SET LOCAL pg_plan_advice.advice = 'JOIN_ORDER(d f) NESTED_LOOP_PLAIN(f)';
+EXPLAIN (COSTS OFF, PLAN_ADVICE)
+	SELECT * FROM join_dim d JOIN join_fact f ON f.dim_id = d.id
+	ORDER BY d.dim LIMIT 10;
+                          QUERY PLAN                          
+--------------------------------------------------------------
+ Limit
+   ->  Nested Loop
+         ->  Sort
+               Sort Key: d.dim
+               ->  Seq Scan on join_dim d
+         ->  Index Scan using join_fact_dim_id on join_fact f
+               Index Cond: (dim_id = d.id)
+ Supplied Plan Advice:
+   JOIN_ORDER(d f) /* matched */
+   NESTED_LOOP_PLAIN(f) /* matched */
+ Generated Plan Advice:
+   JOIN_ORDER(d f)
+   NESTED_LOOP_PLAIN(f)
+   SEQ_SCAN(d)
+   INDEX_SCAN(f public.join_fact_dim_id)
+   NO_GATHER(d f)
+(16 rows)
+
+COMMIT;

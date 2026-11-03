@@ -1610,16 +1610,16 @@ from tenk1 t, generate_series(1, 1000);
                                    QUERY PLAN                                    
 ---------------------------------------------------------------------------------
  Unique
-   ->  Sort
-         Sort Key: t.unique1, ((SubPlan expr_1))
-         ->  Gather
-               Workers Planned: 2
-               ->  Nested Loop
+   ->  Nested Loop
+         ->  Sort
+               Sort Key: t.unique1, ((SubPlan expr_1))
+               ->  Gather
+                     Workers Planned: 2
                      ->  Parallel Index Only Scan using tenk1_unique1 on tenk1 t
-                     ->  Function Scan on generate_series
-               SubPlan expr_1
-                 ->  Index Only Scan using tenk1_unique1 on tenk1
-                       Index Cond: (unique1 = t.unique1)
+                     SubPlan expr_1
+                       ->  Index Only Scan using tenk1_unique1 on tenk1
+                             Index Cond: (unique1 = t.unique1)
+         ->  Function Scan on generate_series
 (11 rows)
 
 explain (costs off) select
@@ -1629,16 +1629,16 @@ from tenk1 t, generate_series(1, 1000)
 order by 1, 2;
                                 QUERY PLAN                                 
 ---------------------------------------------------------------------------
- Sort
-   Sort Key: t.unique1, ((SubPlan expr_1))
-   ->  Gather
-         Workers Planned: 2
-         ->  Nested Loop
+ Nested Loop
+   ->  Sort
+         Sort Key: t.unique1, ((SubPlan expr_1))
+         ->  Gather
+               Workers Planned: 2
                ->  Parallel Index Only Scan using tenk1_unique1 on tenk1 t
-               ->  Function Scan on generate_series
-         SubPlan expr_1
-           ->  Index Only Scan using tenk1_unique1 on tenk1
-                 Index Cond: (unique1 = t.unique1)
+               SubPlan expr_1
+                 ->  Index Only Scan using tenk1_unique1 on tenk1
+                       Index Cond: (unique1 = t.unique1)
+   ->  Function Scan on generate_series
 (10 rows)
 
 -- Parallel sort but with expression not available until the upper rel.
@@ -1703,15 +1703,17 @@ explain (costs off) select a, b, a <-> point(5, 5) dist from point_table order b
                Order By: (a <-> '(5,5)'::point)
 (6 rows)
 
--- Ensure we get an incremental sort on the outer side of the mergejoin
+-- Ensure we get an incremental sort on the outer side of the mergejoin.
+-- Use a left join so that the ORDER BY can only be satisfied by t1.
+set enable_nestloop = off;
 explain (costs off)
 select * from
-  (select * from tenk1 order by four) t1 join tenk1 t2 on t1.four = t2.four and t1.two = t2.two
+  (select * from tenk1 order by four) t1 left join tenk1 t2 on t1.four = t2.four and t1.two = t2.two
 order by t1.four, t1.two limit 1;
                               QUERY PLAN                               
 -----------------------------------------------------------------------
  Limit
-   ->  Merge Join
+   ->  Merge Left Join
          Merge Cond: ((tenk1.four = t2.four) AND (tenk1.two = t2.two))
          ->  Incremental Sort
                Sort Key: tenk1.four, tenk1.two
@@ -1724,6 +1726,7 @@ order by t1.four, t1.two limit 1;
                ->  Seq Scan on tenk1 t2
 (12 rows)
 
+reset enable_nestloop;
 --
 -- Test incremental sort for Append/MergeAppend
 --

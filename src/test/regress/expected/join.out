@@ -2844,18 +2844,16 @@ order by x.thousand desc, x.twothousand;
 ----------------------------------------------------------------------------------------
  Finalize GroupAggregate
    Group Key: x.thousand, x.twothousand
-   ->  Incremental Sort
-         Sort Key: x.thousand DESC, x.twothousand
-         Presorted Key: x.thousand
-         ->  Merge Join
-               Merge Cond: (y.thousand = x.thousand)
+   ->  Merge Join
+         Merge Cond: (x.thousand = y.thousand)
+         ->  Sort
+               Sort Key: x.thousand DESC, x.twothousand
+               ->  Seq Scan on tenk1 x
+         ->  Materialize
                ->  Partial GroupAggregate
                      Group Key: y.thousand
                      ->  Index Only Scan Backward using tenk1_thous_tenthous on tenk1 y
-               ->  Sort
-                     Sort Key: x.thousand DESC
-                     ->  Seq Scan on tenk1 x
-(13 rows)
+(11 rows)
 
 reset enable_hashagg;
 reset enable_nestloop;
@@ -4524,29 +4522,29 @@ from int8_tbl t1 left join
    cross join (select from int4_tbl where f1 = 0) t3) t23
   on (t1.q1 = 123)
 order by 1, 2;
-                           QUERY PLAN                           
-----------------------------------------------------------------
- Sort
-   Output: t1.q1, t1.q2, ((SubPlan expr_1))
-   Sort Key: t1.q1, t1.q2
-   ->  Nested Loop Left Join
-         Output: t1.q1, t1.q2, (SubPlan expr_1)
-         Join Filter: (t1.q1 = 123)
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Nested Loop Left Join
+   Output: t1.q1, t1.q2, (SubPlan expr_1)
+   Join Filter: (t1.q1 = 123)
+   ->  Sort
+         Output: t1.q1, t1.q2
+         Sort Key: t1.q1, t1.q2
          ->  Seq Scan on public.int8_tbl t1
                Output: t1.q1, t1.q2
-         ->  Materialize
-               Output: ('()'::record)
-               ->  Nested Loop
-                     Output: '()'::record
-                     ->  Seq Scan on public.int4_tbl
-                           Output: int4_tbl.f1
-                           Filter: (int4_tbl.f1 = 0)
-                     ->  Seq Scan on public.int4_tbl int4_tbl_1
-                           Output: int4_tbl_1.f1
-                           Filter: (int4_tbl_1.f1 = 0)
-         SubPlan expr_1
-           ->  Result
-                 Output: (('()'::record))::text
+   ->  Materialize
+         Output: ('()'::record)
+         ->  Nested Loop
+               Output: '()'::record
+               ->  Seq Scan on public.int4_tbl
+                     Output: int4_tbl.f1
+                     Filter: (int4_tbl.f1 = 0)
+               ->  Seq Scan on public.int4_tbl int4_tbl_1
+                     Output: int4_tbl_1.f1
+                     Filter: (int4_tbl_1.f1 = 0)
+   SubPlan expr_1
+     ->  Result
+           Output: (('()'::record))::text
 (21 rows)
 
 select t1.q1, t1.q2, (select t23::text)
@@ -4573,31 +4571,31 @@ from int8_tbl t1 left join
   on (t1.q1 = 123),
   length(t23::text) f
 order by 1, 2;
-                              QUERY PLAN                              
-----------------------------------------------------------------------
- Sort
+                           QUERY PLAN                           
+----------------------------------------------------------------
+ Nested Loop
    Output: t1.q1, t1.q2, f.f
-   Sort Key: t1.q1, t1.q2
-   ->  Nested Loop
-         Output: t1.q1, t1.q2, f.f
-         ->  Nested Loop Left Join
-               Output: t1.q1, t1.q2, ('()'::record)
-               Join Filter: (t1.q1 = 123)
+   ->  Nested Loop Left Join
+         Output: t1.q1, t1.q2, ('()'::record)
+         Join Filter: (t1.q1 = 123)
+         ->  Sort
+               Output: t1.q1, t1.q2
+               Sort Key: t1.q1, t1.q2
                ->  Seq Scan on public.int8_tbl t1
                      Output: t1.q1, t1.q2
-               ->  Materialize
-                     Output: ('()'::record)
-                     ->  Nested Loop Left Join
-                           Output: '()'::record
-                           ->  Seq Scan on public.int4_tbl
-                                 Output: int4_tbl.f1
-                                 Filter: (int4_tbl.f1 = 0)
-                           ->  Seq Scan on public.int4_tbl int4_tbl_1
-                                 Output: int4_tbl_1.f1
-                                 Filter: (int4_tbl_1.f1 = 0)
-         ->  Function Scan on pg_catalog.length f
-               Output: f.f
-               Function Call: length((('()'::record))::text)
+         ->  Materialize
+               Output: ('()'::record)
+               ->  Nested Loop Left Join
+                     Output: '()'::record
+                     ->  Seq Scan on public.int4_tbl
+                           Output: int4_tbl.f1
+                           Filter: (int4_tbl.f1 = 0)
+                     ->  Seq Scan on public.int4_tbl int4_tbl_1
+                           Output: int4_tbl_1.f1
+                           Filter: (int4_tbl_1.f1 = 0)
+   ->  Function Scan on pg_catalog.length f
+         Output: f.f
+         Function Call: length((('()'::record))::text)
 (23 rows)
 
 select t1.q1, t1.q2, f
@@ -4741,21 +4739,21 @@ from int4_tbl i4
   left join (lateral (select i4.f1) ss(x) cross join (select 1) s2(y)) j
   on (i4.f1 = 0)
 order by 1;
-                   QUERY PLAN                    
--------------------------------------------------
- Sort
-   Output: i4.f1, ((SubPlan expr_1))
-   Sort Key: i4.f1
-   ->  Nested Loop Left Join
-         Output: i4.f1, (SubPlan expr_1)
-         Join Filter: (i4.f1 = 0)
+                 QUERY PLAN                 
+--------------------------------------------
+ Nested Loop Left Join
+   Output: i4.f1, (SubPlan expr_1)
+   Join Filter: (i4.f1 = 0)
+   ->  Sort
+         Output: i4.f1
+         Sort Key: i4.f1
          ->  Seq Scan on public.int4_tbl i4
                Output: i4.f1
-         ->  Result
-               Output: ROW(i4.f1, 1)
-         SubPlan expr_1
-           ->  Result
-                 Output: ((ROW(i4.f1, 1)))::text
+   ->  Result
+         Output: ROW(i4.f1, 1)
+   SubPlan expr_1
+     ->  Result
+           Output: ((ROW(i4.f1, 1)))::text
 (13 rows)
 
 select i4.f1, (select j::text)
@@ -8526,19 +8524,18 @@ select d.* from d left join
   (select distinct on (id) id, generate_series(1, 2) as g from b order by id) s
   on d.a = s.id
   order by 1, 2;
-                              QUERY PLAN                               
------------------------------------------------------------------------
- Sort
-   Sort Key: d.a, d.b
-   ->  Hash Left Join
-         Hash Cond: (d.a = s.id)
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ Merge Left Join
+   Merge Cond: (d.a = b.id)
+   ->  Sort
+         Sort Key: d.a, d.b
          ->  Seq Scan on d
-         ->  Hash
-               ->  Subquery Scan on s
-                     ->  ProjectSet
-                           ->  Unique
-                                 ->  Index Only Scan using b_pkey on b
-(10 rows)
+   ->  Materialize
+         ->  ProjectSet
+               ->  Unique
+                     ->  Index Only Scan using b_pkey on b
+(9 rows)
 
 select d.* from d left join
   (select distinct on (id) id, generate_series(1, 2) as g from b order by id) s
@@ -11961,6 +11958,55 @@ select * from
   0 | 9998 |  0
 (1 row)
 
+-- Relation with only parameterized paths, gets no presorted path.
+explain (costs off)
+select x.u
+from int8_tbl a, int8_tbl b, lateral unnest(array[a.q1, a.q2]) as x(u)
+where x.u = b.q1
+order by x.u;
+                 QUERY PLAN                  
+---------------------------------------------
+ Merge Join
+   Merge Cond: (b.q1 = x.u)
+   ->  Sort
+         Sort Key: b.q1
+         ->  Seq Scan on int8_tbl b
+   ->  Sort
+         Sort Key: x.u
+         ->  Nested Loop
+               ->  Seq Scan on int8_tbl a
+               ->  Function Scan on unnest x
+(10 rows)
+
+select x.u
+from int8_tbl a, int8_tbl b, lateral unnest(array[a.q1, a.q2]) as x(u)
+where x.u = b.q1
+order by x.u;
+        u         
+------------------
+              123
+              123
+              123
+              123
+              123
+              123
+ 4567890123456789
+ 4567890123456789
+ 4567890123456789
+ 4567890123456789
+ 4567890123456789
+ 4567890123456789
+ 4567890123456789
+ 4567890123456789
+ 4567890123456789
+ 4567890123456789
+ 4567890123456789
+ 4567890123456789
+ 4567890123456789
+ 4567890123456789
+ 4567890123456789
+(21 rows)
+
 -- check proper extParam/allParam handling (this isn't exactly a LATERAL issue,
 -- but we can make the test case much more compact with LATERAL)
 explain (verbose, costs off)
@@ -12306,29 +12352,29 @@ select t1.b, ss.phv from join_ut1 t1 left join lateral
               (select t2.a as t2a, t3.a t3a, least(t1.a, t2.a, t3.a) phv
 					  from join_pt1 t2 join join_ut1 t3 on t2.a = t3.b) ss
               on t1.a = ss.t2a order by t1.a;
-                             QUERY PLAN                             
---------------------------------------------------------------------
- Sort
+                          QUERY PLAN                          
+--------------------------------------------------------------
+ Nested Loop Left Join
    Output: t1.b, (LEAST(t1.a, t2.a, t3.a)), t1.a
-   Sort Key: t1.a
-   ->  Nested Loop Left Join
-         Output: t1.b, (LEAST(t1.a, t2.a, t3.a)), t1.a
+   ->  Sort
+         Output: t1.b, t1.a
+         Sort Key: t1.a
          ->  Seq Scan on public.join_ut1 t1
-               Output: t1.a, t1.b, t1.c
-         ->  Hash Join
-               Output: t2.a, LEAST(t1.a, t2.a, t3.a)
-               Hash Cond: (t3.b = t2.a)
-               ->  Seq Scan on public.join_ut1 t3
-                     Output: t3.a, t3.b, t3.c
-               ->  Hash
-                     Output: t2.a
-                     ->  Append
-                           ->  Seq Scan on public.join_pt1p1p1 t2_1
-                                 Output: t2_1.a
-                                 Filter: (t1.a = t2_1.a)
-                           ->  Seq Scan on public.join_pt1p2 t2_2
-                                 Output: t2_2.a
-                                 Filter: (t1.a = t2_2.a)
+               Output: t1.b, t1.a
+   ->  Hash Join
+         Output: t2.a, LEAST(t1.a, t2.a, t3.a)
+         Hash Cond: (t3.b = t2.a)
+         ->  Seq Scan on public.join_ut1 t3
+               Output: t3.a, t3.b, t3.c
+         ->  Hash
+               Output: t2.a
+               ->  Append
+                     ->  Seq Scan on public.join_pt1p1p1 t2_1
+                           Output: t2_1.a
+                           Filter: (t1.a = t2_1.a)
+                     ->  Seq Scan on public.join_pt1p2 t2_2
+                           Output: t2_2.a
+                           Filter: (t1.a = t2_2.a)
 (21 rows)
 
 select t1.b, ss.phv from join_ut1 t1 left join lateral
@@ -13071,5 +13117,58 @@ WHERE s.x = s.c;
 --------+--------
  123456 | 123456
 (1 row)
+
+ROLLBACK;
+--
+-- Test sort-ahead: a relation without an index on the ORDER BY key is
+-- sorted below the join, instead of sorting the join result
+--
+BEGIN;
+CREATE TEMP TABLE sa_outer AS
+  SELECT g AS id, (g * 7919) % 1000 AS v FROM generate_series(1, 1000) g;
+CREATE TEMP TABLE sa_inner AS
+  SELECT g % 1000 + 1 AS oid, g AS x FROM generate_series(1, 20000) g;
+CREATE INDEX ON sa_inner (oid);
+ANALYZE sa_outer, sa_inner;
+-- The outer side is sorted on the ORDER BY prefix that it can provide, and
+-- an Incremental Sort above the join completes the order
+EXPLAIN (COSTS OFF)
+SELECT o.v, i.x FROM sa_outer o JOIN sa_inner i ON i.oid = o.id
+ORDER BY o.v, i.x LIMIT 5;
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Limit
+   ->  Incremental Sort
+         Sort Key: o.v, i.x
+         Presorted Key: o.v
+         ->  Nested Loop
+               ->  Sort
+                     Sort Key: o.v
+                     ->  Seq Scan on sa_outer o
+               ->  Index Scan using sa_inner_oid_idx on sa_inner i
+                     Index Cond: (oid = o.id)
+(10 rows)
+
+SELECT o.v, i.x FROM sa_outer o JOIN sa_inner i ON i.oid = o.id
+ORDER BY o.v, i.x LIMIT 5;
+ v |  x   
+---+------
+ 0 |  999
+ 0 | 1999
+ 0 | 2999
+ 0 | 3999
+ 0 | 4999
+(5 rows)
+
+-- With a single relation there is no join to sort below
+EXPLAIN (COSTS OFF)
+SELECT * FROM sa_outer ORDER BY v LIMIT 5;
+            QUERY PLAN            
+----------------------------------
+ Limit
+   ->  Sort
+         Sort Key: v
+         ->  Seq Scan on sa_outer
+(4 rows)
 
 ROLLBACK;
