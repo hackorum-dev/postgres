@@ -533,6 +533,8 @@ get_extension_control_directories(void)
 	}
 	else
 	{
+		List	   *found_paths = NIL;
+
 		/* Duplicate the string so we can modify it */
 		ecp = pstrdup(Extension_control_path);
 
@@ -541,7 +543,8 @@ get_extension_control_directories(void)
 			int			len;
 			char	   *mangled;
 			char	   *piece = first_path_var_separator(ecp);
-			ExtensionLocation *location;
+			String	   *path_str;
+			bool		is_system;
 
 			/* Get the length of the next path on ecp */
 			if (piece == NULL)
@@ -556,8 +559,6 @@ get_extension_control_directories(void)
 						errmsg("empty element in parameter \"%s\"",
 							   "extension_control_path"));
 
-			location = palloc_object(ExtensionLocation);
-
 			/* Copy the next path found on ecp */
 			piece = palloc(len + 1);
 			strlcpy(piece, ecp, len + 1);
@@ -566,16 +567,11 @@ get_extension_control_directories(void)
 			 * Substitute the path macro if needed or append "extension"
 			 * suffix if it is a custom extension control path.
 			 */
-			if (strcmp(piece, EXTENSION_SYSTEM_MACRO) == 0)
-			{
-				location->macro = pstrdup(piece);
+			is_system = strcmp(piece, EXTENSION_SYSTEM_MACRO) == 0;
+			if (is_system)
 				mangled = substitute_path_macro(piece, EXTENSION_SYSTEM_MACRO, system_dir);
-			}
 			else
-			{
-				location->macro = NULL;
 				mangled = psprintf("%s/extension", piece);
-			}
 			pfree(piece);
 
 			/* Canonicalize the path based on the OS and add to the list */
@@ -586,8 +582,23 @@ get_extension_control_directories(void)
 						errmsg("component in parameter \"%s\" is not an absolute path",
 							   "extension_control_path"));
 
-			location->loc = mangled;
-			paths = lappend(paths, location);
+			path_str = makeString(mangled);
+
+			/* Keep the first occurrence, including its macro for display. */
+			if (list_member(found_paths, path_str))
+			{
+				pfree(path_str);
+				pfree(mangled);
+			}
+			else
+			{
+				ExtensionLocation *location = palloc_object(ExtensionLocation);
+
+				location->macro = is_system ? pstrdup(EXTENSION_SYSTEM_MACRO) : NULL;
+				location->loc = mangled;
+				found_paths = lappend(found_paths, path_str);
+				paths = lappend(paths, location);
+			}
 
 			/* Break if ecp is empty or move to the next path on ecp */
 			if (ecp[len] == '\0')
@@ -595,6 +606,9 @@ get_extension_control_directories(void)
 			else
 				ecp += len + 1;
 		}
+
+		/* Free the String nodes, but retain the strings used by locations. */
+		list_free_deep(found_paths);
 	}
 
 	return paths;
