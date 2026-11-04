@@ -21,6 +21,11 @@ SET search_path = null, null;  -- syntax error
 SET enable_seqscan = null;  -- error
 RESET search_path;
 
+-- A long search_path is reported to the client in a ParameterStatus message,
+-- which libpq must accept even when it is over 30000 bytes
+SELECT length(set_config('search_path', repeat('a', 40000), false));
+RESET search_path;
+
 -- SET LOCAL has no effect outside of a transaction
 SET LOCAL vacuum_cost_delay TO 50;
 SHOW vacuum_cost_delay;

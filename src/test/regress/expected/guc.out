@@ -53,6 +53,15 @@ LINE 1: SET search_path = null, null;
 SET enable_seqscan = null;  -- error
 ERROR:  NULL is an invalid value for enable_seqscan
 RESET search_path;
+-- A long search_path is reported to the client in a ParameterStatus message,
+-- which libpq must accept even when it is over 30000 bytes
+SELECT length(set_config('search_path', repeat('a', 40000), false));
+ length 
+--------
+  40000
+(1 row)
+
+RESET search_path;
 -- SET LOCAL has no effect outside of a transaction
 SET LOCAL vacuum_cost_delay TO 50;
 WARNING:  SET LOCAL can only be used in transaction blocks
