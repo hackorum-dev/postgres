@@ -189,6 +189,8 @@ SELECT '(2,0,0,0,1),(3,1,0,0,0)'::cube < '(2,0),(3,1)'::cube AS bool;
 SELECT '(2,0,0,0,0),(3,1,0,0,0)'::cube > '(2,0),(3,1)'::cube AS bool;
 SELECT '(2,0,0,0,0),(3,1,0,0,0)'::cube < '(2,0),(3,1)'::cube AS bool;
 
+SELECT '(1,1)'::cube = '(NaN,NaN)'::cube AS eq,
+	   '(NaN)'::cube > '(1)'::cube AS gt;
 
 -- "overlap"
 --
@@ -356,6 +358,11 @@ SELECT '(1,1)'::cube <#> '(4,5)'::cube as d_t;
 SELECT cube_distance('(2,2),(10,10)'::cube, '(0,0),(5,5)'::cube);
 SELECT distance_chebyshev('(2,2),(10,10)'::cube, '(0,0),(5,5)'::cube);
 SELECT distance_taxicab('(2,2),(10,10)'::cube, '(0,0),(5,5)'::cube);
+
+SELECT '(NaN,1)'::cube <-> '(2,2)'::cube AS euclidean,
+	   '(NaN,1)'::cube <#> '(2,2)'::cube AS taxicab,
+	   '(NaN,1)'::cube <=> '(2,2)'::cube AS chebyshev;
+
 -- coordinate access
 SELECT cube(array[10,20,30], array[40,50,60])->1;
 SELECT cube(array[40,50,60], array[10,20,30])->1;

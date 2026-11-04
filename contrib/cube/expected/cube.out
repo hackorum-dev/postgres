@@ -705,6 +705,13 @@ SELECT '(2,0,0,0,0),(3,1,0,0,0)'::cube < '(2,0),(3,1)'::cube AS bool;
  f
 (1 row)
 
+SELECT '(1,1)'::cube = '(NaN,NaN)'::cube AS eq,
+	   '(NaN)'::cube > '(1)'::cube AS gt;
+ eq | gt 
+----+----
+ f  | t
+(1 row)
+
 -- "overlap"
 --
 SELECT '1'::cube && '1'::cube AS bool;
@@ -1438,6 +1445,14 @@ SELECT distance_taxicab('(2,2),(10,10)'::cube, '(0,0),(5,5)'::cube);
  distance_taxicab 
 ------------------
                 0
+(1 row)
+
+SELECT '(NaN,1)'::cube <-> '(2,2)'::cube AS euclidean,
+	   '(NaN,1)'::cube <#> '(2,2)'::cube AS taxicab,
+	   '(NaN,1)'::cube <=> '(2,2)'::cube AS chebyshev;
+ euclidean | taxicab | chebyshev 
+-----------+---------+-----------
+       NaN |     NaN |       NaN
 (1 row)
 
 -- coordinate access
