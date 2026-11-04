@@ -1828,6 +1828,54 @@ endif
 
 
 ###############################################################
+# Library: libhegel (property-based testing engine)
+###############################################################
+
+# Property-based tests (src/test/prop) require:
+#   1. -Dprop_tests=enabled (explicit opt-in; default disabled), and
+#   2. libhegel's header and shared library present (found via
+#      extra_include_dirs / extra_lib_dirs or a system path).
+# TAP is NOT required: the pg_prop binary is a standalone C program that emits
+# TAP output and runs on its own (./pg_prop <area> ...), against any cluster
+# PGHOST/PGPORT point at for the SQL-oracle areas.  When TAP tests are also
+# enabled the Perl drivers (t/001_prop.pl, t/002_sql_props.pl) are registered
+# as the 'prop' meson suite for convenience -- they start a throwaway cluster
+# and run the binary -- but the suite is a methodology on top of the harness,
+# not gated by TAP.  With -Dprop_tests=enabled a missing libhegel is a hard
+# error so the opt-in cannot silently do nothing.
+prop_tests_enabled = false
+prop_tests_tap = false
+libhegel = not_found_dep
+propopt = get_option('prop_tests')
+if not propopt.disabled()
+  # The C ABI header has no PostgreSQL dependencies; the engine ships as a
+  # plain shared library named libhegel_c.  Look for both.
+  libhegel_h = cc.has_header('hegel.h',
+    args: test_c_args, include_directories: postgres_inc,
+    required: propopt)
+  libhegel_lib = cc.find_library('hegel_c',
+    dirs: postgres_lib_d, required: propopt)
+  if libhegel_h and libhegel_lib.found()
+    libhegel = declare_dependency(dependencies: libhegel_lib)
+    prop_tests_enabled = true
+    # Register the Perl TAP drivers only when TAP is available; without it the
+    # binary still builds and can be run by hand.
+    prop_tests_tap = tap_tests_enabled
+    if not tap_tests_enabled
+      message('property-based tests: building pg_prop; TAP drivers not ' +
+              'registered (tap_tests disabled) -- run the binary directly')
+    endif
+  elif propopt.enabled()
+    error('prop_tests requires libhegel (hegel.h and libhegel_c); ' +
+          'point --extra-include-dirs / --extra-lib-dirs at its install')
+  else
+    message('property-based tests disabled: libhegel not found')
+  endif
+endif
+
+
+
+###############################################################
 # Library: zstd
 ###############################################################
 
@@ -2185,8 +2233,6 @@ common_functional_flags = [
   # Disable optimizations that assume no overflow; needed for gcc 4.3+
   '-fwrapv',
   '-fexcess-precision=standard',
-  # Treat only arrays with [], [0], or [1] as flexible array members.
-  '-fstrict-flex-arrays=1',
   # Without -fpch-deps gcc emits dependencies that are insufficient for ccache
   # to trigger a rebuild when the precompiled header changes. We could make
   # this depend on using gcc and precompiled headers being enabled, but that's
@@ -3865,30 +3911,13 @@ meson_install_args = meson_args + ['install'] + {
 # setup tests should be run first,
 # so define priority for these
 setup_tests_priority = 100
-
-# Depend on a single stamp custom_target rather than on installed_targets
-# directly.  On Windows, meson adds the build directory of every target in a
-# test's 'depends:' to the test's PATH, and with NLS enabled installed_targets
-# includes hundreds of per-locale .mo targets, pushing PATH past the Windows
-# length limit.  A custom_target's own dependencies are not walked for this
-# purpose, so the stamp adds at most one entry, while still forcing
-# installed_targets to be built first.  This indirection can be removed once
-# we mandate a meson version with the upstream fix
-# (https://github.com/mesonbuild/meson/pull/16039, expected in 1.13).
-installed_targets_stamp = custom_target('installed-targets-stamp',
-  output: 'installed-targets-stamp',
-  command: [python, '-c', 'pass'],
-  depends: installed_targets,
-  build_always_stale: true,
-)
-
 test('tmp_install',
     meson_bin, args: meson_install_args ,
     env: {'DESTDIR':test_install_destdir},
     priority: setup_tests_priority,
     timeout: 300,
     is_parallel: false,
-    depends: installed_targets_stamp,
+    depends: installed_targets,
     suite: ['setup'])
 
 test('install_test_files',
@@ -4157,24 +4186,12 @@ add_test_setup('running',
 ###############################################################
 
 headerscheck = files('src/tools/pginclude/headerscheck')
-
-# These checks compile headers, so all the headers they might include
-# need to have been generated.
-headerscheck_depends = [
-  generated_headers_stamp,
-  generated_backend_headers_stamp,
-  backend_parser,
-  jsonpath_gram,
-]
-
 run_target('headerscheck',
-  command: [headerscheck, meson.project_source_root(), meson.project_build_root()],
-  depends: headerscheck_depends,
+  command: [headerscheck, meson.project_source_root(), meson.project_build_root()]
 )
 
 run_target('cpluspluscheck',
-  command: [headerscheck, '--cplusplus', meson.project_source_root(), meson.project_build_root()],
-  depends: headerscheck_depends,
+  command: [headerscheck, '--cplusplus', meson.project_source_root(), meson.project_build_root()]
 )
 
 
@@ -4353,6 +4370,7 @@ summary(
     'icu': icu,
     'ldap': ldap,
     'libcurl': libcurl,
+    'libhegel (prop_tests)': libhegel,
     'libnuma': libnuma,
     'liburing': liburing,
     'libxml': libxml,
