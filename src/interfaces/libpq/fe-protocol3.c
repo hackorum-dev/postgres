@@ -42,6 +42,7 @@
 	 (id) == PqMsg_FunctionCallResponse || \
 	 (id) == PqMsg_NoticeResponse || \
 	 (id) == PqMsg_NotificationResponse || \
+	 (id) == PqMsg_ParameterStatus || \
 	 (id) == PqMsg_RowDescription || \
 	 (id) == PqMsg_ParameterDescription)
 
