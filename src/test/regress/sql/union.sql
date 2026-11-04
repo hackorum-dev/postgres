@@ -611,6 +611,17 @@ EXPLAIN (COSTS OFF)
 EXCEPT
 SELECT unique1 FROM tenk1 WHERE unique1 < 5
 ORDER BY 1;
+
+-- Same, with a type that is only binary-compatible with the input type of
+-- its sort opclass.  The Merge Append must still find a sort operator.
+EXPLAIN (COSTS OFF)
+(SELECT stringu1::varchar FROM tenk1 WHERE unique1 < 3
+ UNION SELECT stringu2::varchar FROM tenk1 WHERE unique1 < 3
+ EXCEPT SELECT stringu1::varchar FROM tenk1 WHERE unique1 = 0)
+UNION
+(SELECT stringu1::varchar FROM tenk1 WHERE unique1 BETWEEN 5 AND 6
+ UNION SELECT stringu2::varchar FROM tenk1 WHERE unique1 BETWEEN 5 AND 6
+ EXCEPT SELECT stringu2::varchar FROM tenk1 WHERE unique1 = 5);
 RESET enable_hashagg;
 
 -- Test constraint exclusion of UNION ALL subqueries

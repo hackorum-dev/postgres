@@ -30,6 +30,7 @@
 #include "optimizer/paths.h"
 #include "optimizer/planmain.h"
 #include "optimizer/restrictinfo.h"
+#include "parser/parsetree.h"
 #include "rewrite/rewriteManip.h"
 #include "utils/lsyscache.h"
 
@@ -747,6 +748,7 @@ get_eclass_for_sort_expr(PlannerInfo *root,
 	Relids		expr_relids;
 	EquivalenceClass *newec;
 	EquivalenceMember *newem;
+	Index		setop_varno = 0;
 	ListCell   *lc1;
 	MemoryContext oldcontext;
 
@@ -762,6 +764,26 @@ get_eclass_for_sort_expr(PlannerInfo *root,
 	jdomain = linitial_node(JoinDomain, root->join_domains);
 
 	/*
+	 * A Var of an RTE_SETOP entry can only match a parent member of an EC
+	 * whose ec_relids include its varno, since parent members get their
+	 * relids from pull_varnos and ec_relids never shrink.  Checking that
+	 * first is much cheaper than comparing opfamilies and members.
+	 */
+	if (relids == NULL)
+	{
+		Expr	   *e = expr;
+
+		while (IsA(e, RelabelType))
+			e = ((RelabelType *) e)->arg;
+		if (IsA(e, Var) &&
+			((Var *) e)->varlevelsup == 0 &&
+			((Var *) e)->varnullingrels == NULL &&
+			!IS_SPECIAL_VARNO(((Var *) e)->varno) &&
+			planner_rt_fetch(((Var *) e)->varno, root)->rtekind == RTE_SETOP)
+			setop_varno = ((Var *) e)->varno;
+	}
+
+	/*
 	 * Scan through the existing EquivalenceClasses for a match
 	 */
 	foreach(lc1, root->eq_classes)
@@ -769,6 +791,9 @@ get_eclass_for_sort_expr(PlannerInfo *root,
 		EquivalenceClass *cur_ec = (EquivalenceClass *) lfirst(lc1);
 		EquivalenceMemberIterator it;
 		EquivalenceMember *cur_em;
+
+		if (setop_varno > 0 && !bms_is_member(setop_varno, cur_ec->ec_relids))
+			continue;
 
 		/*
 		 * Never match to a volatile EC, except when we are looking at another
@@ -3171,7 +3196,8 @@ add_child_rel_pathkey_equivalences(PlannerInfo *root, RelOptInfo *child_rel,
  *
  * 'root' is the PlannerInfo belonging to the top-level set operation.
  * 'child_rel' is the RelOptInfo of the child relation we're adding
- * EquivalenceMembers for.
+ * EquivalenceMembers for.  This is either a subquery's base relation or the
+ * upper relation of a set operation nested below the one being planned.
  * 'child_tlist' is the target list for the setop child relation.  The target
  * list expressions are what we add as EquivalenceMembers.
  * 'setop_pathkeys' is a list of PathKeys which must contain an entry for each
@@ -3183,6 +3209,16 @@ add_setop_child_rel_equivalences(PlannerInfo *root, RelOptInfo *child_rel,
 {
 	ListCell   *lc;
 	ListCell   *lc2 = list_head(setop_pathkeys);
+	Index		child_relid;
+
+	/*
+	 * A nested set operation has no relid of its own, so store its members
+	 * under the lowest relid in its relids, as is done for child joinrels.
+	 */
+	if (child_rel->reloptkind == RELOPT_BASEREL)
+		child_relid = child_rel->relid;
+	else
+		child_relid = bms_next_member(child_rel->relids, -1);
 
 	foreach(lc, child_tlist)
 	{
@@ -3205,6 +3241,11 @@ add_setop_child_rel_equivalences(PlannerInfo *root, RelOptInfo *child_rel,
 		 * likewise, the JoinDomain can be that of the initial member of the
 		 * Pathkey's EquivalenceClass.  We pass -1 for ec_index since we
 		 * maintain the eclass_indexes for the child_rel after the loop.
+		 *
+		 * The child member takes its parent's em_datatype, not the type of
+		 * the child expression.  The two differ when the column type is only
+		 * binary-compatible with the opclass input type, such as varchar with
+		 * text_ops, and a sort operator can only be looked up by the latter.
 		 */
 		add_child_eq_member(root,
 							pk->pk_eclass,
@@ -3213,8 +3254,8 @@ add_setop_child_rel_equivalences(PlannerInfo *root, RelOptInfo *child_rel,
 							child_rel->relids,
 							parent_em->em_jdomain,
 							parent_em,
-							exprType((Node *) tle->expr),
-							child_rel->relid);
+							parent_em->em_datatype,
+							child_relid);
 
 		lc2 = lnext(setop_pathkeys, lc2);
 	}
@@ -3227,123 +3268,6 @@ add_setop_child_rel_equivalences(PlannerInfo *root, RelOptInfo *child_rel,
 	 */
 	child_rel->eclass_indexes = bms_add_range(child_rel->eclass_indexes, 0,
 											  list_length(root->eq_classes) - 1);
-}
-
-/*
- * add_setop_output_equivalences
- *		Add the output Vars of a set operation to the EquivalenceClasses that
- *		already contain the same output column of another set operation in
- *		this query level.
- *
- * Nested set operations are planned within one PlannerInfo.  A parent can
- * only make use of a child set operation's sorted paths if both refer to
- * their output columns through the same EquivalenceClasses, so whenever a
- * Var in 'tlist' matches the RTE_SETOP Var of another set operation's output
- * column (same column number, type, typmod and collation), we add it to each
- * EquivalenceClass containing that Var.  This must be done before building
- * any pathkeys from 'tlist'.  Entries of 'tlist' that are not RTE_SETOP Vars
- * are ignored.
- */
-void
-add_setop_output_equivalences(PlannerInfo *root, List *tlist)
-{
-	int			ncols = list_length(tlist);
-	Var		  **vars;
-	EquivalenceMember **match;
-	bool	   *present;
-	bool		found = false;
-
-	/* Index our output Vars by column number */
-	vars = palloc0_array(Var *, ncols + 1);
-	foreach_node(TargetEntry, tle, tlist)
-	{
-		Var		   *var = (Var *) tle->expr;
-
-		/* Only output columns of set operations are of interest */
-		if (!IsA(var, Var) || var->varlevelsup != 0 ||
-			var->varattno < 1 || var->varattno > ncols ||
-			root->simple_rte_array[var->varno]->rtekind != RTE_SETOP)
-			continue;
-		/* Callers build 'tlist' so that each column number appears once */
-		Assert(vars[var->varattno] == NULL);
-		vars[var->varattno] = var;
-		found = true;
-	}
-	if (!found)
-		return;
-
-	match = palloc0_array(EquivalenceMember *, ncols + 1);
-	present = palloc0_array(bool, ncols + 1);
-
-	foreach_node(EquivalenceClass, ec, root->eq_classes)
-	{
-		List	   *seen = NIL;
-
-		if (ec->ec_has_volatile)
-			continue;
-
-		/*
-		 * For each of our columns, find the first member that is the same
-		 * output column of another set operation, and note whether our own
-		 * Var is already a member.
-		 */
-		foreach_node(EquivalenceMember, em, ec->ec_members)
-		{
-			Expr	   *expr = em->em_expr;
-			Var		   *emvar;
-			Var		   *var;
-
-			/* Look through any RelabelType added by canonicalization */
-			while (IsA(expr, RelabelType))
-				expr = ((RelabelType *) expr)->arg;
-			if (!IsA(expr, Var))
-				continue;
-			emvar = (Var *) expr;
-			if (emvar->varlevelsup != 0 ||
-				emvar->varattno < 1 || emvar->varattno > ncols)
-				continue;
-			var = vars[emvar->varattno];
-			if (var == NULL ||
-				root->simple_rte_array[emvar->varno]->rtekind != RTE_SETOP ||
-				emvar->vartype != var->vartype ||
-				emvar->vartypmod != var->vartypmod ||
-				emvar->varcollid != var->varcollid)
-				continue;
-
-			if (match[var->varattno] == NULL && !present[var->varattno])
-				seen = lappend_int(seen, var->varattno);
-			if (emvar->varno == var->varno)
-				present[var->varattno] = true;
-			else if (match[var->varattno] == NULL)
-				match[var->varattno] = em;
-		}
-
-		/* Add a copy of each match that uses our varno, then reset */
-		foreach_int(attno, seen)
-		{
-			if (match[attno] != NULL && !present[attno])
-			{
-				Expr	   *newexpr = copyObject(match[attno]->em_expr);
-				Expr	   *expr = newexpr;
-
-				while (IsA(expr, RelabelType))
-					expr = ((RelabelType *) expr)->arg;
-				((Var *) expr)->varno = vars[attno]->varno;
-
-				add_eq_member(ec, newexpr,
-							  bms_make_singleton(vars[attno]->varno),
-							  match[attno]->em_jdomain,
-							  match[attno]->em_datatype);
-			}
-			match[attno] = NULL;
-			present[attno] = false;
-		}
-		list_free(seen);
-	}
-
-	pfree(vars);
-	pfree(match);
-	pfree(present);
 }
 
 /*

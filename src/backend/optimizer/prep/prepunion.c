@@ -686,6 +686,128 @@ build_setop_child_paths(PlannerInfo *root, RelOptInfo *rel,
 }
 
 /*
+ * convert_setop_child_path
+ *		Return a path of a nested set operation, with its pathkeys
+ *		converted to refer to the output columns of the parent set operation.
+ *
+ * The paths of a set operation nested below the one being planned are
+ * sorted by the child's output Vars, which the parent knows nothing about.
+ * Column k of the parent has the same value as column k of the child if the
+ * child's column is a plain output Var of the same type, typmod and
+ * collation, and in that case a pathkey for the child's column can be
+ * converted to the parent's.  We stop at the first pathkey that cannot be
+ * converted.
+ *
+ * 'child_tlist' is the child's target list as seen by the parent, and
+ * 'parent_tlist' is the parent's.  The path is wrapped in a
+ * ProjectionPath that computes the same target, so it costs the same as
+ * the original and does not add a node to the plan.
+ */
+static Path *
+convert_setop_child_path(PlannerInfo *root, Path *path,
+						 List *child_tlist, List *parent_tlist)
+{
+	List	   *pathkeys = NIL;
+	ProjectionPath *ppath;
+
+	Assert(list_length(child_tlist) == list_length(parent_tlist));
+
+	foreach_node(PathKey, pk, path->pathkeys)
+	{
+		EquivalenceClass *ec = pk->pk_eclass;
+		EquivalenceClass *parent_ec = NULL;
+
+		foreach_node(EquivalenceMember, em, ec->ec_members)
+		{
+			Expr	   *expr = em->em_expr;
+			Var		   *var;
+			Var		   *parent_var;
+
+			/* Look through any RelabelType added by canonicalization */
+			while (IsA(expr, RelabelType))
+				expr = ((RelabelType *) expr)->arg;
+			if (!IsA(expr, Var))
+				continue;
+			var = (Var *) expr;
+			if (var->varlevelsup != 0 || var->varattno < 1 ||
+				var->varattno > list_length(child_tlist))
+				continue;
+
+			/* It must be the child's output column ... */
+			if (!equal(list_nth_node(TargetEntry, child_tlist,
+									 var->varattno - 1)->expr, var))
+				continue;
+
+			/* ... with the same type, typmod and collation as ours */
+			parent_var = (Var *) list_nth_node(TargetEntry, parent_tlist,
+											   var->varattno - 1)->expr;
+			if (!IsA(parent_var, Var) ||
+				parent_var->vartype != var->vartype ||
+				parent_var->vartypmod != var->vartypmod ||
+				parent_var->varcollid != var->varcollid)
+				continue;
+
+			parent_ec = get_eclass_for_sort_expr(root, (Expr *) parent_var,
+												 ec->ec_opfamilies,
+												 em->em_datatype,
+												 ec->ec_collation,
+												 0, NULL, false);
+			if (parent_ec != NULL)
+				break;
+		}
+
+		if (parent_ec == NULL)
+			break;
+
+		pathkeys = lappend(pathkeys,
+						   make_canonical_pathkey(root, parent_ec,
+												  pk->pk_opfamily,
+												  pk->pk_cmptype,
+												  pk->pk_nulls_first));
+	}
+
+	ppath = create_projection_path(root, path->parent, path, path->pathtarget);
+	ppath->path.pathkeys = pathkeys;
+
+	return (Path *) ppath;
+}
+
+/*
+ * get_setop_child_sorted_path
+ *		Find the cheapest path of a nested set operation 'rel' that is sorted
+ *		by the parent's 'pathkeys', or return NULL if there is none.
+ *
+ * The result is converted by convert_setop_child_path().  We also add the
+ * child's output columns as child members of the parent's
+ * EquivalenceClasses, so that createplan.c can find the sort columns in the
+ * child's target list.
+ */
+static Path *
+get_setop_child_sorted_path(PlannerInfo *root, RelOptInfo *rel,
+							List *child_tlist, List *parent_tlist,
+							List *pathkeys)
+{
+	List	   *paths = NIL;
+	Path	   *result;
+
+	foreach_ptr(Path, path, rel->pathlist)
+	{
+		if (path->pathkeys != NIL)
+			paths = lappend(paths, convert_setop_child_path(root, path,
+															child_tlist,
+															parent_tlist));
+	}
+
+	result = get_cheapest_path_for_pathkeys(paths, pathkeys, NULL,
+											TOTAL_COST, false);
+	if (result != NULL)
+		add_setop_child_rel_equivalences(root, rel, child_tlist, pathkeys);
+
+	list_free(paths);
+	return result;
+}
+
+/*
  * Generate paths for a UNION or UNION ALL node
  */
 static RelOptInfo *
@@ -738,9 +860,6 @@ generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
 								  tlist_list, refnames_tlist);
 	*pTargetList = tlist;
 
-	/* Share pathkeys with any set operations nested below this one */
-	add_setop_output_equivalences(root, tlist);
-
 	/* For UNIONs (not UNION ALL), try sorting, if sorting is possible */
 	if (!op->all)
 	{
@@ -790,9 +909,10 @@ generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
 	}
 
 	/* Build path lists and relid set. */
-	foreach(lc, rellist)
+	forboth(lc, rellist, lc3, tlist_list)
 	{
 		RelOptInfo *rel = lfirst(lc);
+		List	   *child_tlist = lfirst_node(List, lc3);
 		Path	   *ordered_path;
 
 		/*
@@ -810,11 +930,16 @@ generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
 
 		if (try_sorted)
 		{
-			ordered_path = get_cheapest_path_for_pathkeys(rel->pathlist,
-														  union_pathkeys,
-														  NULL,
-														  TOTAL_COST,
-														  false);
+			if (rel->rtekind == RTE_SUBQUERY)
+				ordered_path = get_cheapest_path_for_pathkeys(rel->pathlist,
+															  union_pathkeys,
+															  NULL,
+															  TOTAL_COST,
+															  false);
+			else
+				ordered_path = get_setop_child_sorted_path(root, rel,
+														   child_tlist, tlist,
+														   union_pathkeys);
 
 			if (ordered_path != NULL)
 				ordered.subpaths = lappend(ordered.subpaths, ordered_path);
@@ -1124,9 +1249,6 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 
 	*pTargetList = tlist;
 
-	/* Share pathkeys with any set operations nested below this one */
-	add_setop_output_equivalences(root, tlist);
-
 	/* Identify the grouping semantics */
 	groupList = generate_setop_grouplist(op, tlist);
 
@@ -1148,14 +1270,6 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 														  tlist);
 
 		root->query_pathkeys = nonunion_pathkeys;
-
-		/*
-		 * A child set operation that built no pathkeys of its own (such as
-		 * UNION ALL) has not been linked to our EquivalenceClasses yet.  Do
-		 * it now, so that sorting a child's output yields our pathkeys.
-		 */
-		add_setop_output_equivalences(root, lpath_tlist);
-		add_setop_output_equivalences(root, rpath_tlist);
 	}
 
 	/*
@@ -1359,8 +1473,10 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 			slpath = lpath;		/* cheapest path is already sorted */
 		else
 		{
+			/* A nested set operation's paths are sorted by its own columns */
 			slpath = get_cheapest_path_for_pathkeys(lrel->pathlist,
-													nonunion_pathkeys,
+													lrel->rtekind == RTE_SUBQUERY ?
+													nonunion_pathkeys : pathkeys,
 													NULL,
 													TOTAL_COST,
 													false);
@@ -1372,6 +1488,8 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 												   pathkeys,
 												   -1.0);
 		}
+		if (lrel->rtekind != RTE_SUBQUERY)
+			slpath = convert_setop_child_path(root, slpath, lpath_tlist, tlist);
 
 		/* and now the same for the right. */
 		pathkeys = make_pathkeys_for_sortclauses(root,
@@ -1381,8 +1499,10 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 			srpath = rpath;		/* cheapest path is already sorted */
 		else
 		{
+			/* A nested set operation's paths are sorted by its own columns */
 			srpath = get_cheapest_path_for_pathkeys(rrel->pathlist,
-													nonunion_pathkeys,
+													rrel->rtekind == RTE_SUBQUERY ?
+													nonunion_pathkeys : pathkeys,
 													NULL,
 													TOTAL_COST,
 													false);
@@ -1394,6 +1514,8 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 												   pathkeys,
 												   -1.0);
 		}
+		if (rrel->rtekind != RTE_SUBQUERY)
+			srpath = convert_setop_child_path(root, srpath, rpath_tlist, tlist);
 
 		path = (Path *) create_setop_path(root,
 										  result_rel,
