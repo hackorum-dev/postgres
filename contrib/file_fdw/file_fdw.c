@@ -1264,6 +1264,13 @@ file_acquire_sample_rows(Relation onerel, int elevel,
 			 */
 			cstate->escontext->error_occurred = false;
 
+			if (cstate->opts.reject_limit > 0 &&
+				cstate->num_errors > cstate->opts.reject_limit)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+						 errmsg("skipped more than REJECT_LIMIT (%" PRId64 ") rows due to data type incompatibility",
+								cstate->opts.reject_limit)));
+
 			/* Repeat NextCopyFrom() until no soft error occurs */
 			continue;
 		}
