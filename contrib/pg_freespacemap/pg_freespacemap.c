@@ -9,6 +9,7 @@
 #include "postgres.h"
 
 #include "access/relation.h"
+#include "access/xlog.h"
 #include "fmgr.h"
 #include "storage/freespace.h"
 #include "utils/rel.h"
@@ -40,6 +41,22 @@ pg_freespace(PG_FUNCTION_ARGS)
 				 errmsg("relation \"%s\" does not have storage",
 						RelationGetRelationName(rel)),
 				 errdetail_relkind_not_supported(rel->rd_rel->relkind)));
+
+	/*
+	 * Reject attempts to read non-local temporary relations; we would be
+	 * likely to get wrong data since we have no visibility into the owning
+	 * session's local buffers.
+	 */
+	if (RELATION_IS_OTHER_TEMP(rel))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot access temporary tables of other sessions")));
+
+	/* Temporary and unlogged relations are inaccessible during recovery. */
+	if (!RelationIsPermanent(rel) && RecoveryInProgress())
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot access temporary or unlogged relations during recovery")));
 
 	if (blkno < 0 || blkno > MaxBlockNumber)
 		ereport(ERROR,
