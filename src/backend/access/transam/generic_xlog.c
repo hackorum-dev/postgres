@@ -67,6 +67,7 @@ struct GenericXLogState
 	PGIOAlignedBlock images[MAX_GENERIC_XLOG_PAGES];
 	/* Info about each page, see above */
 	GenericXLogPageData pages[MAX_GENERIC_XLOG_PAGES];
+	/* RelationNeedsWAL() result */
 	bool		isLogged;
 };
 
@@ -331,36 +332,59 @@ GenericXLogRegisterBuffer(GenericXLogState *state, Buffer buffer, int flags)
 
 /*
  * Apply changes represented by GenericXLogState to the actual buffers,
- * and emit a generic xlog record.
+ * and emit a generic xlog record (if needed).
  */
 XLogRecPtr
 GenericXLogFinish(GenericXLogState *state)
 {
 	XLogRecPtr	lsn;
 	int			i;
+	bool		logged[MAX_GENERIC_XLOG_PAGES];
+	bool		loggedAny = false;
 
-	if (state->isLogged)
+	START_CRIT_SECTION();
+
+	/*
+	 * Compute deltas if necessary, write changes to buffers, mark buffers
+	 * dirty, and register changes.
+	 */
+	for (i = 0; i < MAX_GENERIC_XLOG_PAGES; i++)
 	{
-		/* Logged relation: make xlog record in critical section. */
-		XLogBeginInsert();
+		GenericXLogPageData *pageData = &state->pages[i];
+		bool		xlogNeeded;
 
-		START_CRIT_SECTION();
-
-		/*
-		 * Compute deltas if necessary, write changes to buffers, mark buffers
-		 * dirty, and register changes.
-		 */
-		for (i = 0; i < MAX_GENERIC_XLOG_PAGES; i++)
+		if (BufferIsInvalid(pageData->buffer))
 		{
-			GenericXLogPageData *pageData = &state->pages[i];
-			Page		page;
+			logged[i] = false;
+			continue;
+		}
+
+		/* Does this page need to be WAL-logged? */
+		if (state->isLogged)
+			xlogNeeded = true;
+		else
+		{
+			RelFileLocator rlocator;
+			ForkNumber	forknum;
+			BlockNumber blkno;
+
+			BufferGetTag(pageData->buffer, &rlocator, &forknum, &blkno);
+
+			xlogNeeded = (forknum == INIT_FORKNUM);
+		}
+		logged[i] = xlogNeeded;
+
+		/* call XLogBeginInsert() before starting to build the WAL record */
+		if (xlogNeeded && !loggedAny)
+		{
+			XLogBeginInsert();
+			loggedAny = true;
+		}
+
+		if (xlogNeeded)
+		{
+			Page		page = BufferGetPage(pageData->buffer);
 			PageHeader	pageHeader;
-
-			if (BufferIsInvalid(pageData->buffer))
-				continue;
-
-			page = BufferGetPage(pageData->buffer);
-			pageHeader = (PageHeader) pageData->image;
 
 			/*
 			 * Compute delta while we still have both the unmodified page and
@@ -374,6 +398,7 @@ GenericXLogFinish(GenericXLogState *state)
 			 * pd_lower and pd_upper in order to avoid divergence between
 			 * actual page state and what replay would produce.
 			 */
+			pageHeader = (PageHeader) pageData->image;
 			memcpy(page, pageData->image, pageHeader->pd_lower);
 			memset(page + pageHeader->pd_lower, 0,
 				   pageHeader->pd_upper - pageHeader->pd_lower);
@@ -394,7 +419,18 @@ GenericXLogFinish(GenericXLogState *state)
 				XLogRegisterBufData(i, pageData->delta, pageData->deltaLen);
 			}
 		}
+		else
+		{
+			memcpy(BufferGetPage(pageData->buffer),
+				   pageData->image,
+				   BLCKSZ);
+			/* We don't worry about zeroing the "hole" in this case */
+			MarkBufferDirty(pageData->buffer);
+		}
+	}
 
+	if (loggedAny)
+	{
 		/* Insert xlog record */
 		lsn = XLogInsert(RM_GENERIC_ID, 0);
 
@@ -403,32 +439,18 @@ GenericXLogFinish(GenericXLogState *state)
 		{
 			GenericXLogPageData *pageData = &state->pages[i];
 
-			if (BufferIsInvalid(pageData->buffer))
+			if (!logged[i])
 				continue;
+
 			PageSetLSN(BufferGetPage(pageData->buffer), lsn);
 		}
-		END_CRIT_SECTION();
 	}
 	else
 	{
-		/* Unlogged relation: skip xlog-related stuff */
-		START_CRIT_SECTION();
-		for (i = 0; i < MAX_GENERIC_XLOG_PAGES; i++)
-		{
-			GenericXLogPageData *pageData = &state->pages[i];
-
-			if (BufferIsInvalid(pageData->buffer))
-				continue;
-			memcpy(BufferGetPage(pageData->buffer),
-				   pageData->image,
-				   BLCKSZ);
-			/* We don't worry about zeroing the "hole" in this case */
-			MarkBufferDirty(pageData->buffer);
-		}
-		END_CRIT_SECTION();
 		/* We don't have a LSN to return, in this case */
 		lsn = InvalidXLogRecPtr;
 	}
+	END_CRIT_SECTION();
 
 	pfree(state);
 
