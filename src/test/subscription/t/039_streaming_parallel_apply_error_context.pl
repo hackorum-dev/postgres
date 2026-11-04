@@ -1,9 +1,8 @@
 # Copyright (c) 2026, PostgreSQL Global Development Group
 
-# Test that an error relayed from a parallel apply worker (applying a
-# streamed transaction) to the leader does not get a misleading extra
-# CONTEXT line describing some other, unrelated transaction the leader
-# happens to be applying directly at the same time.
+# Test that an error relayed from a parallel apply worker clearly
+# distinguishes the operation that failed in the parallel worker from
+# the operation concurrently processed by the leader apply worker.
 #
 # This is the same underlying issue as reported upstream for the parallel
 # apply of non-streaming transactions patch set, but reproduced here
@@ -158,15 +157,11 @@ like(
 	'the relayed error is the tab_a trigger exception'
 );
 
-# ... and it must not be polluted with an unrelated CONTEXT line describing
-# whatever the leader itself happened to be doing at that moment (tab_b):
-# the leader's own context-stack walk in ProcessParallelApplyMessage()
-# currently appends exactly such a bogus line, so this fails today.
-unlike(
+#  ... and the log also includes the leader apply worker context
+like(
 	$log_contents,
-	qr/relation "public\.tab_b"/,
-	'the relayed error must not be annotated with the leader\'s own, '
-	  . 'unrelated tab_b activity as additional context'
+	qr/leader apply worker was processing:.*relation "public\.tab_b"/s,
+	'the relayed error includes the leader apply worker context'
 );
 
 # TX1 never got to commit (its worker errored out instead); errors make

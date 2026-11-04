@@ -327,6 +327,7 @@ extern void store_flush_position(XLogRecPtr remote_lsn, XLogRecPtr local_lsn);
 /* Function for apply error callback */
 extern void apply_error_callback(void *arg);
 extern void set_apply_error_context_origin(char *originname);
+extern void leader_apply_error_callback(void *arg);
 
 /* Parallel apply worker setup and interactions */
 extern void pa_allocate_worker(TransactionId xid);

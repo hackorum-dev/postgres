@@ -1029,6 +1029,7 @@ ProcessParallelApplyMessage(StringInfo msg)
 		case PqMsg_ErrorResponse:
 			{
 				ErrorData	edata;
+				ErrorContextCallback leader_errcallback;
 
 				/* Parse ErrorResponse. */
 				pq_parse_errornotice(msg, &edata);
@@ -1049,10 +1050,14 @@ ProcessParallelApplyMessage(StringInfo msg)
 					edata.context = pstrdup(_("logical replication parallel apply worker"));
 
 				/*
-				 * Use the callbacks saved before the leader's apply error
-				 * context callback was installed.
+				 * Add the leader's current activity only while propagating an
+				 * error received from a parallel apply worker.
 				 */
-				error_context_stack = apply_loop_outer_error_context_stack;
+				leader_errcallback.callback = leader_apply_error_callback;
+				leader_errcallback.arg = NULL;
+				leader_errcallback.previous =
+					apply_loop_outer_error_context_stack;
+				error_context_stack = &leader_errcallback;
 
 				/* Rethrow error from parallel apply worker */
 				ThrowErrorData(&edata);

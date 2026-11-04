@@ -6419,6 +6419,24 @@ apply_error_callback(void *arg)
 }
 
 /*
+ * Error callback for errors propagated from parallel apply workers.
+ *
+ * Distinguish the leader's current operation from the operation that failed
+ * in the parallel apply worker.
+ */
+void
+leader_apply_error_callback(void *arg)
+{
+	ApplyRemoteCtx *ctx = &remote_ctx;
+
+	if (ctx->command == 0)
+		return;
+
+	errcontext("leader apply worker was processing:");
+	apply_error_callback(arg);
+}
+
+/*
  * Set information identifying the remote transaction currently being
  * applied, kept for the duration of that transaction.
  *
