@@ -443,3 +443,9 @@ SELECT c~>(-2), c FROM test_cube ORDER BY c~>(-2) LIMIT 15; -- descending by rig
 SELECT c~>(-3), c FROM test_cube ORDER BY c~>(-3) LIMIT 15; -- descending by lower bound
 SELECT c~>(-4), c FROM test_cube ORDER BY c~>(-4) LIMIT 15; -- descending by upper bound
 RESET enable_indexscan;
+
+-- Test kNN with NaN coordinates
+INSERT INTO test_cube VALUES ('(200000, 25000),(NaN, 25000)');
+SET enable_seqscan = false;
+SELECT c~>(-1), c FROM test_cube ORDER BY c~>(-1) LIMIT 2;
+RESET enable_seqscan;

@@ -1988,3 +1988,14 @@ SELECT c~>(-4), c FROM test_cube ORDER BY c~>(-4) LIMIT 15; -- descending by upp
 (15 rows)
 
 RESET enable_indexscan;
+-- Test kNN with NaN coordinates
+INSERT INTO test_cube VALUES ('(200000, 25000),(NaN, 25000)');
+SET enable_seqscan = false;
+SELECT c~>(-1), c FROM test_cube ORDER BY c~>(-1) LIMIT 2;
+ ?column? |              c               
+----------+------------------------------
+  -200000 | (200000, 25000),(NaN, 25000)
+  -100000 | (100000)
+(2 rows)
+
+RESET enable_seqscan;
