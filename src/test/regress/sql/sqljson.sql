@@ -232,6 +232,31 @@ SELECT JSON_ARRAY(SELECT 1 WHERE FALSE RETURNING varchar(1));
 SELECT JSON_ARRAY(SELECT 1 RETURNING varchar(3));
 SELECT JSON_ARRAY(SELECT 1 WHERE FALSE RETURNING varchar(2));
 
+-- JSON_ARRAY(subquery) RETURNING a domain: its constraints are checked on
+-- the final result at run time, including on the empty array
+CREATE DOMAIN sqljson_nonempty_arr AS jsonb
+  CHECK (jsonb_array_length(VALUE) > 0);
+-- Should work
+SELECT JSON_ARRAY(SELECT 1 RETURNING sqljson_nonempty_arr);
+-- Should fail
+SELECT JSON_ARRAY(SELECT 1 WHERE FALSE RETURNING sqljson_nonempty_arr);
+-- Should work: the NULL for an empty set is replaced by '[]' before the
+-- domain's constraints are checked
+CREATE DOMAIN sqljson_nn_arr AS jsonb NOT NULL;
+SELECT JSON_ARRAY(SELECT 1 WHERE FALSE RETURNING sqljson_nn_arr);
+-- Constraints added to the domain later must be checked too
+CREATE DOMAIN sqljson_arr AS jsonb;
+CREATE VIEW sqljson_arr_view AS
+  SELECT JSON_ARRAY(SELECT 1 WHERE FALSE RETURNING sqljson_arr) AS a;
+-- Should work
+SELECT * FROM sqljson_arr_view;
+ALTER DOMAIN sqljson_arr ADD CONSTRAINT sqljson_arr_nonempty
+  CHECK (jsonb_array_length(VALUE) > 0);
+-- Should fail
+SELECT * FROM sqljson_arr_view;
+DROP VIEW sqljson_arr_view;
+DROP DOMAIN sqljson_nonempty_arr, sqljson_nn_arr, sqljson_arr;
+
 -- Should fail
 SELECT JSON_ARRAY(SELECT FROM (VALUES (1)) foo(i));
 SELECT JSON_ARRAY(SELECT i, i FROM (VALUES (1)) foo(i));
