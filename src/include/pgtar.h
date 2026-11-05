@@ -16,11 +16,31 @@
 
 #define		TAR_BLOCK_SIZE	512
 
+/*
+ * Sizes of the fixed-width string fields in a traditional ustar header.
+ * These are part of the on-disk format and must not be changed.
+ */
+#define		TAR_NAME_FIELD_SIZE		100
+#define		TAR_PREFIX_FIELD_SIZE	155
+#define		TAR_LINKNAME_FIELD_SIZE	100
+
+/*
+ * Maximum size of a PAX extended header payload that we are willing to accept.
+ * The only extensions we care about are "path" and "linkpath", both of which
+ * are bounded by MAXPGPATH, so there is no reason to accept arbitrarily large
+ * payloads.
+ */
+#define		TAR_MAX_PAX_PAYLOAD		(MAXPGPATH * 4)
+
+/* Name used for the PAX extended header member itself. */
+#define		TAR_PAX_HEADER_NAME		"PaxHeader"
+
 enum tarError
 {
 	TAR_OK = 0,
 	TAR_NAME_TOO_LONG,
 	TAR_SYMLINK_TOO_LONG,
+	TAR_BUFFER_TOO_SMALL,
 };
 
 /*
@@ -70,6 +90,14 @@ extern enum tarError tarCreateHeader(char *h, const char *filename,
 									 const char *linktarget, pgoff_t size,
 									 mode_t mode, uid_t uid, gid_t gid,
 									 time_t mtime);
+extern enum tarError tarCreateHeaderExt(char *h, size_t hsize,
+										const char *filename,
+										const char *linktarget,
+										pgoff_t size, mode_t mode,
+										uid_t uid, gid_t gid, time_t mtime,
+										size_t *bytes_written);
+extern size_t tarCreateHeaderExtSize(const char *filename,
+									 const char *linktarget);
 extern uint64 read_tar_number(const char *s, int len);
 extern void print_tar_number(char *s, int len, uint64 val);
 extern int	tarChecksum(const char *header);
