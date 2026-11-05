@@ -457,16 +457,16 @@ DETAIL:  A cube cannot have more than 100 dimensions.
 --
 -- Test point processing
 --
-SELECT cube('(1,2),(1,2)'); -- cube_in
-  cube  
---------
- (1, 2)
+SELECT cube('(NaN,NaN),(NaN,NaN)'); -- cube_in
+    cube    
+------------
+ (NaN, NaN)
 (1 row)
 
-SELECT cube('{0,1,2}'::float[], '{0,1,2}'::float[]); -- cube_a_f8_f8
-   cube    
------------
- (0, 1, 2)
+SELECT cube('{0,1,NaN}'::float[], '{0,1,NaN}'::float[]); -- cube_a_f8_f8
+    cube     
+-------------
+ (0, 1, NaN)
 (1 row)
 
 SELECT cube('{5,6,7,8}'::float[]); -- cube_a_f8
@@ -481,10 +481,10 @@ SELECT cube(1.37); -- cube_f8
  (1.37)
 (1 row)
 
-SELECT cube(1.37, 1.37); -- cube_f8_f8
-  cube  
---------
- (1.37)
+SELECT cube('NaN'::float8, 'NaN'::float8); -- cube_f8_f8
+ cube  
+-------
+ (NaN)
 (1 row)
 
 SELECT cube(cube(1,1), 42); -- cube_c_f8
@@ -499,10 +499,10 @@ SELECT cube(cube(1,2), 42); -- cube_c_f8
  (1, 42),(2, 42)
 (1 row)
 
-SELECT cube(cube(1,1), 42, 42); -- cube_c_f8_f8
-  cube   
----------
- (1, 42)
+SELECT cube(cube(1,1), 'NaN'::float8, 'NaN'::float8); -- cube_c_f8_f8
+   cube   
+----------
+ (1, NaN)
 (1 row)
 
 SELECT cube(cube(1,1), 42, 24); -- cube_c_f8_f8
@@ -703,6 +703,13 @@ SELECT '(2,0,0,0,0),(3,1,0,0,0)'::cube < '(2,0),(3,1)'::cube AS bool;
  bool 
 ------
  f
+(1 row)
+
+SELECT '(1,1)'::cube = '(NaN,NaN)'::cube AS eq,
+	   '(NaN)'::cube > '(1)'::cube AS gt;
+ eq | gt 
+----+----
+ f  | t
 (1 row)
 
 -- "overlap"
@@ -1145,7 +1152,7 @@ SELECT cube_is_point('(0,1,2)'::cube);
  t
 (1 row)
 
-SELECT cube_is_point('(0,1,2),(0,1,2)'::cube);
+SELECT cube_is_point(cube(ARRAY['NaN'::float8], ARRAY['NaN'::float8]));
  cube_is_point 
 ---------------
  t
@@ -1375,7 +1382,7 @@ SELECT cube_size('(4,8),(15,16)'::cube);
         88
 (1 row)
 
-SELECT cube_size('(42,137)'::cube);
+SELECT cube_size(cube_subset('(NaN,0),(NaN,1)'::cube, ARRAY[1]));
  cube_size 
 -----------
          0
@@ -1438,6 +1445,14 @@ SELECT distance_taxicab('(2,2),(10,10)'::cube, '(0,0),(5,5)'::cube);
  distance_taxicab 
 ------------------
                 0
+(1 row)
+
+SELECT '(NaN,1)'::cube <-> '(2,2)'::cube AS euclidean,
+	   '(NaN,1)'::cube <#> '(2,2)'::cube AS taxicab,
+	   '(NaN,1)'::cube <=> '(2,2)'::cube AS chebyshev;
+ euclidean | taxicab | chebyshev 
+-----------+---------+-----------
+       NaN |     NaN |       NaN
 (1 row)
 
 -- coordinate access
