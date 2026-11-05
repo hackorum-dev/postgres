@@ -443,3 +443,16 @@ SELECT c~>(-2), c FROM test_cube ORDER BY c~>(-2) LIMIT 15; -- descending by rig
 SELECT c~>(-3), c FROM test_cube ORDER BY c~>(-3) LIMIT 15; -- descending by lower bound
 SELECT c~>(-4), c FROM test_cube ORDER BY c~>(-4) LIMIT 15; -- descending by upper bound
 RESET enable_indexscan;
+
+-- Opposite coordinate orders cannot both follow the index's page order.
+TRUNCATE test_cube;
+INSERT INTO test_cube
+SELECT cube(ARRAY[number::float8, -number::float8],
+			ARRAY['NaN'::float8, 'NaN'::float8])
+FROM generate_series(1, 1000) AS numbers(number);
+SET enable_seqscan = false;
+SELECT ARRAY(SELECT c~>(-1) FROM test_cube ORDER BY c~>(-1)) =
+	   ARRAY(SELECT generate_series(-1000, -1)::float8) AS correct_order;
+SELECT ARRAY(SELECT c~>(-3) FROM test_cube ORDER BY c~>(-3)) =
+	   ARRAY(SELECT generate_series(1, 1000)::float8) AS correct_order;
+RESET enable_seqscan;

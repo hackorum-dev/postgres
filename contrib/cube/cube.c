@@ -1448,9 +1448,9 @@ g_cube_distance(PG_FUNCTION_ARGS)
 				{
 					/* For leaf just return required upper/lower bound */
 					if (upper)
-						retval = Max(cube->x[index], cube->x[index + DIM(cube)]);
+						retval = float8_max(cube->x[index], cube->x[index + DIM(cube)]);
 					else
-						retval = Min(cube->x[index], cube->x[index + DIM(cube)]);
+						retval = float8_min(cube->x[index], cube->x[index + DIM(cube)]);
 				}
 				else
 				{
@@ -1462,9 +1462,9 @@ g_cube_distance(PG_FUNCTION_ARGS)
 					 * inversed value.
 					 */
 					if (!inverse)
-						retval = Min(cube->x[index], cube->x[index + DIM(cube)]);
+						retval = float8_min(cube->x[index], cube->x[index + DIM(cube)]);
 					else
-						retval = Max(cube->x[index], cube->x[index + DIM(cube)]);
+						retval = float8_max(cube->x[index], cube->x[index + DIM(cube)]);
 				}
 			}
 		}
@@ -1501,6 +1501,11 @@ g_cube_distance(PG_FUNCTION_ARGS)
 				break;
 		}
 	}
+
+	/* NaN does not bound the subtree's distances from below */
+	if (!GIST_LEAF(entry) && isnan(retval))
+		retval = -get_float8_infinity();
+
 	PG_RETURN_FLOAT8(retval);
 }
 
