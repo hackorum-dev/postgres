@@ -3778,7 +3778,10 @@ transformJsonObjectConstructor(ParseState *pstate, JsonObjectConstructor *ctor)
  *        COALESCE((SELECT JSON_ARRAYAGG(a) FROM (subquery) q(a)), '[]')
  *
  *    The COALESCE ensures that an empty result set produces '[]' rather than
- *    NULL, per the SQL/JSON standard.
+ *    NULL, per the SQL/JSON standard.  If the RETURNING type is a domain, the
+ *    JSON_ARRAYAGG returns the domain's base type and the COALESCE is wrapped
+ *    in a CoerceToDomain, so that the domain's constraints are checked on the
+ *    final result; see below.
  *
  *  - orig_query: the transformed Query of the user's original subquery, so
  *    that ruleutils.c can deparse the original JSON_ARRAY(SELECT ...) syntax
@@ -3809,7 +3812,11 @@ transformJsonArrayQueryConstructor(ParseState *pstate,
 	int16		typlen;
 	bool		typbyval;
 	JsonReturning *returning;
+	JsonOutput *agg_output;
+	Oid			base_typid;
+	int32		base_typmod;
 	List	   *args;
+	Node	   *func;
 	Node	   *result;
 
 	/*
@@ -3828,6 +3835,32 @@ transformJsonArrayQueryConstructor(ParseState *pstate,
 				parser_errposition(pstate, ctor->location));
 
 	free_parsestate(qpstate);
+
+	/* Determine the RETURNING type. */
+	args = list_make1(linitial_node(TargetEntry, query->targetList)->expr);
+	returning = transformJsonConstructorOutput(pstate, ctor->output, args);
+
+	/*
+	 * If the RETURNING type is a domain, have the JSON_ARRAYAGG below return
+	 * the domain's base type instead, and apply the coercion to the domain to
+	 * the result of the COALESCE, further below.  Coercing within the
+	 * JSON_ARRAYAGG would check the domain's constraints against the NULL
+	 * that it returns for an empty result set, before the COALESCE gets to
+	 * replace it with '[]', and would make the empty-array constant be built
+	 * with the domain's input function, which checks the constraints against
+	 * '[]' right here, whether or not it ends up being used.  Either way, the
+	 * constraints must be checked against the final result, and at run time.
+	 */
+	base_typmod = returning->typmod;
+	base_typid = getBaseTypeAndTypmod(returning->typid, &base_typmod);
+	if (base_typid != returning->typid)
+	{
+		agg_output = makeNode(JsonOutput);
+		agg_output->typeName = makeTypeNameFromOid(base_typid, base_typmod);
+		agg_output->returning = ctor->output->returning;
+	}
+	else
+		agg_output = ctor->output;
 
 	/*
 	 * Build the executable form by constructing query:
@@ -3848,7 +3881,7 @@ transformJsonArrayQueryConstructor(ParseState *pstate,
 	agg->absent_on_null = ctor->absent_on_null;
 	agg->constructor = makeNode(JsonAggConstructor);
 	agg->constructor->agg_order = NIL;
-	agg->constructor->output = ctor->output;
+	agg->constructor->output = agg_output;
 	agg->constructor->location = ctor->location;
 
 	target = makeNode(ResTarget);
@@ -3882,8 +3915,9 @@ transformJsonArrayQueryConstructor(ParseState *pstate,
 
 	/*
 	 * Wrap in COALESCE so that an empty result set produces '[]' rather than
-	 * NULL.  The empty-array constant is created in the output type and
-	 * typmod, so that the COALESCE arguments have consistent types and any
+	 * NULL.  The empty-array constant is created in the JSON_ARRAYAGG's output
+	 * type and typmod (that is, the RETURNING type, or its base type if it is
+	 * a domain), so that the COALESCE arguments have consistent types and any
 	 * length restriction from the RETURNING clause is enforced uniformly
 	 * across the empty and non-empty paths.
 	 */
@@ -3908,16 +3942,25 @@ transformJsonArrayQueryConstructor(ParseState *pstate,
 	coalesce->location = ctor->location;
 
 	/*
-	 * Build the JSCTOR_JSON_ARRAY_QUERY node.  The COALESCE goes in func as
-	 * the executable form; during planning, eval_const_expressions replaces
-	 * the entire node with func.  The transformed Query is stored in
+	 * Finally, coerce the result of the COALESCE to the domain, if any, so
+	 * that its constraints are checked at run time; see above.
+	 */
+	if (base_typid != returning->typid)
+		func = coerce_to_domain((Node *) coalesce,
+								base_typid, base_typmod, returning->typid,
+								COERCION_ASSIGNMENT, COERCE_IMPLICIT_CAST,
+								ctor->location, false);
+	else
+		func = (Node *) coalesce;
+
+	/*
+	 * Build the JSCTOR_JSON_ARRAY_QUERY node.  The above expression goes in
+	 * func as the executable form; during planning, eval_const_expressions
+	 * replaces the entire node with func.  The transformed Query is stored in
 	 * orig_query so that ruleutils.c can deparse the original syntax.
 	 */
-	args = list_make1(linitial_node(TargetEntry, query->targetList)->expr);
-	returning = transformJsonConstructorOutput(pstate, ctor->output, args);
-
 	result = makeJsonConstructorExpr(pstate, JSCTOR_JSON_ARRAY_QUERY,
-									 NIL, (Expr *) coalesce, returning,
+									 NIL, (Expr *) func, returning,
 									 false, ctor->absent_on_null,
 									 ctor->location);
 	((JsonConstructorExpr *) result)->orig_query = (Node *) query;
