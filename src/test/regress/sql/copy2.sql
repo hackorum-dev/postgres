@@ -624,6 +624,10 @@ COPY t_on_error_null FROM STDIN WITH (on_error set_null); -- fail
 COPY t_on_error_null FROM STDIN WITH (delimiter ',', on_error set_null);
 1,1
 \.
+-- fail, less data after a conversion error.
+COPY t_on_error_null FROM STDIN WITH (delimiter ',', on_error set_null);
+1,bad
+\.
 -- fail, extra data.
 COPY t_on_error_null FROM STDIN WITH (delimiter ',', on_error set_null);
 1,2,3,4
@@ -669,9 +673,15 @@ COPY check_ign_err FROM STDIN WITH (on_error ignore);
 1	{1}
 \.
 
--- test extra data: should fail
+-- test extra data after an ignored row: should fail with the current line
 COPY check_ign_err FROM STDIN WITH (on_error ignore);
+bad	{1}	3
 1	{1}	3	abc
+\.
+
+COPY check_ign_err FROM STDIN WITH (format csv, on_error ignore);
+bad,{1},3
+1,{1},3,abc
 \.
 
 -- tests for reject_limit option
