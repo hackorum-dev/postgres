@@ -112,6 +112,7 @@ test: timeouts
 test: vacuum-concurrent-drop
 test: vacuum-conflict
 test: vacuum-skip-locked
+test: vacuum-skip-locked-perms
 test: stats
 test: stats-backend
 test: horizons
