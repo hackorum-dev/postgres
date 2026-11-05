@@ -35,7 +35,7 @@ typedef struct astreamer_extractor
 	char	   *basepath;
 	const char *(*link_map) (const char *);
 	void		(*report_output_file) (const char *);
-	char		filename[MAXPGPATH];
+	char	   *filename;
 	FILE	   *file;
 } astreamer_extractor;
 
@@ -223,12 +223,15 @@ astreamer_extractor_content(astreamer *streamer, astreamer_member *member,
 						 member->pathname);
 
 			/* Prepend basepath. */
-			snprintf(mystreamer->filename, sizeof(mystreamer->filename),
-					 "%s/%s", mystreamer->basepath, member->pathname);
+			if (mystreamer->filename != NULL)
+				pfree(mystreamer->filename);
+			mystreamer->filename = psprintf("%s/%s",
+											mystreamer->basepath,
+											member->pathname);
 
 			/* Remove any trailing slash. */
 			fnamelen = strlen(mystreamer->filename);
-			if (mystreamer->filename[fnamelen - 1] == '/')
+			if (fnamelen > 0 && mystreamer->filename[fnamelen - 1] == '/')
 				mystreamer->filename[fnamelen - 1] = '\0';
 
 			/* Dispatch based on file type. */
@@ -409,5 +412,7 @@ astreamer_extractor_free(astreamer *streamer)
 	astreamer_extractor *mystreamer = (astreamer_extractor *) streamer;
 
 	pfree(mystreamer->basepath);
+	if (mystreamer->filename)
+		pfree(mystreamer->filename);
 	pfree(mystreamer);
 }
