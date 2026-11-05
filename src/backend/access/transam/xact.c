@@ -3547,6 +3547,7 @@ static bool
 AbortCurrentTransactionInternal(void)
 {
 	TransactionState s = CurrentTransactionState;
+	SavedTransactionCharacteristics savetc;
 
 	switch (s->blockState)
 	{
@@ -3603,7 +3604,10 @@ AbortCurrentTransactionInternal(void)
 			 */
 		case TBLOCK_INPROGRESS:
 		case TBLOCK_PARALLEL_INPROGRESS:
+			/* Restore characteristics in case AND CHAIN is coming */
+			SaveTransactionCharacteristics(&savetc);
 			AbortTransaction();
+			RestoreTransactionCharacteristics(&savetc);
 			s->blockState = TBLOCK_ABORT;
 			/* CleanupTransaction happens when we exit TBLOCK_ABORT_END */
 			break;
