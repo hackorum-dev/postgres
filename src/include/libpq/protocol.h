@@ -111,4 +111,12 @@
 #define AUTH_REQ_SASL_FIN  12	/* Final SASL message */
 #define AUTH_REQ_MAX	   AUTH_REQ_SASL_FIN	/* maximum AUTH_REQ_* value */
 
+
+/*
+ * libpq treats a backend message longer than this, including the length
+ * word, as a loss of sync, unless its type is one that can be long.  The
+ * backend must not send a longer message of any other type.
+ */
+#define PQ_SHORT_MESSAGE_MAX_LEN	30000
+
 #endif							/* PROTOCOL_H */
