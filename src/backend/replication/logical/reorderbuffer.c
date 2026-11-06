@@ -4216,7 +4216,16 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	Assert(spilled == txn->nentries_mem);
 	Assert(dlist_is_empty(&txn->changes));
 	txn->nentries_mem = 0;
-	txn->txn_flags |= RBTXN_IS_SERIALIZED;
+
+	/*
+	 * Mark the transaction as serialized only if we wrote something.  A
+	 * subtransaction without any decoded changes gets here too, and it has no
+	 * valid final_lsn until its commit or abort is decoded, which
+	 * ReorderBufferRestoreCleanup() would need if the transaction were found
+	 * to be aborted before that.
+	 */
+	if (spilled)
+		txn->txn_flags |= RBTXN_IS_SERIALIZED;
 
 	if (fd != -1)
 		CloseTransientFile(fd);
