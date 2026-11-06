@@ -39,7 +39,7 @@
  * Internal errors also return NULL, with v->err set.
  */
 static chr *
-longest(struct vars *v,
+longest(struct exec_vars *v,
 		struct dfa *d,
 		chr *start,				/* where the match should start */
 		chr *stop,				/* match must end at or before here */
@@ -201,7 +201,7 @@ longest(struct vars *v,
  * Internal errors also return NULL, with v->err set.
  */
 static chr *
-shortest(struct vars *v,
+shortest(struct exec_vars *v,
 		 struct dfa *d,
 		 chr *start,			/* where the match should start */
 		 chr *min,				/* match must end at or after here */
@@ -368,7 +368,7 @@ shortest(struct vars *v,
  * Internal errors also return 0, with v->err set.
  */
 static int
-matchuntil(struct vars *v,
+matchuntil(struct exec_vars *v,
 		   struct dfa *d,
 		   chr *probe,			/* we want to know if a match ends here */
 		   struct sset **lastcss,	/* state storage across calls */
@@ -503,7 +503,7 @@ matchuntil(struct vars *v,
  * of checking a match to a predetermined section of the string.
  */
 static chr *
-dfa_backref(struct vars *v,
+dfa_backref(struct exec_vars *v,
 			struct dfa *d,
 			chr *start,			/* where the match should start */
 			chr *min,			/* match must end at or after here */
@@ -582,7 +582,7 @@ dfa_backref(struct vars *v,
  * lastcold - determine last point at which no progress had been made
  */
 static chr *					/* endpoint, or NULL */
-lastcold(struct vars *v,
+lastcold(struct exec_vars *v,
 		 struct dfa *d)
 {
 	struct sset *ss;
@@ -604,7 +604,7 @@ lastcold(struct vars *v,
  * Returns NULL (and sets v->err) on failure.
  */
 static struct dfa *
-newdfa(struct vars *v,
+newdfa(struct exec_vars *v,
 	   struct cnfa *cnfa,
 	   struct colormap *cm,
 	   struct smalldfa *sml)	/* preallocated space, may be NULL */
@@ -737,7 +737,7 @@ hash(unsigned *uv,
  * initialize - hand-craft a cache entry for startup, otherwise get ready
  */
 static struct sset *
-initialize(struct vars *v,
+initialize(struct exec_vars *v,
 		   struct dfa *d,
 		   chr *start)
 {
@@ -783,7 +783,7 @@ initialize(struct vars *v,
  * Internal errors also return NULL, with v->err set.
  */
 static struct sset *
-miss(struct vars *v,
+miss(struct exec_vars *v,
 	 struct dfa *d,
 	 struct sset *css,
 	 color co,
@@ -922,7 +922,7 @@ miss(struct vars *v,
  * lacon - lookaround-constraint checker for miss()
  */
 static int						/* predicate:  constraint satisfied? */
-lacon(struct vars *v,
+lacon(struct exec_vars *v,
 	  struct cnfa *pcnfa,		/* parent cnfa */
 	  chr *cp,
 	  color co)					/* "color" of the lookaround constraint */
@@ -979,7 +979,7 @@ lacon(struct vars *v,
  * clear the innards of the state set -- that's up to the caller.
  */
 static struct sset *
-getvacant(struct vars *v,
+getvacant(struct exec_vars *v,
 		  struct dfa *d,
 		  chr *cp,
 		  chr *start)
@@ -1050,7 +1050,7 @@ getvacant(struct vars *v,
  * pickss - pick the next stateset to be used
  */
 static struct sset *
-pickss(struct vars *v,
+pickss(struct exec_vars *v,
 	   struct dfa *d,
 	   chr *cp,
 	   chr *start)
