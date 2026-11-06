@@ -99,7 +99,7 @@ pqParseInput3(PGconn *conn)
 			handleSyncLoss(conn, id, msgLength);
 			return;
 		}
-		if (msgLength > 30000 && !VALID_LONG_MESSAGE_TYPE(id))
+		if (msgLength > PQ_SHORT_MESSAGE_MAX_LEN && !VALID_LONG_MESSAGE_TYPE(id))
 		{
 			handleSyncLoss(conn, id, msgLength);
 			return;
@@ -2259,7 +2259,7 @@ pqFunctionCall3(PGconn *conn, Oid fnid,
 			handleSyncLoss(conn, id, msgLength);
 			break;
 		}
-		if (msgLength > 30000 && !VALID_LONG_MESSAGE_TYPE(id))
+		if (msgLength > PQ_SHORT_MESSAGE_MAX_LEN && !VALID_LONG_MESSAGE_TYPE(id))
 		{
 			handleSyncLoss(conn, id, msgLength);
 			break;

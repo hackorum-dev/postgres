@@ -38,6 +38,7 @@
 #include "guc_internal.h"
 #include "libpq/pqformat.h"
 #include "libpq/protocol.h"
+#include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "parser/scansup.h"
 #include "port/pg_bitutils.h"
@@ -6804,14 +6805,32 @@ call_real_check_hook(const struct config_generic *conf, double *newval, void **e
 	return true;
 }
 
+/*
+ * Maximum length in bytes of a GUC_REPORT string parameter.
+ *
+ * Each new value is sent in a ParameterStatus message, which must fit in
+ * PQ_SHORT_MESSAGE_MAX_LEN, or libpq drops the connection.  The message holds
+ * a 4-byte length word and the parameter name and value, each with a
+ * trailing null byte.  Both strings are converted to the client encoding
+ * before they are sent, which can make them up to MAX_CONVERSION_GROWTH
+ * times longer.  A show_hook could also change the value that is sent, but
+ * we don't try to account for that.
+ */
+static int
+max_reported_string_len(const struct config_generic *conf)
+{
+	return (PQ_SHORT_MESSAGE_MAX_LEN - 4) / MAX_CONVERSION_GROWTH -
+		(int) strlen(conf->name) - 2;
+}
+
 static bool
 call_string_check_hook(const struct config_generic *conf, char **newval, void **extra,
 					   GucSource source, int elevel)
 {
 	volatile bool result = true;
 
-	/* Quick success if no hook */
-	if (!conf->_string.check_hook)
+	/* Quick success if no hook and no length limit */
+	if (!conf->_string.check_hook && !(conf->flags & GUC_REPORT))
 		return true;
 
 	/*
@@ -6827,7 +6846,19 @@ call_string_check_hook(const struct config_generic *conf, char **newval, void **
 		GUC_check_errdetail_string = NULL;
 		GUC_check_errhint_string = NULL;
 
-		if (!conf->_string.check_hook(newval, extra, source))
+		if ((conf->flags & GUC_REPORT) && *newval &&
+			strlen(*newval) > max_reported_string_len(conf))
+		{
+			ereport(elevel,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("value for parameter \"%s\" is too long",
+							conf->name),
+					 errdetail("The maximum length is %d bytes.",
+							   max_reported_string_len(conf))));
+			result = false;
+		}
+		else if (conf->_string.check_hook &&
+				 !conf->_string.check_hook(newval, extra, source))
 		{
 			ereport(elevel,
 					(errcode(GUC_check_errcode_value),
