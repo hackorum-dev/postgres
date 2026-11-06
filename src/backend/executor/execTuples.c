@@ -377,6 +377,25 @@ tts_heap_getsysattr(TupleTableSlot *slot, int attnum, bool *isnull)
 						   slot->tts_tupleDescriptor, isnull);
 }
 
+static TransactionId
+tts_heap_get_effective_xmin(TupleTableSlot *slot)
+{
+	HeapTupleTableSlot *hslot = (HeapTupleTableSlot *) slot;
+
+	Assert(!TTS_EMPTY(slot));
+
+	/*
+	 * In some code paths it's possible to get here with a non-materialized
+	 * slot, in which case we can't retrieve the tuple's xmin.
+	 */
+	if (!hslot->tuple)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("don't have a storage tuple in this context")));
+
+	return HeapTupleHeaderGetXmin(hslot->tuple->t_data);
+}
+
 static bool
 tts_heap_is_current_xact_tuple(TupleTableSlot *slot)
 {
@@ -788,6 +807,25 @@ tts_buffer_heap_getsysattr(TupleTableSlot *slot, int attnum, bool *isnull)
 
 	return heap_getsysattr(bslot->base.tuple, attnum,
 						   slot->tts_tupleDescriptor, isnull);
+}
+
+static TransactionId
+tts_buffer_heap_get_effective_xmin(TupleTableSlot *slot)
+{
+	BufferHeapTupleTableSlot *bslot = (BufferHeapTupleTableSlot *) slot;
+
+	Assert(!TTS_EMPTY(slot));
+
+	/*
+	 * In some code paths it's possible to get here with a non-materialized
+	 * slot, in which case we can't retrieve the tuple's xmin.
+	 */
+	if (!bslot->base.tuple)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("don't have a storage tuple in this context")));
+
+	return HeapTupleHeaderGetXmin(bslot->base.tuple->t_data);
 }
 
 static bool
@@ -1317,6 +1355,7 @@ const TupleTableSlotOps TTSOpsVirtual = {
 	.clear = tts_virtual_clear,
 	.getsomeattrs = tts_virtual_getsomeattrs,
 	.getsysattr = tts_virtual_getsysattr,
+	.get_effective_xmin = NULL,
 	.materialize = tts_virtual_materialize,
 	.is_current_xact_tuple = tts_virtual_is_current_xact_tuple,
 	.copyslot = tts_virtual_copyslot,
@@ -1338,6 +1377,7 @@ const TupleTableSlotOps TTSOpsHeapTuple = {
 	.clear = tts_heap_clear,
 	.getsomeattrs = tts_heap_getsomeattrs,
 	.getsysattr = tts_heap_getsysattr,
+	.get_effective_xmin = tts_heap_get_effective_xmin,
 	.is_current_xact_tuple = tts_heap_is_current_xact_tuple,
 	.materialize = tts_heap_materialize,
 	.copyslot = tts_heap_copyslot,
@@ -1356,6 +1396,7 @@ const TupleTableSlotOps TTSOpsMinimalTuple = {
 	.clear = tts_minimal_clear,
 	.getsomeattrs = tts_minimal_getsomeattrs,
 	.getsysattr = tts_minimal_getsysattr,
+	.get_effective_xmin = NULL,
 	.is_current_xact_tuple = tts_minimal_is_current_xact_tuple,
 	.materialize = tts_minimal_materialize,
 	.copyslot = tts_minimal_copyslot,
@@ -1374,6 +1415,7 @@ const TupleTableSlotOps TTSOpsBufferHeapTuple = {
 	.clear = tts_buffer_heap_clear,
 	.getsomeattrs = tts_buffer_heap_getsomeattrs,
 	.getsysattr = tts_buffer_heap_getsysattr,
+	.get_effective_xmin = tts_buffer_heap_get_effective_xmin,
 	.is_current_xact_tuple = tts_buffer_is_current_xact_tuple,
 	.materialize = tts_buffer_heap_materialize,
 	.copyslot = tts_buffer_heap_copyslot,
