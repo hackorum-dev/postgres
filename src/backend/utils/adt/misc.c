@@ -58,6 +58,8 @@ typedef struct ValidIOData
 	Oid			typoid;
 	int32		typmod;
 	bool		typname_constant;
+	char	   *typname;		/* type name last parsed, if typname_constant */
+	int			typname_len;
 	Oid			typiofunc;
 	Oid			typioparam;
 	FmgrInfo	inputproc;
@@ -751,35 +753,55 @@ pg_input_is_valid_common(FunctionCallInfo fcinfo,
 	if (my_extra == NULL)
 	{
 		fcinfo->flinfo->fn_extra =
-			MemoryContextAlloc(fcinfo->flinfo->fn_mcxt,
-							   sizeof(ValidIOData));
+			MemoryContextAllocZero(fcinfo->flinfo->fn_mcxt,
+								   sizeof(ValidIOData));
 		my_extra = (ValidIOData *) fcinfo->flinfo->fn_extra;
-		my_extra->typoid = InvalidOid;
 		/* Detect whether typname argument is constant. */
 		my_extra->typname_constant = get_fn_expr_arg_stable(fcinfo->flinfo, 1);
 	}
 
 	/*
-	 * If the typname argument is constant, we only need to parse it the first
-	 * time through.
+	 * Parse the type name unless it is stable and unchanged.  An external
+	 * Param counts as stable, but plpgsql can supply a new value for it each
+	 * time a simple expression is evaluated.
 	 */
-	if (my_extra->typoid == InvalidOid || !my_extra->typname_constant)
+	if (!my_extra->typname_constant || my_extra->typname == NULL ||
+		my_extra->typname_len != VARSIZE_ANY_EXHDR(typname) ||
+		memcmp(my_extra->typname, VARDATA_ANY(typname),
+			   my_extra->typname_len) != 0)
 	{
 		char	   *typnamestr = text_to_cstring(typname);
 		Oid			typoid;
+		int32		typmod;
+
+		/* Free the old name now, so that an error below forces a re-parse */
+		if (my_extra->typname)
+		{
+			pfree(my_extra->typname);
+			my_extra->typname = NULL;
+		}
 
 		/* Parse type-name argument to obtain type OID and encoded typmod. */
-		(void) parseTypeString(typnamestr, &typoid, &my_extra->typmod, NULL);
+		(void) parseTypeString(typnamestr, &typoid, &typmod, NULL);
 
 		/* Update type-specific info if typoid changed. */
 		if (my_extra->typoid != typoid)
 		{
+			my_extra->typoid = InvalidOid;
 			getTypeInputInfo(typoid,
 							 &my_extra->typiofunc,
 							 &my_extra->typioparam);
 			fmgr_info_cxt(my_extra->typiofunc, &my_extra->inputproc,
 						  fcinfo->flinfo->fn_mcxt);
 			my_extra->typoid = typoid;
+		}
+		my_extra->typmod = typmod;
+
+		if (my_extra->typname_constant)
+		{
+			my_extra->typname = MemoryContextStrdup(fcinfo->flinfo->fn_mcxt,
+													typnamestr);
+			my_extra->typname_len = strlen(typnamestr);
 		}
 	}
 
