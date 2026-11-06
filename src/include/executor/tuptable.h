@@ -16,6 +16,7 @@
 
 #include "access/htup.h"
 #include "access/sysattr.h"
+#include "access/transam.h"
 #include "access/tupdesc.h"
 #include "storage/buf.h"
 
@@ -180,6 +181,16 @@ struct TupleTableSlotOps
 	 * support system attributes.
 	 */
 	Datum		(*getsysattr) (TupleTableSlot *slot, int attnum, bool *isnull);
+
+	/*
+	 * Return the effective transaction ID that inserted the tuple.  Unlike
+	 * getsysattr(MinTransactionIdAttributeNumber), this accounts for freezing
+	 * and other cases where the raw XID no longer provides meaningful
+	 * transaction information.  Throws an error if the slot doesn't contain
+	 * the storage tuple.  If the slot type cannot provide this information,
+	 * it should not implement this callback and should set it as NULL.
+	 */
+	TransactionId (*get_effective_xmin) (TupleTableSlot *slot);
 
 	/*
 	 * Check if the tuple is created by the current transaction. Throws an
@@ -452,6 +463,26 @@ slot_getsysattr(TupleTableSlot *slot, int attnum, bool *isnull)
 
 	/* Fetch the system attribute from the underlying tuple. */
 	return slot->tts_ops->getsysattr(slot, attnum, isnull);
+}
+
+/*
+ * slot_get_effective_xmin - fetch the effective XID that inserted the slot's
+ *							 current tuple.
+ *
+ *	If the slot type does not provide an effective xmin, this returns
+ *	InvalidTransactionId.  If the slot type supports storage tuples, the
+ *	caller must ensure that there is currently one inside the slot, otherwise
+ *	an error will be thrown.
+ */
+static inline TransactionId
+slot_get_effective_xmin(TupleTableSlot *slot)
+{
+	Assert(!TTS_EMPTY(slot));
+
+	if (slot->tts_ops->get_effective_xmin == NULL)
+		return InvalidTransactionId;
+
+	return slot->tts_ops->get_effective_xmin(slot);
 }
 
 /*

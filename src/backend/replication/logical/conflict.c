@@ -227,8 +227,11 @@ GetConflictLogDest(const char *dest)
 }
 
 /*
- * Get the xmin and commit timestamp data (origin and timestamp) associated
- * with the provided local row.
+ * Get the effective xmin and commit timestamp data (origin and timestamp)
+ * associated with the provided local row.
+ *
+ * If the tuple is frozen or the slot does not provide a normal XID, *xmin is
+ * set to InvalidTransactionId.
  *
  * Return true if the commit timestamp data was found, false otherwise.
  */
@@ -236,24 +239,29 @@ bool
 GetTupleTransactionInfo(TupleTableSlot *localslot, TransactionId *xmin,
 						ReplOriginId *localorigin, TimestampTz *localts)
 {
-	Datum		xminDatum;
-	bool		isnull;
+	TransactionId tup_xmin;
 
-	xminDatum = slot_getsysattr(localslot, MinTransactionIdAttributeNumber,
-								&isnull);
-	*xmin = DatumGetTransactionId(xminDatum);
-	Assert(!isnull);
+	*xmin = InvalidTransactionId;
+	*localorigin = InvalidReplOriginId;
+	*localts = 0;
+
+	tup_xmin = slot_get_effective_xmin(localslot);
+
+	/*
+	 * Non-normal XIDs cannot be used to obtain meaningful transaction
+	 * information.
+	 */
+	if (!TransactionIdIsNormal(tup_xmin))
+		return false;
+
+	*xmin = tup_xmin;
 
 	/*
 	 * The commit timestamp data is not available if track_commit_timestamp is
 	 * disabled.
 	 */
 	if (!track_commit_timestamp)
-	{
-		*localorigin = InvalidReplOriginId;
-		*localts = 0;
 		return false;
-	}
 
 	return TransactionIdGetCommitTsData(*xmin, localts, localorigin);
 }
@@ -499,7 +507,7 @@ errdetail_apply_conflict(EState *estate, ResultRelInfo *relinfo,
 										 localxmin, timestamptz_to_str(localts));
 				}
 			}
-			else
+			else if (TransactionIdIsValid(localxmin))
 			{
 				if (tuple_buf.len)
 					appendStringInfo(&err_detail, _("Key already exists in unique index \"%s\", modified in transaction %u: %s."),
@@ -508,6 +516,15 @@ errdetail_apply_conflict(EState *estate, ResultRelInfo *relinfo,
 				else
 					appendStringInfo(&err_detail, _("Key already exists in unique index \"%s\", modified in transaction %u."),
 									 get_rel_name(indexoid), localxmin);
+			}
+			else
+			{
+				if (tuple_buf.len)
+					appendStringInfo(&err_detail, _("Key already exists in unique index \"%s\": %s."),
+									 get_rel_name(indexoid), tuple_buf.data);
+				else
+					appendStringInfo(&err_detail, _("Key already exists in unique index \"%s\"."),
+									 get_rel_name(indexoid));
 			}
 
 			break;
