@@ -409,3 +409,29 @@ SELECT name FROM tab_settings_flags
   WHERE no_reset AND NOT no_reset_all
   ORDER BY 1;
 DROP TABLE tab_settings_flags;
+
+-- A GUC_REPORT string such as search_path must fit in a ParameterStatus
+-- message that libpq accepts, even after conversion to the client encoding.
+-- The longest value works, longer ones fail for one name or many names.
+SELECT length(set_config('search_path', repeat('a', 7486), false));
+DO $$
+DECLARE
+  detail text;
+BEGIN
+  BEGIN
+    PERFORM set_config('search_path', repeat('a', 7487), false);
+  EXCEPTION WHEN invalid_parameter_value THEN
+    GET STACKED DIAGNOSTICS detail = PG_EXCEPTION_DETAIL;
+    RAISE NOTICE 'set_config: %', detail;
+  END;
+  BEGIN
+    EXECUTE 'SET search_path = ' ||
+      (SELECT string_agg(lpad(i::text, 63, 'x'), ', ')
+       FROM generate_series(1, 200) i);
+  EXCEPTION WHEN invalid_parameter_value THEN
+    GET STACKED DIAGNOSTICS detail = PG_EXCEPTION_DETAIL;
+    RAISE NOTICE 'SET: %', detail;
+  END;
+END $$;
+SELECT length(current_setting('search_path'));
+RESET search_path;
