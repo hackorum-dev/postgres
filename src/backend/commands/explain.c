@@ -4953,6 +4953,13 @@ show_modifytable_info(ModifyTableState *mtstate, List *ancestors,
 		}
 	}
 
+	/*
+	 * Close the "Target Tables" group before emitting the properties below;
+	 * they belong to the ModifyTable node itself, not to its target list.
+	 */
+	if (labeltargets)
+		ExplainCloseGroup("Target Tables", "Target Tables", false, es);
+
 	/* Gather names of ON CONFLICT arbiter indexes */
 	foreach(lst, node->arbiterIndexes)
 	{
@@ -5076,9 +5083,6 @@ show_modifytable_info(ModifyTableState *mtstate, List *ancestors,
 			}
 		}
 	}
-
-	if (labeltargets)
-		ExplainCloseGroup("Target Tables", "Target Tables", false, es);
 }
 
 /*
