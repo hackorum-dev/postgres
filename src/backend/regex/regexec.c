@@ -103,7 +103,7 @@ struct smalldfa
 
 
 /* internal variables, bundled for easy passing around */
-struct vars
+struct exec_vars
 {
 	regex_t    *re;
 	struct guts *g;
@@ -137,44 +137,44 @@ struct vars
  * forward declarations
  */
 /* === regexec.c === */
-static struct dfa *getsubdfa(struct vars *v, struct subre *t);
-static struct dfa *getladfa(struct vars *v, int n);
-static int	find(struct vars *v, struct cnfa *cnfa, struct colormap *cm);
-static int	cfind(struct vars *v, struct cnfa *cnfa, struct colormap *cm);
-static int	cfindloop(struct vars *v, struct cnfa *cnfa, struct colormap *cm,
+static struct dfa *getsubdfa(struct exec_vars *v, struct subre *t);
+static struct dfa *getladfa(struct exec_vars *v, int n);
+static int	find(struct exec_vars *v, struct cnfa *cnfa, struct colormap *cm);
+static int	cfind(struct exec_vars *v, struct cnfa *cnfa, struct colormap *cm);
+static int	cfindloop(struct exec_vars *v, struct cnfa *cnfa, struct colormap *cm,
 					  struct dfa *d, struct dfa *s, chr **coldp);
 static void zapallsubs(regmatch_t *p, size_t n);
-static void zaptreesubs(struct vars *v, struct subre *t);
-static void subset(struct vars *v, struct subre *sub, chr *begin, chr *end);
-static int	cdissect(struct vars *v, struct subre *t, chr *begin, chr *end);
-static int	ccondissect(struct vars *v, struct subre *t, chr *begin, chr *end);
-static int	crevcondissect(struct vars *v, struct subre *t, chr *begin, chr *end);
-static int	cbrdissect(struct vars *v, struct subre *t, chr *begin, chr *end);
-static int	caltdissect(struct vars *v, struct subre *t, chr *begin, chr *end);
-static int	citerdissect(struct vars *v, struct subre *t, chr *begin, chr *end);
-static int	creviterdissect(struct vars *v, struct subre *t, chr *begin, chr *end);
+static void zaptreesubs(struct exec_vars *v, struct subre *t);
+static void subset(struct exec_vars *v, struct subre *sub, chr *begin, chr *end);
+static int	cdissect(struct exec_vars *v, struct subre *t, chr *begin, chr *end);
+static int	ccondissect(struct exec_vars *v, struct subre *t, chr *begin, chr *end);
+static int	crevcondissect(struct exec_vars *v, struct subre *t, chr *begin, chr *end);
+static int	cbrdissect(struct exec_vars *v, struct subre *t, chr *begin, chr *end);
+static int	caltdissect(struct exec_vars *v, struct subre *t, chr *begin, chr *end);
+static int	citerdissect(struct exec_vars *v, struct subre *t, chr *begin, chr *end);
+static int	creviterdissect(struct exec_vars *v, struct subre *t, chr *begin, chr *end);
 
 /* === rege_dfa.c === */
-static chr *longest(struct vars *v, struct dfa *d,
+static chr *longest(struct exec_vars *v, struct dfa *d,
 					chr *start, chr *stop, int *hitstopp);
-static chr *shortest(struct vars *v, struct dfa *d, chr *start, chr *min,
+static chr *shortest(struct exec_vars *v, struct dfa *d, chr *start, chr *min,
 					 chr *max, chr **coldp, int *hitstopp);
-static int	matchuntil(struct vars *v, struct dfa *d, chr *probe,
+static int	matchuntil(struct exec_vars *v, struct dfa *d, chr *probe,
 					   struct sset **lastcss, chr **lastcp);
-static chr *dfa_backref(struct vars *v, struct dfa *d, chr *start,
+static chr *dfa_backref(struct exec_vars *v, struct dfa *d, chr *start,
 						chr *min, chr *max, bool shortest);
-static chr *lastcold(struct vars *v, struct dfa *d);
-static struct dfa *newdfa(struct vars *v, struct cnfa *cnfa,
+static chr *lastcold(struct exec_vars *v, struct dfa *d);
+static struct dfa *newdfa(struct exec_vars *v, struct cnfa *cnfa,
 						  struct colormap *cm, struct smalldfa *sml);
 static void freedfa(struct dfa *d);
 static unsigned hash(unsigned *uv, int n);
-static struct sset *initialize(struct vars *v, struct dfa *d, chr *start);
-static struct sset *miss(struct vars *v, struct dfa *d, struct sset *css,
+static struct sset *initialize(struct exec_vars *v, struct dfa *d, chr *start);
+static struct sset *miss(struct exec_vars *v, struct dfa *d, struct sset *css,
 						 color co, chr *cp, chr *start);
-static int	lacon(struct vars *v, struct cnfa *pcnfa, chr *cp, color co);
-static struct sset *getvacant(struct vars *v, struct dfa *d, chr *cp,
+static int	lacon(struct exec_vars *v, struct cnfa *pcnfa, chr *cp, color co);
+static struct sset *getvacant(struct exec_vars *v, struct dfa *d, chr *cp,
 							  chr *start);
-static struct sset *pickss(struct vars *v, struct dfa *d, chr *cp,
+static struct sset *pickss(struct exec_vars *v, struct dfa *d, chr *cp,
 						   chr *start);
 
 
@@ -191,8 +191,8 @@ pg_regexec(regex_t *re,
 		   regmatch_t pmatch[],
 		   int flags)
 {
-	struct vars var;
-	struct vars *v = &var;
+	struct exec_vars var;
+	struct exec_vars *v = &var;
 	int			st;
 	size_t		n;
 	size_t		i;
@@ -371,7 +371,7 @@ cleanup:
  * The DFA will be freed by the cleanup step in pg_regexec().
  */
 static struct dfa *
-getsubdfa(struct vars *v,
+getsubdfa(struct exec_vars *v,
 		  struct subre *t)
 {
 	struct dfa *d = v->subdfas[t->id];
@@ -399,7 +399,7 @@ getsubdfa(struct vars *v,
  * Same as above, but for LACONs.
  */
 static struct dfa *
-getladfa(struct vars *v,
+getladfa(struct exec_vars *v,
 		 int n)
 {
 	assert(n > 0 && n < v->g->nlacons && v->g->lacons != NULL);
@@ -418,7 +418,7 @@ getladfa(struct vars *v,
  * find - find a match for the main NFA (no-complications case)
  */
 static int
-find(struct vars *v,
+find(struct exec_vars *v,
 	 struct cnfa *cnfa,
 	 struct colormap *cm)
 {
@@ -508,7 +508,7 @@ find(struct vars *v,
  * cfind - find a match for the main NFA (with complications)
  */
 static int
-cfind(struct vars *v,
+cfind(struct exec_vars *v,
 	  struct cnfa *cnfa,
 	  struct colormap *cm)
 {
@@ -548,7 +548,7 @@ cfind(struct vars *v,
  * cfindloop - the heart of cfind
  */
 static int
-cfindloop(struct vars *v,
+cfindloop(struct exec_vars *v,
 		  struct cnfa *cnfa,
 		  struct colormap *cm,
 		  struct dfa *d,
@@ -678,7 +678,7 @@ zapallsubs(regmatch_t *p,
  * zaptreesubs - initialize subexpressions within subtree to "no match"
  */
 static void
-zaptreesubs(struct vars *v,
+zaptreesubs(struct exec_vars *v,
 			struct subre *t)
 {
 	int			n = t->capno;
@@ -701,7 +701,7 @@ zaptreesubs(struct vars *v,
  * subset - set subexpression match data for a successful subre
  */
 static void
-subset(struct vars *v,
+subset(struct exec_vars *v,
 	   struct subre *sub,
 	   chr *begin,
 	   chr *end)
@@ -755,7 +755,7 @@ subset(struct vars *v,
  * start of each cdissect level.
  */
 static int						/* regexec return code */
-cdissect(struct vars *v,
+cdissect(struct exec_vars *v,
 		 struct subre *t,
 		 chr *begin,			/* beginning of relevant substring */
 		 chr *end)				/* end of same */
@@ -828,7 +828,7 @@ cdissect(struct vars *v,
  * ccondissect - dissect match for concatenation node
  */
 static int						/* regexec return code */
-ccondissect(struct vars *v,
+ccondissect(struct exec_vars *v,
 			struct subre *t,
 			chr *begin,			/* beginning of relevant substring */
 			chr *end)			/* end of same */
@@ -909,7 +909,7 @@ ccondissect(struct vars *v,
  * crevcondissect - dissect match for concatenation node, shortest-first
  */
 static int						/* regexec return code */
-crevcondissect(struct vars *v,
+crevcondissect(struct exec_vars *v,
 			   struct subre *t,
 			   chr *begin,		/* beginning of relevant substring */
 			   chr *end)		/* end of same */
@@ -993,7 +993,7 @@ crevcondissect(struct vars *v,
  * but we don't know that for sure so must check it here.
  */
 static int						/* regexec return code */
-cbrdissect(struct vars *v,
+cbrdissect(struct exec_vars *v,
 		   struct subre *t,
 		   chr *begin,			/* beginning of relevant substring */
 		   chr *end)			/* end of same */
@@ -1075,7 +1075,7 @@ cbrdissect(struct vars *v,
  * caltdissect - dissect match for alternation node
  */
 static int						/* regexec return code */
-caltdissect(struct vars *v,
+caltdissect(struct exec_vars *v,
 			struct subre *t,
 			chr *begin,			/* beginning of relevant substring */
 			chr *end)			/* end of same */
@@ -1116,7 +1116,7 @@ caltdissect(struct vars *v,
  * citerdissect - dissect match for iteration node
  */
 static int						/* regexec return code */
-citerdissect(struct vars *v,
+citerdissect(struct exec_vars *v,
 			 struct subre *t,
 			 chr *begin,		/* beginning of relevant substring */
 			 chr *end)			/* end of same */
@@ -1320,7 +1320,7 @@ backtrack:
  * creviterdissect - dissect match for iteration node, shortest-first
  */
 static int						/* regexec return code */
-creviterdissect(struct vars *v,
+creviterdissect(struct exec_vars *v,
 				struct subre *t,
 				chr *begin,		/* beginning of relevant substring */
 				chr *end)		/* end of same */
