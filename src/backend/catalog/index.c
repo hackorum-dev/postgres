@@ -763,6 +763,7 @@ index_create(Relation heapRelation,
 	bool		mapped_relation;
 	bool		is_exclusion;
 	Oid			namespaceId;
+	Oid			existingRelationId;
 	int			i;
 	char		relpersistence;
 	bool		isprimary = (flags & INDEX_CREATE_IS_PRIMARY) != 0;
@@ -895,14 +896,30 @@ index_create(Relation heapRelation,
 	 * catalogs' unique indexes anyway, but we prefer to give a friendlier
 	 * error message.
 	 */
-	if (get_relname_relid(indexRelationName, namespaceId))
+	existingRelationId = get_relname_relid(indexRelationName, namespaceId);
+	if (OidIsValid(existingRelationId))
 	{
 		if ((flags & INDEX_CREATE_IF_NOT_EXISTS) != 0)
 		{
+			HeapTuple	indexTuple;
+			bool		existingIndexInvalid = false;
+
+			/* The conflicting relation need not be an index. */
+			indexTuple = SearchSysCache1(INDEXRELID,
+										 ObjectIdGetDatum(existingRelationId));
+			if (HeapTupleIsValid(indexTuple))
+			{
+				existingIndexInvalid =
+					!((Form_pg_index) GETSTRUCT(indexTuple))->indisvalid;
+				ReleaseSysCache(indexTuple);
+			}
+
 			ereport(NOTICE,
 					(errcode(ERRCODE_DUPLICATE_TABLE),
 					 errmsg("relation \"%s\" already exists, skipping",
-							indexRelationName)));
+							indexRelationName),
+					 existingIndexInvalid ?
+					 errdetail("The existing index is invalid.") : 0));
 			table_close(pg_class, RowExclusiveLock);
 			return InvalidOid;
 		}

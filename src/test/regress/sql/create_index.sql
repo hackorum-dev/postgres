@@ -13,6 +13,9 @@ CREATE INDEX onek_unique1 ON onek USING btree(unique1 int4_ops);
 
 CREATE INDEX IF NOT EXISTS onek_unique1 ON onek USING btree(unique1 int4_ops);
 
+-- The conflicting relation need not be an index.
+CREATE INDEX IF NOT EXISTS onek ON onek USING btree(unique1 int4_ops);
+
 CREATE INDEX IF NOT EXISTS ON onek USING btree(unique1 int4_ops);
 
 CREATE INDEX onek_unique2 ON onek USING btree(unique2 int4_ops);
@@ -507,6 +510,9 @@ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS concur_index2 ON concur_heap(f1);
 INSERT INTO concur_heap VALUES ('b','x');
 -- check if constraint is enforced properly at build time
 CREATE UNIQUE INDEX CONCURRENTLY concur_index3 ON concur_heap(f2);
+-- IF NOT EXISTS reports that the existing index is invalid, without rebuilding it.
+CREATE UNIQUE INDEX IF NOT EXISTS concur_index3 ON concur_heap(f2);
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS concur_index3 ON concur_heap(f2);
 -- test that expression indexes and partial indexes work concurrently
 CREATE INDEX CONCURRENTLY concur_index4 on concur_heap(f2) WHERE f1='a';
 CREATE INDEX CONCURRENTLY concur_index5 on concur_heap(f2) WHERE f1='x';
@@ -590,6 +596,14 @@ DROP INDEX CONCURRENTLY "concur_heap_f2_f1_idx";
 \d concur_heap
 
 DROP TABLE concur_heap;
+
+-- An index created on ONLY a partitioned table is also invalid.
+CREATE TABLE invalid_index_heap (a int) PARTITION BY RANGE (a);
+CREATE TABLE invalid_index_partition PARTITION OF invalid_index_heap
+  FOR VALUES FROM (0) TO (10);
+CREATE INDEX invalid_index ON ONLY invalid_index_heap (a);
+CREATE INDEX IF NOT EXISTS invalid_index ON invalid_index_heap (a);
+DROP TABLE invalid_index_heap;
 
 --
 -- Test ADD CONSTRAINT USING INDEX
