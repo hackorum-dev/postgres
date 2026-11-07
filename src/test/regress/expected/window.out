@@ -6250,6 +6250,19 @@ ORDER BY p, x;
  2 |   |            
 (3 rows)
 
+-- the IGNORE NULLS scan must not read the row after a ROWS frame end
+WITH t AS MATERIALIZED (
+  SELECT NULLIF(i, 1) / (2 - i) AS v
+  FROM generate_series(1, 2) AS g(i)
+)
+SELECT first_value(v) IGNORE NULLS OVER (ROWS CURRENT ROW)
+FROM t
+LIMIT 1;
+ first_value 
+-------------
+            
+(1 row)
+
 -- volatile arguments cannot use the IGNORE NULLS nullness cache
 CREATE TEMPORARY SEQUENCE null_treatment_seq;
 CREATE FUNCTION pg_temp.volatile_null(i int) RETURNS int

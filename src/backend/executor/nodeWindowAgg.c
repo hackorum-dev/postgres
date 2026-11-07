@@ -3477,6 +3477,11 @@ ignorenulls_getfuncarginframe(WindowObject winobj, int argno,
 		if (abs_pos < 0)
 			goto out_of_frame;
 
+		/* check whether row is in frame */
+		inframe = row_is_in_frame(winobj, abs_pos, slot, true);
+		if (inframe == -1)
+			goto out_of_frame;
+
 		/*
 		 * Likewise, stop at the end of the partition, which row_is_in_frame
 		 * expects its caller to have checked.  It cannot always detect that
@@ -3489,11 +3494,7 @@ ignorenulls_getfuncarginframe(WindowObject winobj, int argno,
 		if (abs_pos >= winstate->spooled_rows)
 			goto out_of_frame;
 
-		/* check whether row is in frame */
-		inframe = row_is_in_frame(winobj, abs_pos, slot, true);
-		if (inframe == -1)
-			goto out_of_frame;
-		else if (inframe == 0)
+		if (inframe == 0)
 			goto advance;
 
 		if (isout)
