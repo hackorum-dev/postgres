@@ -10,6 +10,9 @@
 CREATE INDEX onek_unique1 ON onek USING btree(unique1 int4_ops);
 CREATE INDEX IF NOT EXISTS onek_unique1 ON onek USING btree(unique1 int4_ops);
 NOTICE:  relation "onek_unique1" already exists, skipping
+-- The conflicting relation need not be an index.
+CREATE INDEX IF NOT EXISTS onek ON onek USING btree(unique1 int4_ops);
+NOTICE:  relation "onek" already exists, skipping
 CREATE INDEX IF NOT EXISTS ON onek USING btree(unique1 int4_ops);
 ERROR:  syntax error at or near "ON"
 LINE 1: CREATE INDEX IF NOT EXISTS ON onek USING btree(unique1 int4_...
@@ -1447,6 +1450,13 @@ DETAIL:  Key (f1)=(b) already exists.
 CREATE UNIQUE INDEX CONCURRENTLY concur_index3 ON concur_heap(f2);
 ERROR:  could not create unique index "concur_index3"
 DETAIL:  Key (f2)=(b) is duplicated.
+-- IF NOT EXISTS reports that the existing index is invalid, without rebuilding it.
+CREATE UNIQUE INDEX IF NOT EXISTS concur_index3 ON concur_heap(f2);
+NOTICE:  relation "concur_index3" already exists, skipping
+DETAIL:  The existing index is invalid.
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS concur_index3 ON concur_heap(f2);
+NOTICE:  relation "concur_index3" already exists, skipping
+DETAIL:  The existing index is invalid.
 -- test that expression indexes and partial indexes work concurrently
 CREATE INDEX CONCURRENTLY concur_index4 on concur_heap(f2) WHERE f1='a';
 CREATE INDEX CONCURRENTLY concur_index5 on concur_heap(f2) WHERE f1='x';
@@ -1565,6 +1575,15 @@ Indexes:
     "std_index" btree (f2)
 
 DROP TABLE concur_heap;
+-- An index created on ONLY a partitioned table is also invalid.
+CREATE TABLE invalid_index_heap (a int) PARTITION BY RANGE (a);
+CREATE TABLE invalid_index_partition PARTITION OF invalid_index_heap
+  FOR VALUES FROM (0) TO (10);
+CREATE INDEX invalid_index ON ONLY invalid_index_heap (a);
+CREATE INDEX IF NOT EXISTS invalid_index ON invalid_index_heap (a);
+NOTICE:  relation "invalid_index" already exists, skipping
+DETAIL:  The existing index is invalid.
+DROP TABLE invalid_index_heap;
 --
 -- Test ADD CONSTRAINT USING INDEX
 --
