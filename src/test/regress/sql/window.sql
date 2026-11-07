@@ -2302,6 +2302,14 @@ SELECT p, x,
 FROM (VALUES (1, 1), (1, NULL), (2, NULL)) v(p, x)
 WINDOW w AS (PARTITION BY p ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE TIES)
 ORDER BY p, x;
+-- the IGNORE NULLS scan must not read the row after a ROWS frame end
+WITH t AS MATERIALIZED (
+  SELECT NULLIF(i, 1) / (2 - i) AS v
+  FROM generate_series(1, 2) AS g(i)
+)
+SELECT first_value(v) IGNORE NULLS OVER (ROWS CURRENT ROW)
+FROM t
+LIMIT 1;
 
 -- volatile arguments cannot use the IGNORE NULLS nullness cache
 CREATE TEMPORARY SEQUENCE null_treatment_seq;
