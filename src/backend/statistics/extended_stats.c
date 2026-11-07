@@ -2427,7 +2427,7 @@ serialize_expr_stats(AnlExprData *exprdata, int nexprs)
 		i = Anum_pg_statistic_stavalues1 - 1;
 		for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
 		{
-			if (stats->numvalues[k] > 0)
+			if (stats->stavalues[k] != NULL)
 			{
 				ArrayType  *arry;
 
