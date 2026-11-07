@@ -1171,8 +1171,6 @@ CopyFromTextLikeOneRow(CopyFromState cstate, ExprContext *econtext,
 
 			if (cstate->opts.on_error == COPY_ON_ERROR_IGNORE)
 				return true;
-			else if (cstate->opts.on_error == COPY_ON_ERROR_SET_NULL)
-				continue;
 		}
 
 		cstate->cur_attname = NULL;
