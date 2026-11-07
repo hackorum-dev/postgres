@@ -3572,6 +3572,24 @@ print_function_sqlbody(StringInfo buf, HeapTuple proctup)
 	dpns.funcname = pstrdup(NameStr(((Form_pg_proc) GETSTRUCT(proctup))->proname));
 	numargs = get_func_arg_info(proctup,
 								&argtypes, &argnames, &argmodes);
+
+	/*
+	 * Param IDs count input parameters only, so remove the names of output
+	 * parameters to keep the array indexable by paramid.
+	 */
+	if (argnames && argmodes)
+	{
+		int			ninput = 0;
+
+		for (int i = 0; i < numargs; i++)
+		{
+			if (argmodes[i] != PROARGMODE_OUT &&
+				argmodes[i] != PROARGMODE_TABLE)
+				argnames[ninput++] = argnames[i];
+		}
+		numargs = ninput;
+	}
+
 	dpns.numargs = numargs;
 	dpns.argnames = argnames;
 
@@ -8815,7 +8833,8 @@ get_parameter(Param *param, deparse_context *context)
 		{
 			char	   *argname = dpns->argnames[param->paramid - 1];
 
-			if (argname)
+			/* An unnamed parameter has an empty name if others are named */
+			if (argname && argname[0] != '\0')
 			{
 				bool		should_qualify = false;
 				ListCell   *lc;

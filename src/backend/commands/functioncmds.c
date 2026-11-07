@@ -418,7 +418,7 @@ interpret_function_parameter_list(ParseState *pstate,
 			have_names = true;
 		}
 
-		if (inParameterNames_list)
+		if (isinput && inParameterNames_list)
 			*inParameterNames_list = lappend(*inParameterNames_list, makeString(fp->name ? fp->name : pstrdup("")));
 
 		if (fp->defexpr)
