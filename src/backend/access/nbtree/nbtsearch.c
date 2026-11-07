@@ -713,7 +713,16 @@ _bt_compare(Relation rel,
 	if (!P_ISLEAF(opaque) && offnum == P_FIRSTDATAKEY(opaque))
 		return 1;
 
-	itup = (IndexTuple) PageGetItem(page, PageGetItemId(page, offnum));
+	/*
+	 * On a prefix-compressed leaf a data item is stored coded; compare
+	 * against its decoded form so the heap TID tiebreak below applies
+	 * unchanged.
+	 */
+	{
+		static BTItemBuf prefixbuf;
+
+		itup = _bt_getitem(page, offnum, &prefixbuf);
+	}
 	ntupatts = BTreeTupleGetNAtts(itup, rel);
 
 	/*
