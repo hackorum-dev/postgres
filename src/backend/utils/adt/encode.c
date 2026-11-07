@@ -592,7 +592,9 @@ pg_base64_decode_internal(const char *src, size_t len, char *dst, bool url)
 	{
 		buf <<= 6;
 		*p++ = (buf >> 16) & 0xFF;
-		*p++ = (buf >> 8) & 0xFF;
+		/* "ab=" carries only one byte; the padding bits are not data */
+		if (end == 0)
+			*p++ = (buf >> 8) & 0xFF;
 	}
 	else if (pos != 0)
 	{
