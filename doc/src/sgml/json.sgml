@@ -982,7 +982,7 @@ UPDATE table_name SET jsonb_field[1]['a'] = '1';
      <row>
       <entry>
        <para>
-        <literal>[<replaceable>subscript</replaceable>, ...]</literal>
+        <literal>[<replaceable>subscript</replaceable> ...]</literal>
        </para>
       </entry>
       <entry>
@@ -997,12 +997,20 @@ UPDATE table_name SET jsonb_field[1]['a'] = '1';
         <replaceable>start_index</replaceable> and <replaceable>end_index</replaceable>.
        </para>
        <para>
+        Multiple <literal><replaceable>subscript</replaceable></literal>s are supported,
+        provided that they are separated by a comma.
+       </para>
+       <para>
         The specified <replaceable>index</replaceable> can be an integer, as
         well as an expression returning a single numeric value, which is
         automatically cast to integer. Index zero corresponds to the first
         array element. You can also use the <literal>last</literal> keyword
         to denote the last array element, which is useful for handling arrays
         of unknown length.
+       </para>
+       <para>
+       Indexes or range of indexes which do not correspond to the array's
+       length are silently ignored.
        </para>
       </entry>
      </row>
