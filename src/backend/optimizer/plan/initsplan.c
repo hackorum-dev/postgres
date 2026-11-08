@@ -14,8 +14,12 @@
  */
 #include "postgres.h"
 
+#include "access/htup_details.h"
 #include "access/nbtree.h"
+#include "access/stratnum.h"
 #include "access/sysattr.h"
+#include "catalog/pg_am.h"
+#include "catalog/pg_amop.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
@@ -32,8 +36,10 @@
 #include "optimizer/restrictinfo.h"
 #include "parser/analyze.h"
 #include "rewrite/rewriteManip.h"
+#include "utils/catcache.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/syscache.h"
 #include "utils/typcache.h"
 
 /* These parameters are set by GUC */
@@ -4036,10 +4042,54 @@ check_hashjoinable(RestrictInfo *restrictinfo)
 }
 
 /*
+ * get_memoize_eqop
+ *	  Find the equality operator for comparing two values of type 'type' with
+ *	  the same semantics as the cross-type hashjoinable operator 'joinop'.
+ *
+ * We look for an equality member of 'type' in a hash opfamily that contains
+ * 'joinop'.  Returns InvalidOid if there is none.
+ */
+static Oid
+get_memoize_eqop(Oid joinop, Oid type)
+{
+	Oid			result = InvalidOid;
+	CatCList   *catlist;
+
+	catlist = SearchSysCacheList1(AMOPOPID, ObjectIdGetDatum(joinop));
+
+	for (int i = 0; i < catlist->n_members; i++)
+	{
+		HeapTuple	tuple = &catlist->members[i]->tuple;
+		Form_pg_amop aform = (Form_pg_amop) GETSTRUCT(tuple);
+
+		if (aform->amopmethod != HASH_AM_OID ||
+			aform->amopstrategy != HTEqualStrategyNumber)
+			continue;
+
+		result = get_opfamily_member(aform->amopfamily, type, type,
+									 HTEqualStrategyNumber);
+		if (OidIsValid(result))
+			break;
+	}
+
+	ReleaseSysCacheList(catlist);
+
+	return result;
+}
+
+/*
  * check_memoizable
  *	  If the restrictinfo's clause is suitable to be used for a Memoize node,
  *	  set the left_hasheqoperator and right_hasheqoperator to the hash equality
  *	  operator that will be needed during caching.
+ *
+ * When the clause is hashjoinable, the cache must use the same notion of
+ * equality as the join operator, as the type's default equality operator
+ * could consider values equal that the join operator does not.  If both
+ * inputs are of the same type, we can just use the join operator itself;
+ * otherwise we look up the same-type equality operators in the join
+ * operator's hash opfamily.  When the clause is not hashjoinable, we use the
+ * type's default equality operator and Memoize uses binary mode.
  */
 static void
 check_memoizable(RestrictInfo *restrictinfo)
@@ -4057,14 +4107,32 @@ check_memoizable(RestrictInfo *restrictinfo)
 		return;
 
 	lefttype = exprType(linitial(((OpExpr *) clause)->args));
+	righttype = exprType(lsecond(((OpExpr *) clause)->args));
+
+	if (OidIsValid(restrictinfo->hashjoinoperator))
+	{
+		Oid			joinop = restrictinfo->hashjoinoperator;
+
+		if (lefttype == righttype)
+		{
+			restrictinfo->left_hasheqoperator = joinop;
+			restrictinfo->right_hasheqoperator = joinop;
+		}
+		else
+		{
+			restrictinfo->left_hasheqoperator = get_memoize_eqop(joinop,
+																 lefttype);
+			restrictinfo->right_hasheqoperator = get_memoize_eqop(joinop,
+																  righttype);
+		}
+		return;
+	}
 
 	typentry = lookup_type_cache(lefttype, TYPECACHE_HASH_PROC |
 								 TYPECACHE_EQ_OPR);
 
 	if (OidIsValid(typentry->hash_proc) && OidIsValid(typentry->eq_opr))
 		restrictinfo->left_hasheqoperator = typentry->eq_opr;
-
-	righttype = exprType(lsecond(((OpExpr *) clause)->args));
 
 	/*
 	 * Lookup the right type, unless it's the same as the left type, in which
