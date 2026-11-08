@@ -35,6 +35,37 @@ typedef struct pendingPosition
 	bool	   *hasMatchKey;
 } pendingPosition;
 
+#define GP_SEEN_INITIAL		1024
+#define GP_SEEN_MAX			(16 * 1024 * 1024)
+
+typedef struct
+{
+	ItemPointerData *tids;		/* sorted, de-duplicated */
+	Size		n;				/* number of used slots */
+	Size		capacity;		/* allocated slots */
+	bool		recheckAll;		/* true if the tracker overflowed */
+} GinPendingSeen;
+
+static int
+ginItemPointerCmp(const void *a, const void *b)
+{
+	return ginCompareItemPointers((const ItemPointer) a, (const ItemPointer) b);
+}
+
+static bool
+ginPendingSeenCheck(GinPendingSeen *seen, ItemPointer tid)
+{
+	ItemPointerData *found;
+
+	if (seen->recheckAll)
+		return true;
+	if (seen->n == 0)
+		return false;
+	found = (ItemPointerData *) bsearch(tid, seen->tids, seen->n,
+										sizeof(ItemPointerData),
+										ginItemPointerCmp);
+	return found != NULL;
+}
 
 /*
  * Goes to the next page if current offset is outside of bounds
@@ -1447,11 +1478,9 @@ scanGetItem(IndexScanDesc scan, ItemPointerData advancePast,
 	return true;
 }
 
-
 /*
  * Functions for scanning the pending list
  */
-
 
 /*
  * Get ItemPointer of next heap row to be checked from pending list.
@@ -1832,7 +1861,8 @@ collectMatchesForHeapRow(IndexScanDesc scan, pendingPosition *pos)
  * Collect all matched rows from pending list into bitmap.
  */
 static void
-scanPendingInsert(IndexScanDesc scan, TIDBitmap *tbm, int64 *ntids)
+scanPendingInsert(IndexScanDesc scan, TIDBitmap *tbm, int64 *ntids,
+				  GinPendingSeen *seen)
 {
 	GinScanOpaque so = (GinScanOpaque) scan->opaque;
 	MemoryContext oldCtx;
@@ -1878,6 +1908,40 @@ scanPendingInsert(IndexScanDesc scan, TIDBitmap *tbm, int64 *ntids)
 	 */
 	while (scanGetCandidate(scan, &pos))
 	{
+		if (!seen->recheckAll)
+		{
+			if (seen->n == seen->capacity)
+			{
+				Size		newcap = seen->capacity ? seen->capacity * 2 : GP_SEEN_INITIAL;
+
+				if (newcap > GP_SEEN_MAX ||
+					newcap * sizeof(ItemPointerData) > MaxAllocSize)
+				{
+					seen->recheckAll = true;
+					if (seen->tids)
+						pfree(seen->tids);
+					seen->tids = NULL;
+					seen->n = seen->capacity = 0;
+				}
+				else
+				{
+					ItemPointerData *newtids = (ItemPointerData *)
+						palloc(newcap * sizeof(ItemPointerData));
+
+					if (seen->tids)
+					{
+						memcpy(newtids, seen->tids,
+							   seen->n * sizeof(ItemPointerData));
+						pfree(seen->tids);
+					}
+					seen->tids = newtids;
+					seen->capacity = newcap;
+				}
+			}
+			if (!seen->recheckAll)
+				seen->tids[seen->n++] = pos.item;
+		}
+
 		/*
 		 * Check entries in tuple and set up entryRes array.
 		 *
@@ -1921,7 +1985,6 @@ scanPendingInsert(IndexScanDesc scan, TIDBitmap *tbm, int64 *ntids)
 	pfree(pos.hasMatchKey);
 }
 
-
 #define GinIsVoidRes(s)		( ((GinScanOpaque) scan->opaque)->isVoidRes )
 
 int64
@@ -1931,6 +1994,7 @@ gingetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 	int64		ntids;
 	ItemPointerData iptr;
 	bool		recheck;
+	GinPendingSeen seen;
 
 	/*
 	 * Set up the scan keys, and check for unsatisfiable query.
@@ -1943,6 +2007,10 @@ gingetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 		return 0;
 
 	ntids = 0;
+	seen.tids = NULL;
+	seen.n = 0;
+	seen.capacity = 0;
+	seen.recheckAll = false;
 
 	/*
 	 * First, scan the pending list and collect any matching entries into the
@@ -1954,7 +2022,23 @@ gingetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 	 * to scan the main index before the pending list, since concurrent
 	 * cleanup could then make us miss entries entirely.
 	 */
-	scanPendingInsert(scan, tbm, &ntids);
+	scanPendingInsert(scan, tbm, &ntids, &seen);
+
+	if (seen.n > 1)
+	{
+		Size		out;
+
+		qsort(seen.tids, seen.n, sizeof(ItemPointerData), ginItemPointerCmp);
+		out = 1;
+		for (Size i = 1; i < seen.n; i++)
+		{
+			if (!ItemPointerEquals(&seen.tids[out - 1], &seen.tids[i]))
+			{
+				seen.tids[out++] = seen.tids[i];
+			}
+		}
+		seen.n = out;
+	}
 
 	/*
 	 * Now scan the main index.
@@ -1971,9 +2055,16 @@ gingetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 		if (ItemPointerIsLossyPage(&iptr))
 			tbm_add_page(tbm, ItemPointerGetBlockNumber(&iptr));
 		else
+		{
+			if (seen.recheckAll || ginPendingSeenCheck(&seen, &iptr))
+				recheck = true;
 			tbm_add_tuples(tbm, &iptr, 1, recheck);
+		}
 		ntids++;
 	}
+
+	if (seen.tids)
+		pfree(seen.tids);
 
 	return ntids;
 }
