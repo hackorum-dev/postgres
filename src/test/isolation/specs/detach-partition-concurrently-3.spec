@@ -50,6 +50,16 @@ step s1attach2		{ ALTER INDEX d3_idx ATTACH PARTITION d3_listp2_a; }
 step s1attach3		{ CREATE UNIQUE INDEX d3_listp3_a ON d3_listp3 (a);
 					  ALTER INDEX d3_idx ATTACH PARTITION d3_listp3_a; }
 step s1valid		{ SELECT indisvalid FROM pg_index WHERE indexrelid = 'd3_idx'::regclass; }
+step s1addck		{ ALTER TABLE d3_listp ADD CHECK (a > 0); }
+step s1setdef		{ ALTER TABLE d3_listp ALTER a SET DEFAULT 1; }
+step s1pubtables	{ CREATE PUBLICATION pub_d3t FOR TABLE d3_listp;
+					  SELECT tablename FROM pg_publication_tables
+					  WHERE pubname = 'pub_d3t' ORDER BY 1;
+					  DROP PUBLICATION pub_d3t; }
+step s1p1ddl		{ SELECT (SELECT pg_get_expr(adbin, adrelid) FROM pg_attrdef
+							WHERE adrelid = 'd3_listp1'::regclass) AS def,
+						   (SELECT count(*) FROM pg_constraint
+							WHERE conrelid = 'd3_listp1'::regclass AND contype = 'c') AS checks; }
 
 session s2
 step s2begin		{ BEGIN; }
@@ -106,3 +116,7 @@ permutation s2snitch s1b s1s s2detach s1cancel(s2detach) s1c s2begin s2detachfin
 
 # The index of a partition pending detach must not count toward validity.
 permutation s2snitch s1idx s1b s1s s2detach s1cancel(s2detach) s1c s1attach2 s1valid s1attach3 s1valid
+
+# DDL on the parent must reach a partition pending detach, while DDL on
+# the partition itself is still refused.  Publications do not list it.
+permutation s2snitch s1b s1s s2detach s1cancel(s2detach) s1c s1addck s1setdef s1alter s1pubtables s2detachfinal s1p1ddl
