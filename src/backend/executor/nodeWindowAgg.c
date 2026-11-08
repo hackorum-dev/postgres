@@ -3458,6 +3458,41 @@ ignorenulls_getfuncarginframe(WindowObject winobj, int argno,
 	}
 
 	/*
+	 * Without ORDER BY, all rows are peers of the current row, so EXCLUDE
+	 * GROUP leaves no row in the frame and EXCLUDE TIES leaves at most the
+	 * current row.  row_is_in_frame() reports every other row in the frame as
+	 * excluded, so the loop below would step over each of them, possibly
+	 * reading rows up to the frame end or the end of the partition, to find
+	 * at most the current row.  Handle these cases directly.
+	 */
+	if (((WindowAgg *) winstate->ss.ps.plan)->ordNumCols == 0 &&
+		(winstate->frameOptions & (FRAMEOPTION_EXCLUDE_GROUP |
+								   FRAMEOPTION_EXCLUDE_TIES)))
+	{
+		if ((winstate->frameOptions & FRAMEOPTION_EXCLUDE_GROUP) ||
+			notnull_relpos > 0)
+			goto out_of_frame;
+
+		/* only the current row can supply the value */
+		abs_pos = winstate->currentpos;
+		if (row_is_in_frame(winobj, abs_pos, slot, true) <= 0)
+			goto out_of_frame;
+		if (!window_gettupleslot(winobj, abs_pos, slot))
+			goto out_of_frame;
+		econtext->ecxt_outertuple = slot;
+		datum = ExecEvalExpr((ExprState *) list_nth(winobj->argstates, argno),
+							 econtext, isnull);
+		if (*isnull)
+			goto out_of_frame;
+
+		if (isout)
+			*isout = false;
+		if (set_mark)
+			WinSetMarkPosition(winobj, mark_pos);
+		return datum;
+	}
+
+	/*
 	 * Get the next nonnull value in the frame, moving forward or backward
 	 * until we find a value or reach the frame's end.
 	 */
@@ -3488,13 +3523,7 @@ ignorenulls_getfuncarginframe(WindowObject winobj, int argno,
 		if (inframe == -1)
 			goto out_of_frame;
 
-		/*
-		 * Now stop at the end of the partition.  row_is_in_frame cannot
-		 * always detect that itself: for a frame ending at UNBOUNDED
-		 * FOLLOWING with EXCLUDE GROUP or EXCLUDE TIES and no ORDER BY, it
-		 * reports every row other than the current one as excluded, wherever
-		 * it is, so we would never reach the end of the loop.
-		 */
+		/* now stop at the end of the partition */
 		spool_tuples(winstate, abs_pos);
 		if (abs_pos >= winstate->spooled_rows)
 			goto out_of_frame;

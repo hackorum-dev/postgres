@@ -6272,7 +6272,11 @@ SELECT first_value(v) IGNORE NULLS OVER (ROWS BETWEEN CURRENT ROW AND 1 FOLLOWIN
        first_value(v) IGNORE NULLS OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 1 FOLLOWING EXCLUDE TIES)
 FROM t
 LIMIT 1;
-ERROR:  division by zero
+ first_value | first_value 
+-------------+-------------
+             |            
+(1 row)
+
 -- EXCLUDE TIES without ORDER BY: the current row is not used when it is
 -- outside the frame
 SELECT x,
