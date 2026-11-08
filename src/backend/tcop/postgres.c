@@ -5375,7 +5375,10 @@ log_disconnections(int code, Datum arg)
  *
  * If there's already a timeout running, don't restart the timer.  That
  * enables compromises between accuracy of timeouts and cost of starting a
- * timeout.
+ * timeout.  Likewise, don't restart it if it has already fired, but the query
+ * cancel request it sent hasn't been serviced yet (e.g. because it fired
+ * while parsing a long query string).  Restarting it would reset its
+ * indicator, causing the request to be reported as a user request.
  */
 static void
 enable_statement_timeout(void)
@@ -5386,7 +5389,8 @@ enable_statement_timeout(void)
 	if (StatementTimeout > 0
 		&& (StatementTimeout < TransactionTimeout || TransactionTimeout == 0))
 	{
-		if (!get_timeout_active(STATEMENT_TIMEOUT))
+		if (!get_timeout_active(STATEMENT_TIMEOUT) &&
+			!get_timeout_indicator(STATEMENT_TIMEOUT, false))
 			enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout);
 	}
 	else
