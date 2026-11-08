@@ -6263,6 +6263,30 @@ LIMIT 1;
             
 (1 row)
 
+-- likewise for the rows excluded by EXCLUDE GROUP/TIES without ORDER BY
+WITH t AS MATERIALIZED (
+  SELECT NULLIF(i, 1) / (2 - i) AS v
+  FROM generate_series(1, 2) AS g(i)
+)
+SELECT first_value(v) IGNORE NULLS OVER (ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING EXCLUDE GROUP),
+       first_value(v) IGNORE NULLS OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 1 FOLLOWING EXCLUDE TIES)
+FROM t
+LIMIT 1;
+ERROR:  division by zero
+-- EXCLUDE TIES without ORDER BY: the current row is not used when it is
+-- outside the frame
+SELECT x,
+       first_value(x) IGNORE NULLS OVER (ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING EXCLUDE TIES) AS f1,
+       last_value(x) IGNORE NULLS OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING EXCLUDE TIES) AS l1,
+       last_value(x) IGNORE NULLS OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW EXCLUDE TIES) AS l2
+FROM (VALUES (1), (NULL), (3)) v(x);
+ x | f1 | l1 | l2 
+---+----+----+----
+ 1 |    |    |  1
+   |    |    |   
+ 3 |    |    |  3
+(3 rows)
+
 -- volatile arguments cannot use the IGNORE NULLS nullness cache
 CREATE TEMPORARY SEQUENCE null_treatment_seq;
 CREATE FUNCTION pg_temp.volatile_null(i int) RETURNS int
