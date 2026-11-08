@@ -50,6 +50,7 @@ step s1attach2		{ ALTER INDEX d3_idx ATTACH PARTITION d3_listp2_a; }
 step s1attach3		{ CREATE UNIQUE INDEX d3_listp3_a ON d3_listp3 (a);
 					  ALTER INDEX d3_idx ATTACH PARTITION d3_listp3_a; }
 step s1valid		{ SELECT indisvalid FROM pg_index WHERE indexrelid = 'd3_idx'::regclass; }
+step s1addck		{ ALTER TABLE d3_listp ADD CHECK (a > 0); }
 
 session s2
 step s2begin		{ BEGIN; }
@@ -106,3 +107,6 @@ permutation s2snitch s1b s1s s2detach s1cancel(s2detach) s1c s2begin s2detachfin
 
 # The index of a partition pending detach must not count toward validity.
 permutation s2snitch s1idx s1b s1s s2detach s1cancel(s2detach) s1c s1attach2 s1valid s1attach3 s1valid
+
+# DDL on the parent must reach a partition pending detach.
+permutation s2snitch s1b s1s s2detach s1cancel(s2detach) s1c s1addck s2detachfinal
