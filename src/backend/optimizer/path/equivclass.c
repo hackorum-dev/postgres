@@ -80,6 +80,7 @@ static bool reconsider_outer_join_clause(PlannerInfo *root,
 										 bool outer_on_left);
 static bool reconsider_full_join_clause(PlannerInfo *root,
 										OuterJoinClauseInfo *ojcinfo);
+static bool is_full_join_expr_null_preserving(Node *node);
 static JoinDomain *find_join_domain(PlannerInfo *root, Relids relids);
 static Bitmapset *get_eclass_indexes_for_relids(PlannerInfo *root,
 												Relids relids);
@@ -2456,6 +2457,15 @@ reconsider_full_join_clause(PlannerInfo *root, OuterJoinClauseInfo *ojcinfo)
 	left_relids = rinfo->left_relids;
 	right_relids = rinfo->right_relids;
 
+	/*
+	 * For an unmatched row, the other input's expression must become NULL.
+	 * Otherwise COALESCE could supply the constant even when this input's
+	 * expression is different, making the derived restriction invalid.
+	 */
+	if (!is_full_join_expr_null_preserving((Node *) leftvar) ||
+		!is_full_join_expr_null_preserving((Node *) rightvar))
+		return false;
+
 	foreach(lc1, root->eq_classes)
 	{
 		EquivalenceClass *cur_ec = (EquivalenceClass *) lfirst(lc1);
@@ -2609,6 +2619,41 @@ reconsider_full_join_clause(PlannerInfo *root, OuterJoinClauseInfo *ojcinfo)
 	}
 
 	return false;				/* failed to make any deduction */
+}
+
+/*
+ * Check whether an expression becomes NULL when its FULL JOIN input is
+ * null-extended.  The caller has verified that all referenced rels belong
+ * to one input.
+ *
+ * A PlaceHolderVar is evaluated below the join, so its result is nulled
+ * regardless of the contained expression.  COALESCE is not strict in any
+ * one argument, but preserves NULL if all its arguments do.
+ *
+ * Otherwise, conservatively require strictness and at least one level-zero
+ * Var or PlaceHolderVar.  The latter test rules out non-NULL constants and
+ * pseudoconstants appearing as COALESCE arguments.
+ */
+static bool
+is_full_join_expr_null_preserving(Node *node)
+{
+	if (IsA(node, PlaceHolderVar))
+		return ((PlaceHolderVar *) node)->phlevelsup == 0;
+	if (IsA(node, CoalesceExpr))
+	{
+		CoalesceExpr *cexpr = (CoalesceExpr *) node;
+		ListCell   *lc;
+
+		foreach(lc, cexpr->args)
+		{
+			if (!is_full_join_expr_null_preserving(lfirst(lc)))
+				return false;
+		}
+		return true;
+	}
+
+	return !contain_nonstrict_functions(node) &&
+		contain_vars_of_level(node, 0);
 }
 
 /*
