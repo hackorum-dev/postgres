@@ -17,6 +17,7 @@
  */
 
 #include "postgres.h"
+#include "utils/injection_point.h"
 
 #include "access/gin_private.h"
 #include "access/ginxlog.h"
@@ -928,6 +929,7 @@ ginInsertCleanup(GinState *ginstate, bool must_empty_list,
 			while ((list = ginGetBAEntry(&accum,
 										 &attnum, &key, &category, &nlist)) != NULL)
 			{
+				INJECTION_POINT("gin-pending-cleanup-key", NULL);
 				ginEntryInsert(ginstate, attnum, key, category,
 							   list, nlist, NULL);
 				vacuum_delay_point(false);
