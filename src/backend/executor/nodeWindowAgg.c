@@ -3477,18 +3477,23 @@ ignorenulls_getfuncarginframe(WindowObject winobj, int argno,
 		if (abs_pos < 0)
 			goto out_of_frame;
 
-		/* check whether row is in frame */
+		/*
+		 * Check whether row is in frame.  row_is_in_frame expects its caller
+		 * to have checked that the row is in the partition, but we call it
+		 * first anyway: for ROWS frames it can tell from the position alone
+		 * that the row is past the frame end, and we must not read such a row
+		 * just to find out whether it exists.
+		 */
 		inframe = row_is_in_frame(winobj, abs_pos, slot, true);
 		if (inframe == -1)
 			goto out_of_frame;
 
 		/*
-		 * Likewise, stop at the end of the partition, which row_is_in_frame
-		 * expects its caller to have checked.  It cannot always detect that
-		 * itself: for a frame ending at UNBOUNDED FOLLOWING with EXCLUDE
-		 * GROUP or EXCLUDE TIES and no ORDER BY, it reports every row other
-		 * than the current one as excluded, wherever it is, so we would never
-		 * reach the end of the loop.
+		 * Now stop at the end of the partition.  row_is_in_frame cannot
+		 * always detect that itself: for a frame ending at UNBOUNDED
+		 * FOLLOWING with EXCLUDE GROUP or EXCLUDE TIES and no ORDER BY, it
+		 * reports every row other than the current one as excluded, wherever
+		 * it is, so we would never reach the end of the loop.
 		 */
 		spool_tuples(winstate, abs_pos);
 		if (abs_pos >= winstate->spooled_rows)
