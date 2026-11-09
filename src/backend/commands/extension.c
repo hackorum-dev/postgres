@@ -580,6 +580,12 @@ get_extension_control_directories(void)
 
 			/* Canonicalize the path based on the OS and add to the list */
 			canonicalize_path(mangled);
+			if (!is_absolute_path(mangled))
+				ereport(ERROR,
+						errcode(ERRCODE_INVALID_NAME),
+						errmsg("component in parameter \"%s\" is not an absolute path",
+							   "extension_control_path"));
+
 			location->loc = mangled;
 			paths = lappend(paths, location);
 
@@ -4113,11 +4119,7 @@ find_in_paths(const char *basename, List *paths)
 		path = pstrdup(path);
 		canonicalize_path(path);
 
-		/* only absolute paths */
-		if (!is_absolute_path(path))
-			ereport(ERROR,
-					errcode(ERRCODE_INVALID_NAME),
-					errmsg("component in parameter \"%s\" is not an absolute path", "extension_control_path"));
+		Assert(is_absolute_path(path));
 
 		full = psprintf("%s/%s", path, basename);
 

@@ -131,6 +131,23 @@ for my $path (
 		"error identifies the empty path element");
 }
 
+# Reject relative paths even if an earlier directory contains the extension.
+my $relative_ext = 'test_relative_path';
+create_extension($relative_ext, $ext_dir);
+for my $sql (
+	'select count(*) from pg_available_extensions',
+	"create extension $relative_ext")
+{
+	my ($code, $stdout, $stderr) = $node->psql(
+		'postgres',
+		"set extension_control_path = '$ext_dir_canonicalized${sep}relative';
+		 $sql");
+	is($code, 3, "relative path is rejected by $sql");
+	like($stderr,
+		qr/ERROR:  component in parameter "extension_control_path" is not an absolute path/,
+		"error identifies the relative path element");
+}
+
 # Test with an extension that does not exists
 my ($code, $stdout, $stderr) =
   $node->psql('postgres', "CREATE EXTENSION invalid");
