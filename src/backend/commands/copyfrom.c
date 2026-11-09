@@ -1269,10 +1269,13 @@ CopyFrom(CopyFromState cstate)
 			 * If we're capturing transition tuples, we might need to convert
 			 * from the partition rowtype to root rowtype. But if there are no
 			 * BEFORE triggers on the partition that could change the tuple,
-			 * we can just remember the original unconverted tuple to avoid a
-			 * needless round trip conversion.
+			 * and no stored generated columns that are computed later on the
+			 * converted tuple, we can just remember the original unconverted
+			 * tuple to avoid a needless round trip conversion.
 			 */
-			if (!has_before_insert_row_trig)
+			if (!has_before_insert_row_trig &&
+				!(resultRelInfo->ri_RelationDesc->rd_att->constr &&
+				  resultRelInfo->ri_RelationDesc->rd_att->constr->has_generated_stored))
 				original_insert_tuple = myslot;
 
 			/*
