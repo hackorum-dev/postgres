@@ -2568,6 +2568,22 @@ select * from merge_conv_table order by a;
 
 drop table merge_conv_table;
 
+-- Stored generated columns in the transition table, with tuple conversion
+create table gen_conv_table (a int, b int, g int generated always as (b * 2) stored)
+  partition by list (a);
+create table gen_conv_table_p1 (b int, g int generated always as (b * 2) stored, a int);
+alter table gen_conv_table attach partition gen_conv_table_p1 default;
+create trigger gen_conv_table_trig
+  after insert on gen_conv_table referencing new table as new_table
+  for each statement execute procedure dump_insert();
+insert into gen_conv_table (a, b) values (1, 10);
+copy gen_conv_table (a, b) from stdin;
+2	20
+\.
+merge into gen_conv_table using (values (3)) as s(a) on false
+  when not matched then insert (a, b) values (3, 30);
+drop table gen_conv_table;
+
 -- cleanup
 drop function dump_insert();
 drop function dump_update();
