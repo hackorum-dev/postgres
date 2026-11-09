@@ -2933,10 +2933,13 @@ ReplicationSlotDropAtPubNode(WalReceiverConn *wrconn, char *slotname, bool missi
 	{
 		WalRcvExecResult *res;
 
+		INJECTION_POINT("tablesync-before-source-slot-drop", NULL);
 		res = walrcv_exec(wrconn, cmd.data, 0, NULL);
 
 		if (res->status == WALRCV_OK_COMMAND)
 		{
+			INJECTION_POINT("tablesync-after-source-slot-drop", NULL);
+
 			/* NOTICE. Success. */
 			ereport(NOTICE,
 					(errmsg("dropped replication slot \"%s\" on publisher",
