@@ -3049,13 +3049,15 @@ eager_aggregation_possible_for_relation(PlannerInfo *root, RelOptInfo *rel)
 	/*
 	 * We cannot push a partial aggregation down below a join clause that
 	 * contains volatile functions, because the clause would then be evaluated
-	 * once per group rather than once per input row.
+	 * once per group rather than once per input row.  Also refuse SubPlans,
+	 * which may hide volatile functions.
 	 */
 	foreach(lc, rel->joininfo)
 	{
 		RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
 
-		if (contain_volatile_functions((Node *) rinfo))
+		if (contain_volatile_functions((Node *) rinfo) ||
+			contain_subplans((Node *) rinfo->clause))
 			return false;
 	}
 
