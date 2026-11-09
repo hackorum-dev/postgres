@@ -190,4 +190,16 @@ set work_mem to 64;
 select explain_filter('explain (analyze,buffers off,costs off) select sum(n) over() from generate_series(1,2500) a(n)');
 -- Test tuplestore storage usage in Window aggregate (memory and disk case, final result is disk)
 select explain_filter('explain (analyze,buffers off,costs off) select sum(n) over(partition by m) from (SELECT n < 3 as m, n from generate_series(1,2500) a(n))');
+-- Test tuplestore storage usage in Window aggregate when the requested row
+-- is not in the frame: a one-row frame emptied by EXCLUDE CURRENT ROW, and an
+-- nth_value() past the end of a three-row frame
+select explain_filter('explain (analyze,buffers off,costs off) select first_value(n) over(rows between current row and current row exclude current row) from generate_series(1,2500) a(n)');
+select explain_filter('explain (analyze,buffers off,costs off) select nth_value(n, 5) over(rows between current row and 2 following) from generate_series(1,2500) a(n)');
+-- likewise for last_value() IGNORE NULLS, which finds its row by scanning
+-- the frame backward from its end
+select explain_filter('explain (analyze,buffers off,costs off) select last_value(n) ignore nulls over(rows between current row and 2 following) from generate_series(1,2500) a(n)');
+-- likewise with IGNORE NULLS, for an empty frame and for a frame with no
+-- non-null value
+select explain_filter('explain (analyze,buffers off,costs off) select first_value(n) ignore nulls over(rows between current row and current row exclude current row) from generate_series(1,2500) a(n)');
+select explain_filter('explain (analyze,buffers off,costs off) select last_value(nullif(n, n)) ignore nulls over(rows between current row and 2 following) from generate_series(1,2500) a(n)');
 reset work_mem;
