@@ -2328,6 +2328,13 @@ SELECT x,
        last_value(x) IGNORE NULLS OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW EXCLUDE TIES) AS l2
 FROM (VALUES (1), (NULL), (3)) v(x);
 
+-- a value before the frame start is not returned
+SELECT i, x,
+       last_value(x) IGNORE NULLS OVER w
+FROM (VALUES (1, 1), (2, NULL), (3, NULL), (4, 4)) v(i, x)
+WINDOW w AS (ORDER BY i ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING)
+ORDER BY i;
+
 -- volatile arguments cannot use the IGNORE NULLS nullness cache
 CREATE TEMPORARY SEQUENCE null_treatment_seq;
 CREATE FUNCTION pg_temp.volatile_null(i int) RETURNS int

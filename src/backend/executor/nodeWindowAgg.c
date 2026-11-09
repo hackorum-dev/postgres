@@ -3448,6 +3448,7 @@ ignorenulls_getfuncarginframe(WindowObject winobj, int argno,
 				goto out_of_frame;
 			update_frametailpos(winstate);
 			abs_pos = winstate->frametailpos - 1;
+			update_frameheadpos(winstate);
 			mark_pos = 0;		/* keep compiler quiet */
 			forward = -1;
 			break;
@@ -3505,11 +3506,14 @@ ignorenulls_getfuncarginframe(WindowObject winobj, int argno,
 		CHECK_FOR_INTERRUPTS();
 
 		/*
-		 * Check apparent out of frame case.  We need to do this because we
-		 * may not call window_gettupleslot before row_is_in_frame, which
-		 * supposes abs_pos is never negative.
+		 * Check apparent out of frame case.  Only the backward walk can get
+		 * before the frame start, and that ends it: exclusion only removes
+		 * rows inside the frame, so every row from here on is out of it.  We
+		 * cannot leave this to row_is_in_frame, which returns 0 for such a
+		 * row, as for an excluded one, since it assumes a forward scan, and
+		 * which supposes abs_pos is never negative.
 		 */
-		if (abs_pos < 0)
+		if (abs_pos < winstate->frameheadpos)
 			goto out_of_frame;
 
 		/*
