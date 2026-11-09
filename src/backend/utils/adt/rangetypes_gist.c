@@ -295,8 +295,31 @@ multirange_gist_consistent(PG_FUNCTION_ARGS)
 	if (GIST_LEAF(entry))
 	{
 		if (!OidIsValid(subtype) || subtype == ANYMULTIRANGEOID)
-			result = range_gist_consistent_leaf_multirange(typcache, strategy, key,
-														   DatumGetMultirangeTypeP(query));
+		{
+			MultirangeType *mr = DatumGetMultirangeTypeP(query);
+
+			if (strategy == RANGESTRAT_CONTAINED_BY)
+			{
+				/*
+				 * The key is the union of the indexed multirange, with its
+				 * gaps filled in, so it need not be contained by the query
+				 * even when the indexed value is.  We can only reject the
+				 * entry if the key goes outside the query's own union.  An
+				 * empty key stands for an empty multirange, which is
+				 * contained by anything.
+				 */
+				if (RangeIsEmpty(key))
+					result = true;
+				else if (MultirangeIsEmpty(mr))
+					result = false;
+				else
+					result = range_contains_internal(typcache,
+													 multirange_get_union_range(typcache, mr),
+													 key);
+			}
+			else
+				result = range_gist_consistent_leaf_multirange(typcache, strategy, key, mr);
+		}
 		else if (subtype == ANYRANGEOID)
 			result = range_gist_consistent_leaf_range(typcache, strategy, key,
 													  DatumGetRangeTypeP(query));
