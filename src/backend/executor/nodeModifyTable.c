@@ -4384,19 +4384,24 @@ ExecPrepareTupleRouting(ModifyTableState *mtstate,
 	/*
 	 * If we're capturing transition tuples, we might need to convert from the
 	 * partition rowtype to root partitioned table's rowtype.  But if there
-	 * are no BEFORE triggers on the partition that could change the tuple, we
-	 * can just remember the original unconverted tuple to avoid a needless
-	 * round trip conversion.
+	 * are no BEFORE triggers on the partition that could change the tuple,
+	 * and no stored generated columns that are computed later on the
+	 * converted tuple, we can just remember the original unconverted tuple to
+	 * avoid a needless round trip conversion.
 	 */
 	if (mtstate->mt_transition_capture != NULL)
 	{
+		TupleDesc	partdesc = RelationGetDescr(partrel->ri_RelationDesc);
 		bool		has_before_insert_row_trig;
+		bool		has_generated_stored;
 
 		has_before_insert_row_trig = (partrel->ri_TrigDesc &&
 									  partrel->ri_TrigDesc->trig_insert_before_row);
+		has_generated_stored = (partdesc->constr &&
+								partdesc->constr->has_generated_stored);
 
 		*tcs_original_insert_tuple =
-			!has_before_insert_row_trig ? slot : NULL;
+			(!has_before_insert_row_trig && !has_generated_stored) ? slot : NULL;
 	}
 
 	/*
