@@ -125,6 +125,8 @@ typedef struct BackgroundWorker
        TABLESPACE</command></para></listitem>
        <listitem><para><command>CREATE DATABASE</command></para></listitem>
       </itemizedlist>
+      The worker is then restarted based on
+      <structfield>bgw_restart_time</structfield>, if set.
       Requires both <literal>BGWORKER_SHMEM_ACCESS</literal> and
       <literal>BGWORKER_BACKEND_DATABASE_CONNECTION</literal>.
      </para>
