@@ -212,6 +212,7 @@ static bool are_peers(WindowAggState *winstate, TupleTableSlot *slot1,
 static bool window_gettupleslot(WindowObject winobj, int64 pos,
 								TupleTableSlot *slot);
 
+static void advance_mark_to_framehead(WindowObject winobj);
 static Datum ignorenulls_getfuncarginframe(WindowObject winobj, int argno,
 										   int relpos, int seektype,
 										   bool set_mark, bool *isnull,
@@ -3400,6 +3401,32 @@ gettuple_eval_partition(WindowObject winobj, int argno,
 }
 
 /*
+ * advance_mark_to_framehead
+ *		Advance the mark of a WindowObject to the current frame start, if it
+ *		is behind it.
+ *
+ * Used when a frame accessor asked to set the mark finds no row to return.
+ * The frame start is a position before which no later frame access fetches,
+ * so the rows before it can be released by tuplestore_trim() even though no
+ * row was fetched.  Don't move the mark past the last row read so far,
+ * though: the read pointers would reach the end of the tuplestore and lose
+ * their place once more rows are appended.
+ */
+static void
+advance_mark_to_framehead(WindowObject winobj)
+{
+	WindowAggState *winstate = winobj->winstate;
+	int64		markpos;
+
+	update_frameheadpos(winstate);
+
+	/* the current row has been read, so spooled_rows is at least 1 */
+	markpos = Min(winstate->frameheadpos, winstate->spooled_rows - 1);
+	if (markpos > winobj->markpos)
+		WinSetMarkPosition(winobj, markpos);
+}
+
+/*
  * ignorenulls_getfuncarginframe
  * For IGNORE NULLS, get the next nonnull value in the frame, moving forward
  * or backward until we find a value or reach the frame's end.
@@ -3448,8 +3475,9 @@ ignorenulls_getfuncarginframe(WindowObject winobj, int argno,
 				goto out_of_frame;
 			update_frametailpos(winstate);
 			abs_pos = winstate->frametailpos - 1;
+			/* the backward walk never fetches a row before the frame start */
 			update_frameheadpos(winstate);
-			mark_pos = 0;		/* keep compiler quiet */
+			mark_pos = winstate->frameheadpos;
 			forward = -1;
 			break;
 		default:
@@ -3584,6 +3612,8 @@ advance:
 	return datum;
 
 out_of_frame:
+	if (set_mark)
+		advance_mark_to_framehead(winobj);
 	if (isout)
 		*isout = true;
 	*isnull = true;
@@ -4054,8 +4084,11 @@ WinGetFuncArgInPartition(WindowObject winobj, int argno,
  * argno: argument number to evaluate (counted from 0)
  * relpos: signed rowcount offset from the seek position
  * seektype: WINDOW_SEEK_HEAD or WINDOW_SEEK_TAIL
- * set_mark: If the row is found/in frame and set_mark is true, the mark is
- *		moved to the row as a side-effect.
+ * set_mark: If true, the mark is moved forward as a side-effect, to a
+ *		position before which no later frame access will fetch.  That is
+ *		the row returned if there is no exclusion clause and nulls are
+ *		respected, and otherwise a position no later than the frame start.
+ *		The mark is moved even if no row is found.
  * isnull: output argument, receives isnull status of result
  * isout: output argument, set to indicate whether target row position
  *		is out of frame (can pass NULL if caller doesn't care about this)
@@ -4177,21 +4210,23 @@ WinGetFuncArgInFrame(WindowObject winobj, int argno,
 			 * exclusion, we can safely set the mark at the accessed row.  But
 			 * if there is, we can only mark the frame start, because we can't
 			 * be sure how far back in the frame the exclusion might cause us
-			 * to fetch in future.  Furthermore, we have to actually check
+			 * to fetch in future.  Either way, we have to actually check
 			 * against frameheadpos here, since it's unsafe to try to fetch a
 			 * row before frame start if the mark might be there already.
 			 */
+			update_frameheadpos(winstate);
 			switch (winstate->frameOptions & FRAMEOPTION_EXCLUSION)
 			{
 				case 0:
 					/* no adjustment needed */
+					if (abs_pos < winstate->frameheadpos)
+						goto out_of_frame;
 					mark_pos = abs_pos;
 					break;
 				case FRAMEOPTION_EXCLUDE_CURRENT_ROW:
 					if (abs_pos <= winstate->currentpos &&
 						winstate->currentpos < winstate->frametailpos)
 						abs_pos--;
-					update_frameheadpos(winstate);
 					if (abs_pos < winstate->frameheadpos)
 						goto out_of_frame;
 					mark_pos = winstate->frameheadpos;
@@ -4206,7 +4241,6 @@ WinGetFuncArgInFrame(WindowObject winobj, int argno,
 
 						abs_pos -= overlapend - winstate->groupheadpos;
 					}
-					update_frameheadpos(winstate);
 					if (abs_pos < winstate->frameheadpos)
 						goto out_of_frame;
 					mark_pos = winstate->frameheadpos;
@@ -4229,7 +4263,6 @@ WinGetFuncArgInFrame(WindowObject winobj, int argno,
 						else
 							abs_pos -= overlapend - winstate->groupheadpos;
 					}
-					update_frameheadpos(winstate);
 					if (abs_pos < winstate->frameheadpos)
 						goto out_of_frame;
 					mark_pos = winstate->frameheadpos;
@@ -4263,6 +4296,8 @@ WinGetFuncArgInFrame(WindowObject winobj, int argno,
 						econtext, isnull);
 
 out_of_frame:
+	if (set_mark)
+		advance_mark_to_framehead(winobj);
 	if (isout)
 		*isout = true;
 	*isnull = true;

@@ -839,7 +839,7 @@ select explain_filter('explain (analyze,buffers off,costs off) select first_valu
 ----------------------------------------------------------------------------------
  WindowAgg (actual time=N.N..N.N rows=N.N loops=N)
    Window: w1 AS (ROWS BETWEEN CURRENT ROW AND CURRENT ROW EXCLUDE CURRENT ROW)
-   Storage: Disk  Maximum Storage: NkB
+   Storage: Memory  Maximum Storage: NkB
    ->  Function Scan on generate_series a (actual time=N.N..N.N rows=N.N loops=N)
  Planning Time: N.N ms
  Execution Time: N.N ms
@@ -850,7 +850,7 @@ select explain_filter('explain (analyze,buffers off,costs off) select nth_value(
 ----------------------------------------------------------------------------------
  WindowAgg (actual time=N.N..N.N rows=N.N loops=N)
    Window: w1 AS (ROWS BETWEEN CURRENT ROW AND 'N'::bigint FOLLOWING)
-   Storage: Disk  Maximum Storage: NkB
+   Storage: Memory  Maximum Storage: NkB
    ->  Function Scan on generate_series a (actual time=N.N..N.N rows=N.N loops=N)
  Planning Time: N.N ms
  Execution Time: N.N ms
@@ -863,7 +863,7 @@ select explain_filter('explain (analyze,buffers off,costs off) select last_value
 ----------------------------------------------------------------------------------
  WindowAgg (actual time=N.N..N.N rows=N.N loops=N)
    Window: w1 AS (ROWS BETWEEN CURRENT ROW AND 'N'::bigint FOLLOWING)
-   Storage: Disk  Maximum Storage: NkB
+   Storage: Memory  Maximum Storage: NkB
    ->  Function Scan on generate_series a (actual time=N.N..N.N rows=N.N loops=N)
  Planning Time: N.N ms
  Execution Time: N.N ms
@@ -876,7 +876,7 @@ select explain_filter('explain (analyze,buffers off,costs off) select first_valu
 ----------------------------------------------------------------------------------
  WindowAgg (actual time=N.N..N.N rows=N.N loops=N)
    Window: w1 AS (ROWS BETWEEN CURRENT ROW AND CURRENT ROW EXCLUDE CURRENT ROW)
-   Storage: Disk  Maximum Storage: NkB
+   Storage: Memory  Maximum Storage: NkB
    ->  Function Scan on generate_series a (actual time=N.N..N.N rows=N.N loops=N)
  Planning Time: N.N ms
  Execution Time: N.N ms
@@ -887,7 +887,7 @@ select explain_filter('explain (analyze,buffers off,costs off) select last_value
 ----------------------------------------------------------------------------------
  WindowAgg (actual time=N.N..N.N rows=N.N loops=N)
    Window: w1 AS (ROWS BETWEEN CURRENT ROW AND 'N'::bigint FOLLOWING)
-   Storage: Disk  Maximum Storage: NkB
+   Storage: Memory  Maximum Storage: NkB
    ->  Function Scan on generate_series a (actual time=N.N..N.N rows=N.N loops=N)
  Planning Time: N.N ms
  Execution Time: N.N ms
