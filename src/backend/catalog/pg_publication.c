@@ -1664,9 +1664,36 @@ pg_get_publication_tables(FunctionCallInfo fcinfo, ArrayType *pubnames,
 			!SearchSysCacheExists2(PUBLICATIONNAMESPACEMAP,
 								   ObjectIdGetDatum(schemaid),
 								   ObjectIdGetDatum(pub->oid)))
+		{
 			pubtuple = SearchSysCacheCopy2(PUBLICATIONRELMAP,
 										   ObjectIdGetDatum(relid),
 										   ObjectIdGetDatum(pub->oid));
+
+			/*
+			 * No pg_publication_rel entry is normal for partitions published
+			 * via their parent. However, it can also mean the publication was
+			 * dropped concurrently, as the lookups above process pending
+			 * invalidations when opening the catalogs with a cold cache.
+			 * Distinguish these cases to avoid returning incorrect column
+			 * lists and row filters. If an entry was found, it represents the
+			 * publication definition before the drop.
+			 */
+			if (!HeapTupleIsValid(pubtuple) &&
+				!SearchSysCacheExists1(PUBLICATIONOID,
+									   ObjectIdGetDatum(pub->oid)))
+			{
+				if (!pub_missing_ok)
+					ereport(ERROR,
+							errcode(ERRCODE_UNDEFINED_OBJECT),
+							errmsg("publication \"%s\" does not exist",
+								   get_pubname_from_list(ptstate->pubs,
+														 table_info->pubid)),
+							errdetail("The publication was dropped concurrently."));
+
+				table_close(rel, AccessShareLock);
+				continue;
+			}
+		}
 
 		if (HeapTupleIsValid(pubtuple))
 		{
