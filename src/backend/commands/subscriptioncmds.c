@@ -1303,10 +1303,10 @@ AlterSubscription_refresh(Subscription *sub, bool copy_data,
 					 *
 					 * It is possible that the origin is not yet created for
 					 * tablesync worker, this can happen for the states before
-					 * SUBREL_STATE_DATASYNC. The tablesync worker or apply
-					 * worker can also concurrently try to drop the origin and
-					 * by this time the origin might be already removed. For
-					 * these reasons, passing missing_ok = true.
+					 * SUBREL_STATE_DATASYNC. The tablesync worker can also
+					 * concurrently try to drop the origin and by this time the
+					 * origin might be already removed. For these reasons,
+					 * passing missing_ok = true.
 					 */
 					ReplicationOriginNameForLogicalRep(sub->oid, relid, originname,
 													   sizeof(originname));
@@ -1362,14 +1362,13 @@ AlterSubscription_refresh(Subscription *sub, bool copy_data,
 		 */
 		foreach_ptr(SubRemoveRels, sub_remove_rel, sub_remove_rels)
 		{
-			if (sub_remove_rel->state != SUBREL_STATE_READY &&
-				sub_remove_rel->state != SUBREL_STATE_SYNCDONE)
+			if (sub_remove_rel->state != SUBREL_STATE_READY)
 			{
 				char		syncslotname[NAMEDATALEN] = {0};
 
 				/*
-				 * For READY/SYNCDONE states we know the tablesync slot has
-				 * already been dropped by the tablesync worker.
+				 * For READY the tablesync worker already dropped the slot.
+				 * SYNCDONE can still need cleanup after a worker failure.
 				 *
 				 * For other states, there is no certainty, maybe the slot
 				 * does not exist yet. Also, if we fail after removing some of
@@ -2863,6 +2862,7 @@ DropSubscription(DropSubscriptionStmt *stmt, bool isTopLevel)
 		{
 			SubscriptionRelState *rstate = (SubscriptionRelState *) lfirst(lc);
 			Oid			relid = rstate->relid;
+			char		syncslotname[NAMEDATALEN] = {0};
 
 			/* Only cleanup resources of tablesync workers */
 			if (!OidIsValid(relid))
@@ -2871,8 +2871,8 @@ DropSubscription(DropSubscriptionStmt *stmt, bool isTopLevel)
 			/*
 			 * Drop the tablesync slots associated with removed tables.
 			 *
-			 * For SYNCDONE/READY states, the tablesync slot is known to have
-			 * already been dropped by the tablesync worker.
+			 * READY relations are not included in rstates.  SYNCDONE can
+			 * still have a slot awaiting cleanup by the tablesync worker.
 			 *
 			 * For other states, there is no certainty, maybe the slot does
 			 * not exist yet. Also, if we fail after removing some of the
@@ -2880,14 +2880,9 @@ DropSubscription(DropSubscriptionStmt *stmt, bool isTopLevel)
 			 * slots and fail. For these reasons, we allow missing_ok = true
 			 * for the drop.
 			 */
-			if (rstate->state != SUBREL_STATE_SYNCDONE)
-			{
-				char		syncslotname[NAMEDATALEN] = {0};
-
-				ReplicationSlotNameForTablesync(subid, relid, syncslotname,
-												sizeof(syncslotname));
-				ReplicationSlotDropAtPubNode(wrconn, syncslotname, true);
-			}
+			ReplicationSlotNameForTablesync(subid, relid, syncslotname,
+											sizeof(syncslotname));
+			ReplicationSlotDropAtPubNode(wrconn, syncslotname, true);
 		}
 
 		list_free(rstates);
@@ -3696,6 +3691,7 @@ ReportSlotConnectionError(List *rstates, Oid subid, char *slotname, char *err)
 	{
 		SubscriptionRelState *rstate = (SubscriptionRelState *) lfirst(lc);
 		Oid			relid = rstate->relid;
+		char		syncslotname[NAMEDATALEN] = {0};
 
 		/* Only cleanup resources of tablesync workers */
 		if (!OidIsValid(relid))
@@ -3705,15 +3701,10 @@ ReportSlotConnectionError(List *rstates, Oid subid, char *slotname, char *err)
 		 * Caller needs to ensure that relstate doesn't change underneath us.
 		 * See DropSubscription where we get the relstates.
 		 */
-		if (rstate->state != SUBREL_STATE_SYNCDONE)
-		{
-			char		syncslotname[NAMEDATALEN] = {0};
-
-			ReplicationSlotNameForTablesync(subid, relid, syncslotname,
-											sizeof(syncslotname));
-			elog(WARNING, "could not drop tablesync replication slot \"%s\"",
-				 syncslotname);
-		}
+		ReplicationSlotNameForTablesync(subid, relid, syncslotname,
+										sizeof(syncslotname));
+		elog(WARNING, "could not drop tablesync replication slot \"%s\"",
+			 syncslotname);
 	}
 
 	ereport(ERROR,
