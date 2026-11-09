@@ -78,7 +78,14 @@ gtsquery_consistent(PG_FUNCTION_ARGS)
 			if (GIST_LEAF(entry))
 				retval = (key & sq) == key;
 			else
-				retval = (key & sq) != 0;
+			{
+				/*
+				 * An empty tsquery has an empty signature, and it is
+				 * contained by anything.  An internal key that does not
+				 * overlap the query can still have such entries below it.
+				 */
+				retval = true;
+			}
 			break;
 		default:
 			retval = false;
