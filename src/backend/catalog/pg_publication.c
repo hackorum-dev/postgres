@@ -1734,19 +1734,26 @@ pg_get_publication_tables(FunctionCallInfo fcinfo, ArrayType *pubnames,
 										   ObjectIdGetDatum(pub->oid));
 
 			/*
-			 * No pg_publication_rel entry is normal for partitions published
-			 * via their parent. However, it can also mean the publication was
-			 * dropped concurrently, as the lookups above process pending
-			 * invalidations when opening the catalogs with a cold cache.
-			 * Distinguish these cases to avoid returning incorrect column
-			 * lists and row filters. If an entry was found, it represents the
-			 * publication definition before the drop.
+			 * No pg_publication_rel entry is expected here only for a
+			 * partition whose ancestor is in the publication.  Otherwise, the
+			 * table is no longer published by this publication: either the
+			 * table was removed from it or the publication was dropped
+			 * concurrently (for instance, while we waited for the lock on the
+			 * table above, or, with a cold cache, during the lookups above,
+			 * which process pending invalidations).  Building the row anyway
+			 * would return incorrect column lists and row filters.
+			 *
+			 * If the table was removed, skip the row, as for a dropped table.
+			 * If the publication was dropped, report it as above.  Check for
+			 * the latter only after is_table_publishable_in_publication(), as
+			 * its lookups may also process the drop.
 			 */
 			if (!HeapTupleIsValid(pubtuple) &&
-				!SearchSysCacheExists1(PUBLICATIONOID,
-									   ObjectIdGetDatum(pub->oid)))
+				!is_table_publishable_in_publication(relid, pub))
 			{
-				if (!pub_missing_ok)
+				if (!pub_missing_ok &&
+					!SearchSysCacheExists1(PUBLICATIONOID,
+										   ObjectIdGetDatum(pub->oid)))
 					ereport(ERROR,
 							errcode(ERRCODE_UNDEFINED_OBJECT),
 							errmsg("publication \"%s\" does not exist",
