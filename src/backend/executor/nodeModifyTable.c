@@ -1292,7 +1292,7 @@ ExecInsert(ModifyTableContext *context,
 							 NULL,
 							 NULL,
 							 slot,
-							 NULL,
+							 tcs_original_insert_tuple,
 							 NULL,
 							 mtstate->mt_transition_capture,
 							 false);
@@ -1305,7 +1305,7 @@ ExecInsert(ModifyTableContext *context,
 	}
 
 	/* AFTER ROW INSERT Triggers */
-	ExecARInsertTriggers(estate, resultRelInfo, slot, NULL,
+	ExecARInsertTriggers(estate, resultRelInfo, slot, tcs_original_insert_tuple,
 						 recheckIndexes, ar_insert_trig_tcs);
 	list_free(recheckIndexes);
 
