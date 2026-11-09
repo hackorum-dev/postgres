@@ -811,9 +811,11 @@ create_agg_clause_infos(PlannerInfo *root)
 		/*
 		 * We cannot push down aggregates that contain volatile functions.
 		 * Doing so would change the number of times the function is
-		 * evaluated.
+		 * evaluated.  Also refuse SubPlans, which may hide volatile
+		 * functions.
 		 */
-		if (contain_volatile_functions((Node *) aggref))
+		if (contain_volatile_functions((Node *) aggref) ||
+			contain_subplans((Node *) aggref))
 		{
 			eager_agg_applicable = false;
 			break;

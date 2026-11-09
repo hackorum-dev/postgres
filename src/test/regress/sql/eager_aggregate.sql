@@ -184,6 +184,19 @@ SELECT t1.a, avg(t2.c)
   JOIN eager_agg_t2 t2 ON t1.b = t2.b AND t1.c > t2.b * random()
 GROUP BY t1.a ORDER BY t1.a;
 
+-- Ensure eager aggregation is not applied when a SubPlan hides a volatile
+-- function
+EXPLAIN (COSTS OFF)
+SELECT t1.a, avg((SELECT t2.c + random()))
+  FROM eager_agg_t1 t1 JOIN eager_agg_t2 t2 ON t1.b = t2.b
+GROUP BY t1.a;
+
+EXPLAIN (COSTS OFF)
+SELECT t1.a, avg(t2.c)
+  FROM eager_agg_t1 t1 JOIN eager_agg_t2 t2
+    ON t1.b = t2.b AND t1.c > (SELECT t2.b * random())
+GROUP BY t1.a;
+
 -- Eager aggregation must not push a partial aggregate onto the inner side of a
 -- SEMI or ANTI join
 EXPLAIN (VERBOSE, COSTS OFF)
