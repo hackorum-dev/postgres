@@ -19,12 +19,13 @@ if ($ENV{enable_injection_points} ne 'yes')
 # Returns the PID of the worker launched.
 sub launch_bgworker
 {
-	my ($node, $database, $testcase, $interruptible) = @_;
+	my ($node, $database, $testcase, $interruptible, $restart_time) = @_;
+	$restart_time //= -1;
 
 	# Launch a background worker on the given database.
 	my $pid = $node->safe_psql(
 		'postgres', qq(
-        SELECT worker_spi_launch($testcase, '$database'::regdatabase, 0, '{}', $interruptible);
+        SELECT worker_spi_launch($testcase, '$database'::regdatabase, 0, '{}', $interruptible, $restart_time);
     ));
 
 	# Check that the bgworker is initialized and napping.
@@ -42,6 +43,13 @@ sub launch_bgworker
 sub run_bgworker_interruptible_test
 {
 	my ($node, $command, $testname, $pid) = @_;
+
+	# A restarted worker may reuse the PID, so also record its start time.
+	my $backend_start = $node->safe_psql('postgres',
+		"SELECT backend_start FROM pg_stat_activity WHERE pid = $pid;");
+	die "could not find start time for worker $pid"
+	  unless length $backend_start;
+
 	my $offset = -s $node->logfile;
 
 	$node->safe_psql('postgres', $command);
@@ -56,7 +64,9 @@ sub run_bgworker_interruptible_test
 		$offset);
 
 	my $result = $node->safe_psql('postgres',
-		"SELECT count(*) = 0 FROM pg_stat_activity WHERE pid = $pid;");
+		qq[SELECT count(*) = 0 FROM pg_stat_activity
+		   WHERE pid = $pid
+		     AND backend_start = '$backend_start'::timestamptz;]);
 	is($result, 't', "dynamic bgworker stopped for $testname");
 }
 
@@ -160,5 +170,21 @@ run_bgworker_interruptible_test(
 	$node,
 	"DROP DATABASE renameddb",
 	"DROP DATABASE", $pid);
+
+# Test case 5: restart after termination.  Restart time at 0 implies zero
+# delay in the restart.  The old worker is known to have exited, so do not
+# rely on the PID of the new worker being different, as it could be reused.
+$pid = launch_bgworker($node, 'postgres', 5, 'true', 0);
+run_bgworker_interruptible_test(
+	$node,
+	"CREATE DATABASE testdb2 WITH TEMPLATE postgres",
+	"CREATE DATABASE WITH TEMPLATE, restartable worker", $pid);
+$result = $node->poll_query_until(
+	'postgres',
+	qq[SELECT count(*) FROM pg_stat_activity
+		WHERE backend_type = 'worker_spi dynamic'
+		AND wait_event = 'WorkerSpiMain';],
+	'1');
+is($result, 1, "bgworker restarted after termination");
 
 done_testing();
