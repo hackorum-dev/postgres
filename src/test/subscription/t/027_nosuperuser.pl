@@ -86,6 +86,9 @@ $node_publisher = PostgreSQL::Test::Cluster->new('publisher');
 $node_subscriber = PostgreSQL::Test::Cluster->new('subscriber');
 $node_publisher->init(allows_streaming => 'logical');
 $node_subscriber->init;
+# Reduce the wait between retries after expected permission errors.
+$node_subscriber->append_conf('postgresql.conf',
+	"wal_retrieve_retry_interval = '100ms'");
 $node_publisher->start;
 $node_subscriber->start;
 $publisher_connstr = $node_publisher->connstr . ' dbname=postgres';
