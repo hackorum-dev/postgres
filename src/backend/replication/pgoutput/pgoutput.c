@@ -2103,7 +2103,8 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 		ListCell   *lc;
 		Oid			publish_as_relid = relid;
 		int			publish_ancestor_level = 0;
-		bool		am_partition = get_rel_relispartition(relid);
+		List	   *ancestors = NIL;
+		bool		am_partition;
 		char		relkind = get_rel_relkind(relid);
 		List	   *rel_publications = NIL;
 
@@ -2185,6 +2186,16 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 		memset(entry->exprstate, 0, sizeof(entry->exprstate));
 
 		/*
+		 * A partition whose concurrent detach has been committed but not
+		 * finalized reports no ancestors, even though relispartition is still
+		 * set. Treat such a partition as a standalone table, as after the
+		 * detach is finalized.
+		 */
+		if (get_rel_relispartition(relid))
+			ancestors = get_partition_ancestors(relid);
+		am_partition = (ancestors != NIL);
+
+		/*
 		 * Build publication cache. We can't use one provided by relcache as
 		 * relcache considers all publications that the given relation is in,
 		 * but here we only need to consider ones that the subscriber
@@ -2213,7 +2224,6 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 
 				if (am_partition)
 				{
-					List	   *ancestors = get_partition_ancestors(relid);
 					Oid			last_ancestor_relid = llast_oid(ancestors);
 
 					/*
@@ -2266,7 +2276,6 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 				{
 					Oid			ancestor;
 					int			level;
-					List	   *ancestors = get_partition_ancestors(relid);
 
 					ancestor = GetTopMostAncestorInPublication(pub->oid,
 															   ancestors,
