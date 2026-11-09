@@ -195,8 +195,7 @@ static void ExecAlterExtensionContentsRecurse(AlterExtensionContentsStmt *stmt,
 											  ObjectAddress object);
 static char *read_whole_file(const char *filename, int *length);
 static ExtensionControlFile *new_ExtensionControlFile(const char *extname);
-
-char	   *find_in_paths(const char *basename, List *paths);
+static char *find_in_paths(const char *basename, List *paths);
 
 /*
  *  Return the extension location. If the current user doesn't have sufficient
@@ -511,8 +510,11 @@ is_extension_script_filename(const char *filename)
 
 /*
  * Return a list of directories declared in the extension_control_path GUC.
- * If skip_invalid_path is true, ignore empty elements instead of reporting an
- * error.  This is useful when looking for extensions only to provide a hint.
+ * All returned directory paths are absolute and canonicalized.
+ *
+ * If skip_invalid_path is true, ignore empty or relative elements instead of
+ * reporting an error.  This is useful when looking for extensions only to
+ * provide a hint.
  */
 static List *
 get_extension_control_directories(bool skip_invalid_path)
@@ -526,6 +528,7 @@ get_extension_control_directories(bool skip_invalid_path)
 	get_share_path(my_exec_path, sharepath);
 
 	system_dir = psprintf("%s/extension", sharepath);
+	canonicalize_path(system_dir);
 
 	if (strlen(Extension_control_path) == 0)
 	{
@@ -563,7 +566,7 @@ get_extension_control_directories(bool skip_invalid_path)
 			else
 			{
 				char	   *mangled;
-				ExtensionLocation *location = palloc_object(ExtensionLocation);
+				bool		is_system;
 
 				/* Copy the next path found on ecp */
 				piece = palloc(len + 1);
@@ -573,22 +576,32 @@ get_extension_control_directories(bool skip_invalid_path)
 				 * Substitute the path macro if needed or append "extension"
 				 * suffix if it is a custom extension control path.
 				 */
-				if (strcmp(piece, EXTENSION_SYSTEM_MACRO) == 0)
-				{
-					location->macro = pstrdup(piece);
+				is_system = strcmp(piece, EXTENSION_SYSTEM_MACRO) == 0;
+				if (is_system)
 					mangled = substitute_path_macro(piece, EXTENSION_SYSTEM_MACRO, system_dir);
-				}
 				else
-				{
-					location->macro = NULL;
 					mangled = psprintf("%s/extension", piece);
-				}
 				pfree(piece);
 
 				/* Canonicalize the path based on the OS and add to the list */
 				canonicalize_path(mangled);
-				location->loc = mangled;
-				paths = lappend(paths, location);
+				if (!is_absolute_path(mangled))
+				{
+					if (!skip_invalid_path)
+						ereport(ERROR,
+								errcode(ERRCODE_INVALID_NAME),
+								errmsg("component in parameter \"%s\" is not an absolute path",
+									   "extension_control_path"));
+					pfree(mangled);
+				}
+				else
+				{
+					ExtensionLocation *location = palloc_object(ExtensionLocation);
+
+					location->macro = is_system ? pstrdup(EXTENSION_SYSTEM_MACRO) : NULL;
+					location->loc = mangled;
+					paths = lappend(paths, location);
+				}
 			}
 
 			/* Break if ecp is empty or move to the next path on ecp */
@@ -4238,12 +4251,10 @@ new_ExtensionControlFile(const char *extname)
 }
 
 /*
- * Search for the basename in the list of paths.
- *
- * Similar to find_in_path but for simplicity does not support custom error
- * messages and expects that paths already have all macros replaced.
+ * Search for the basename in the list of absolute, canonicalized paths
+ * returned by get_extension_control_directories().
  */
-char *
+static char *
 find_in_paths(const char *basename, List *paths)
 {
 	ListCell   *cell;
@@ -4251,26 +4262,17 @@ find_in_paths(const char *basename, List *paths)
 	foreach(cell, paths)
 	{
 		ExtensionLocation *location = lfirst(cell);
-		char	   *path = location->loc;
+		const char *path = location->loc;
 		char	   *full;
 
 		Assert(path != NULL);
-
-		path = pstrdup(path);
-		canonicalize_path(path);
-
-		/* only absolute paths */
-		if (!is_absolute_path(path))
-			ereport(ERROR,
-					errcode(ERRCODE_INVALID_NAME),
-					errmsg("component in parameter \"%s\" is not an absolute path", "extension_control_path"));
+		Assert(is_absolute_path(path));
 
 		full = psprintf("%s/%s", path, basename);
 
 		if (pg_file_exists(full))
 			return full;
 
-		pfree(path);
 		pfree(full);
 	}
 

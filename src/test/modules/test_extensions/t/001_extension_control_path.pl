@@ -131,21 +131,43 @@ for my $path (
 		"error identifies the empty path element");
 }
 
-# Empty elements must not replace an unknown-language error or prevent a hint
+# Invalid elements must not replace an unknown-language error or prevent a hint
 # from being found using the remaining directories.
+for my $path (
+	"$sep$ext_dir_canonicalized$sep",
+	"relative$sep$ext_dir_canonicalized${sep}relative")
+{
+	for my $sql (
+		"create function test_invalid_language() returns int language $ext_name as 'x'",
+		"do language $ext_name 'x'")
+	{
+		my ($code, $stdout, $stderr) = $node->psql(
+			'postgres',
+			"set extension_control_path = '$path'; $sql");
+		is($code, 3, "unknown language is rejected by $sql");
+		like($stderr, qr/ERROR:  language "\Q$ext_name\E" does not exist/,
+			"invalid path does not replace the unknown-language error");
+		like($stderr,
+			qr/HINT:  Use CREATE EXTENSION to load the language into the database\./,
+			"remaining directory provides the extension hint");
+	}
+}
+
+# Reject relative paths even if an earlier directory contains the extension.
+my $relative_ext = 'test_relative_path';
+create_extension($relative_ext, $ext_dir);
 for my $sql (
-	"create function test_invalid_language() returns int language $ext_name as 'x'",
-	"do language $ext_name 'x'")
+	'select count(*) from pg_available_extensions',
+	"create extension $relative_ext")
 {
 	my ($code, $stdout, $stderr) = $node->psql(
 		'postgres',
-		"set extension_control_path = '$sep$ext_dir_canonicalized$sep'; $sql");
-	is($code, 3, "unknown language is rejected by $sql");
-	like($stderr, qr/ERROR:  language "\Q$ext_name\E" does not exist/,
-		"invalid path does not replace the unknown-language error");
+		"set extension_control_path = '$ext_dir_canonicalized${sep}relative';
+		 $sql");
+	is($code, 3, "relative path is rejected by $sql");
 	like($stderr,
-		qr/HINT:  Use CREATE EXTENSION to load the language into the database\./,
-		"remaining directory provides the extension hint");
+		qr/ERROR:  component in parameter "extension_control_path" is not an absolute path/,
+		"error identifies the relative path element");
 }
 
 # Test with an extension that does not exists
