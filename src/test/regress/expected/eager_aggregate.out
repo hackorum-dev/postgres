@@ -486,6 +486,44 @@ GROUP BY t1.a ORDER BY t1.a;
                      ->  Seq Scan on eager_agg_t1 t1
 (10 rows)
 
+-- Ensure eager aggregation is not applied when a SubPlan hides a volatile
+-- function
+EXPLAIN (COSTS OFF)
+SELECT t1.a, avg((SELECT t2.c + random()))
+  FROM eager_agg_t1 t1 JOIN eager_agg_t2 t2 ON t1.b = t2.b
+GROUP BY t1.a;
+                  QUERY PLAN                   
+-----------------------------------------------
+ HashAggregate
+   Group Key: t1.a
+   ->  Hash Join
+         Hash Cond: (t2.b = t1.b)
+         ->  Seq Scan on eager_agg_t2 t2
+         ->  Hash
+               ->  Seq Scan on eager_agg_t1 t1
+   SubPlan expr_1
+     ->  Result
+(9 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT t1.a, avg(t2.c)
+  FROM eager_agg_t1 t1 JOIN eager_agg_t2 t2
+    ON t1.b = t2.b AND t1.c > (SELECT t2.b * random())
+GROUP BY t1.a;
+                   QUERY PLAN                   
+------------------------------------------------
+ HashAggregate
+   Group Key: t1.a
+   ->  Hash Join
+         Hash Cond: (t2.b = t1.b)
+         Join Filter: (t1.c > (SubPlan expr_1))
+         ->  Seq Scan on eager_agg_t2 t2
+         ->  Hash
+               ->  Seq Scan on eager_agg_t1 t1
+         SubPlan expr_1
+           ->  Result
+(10 rows)
+
 -- Eager aggregation must not push a partial aggregate onto the inner side of a
 -- SEMI or ANTI join
 EXPLAIN (VERBOSE, COSTS OFF)
