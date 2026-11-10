@@ -39,7 +39,7 @@ PostgreSQL documentation
   <para>
    <application>pg_restore</application> is a utility for restoring a
    <productname>PostgreSQL</productname> database from an archive
-   created by <xref linkend="app-pgdump"/> in one of the non-plain-text
+   created by <xref linkend="app-pgdump"/> in one of the non-plain text
    formats.  It will issue the commands necessary to reconstruct the
    database to the state it was in at the time it was saved.  The
    archive files also allow <application>pg_restore</application> to
@@ -74,7 +74,7 @@ PostgreSQL documentation
     Restoring a dump causes the destination to execute arbitrary code of the
     source superusers' choice.  Partial dumps and partial restores do not limit
     that.  If the source superusers are not trusted, the dumped SQL statements
-    must be inspected before restoring.  Non-plain-text dumps can be inspected
+    must be inspected before restoring.  Non-plain text dumps can be inspected
     by using <application>pg_restore</application>'s <option>--file</option>
     option.  Note that the client running the dump and restore need not trust
     the source or destination superusers.
