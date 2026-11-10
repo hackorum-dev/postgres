@@ -28,6 +28,7 @@ ISOLATION = basic \
 	    repack_decode \
 	    repack_dropped \
 	    repack_missingval \
+	    repack_snapshots \
 	    repack_temporal \
 	    repack_temporal_multirange \
 	    repack_toast \
