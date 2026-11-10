@@ -815,8 +815,8 @@ OPTIONS (ADD password_required 'false');
         A user mapping setting overrides the foreign server setting.
         With SCRAM pass-through authentication,
         <filename>postgres_fdw</filename> uses SCRAM-hashed secrets instead of
-        plain-text user passwords to connect to the remote server.  This
-        avoids storing plain-text user passwords in PostgreSQL system
+        cleartext user passwords to connect to the remote server.  This
+        avoids storing cleartext user passwords in PostgreSQL system
         catalogs.
        </para>
 
