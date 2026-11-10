@@ -1049,6 +1049,7 @@ pg_saslprep(const char *input, char **output)
 	char32_t   *input_chars = NULL;
 	char32_t   *output_chars = NULL;
 	int			input_size;
+	int			output_size;
 	char	   *result;
 	int			result_size;
 	int			count;
@@ -1114,6 +1115,17 @@ pg_saslprep(const char *input, char **output)
 		goto prohibited;		/* don't allow empty password */
 
 	/*
+	 * Reject code points unassigned in Unicode 3.2 before normalization.
+	 * The normalizer uses newer Unicode data and may map such code
+	 * points to characters that were already assigned in Unicode 3.2.
+	 */
+	for (i = 0; i < input_size; i++)
+	{
+		if (IS_CODE_IN_TABLE(input_chars[i], unassigned_codepoint_ranges))
+			goto prohibited;
+	}
+
+	/*
 	 * 2) Normalize -- Normalize the result of step 1 using Unicode
 	 * normalization.
 	 */
@@ -1121,13 +1133,20 @@ pg_saslprep(const char *input, char **output)
 	if (!output_chars)
 		goto oom;
 
+	output_size = 0;
+	for (wp = output_chars; *wp; wp++)
+		output_size++;
+
+	if (output_size == 0)
+		goto prohibited;		/* don't allow empty password, after NFKC */
+
 	/*
 	 * 3) Prohibit -- Check for any characters that are not allowed in the
 	 * output.  If any are found, return an error.
 	 */
-	for (i = 0; i < input_size; i++)
+	for (i = 0; i < output_size; i++)
 	{
-		char32_t	code = input_chars[i];
+		char32_t	code = output_chars[i];
 
 		if (IS_CODE_IN_TABLE(code, prohibited_output_ranges))
 			goto prohibited;
@@ -1157,9 +1176,9 @@ pg_saslprep(const char *input, char **output)
 	 * MUST be the last character of the string."
 	 */
 	contains_RandALCat = false;
-	for (i = 0; i < input_size; i++)
+	for (i = 0; i < output_size; i++)
 	{
-		char32_t	code = input_chars[i];
+		char32_t	code = output_chars[i];
 
 		if (IS_CODE_IN_TABLE(code, RandALCat_codepoint_ranges))
 		{
@@ -1170,12 +1189,12 @@ pg_saslprep(const char *input, char **output)
 
 	if (contains_RandALCat)
 	{
-		char32_t	first = input_chars[0];
-		char32_t	last = input_chars[input_size - 1];
+		char32_t	first = output_chars[0];
+		char32_t	last = output_chars[output_size - 1];
 
-		for (i = 0; i < input_size; i++)
+		for (i = 0; i < output_size; i++)
 		{
-			char32_t	code = input_chars[i];
+			char32_t	code = output_chars[i];
 
 			if (IS_CODE_IN_TABLE(code, LCat_codepoint_ranges))
 				goto prohibited;
