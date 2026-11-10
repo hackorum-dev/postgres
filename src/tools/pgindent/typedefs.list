@@ -1306,6 +1306,7 @@ IndexAttachInfo
 IndexAttrBitmapKind
 IndexBuildCallback
 IndexBuildResult
+IndexBuildSecurity
 IndexBulkDeleteCallback
 IndexBulkDeleteResult
 IndexClause
