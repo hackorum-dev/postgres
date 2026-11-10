@@ -144,6 +144,7 @@ static void show_tidbitmap_info(BitmapHeapScanState *planstate,
 								ExplainState *es);
 static void show_scan_io_usage(ScanState *planstate,
 							   ExplainState *es);
+static void show_join_outer_counts(PlanState *planstate, ExplainState *es);
 static void show_instrumentation_count(const char *qlabel, int which,
 									   PlanState *planstate, ExplainState *es);
 static void show_foreignscan_info(ForeignScanState *fsstate, ExplainState *es);
@@ -2177,6 +2178,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			if (((NestLoop *) plan)->join.joinqual)
 				show_instrumentation_count("Rows Removed by Join Filter", 1,
 										   planstate, es);
+			show_join_outer_counts(planstate, es);
 			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 2,
@@ -2190,6 +2192,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			if (((MergeJoin *) plan)->join.joinqual)
 				show_instrumentation_count("Rows Removed by Join Filter", 1,
 										   planstate, es);
+			show_join_outer_counts(planstate, es);
 			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 2,
@@ -2203,6 +2206,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			if (((HashJoin *) plan)->join.joinqual)
 				show_instrumentation_count("Rows Removed by Join Filter", 1,
 										   planstate, es);
+			show_join_outer_counts(planstate, es);
 			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 2,
@@ -4297,6 +4301,56 @@ show_instrumentation_count(const char *qlabel, int which,
 			ExplainPropertyFloat(qlabel, NULL, nfiltered / nloops, 0, es);
 		else
 			ExplainPropertyFloat(qlabel, NULL, 0.0, 0, es);
+	}
+}
+
+/*
+ * show_join_outer_counts
+ *		Under EXPLAIN ANALYZE, show how many outer rows of a join node found
+ *		no partner.
+ *
+ * The executor counts matched outer rows in ntuples2; the unmatched count is
+ * the outer child's row count minus that.  Outer rows the join never read,
+ * e.g. after a Merge Join stops early, count as neither.
+ */
+static void
+show_join_outer_counts(PlanState *planstate, ExplainState *es)
+{
+	NodeInstrumentation *instr = planstate->instrument;
+	NodeInstrumentation *outer_instr;
+	double		nloops;
+	double		nmatched;
+	double		nunmatched;
+
+	if (!es->analyze || instr == NULL)
+		return;
+
+	/* ntuples2 is meaningless there, see ExecHashJoinImpl() */
+	if (((Join *) planstate->plan)->jointype == JOIN_RIGHT_SEMI)
+		return;
+
+	outer_instr = outerPlanState(planstate)->instrument;
+	Assert(outer_instr != NULL);
+
+	/*
+	 * ExplainNode() has not visited the outer child yet, so its current loop
+	 * may still be open.
+	 */
+	InstrEndLoop(outer_instr);
+
+	nloops = instr->nloops;
+	nmatched = instr->ntuples2;
+	Assert(nmatched <= outer_instr->ntuples);
+	nunmatched = outer_instr->ntuples - nmatched;
+
+	/* In text mode, suppress zero counts, like "Rows Removed by ..." */
+	if (nunmatched > 0 || es->format != EXPLAIN_FORMAT_TEXT)
+	{
+		if (nloops > 0)
+			ExplainPropertyFloat("Outer Rows Unmatched", NULL,
+								 nunmatched / nloops, 2, es);
+		else
+			ExplainPropertyFloat("Outer Rows Unmatched", NULL, 0.0, 0, es);
 	}
 }
 

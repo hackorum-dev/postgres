@@ -595,7 +595,18 @@ ExecHashJoinImpl(PlanState *pstate, bool parallel)
 				 */
 				if (joinqual == NULL || ExecQual(joinqual, econtext))
 				{
-					node->hj_MatchedOuter = true;
+					/*
+					 * ntuples2 counts outer tuples having at least one match,
+					 * so bump it only on the flag's false-to-true transition.
+					 * The count is meaningless in a right-semijoin: inner
+					 * tuples matched earlier are skipped above, before the
+					 * join qual is tested.
+					 */
+					if (!node->hj_MatchedOuter)
+					{
+						node->hj_MatchedOuter = true;
+						InstrCountTuples2(node, 1);
+					}
 
 					/*
 					 * This is really only needed if HJ_FILL_INNER(node) or if
