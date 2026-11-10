@@ -3063,4 +3063,35 @@ SELECT count(*) FROM pg_statistic s
                       AND a.attnum = s.staattnum
                       AND NOT a.attisdropped);
 
+-- Bug #19842/#19857
+SELECT * FROM pg_catalog.pg_restore_attribute_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'attname', 'arange',
+    'inherited', 'f'::boolean,
+    'range_length_histogram', '{}'::text,
+    'range_empty_frac', '1'::real);
+-- Bug #19842/#19857 - one empty mismatch
+SELECT pg_catalog.pg_restore_attribute_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'attname', 'id',
+    'inherited', false::boolean,
+    'most_common_vals', '{1,3}'::text,
+    'most_common_freqs', '{}'::real[]);
+-- Bug #19842/#19857 - both empty
+SELECT pg_catalog.pg_restore_attribute_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'attname', 'id',
+    'inherited', false::boolean,
+    'most_common_vals', '{}'::text,
+    'most_common_freqs', '{}'::real[]);
+
+SELECT most_common_vals, most_common_freqs
+FROM pg_stats
+WHERE schemaname = 'stats_import'
+AND tablename = 'test'
+AND attname = 'id';
+
 DROP SCHEMA stats_import CASCADE;

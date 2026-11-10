@@ -967,7 +967,7 @@ SELECT pg_catalog.pg_restore_attribute_stats(
     'most_common_vals', '{{2,1},{3,4}}'::text,
     'most_common_freqs', '{0.3,0.25,0.05,0.04}'::real[]
     );
-WARNING:  "most_common_vals" must be a one-dimensional array
+WARNING:  "most_common_vals" must be a one-dimensional array or empty
  pg_restore_attribute_stats 
 ----------------------------
  f
@@ -4322,6 +4322,56 @@ SELECT count(*) FROM pg_statistic s
  count 
 -------
      0
+(1 row)
+
+-- Bug #19842/#19857
+SELECT * FROM pg_catalog.pg_restore_attribute_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'attname', 'arange',
+    'inherited', 'f'::boolean,
+    'range_length_histogram', '{}'::text,
+    'range_empty_frac', '1'::real);
+ pg_restore_attribute_stats 
+----------------------------
+ t
+(1 row)
+
+-- Bug #19842/#19857 - one empty mismatch
+SELECT pg_catalog.pg_restore_attribute_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'attname', 'id',
+    'inherited', false::boolean,
+    'most_common_vals', '{1,3}'::text,
+    'most_common_freqs', '{}'::real[]);
+WARNING:  could not parse "most_common_vals": incorrect number of elements (same as "most_common_freqs" required)
+ pg_restore_attribute_stats 
+----------------------------
+ f
+(1 row)
+
+-- Bug #19842/#19857 - both empty
+SELECT pg_catalog.pg_restore_attribute_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'attname', 'id',
+    'inherited', false::boolean,
+    'most_common_vals', '{}'::text,
+    'most_common_freqs', '{}'::real[]);
+ pg_restore_attribute_stats 
+----------------------------
+ t
+(1 row)
+
+SELECT most_common_vals, most_common_freqs
+FROM pg_stats
+WHERE schemaname = 'stats_import'
+AND tablename = 'test'
+AND attname = 'id';
+ most_common_vals | most_common_freqs 
+------------------+-------------------
+ {}               | {}
 (1 row)
 
 DROP SCHEMA stats_import CASCADE;
