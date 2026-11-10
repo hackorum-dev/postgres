@@ -1380,8 +1380,20 @@ static enum JsonPathDatatypeStatus jspIsMutableWalker(JsonPathItem *jpi,
 bool
 jspIsMutable(JsonPath *path, List *varnames, List *varexprs)
 {
+	return jspIsMutableExtended(path, varnames, varexprs, NULL);
+}
+
+/*
+ * Like jspIsMutable(), but also report whether the path may return a
+ * datetime value.
+ */
+bool
+jspIsMutableExtended(JsonPath *path, List *varnames, List *varexprs,
+					 bool *returns_datetime)
+{
 	struct JsonPathMutableContext cxt;
 	JsonPathItem jpi;
+	enum JsonPathDatatypeStatus status;
 
 	cxt.varnames = varnames;
 	cxt.varexprs = varexprs;
@@ -1390,7 +1402,10 @@ jspIsMutable(JsonPath *path, List *varnames, List *varexprs)
 	cxt.mutable = false;
 
 	jspInit(&jpi, path);
-	(void) jspIsMutableWalker(&jpi, &cxt);
+	status = jspIsMutableWalker(&jpi, &cxt);
+
+	if (returns_datetime)
+		*returns_datetime = (status != jpdsNonDateTime);
 
 	return cxt.mutable;
 }

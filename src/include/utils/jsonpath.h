@@ -213,6 +213,8 @@ extern char *jspGetString(JsonPathItem *v, int32 *len);
 extern bool jspGetArraySubscript(JsonPathItem *v, JsonPathItem *from,
 								 JsonPathItem *to, int i);
 extern bool jspIsMutable(JsonPath *path, List *varnames, List *varexprs);
+extern bool jspIsMutableExtended(JsonPath *path, List *varnames,
+								 List *varexprs, bool *returns_datetime);
 
 extern const char *jspOperationName(JsonPathItemType type);
 

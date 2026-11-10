@@ -404,6 +404,27 @@ contain_mutable_functions(Node *clause)
 	return contain_mutable_functions_walker(clause, NULL);
 }
 
+/*
+ * Is coercing a JsonExpr result to the given type immutable?  The coercion
+ * calls the input function of the type, or of the element type for arrays.
+ */
+static bool
+jsonexpr_coercion_is_immutable(Oid typid)
+{
+	Oid			elemtype;
+	Oid			typinput;
+	Oid			typioparam;
+
+	typid = getBaseType(typid);
+	elemtype = get_element_type(typid);
+	if (OidIsValid(elemtype))
+		typid = getBaseType(elemtype);
+
+	getTypeInputInfo(typid, &typinput, &typioparam);
+
+	return func_volatile(typinput) == PROVOLATILE_IMMUTABLE;
+}
+
 static bool
 contain_mutable_functions_checker(Oid func_id, void *context)
 {
@@ -451,6 +472,7 @@ contain_mutable_functions_walker(Node *node, void *context)
 	{
 		JsonExpr   *jexpr = castNode(JsonExpr, node);
 		Const	   *cnst;
+		bool		returns_datetime = false;
 
 		if (!IsA(jexpr->path_spec, Const))
 			return true;
@@ -458,12 +480,27 @@ contain_mutable_functions_walker(Node *node, void *context)
 		cnst = castNode(Const, jexpr->path_spec);
 
 		Assert(cnst->consttype == JSONPATHOID);
-		if (cnst->constisnull)
-			return false;
 
-		if (jspIsMutable(DatumGetJsonPathP(cnst->constvalue),
-						 jexpr->passing_names, jexpr->passing_values))
+		/* With a NULL path, still check PASSING and DEFAULT below */
+		if (!cnst->constisnull &&
+			jspIsMutableExtended(DatumGetJsonPathP(cnst->constvalue),
+								 jexpr->passing_names, jexpr->passing_values,
+								 &returns_datetime))
 			return true;
+
+		if ((jexpr->use_io_coercion || jexpr->use_json_coercion) &&
+			!jsonexpr_coercion_is_immutable(jexpr->returning->typid))
+			return true;
+
+		/* JSON_VALUE() prints datetime items using DateStyle */
+		if (returns_datetime &&
+			jexpr->op == JSON_VALUE_OP &&
+			jexpr->returning->typid != JSONOID &&
+			jexpr->returning->typid != JSONBOID &&
+			!jexpr->use_json_coercion)
+			return true;
+
+		/* Check all subnodes */
 	}
 
 	if (IsA(node, SQLValueFunction))
