@@ -193,7 +193,15 @@ ExecNestLoop(PlanState *pstate)
 		 */
 		if (ExecQual(joinqual, econtext))
 		{
-			node->nl_MatchedOuter = true;
+			/*
+			 * ntuples2 counts outer tuples having at least one match, so bump
+			 * it only on the flag's false-to-true transition.
+			 */
+			if (!node->nl_MatchedOuter)
+			{
+				node->nl_MatchedOuter = true;
+				InstrCountTuples2(node, 1);
+			}
 
 			/* In an antijoin, we never return a matched tuple */
 			if (node->js.jointype == JOIN_ANTI)

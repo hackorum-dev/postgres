@@ -719,7 +719,15 @@ ExecMergeJoin(PlanState *pstate)
 
 				if (qualResult)
 				{
-					node->mj_MatchedOuter = true;
+					/*
+					 * ntuples2 counts outer tuples with a match; count only
+					 * the first one.
+					 */
+					if (!node->mj_MatchedOuter)
+					{
+						node->mj_MatchedOuter = true;
+						InstrCountTuples2(node, 1);
+					}
 					node->mj_MatchedInner = true;
 
 					/* In an antijoin, we never return a matched tuple */
