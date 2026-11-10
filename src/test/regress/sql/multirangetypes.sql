@@ -722,6 +722,26 @@ select _textrange1(textrange2('a','z')) @> 'b'::text;
 drop type textrange1;
 drop type textrange2;
 
+-- Multirange array names must avoid collisions in the multirange's schema.
+create schema mr_sch;
+create type mr_sch._mr_type1 as enum ('a');
+create type _mr_type2 as enum ('b');
+create type myrange1 as range (subtype=int4, multirange_type_name=mr_sch.mr_type1);
+create type myrange2 as range (subtype=int4, multirange_type_name=mr_sch.mr_type2);
+
+select t.typname, a.typname as array_name,
+       a.typnamespace = t.typnamespace as same_schema
+from pg_type t join pg_type a on a.oid = t.typarray
+where t.oid in ('mr_sch.mr_type1'::regtype, 'mr_sch.mr_type2'::regtype)
+order by t.typname;
+select enum_range(null::mr_sch._mr_type1), enum_range(null::_mr_type2);
+
+drop type myrange1;
+drop type myrange2;
+drop type mr_sch._mr_type1;
+drop type _mr_type2;
+drop schema mr_sch;
+
 --
 -- Multiranges don't have their own ownership or permissions.
 --

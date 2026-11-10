@@ -504,10 +504,10 @@ CREATE TYPE <replaceable class="parameter">name</replaceable>
    <para>
     Whenever a user-defined type is created,
     <productname>PostgreSQL</productname> automatically creates an
-    associated array type, whose name consists of the element type's
+    associated array type in the same schema. Its name consists of the element type's
     name prepended with an underscore, and truncated if necessary to keep
     it less than <symbol>NAMEDATALEN</symbol> bytes long.  (If the name
-    so generated collides with an existing type name, the process is
+    so generated collides with an existing type name in that schema, the process is
     repeated until a non-colliding name is found.)
     This implicitly-created array type is variable length and uses the
     built-in input and output functions <literal>array_in</literal> and

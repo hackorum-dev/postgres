@@ -1753,7 +1753,7 @@ DefineRange(ParseState *pstate, CreateRangeStmt *stmt)
 
 	/* Create the multirange's array type */
 
-	multirangeArrayName = makeArrayTypeName(multirangeTypeName, typeNamespace);
+	multirangeArrayName = makeArrayTypeName(multirangeTypeName, multirangeNamespace);
 
 	TypeCreate(multirangeArrayOid,	/* force assignment of this type OID */
 			   multirangeArrayName, /* type name */
