@@ -1247,6 +1247,19 @@ DROP TABLE plt1_adv;
 DROP TABLE plt2_adv;
 DROP TABLE plt3_adv;
 
+-- Test that the partitions of a join rel, merged from one pair of inputs,
+-- can differ from those of another pair, because of partition pruning.
+CREATE TABLE plt1_adv (a int) PARTITION BY LIST (a);
+CREATE TABLE plt1_adv_p1 PARTITION OF plt1_adv FOR VALUES IN (1);
+CREATE TABLE plt1_adv_p2 PARTITION OF plt1_adv FOR VALUES IN (2);
+CREATE TABLE plt1_adv_def PARTITION OF plt1_adv DEFAULT;
+CREATE TABLE plt2_adv (a int) PARTITION BY LIST (a);
+CREATE TABLE plt2_adv_p1 PARTITION OF plt2_adv FOR VALUES IN (1);
+CREATE TABLE plt2_adv_p2 PARTITION OF plt2_adv FOR VALUES IN (2);
+EXPLAIN (COSTS OFF)
+SELECT 1 FROM plt1_adv t1 JOIN plt2_adv t2 ON t1.a = t2.a WHERE t2.a IN (SELECT a FROM plt1_adv t3 WHERE t3.a < 2);
+DROP TABLE plt1_adv;
+DROP TABLE plt2_adv;
 
 -- Tests for multi-level partitioned tables
 CREATE TABLE alpha (a double precision, b int, c text) PARTITION BY RANGE (a);
