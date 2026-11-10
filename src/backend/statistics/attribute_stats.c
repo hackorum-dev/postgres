@@ -405,8 +405,8 @@ attribute_statistics_update_internal(Oid reloid,
 		{
 			ArrayType  *vals_arr = DatumGetArrayTypeP(stavalues);
 			ArrayType  *nums_arr = DatumGetArrayTypeP(stanumbers);
-			int			nvals = ARR_DIMS(vals_arr)[0];
-			int			nnums = ARR_DIMS(nums_arr)[0];
+			int			nvals = (ARR_NDIM(vals_arr) > 0) ? ARR_DIMS(vals_arr)[0] : 0;
+			int			nnums = (ARR_NDIM(nums_arr) > 0) ? ARR_DIMS(nums_arr)[0] : 0;
 
 			if (nvals != nnums)
 			{
