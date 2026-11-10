@@ -52,11 +52,11 @@ static SpecialJoinInfo *build_child_join_sjinfo(PlannerInfo *root,
 												Relids left_relids, Relids right_relids);
 static void free_child_join_sjinfo(SpecialJoinInfo *child_sjinfo,
 								   SpecialJoinInfo *parent_sjinfo);
-static void compute_partition_bounds(PlannerInfo *root, RelOptInfo *rel1,
+static bool compute_partition_bounds(PlannerInfo *root, RelOptInfo *rel1,
 									 RelOptInfo *rel2, RelOptInfo *joinrel,
 									 SpecialJoinInfo *parent_sjinfo,
 									 List **parts1, List **parts2);
-static void get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
+static bool get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
 									RelOptInfo *rel1, RelOptInfo *rel2,
 									List **parts1, List **parts2);
 
@@ -1699,8 +1699,9 @@ try_partitionwise_join(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 
 	Assert(!(joinrel->partbounds_merged && (joinrel->nparts <= 0)));
 
-	compute_partition_bounds(root, rel1, rel2, joinrel, parent_sjinfo,
-							 &parts1, &parts2);
+	if (!compute_partition_bounds(root, rel1, rel2, joinrel, parent_sjinfo,
+								  &parts1, &parts2))
+		return;
 
 	if (joinrel->partbounds_merged)
 	{
@@ -1976,8 +1977,10 @@ free_child_join_sjinfo(SpecialJoinInfo *child_sjinfo,
 /*
  * compute_partition_bounds
  *		Compute the partition bounds for a join rel from those for inputs
+ *
+ * Returns false if the join of the given inputs can't be done partitionwise.
  */
-static void
+static bool
 compute_partition_bounds(PlannerInfo *root, RelOptInfo *rel1,
 						 RelOptInfo *rel2, RelOptInfo *joinrel,
 						 SpecialJoinInfo *parent_sjinfo,
@@ -2029,7 +2032,7 @@ compute_partition_bounds(PlannerInfo *root, RelOptInfo *rel1,
 			if (boundinfo == NULL)
 			{
 				joinrel->nparts = 0;
-				return;
+				return false;
 			}
 			nparts = list_length(*parts1);
 			joinrel->partbounds_merged = true;
@@ -2055,19 +2058,28 @@ compute_partition_bounds(PlannerInfo *root, RelOptInfo *rel1,
 		 */
 		if (joinrel->partbounds_merged)
 		{
-			get_matching_part_pairs(root, joinrel, rel1, rel2,
-									parts1, parts2);
+			if (!get_matching_part_pairs(root, joinrel, rel1, rel2,
+										 parts1, parts2))
+				return false;
 			Assert(list_length(*parts1) == joinrel->nparts);
 			Assert(list_length(*parts2) == joinrel->nparts);
 		}
 	}
+
+	return true;
 }
 
 /*
  * get_matching_part_pairs
  *		Generate pairs of partitions to be joined from inputs
+ *
+ * The join rel's partition bounds were merged when the first pair of inputs
+ * was considered.  Since partition bound merging ignores pruned partitions,
+ * another pair of inputs may have been partitioned in a way that does not
+ * match the existing child joins.  In that case, return false and let the
+ * caller skip the partitionwise join for these inputs.
  */
-static void
+static bool
 get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
 						RelOptInfo *rel1, RelOptInfo *rel2,
 						List **parts1, List **parts2)
@@ -2108,16 +2120,13 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
 		 */
 		child_relids1 = bms_intersect(child_joinrel->relids,
 									  rel1->all_partrels);
-		Assert(bms_num_members(child_relids1) == bms_num_members(rel1->relids));
+		if (bms_num_members(child_relids1) != bms_num_members(rel1->relids))
+			return false;
 
 		/*
-		 * Get a child rel for rel1 with the relids.  Note that we should have
-		 * the child rel even if rel1 is a join rel, because in that case the
-		 * partitions specified in the relids would have matching/overlapping
-		 * boundaries, so the specified partitions should be considered as
-		 * ones to be joined when planning partitionwise joins of rel1,
-		 * meaning that the child rel would have been built by the time we get
-		 * here.
+		 * Get a child rel for rel1 with the relids.  If rel1 is a join rel,
+		 * the child rel may not exist, because the partitions of rel1 were
+		 * paired up without regard to the partitions of rel2.
 		 */
 		if (rel1_is_simple)
 		{
@@ -2127,7 +2136,8 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
 		}
 		else
 			child_rel1 = find_join_rel(root, child_relids1);
-		Assert(child_rel1);
+		if (child_rel1 == NULL)
+			return false;
 
 		/*
 		 * Get a relids set of partition(s) involved in this join segment that
@@ -2135,7 +2145,8 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
 		 */
 		child_relids2 = bms_intersect(child_joinrel->relids,
 									  rel2->all_partrels);
-		Assert(bms_num_members(child_relids2) == bms_num_members(rel2->relids));
+		if (bms_num_members(child_relids2) != bms_num_members(rel2->relids))
+			return false;
 
 		/*
 		 * Get a child rel for rel2 with the relids.  See above comments.
@@ -2148,7 +2159,8 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
 		}
 		else
 			child_rel2 = find_join_rel(root, child_relids2);
-		Assert(child_rel2);
+		if (child_rel2 == NULL)
+			return false;
 
 		/*
 		 * The join of rel1 and rel2 is legal, so is the join of the child
@@ -2158,4 +2170,6 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
 		*parts1 = lappend(*parts1, child_rel1);
 		*parts2 = lappend(*parts2, child_rel2);
 	}
+
+	return true;
 }
