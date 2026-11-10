@@ -64,7 +64,7 @@ stats_check_required_arg(FunctionCallInfo fcinfo,
 
 /*
  * Check that argument is either NULL or a one dimensional array with no
- * NULLs.
+ * NULLs, or an empty array.
  *
  * If a problem is found, emit a WARNING, and return false. Otherwise return
  * true.
@@ -81,7 +81,7 @@ stats_check_arg_array(FunctionCallInfo fcinfo,
 
 	arr = DatumGetArrayTypeP(PG_GETARG_DATUM(argnum));
 
-	if (ARR_NDIM(arr) != 1)
+	if (ARR_NDIM(arr) > 1)
 	{
 		ereport(WARNING,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -622,11 +622,11 @@ statatt_build_stavalues(const char *staname, FmgrInfo *array_in, Datum d, Oid ty
 
 	pfree(s);
 
-	if (ARR_NDIM(DatumGetArrayTypeP(result)) != 1)
+	if (ARR_NDIM(DatumGetArrayTypeP(result)) > 1)
 	{
 		ereport(WARNING,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("\"%s\" must be a one-dimensional array", staname)));
+				 errmsg("\"%s\" must be a one-dimensional array or empty", staname)));
 		*ok = false;
 		return (Datum) 0;
 	}
