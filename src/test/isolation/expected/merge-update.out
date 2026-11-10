@@ -89,10 +89,11 @@ Merge on target t (actual rows=2.00 loops=1)
   Tuples: inserted=1 updated=1                             
   ->  Hash Full Join (actual rows=2.00 loops=1)            
         Hash Cond: (t.key = (1))                           
+        Outer Rows Unmatched: 1.00                         
         ->  Seq Scan on target t (actual rows=1.00 loops=1)
         ->  Hash (actual rows=1.00 loops=1)                
               ->  Result (actual rows=1.00 loops=1)        
-(7 rows)
+(8 rows)
 
 step select2: SELECT * FROM target;
 key|val                                                   
@@ -382,13 +383,14 @@ Merge on pa_target t (actual rows=2.00 loops=1)
   Tuples: updated=2                                               
   ->  Hash Full Join (actual rows=2.00 loops=1)                   
         Hash Cond: (t.key = (1))                                  
+        Outer Rows Unmatched: 1.00                                
         ->  Append (actual rows=2.00 loops=1)                     
               ->  Seq Scan on part1 t_1 (actual rows=1.00 loops=1)
               ->  Seq Scan on part2 t_2 (actual rows=1.00 loops=1)
               ->  Seq Scan on part3 t_3 (actual rows=0.00 loops=1)
         ->  Hash (actual rows=1.00 loops=1)                       
               ->  Result (actual rows=1.00 loops=1)               
-(13 rows)
+(14 rows)
 
 step pa_select2: SELECT * FROM pa_target;
 key|val                                               

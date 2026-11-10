@@ -1707,6 +1707,7 @@ WHEN NOT MATCHED AND s.a < 10 THEN
    Tuples: inserted=4 skipped=96
    ->  Merge Left Join (actual rows=100.00 loops=1)
          Merge Cond: (s.a = t.a)
+         Outer Rows Unmatched: 55.00
          ->  Sort (actual rows=100.00 loops=1)
                Sort Key: s.a
                Sort Method: quicksort  Memory: xxx
@@ -1715,7 +1716,7 @@ WHEN NOT MATCHED AND s.a < 10 THEN
                Sort Key: t.a
                Sort Method: quicksort  Memory: xxx
                ->  Seq Scan on ex_mtarget t (actual rows=45.00 loops=1)
-(12 rows)
+(13 rows)
 
 -- all three
 SELECT explain_merge('
@@ -1732,6 +1733,7 @@ WHEN NOT MATCHED AND s.a < 20 THEN
    Tuples: inserted=10 updated=9 deleted=5 skipped=76
    ->  Merge Left Join (actual rows=100.00 loops=1)
          Merge Cond: (s.a = t.a)
+         Outer Rows Unmatched: 51.00
          ->  Sort (actual rows=100.00 loops=1)
                Sort Key: s.a
                Sort Method: quicksort  Memory: xxx
@@ -1740,7 +1742,7 @@ WHEN NOT MATCHED AND s.a < 20 THEN
                Sort Key: t.a
                Sort Method: quicksort  Memory: xxx
                ->  Seq Scan on ex_mtarget t (actual rows=49.00 loops=1)
-(12 rows)
+(13 rows)
 
 -- not matched by source
 SELECT explain_merge('

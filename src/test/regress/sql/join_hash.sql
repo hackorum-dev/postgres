@@ -509,6 +509,91 @@ $$);
 rollback to settings;
 
 
+-- The unmatched outer-row count must not depend on the number of batches nor
+-- on parallelism.  The outer side has 20001 rows (one with a NULL key), 6666
+-- of them find a partner in simple_third and 13335 do not.  JSON gives a
+-- per-loop average with two decimal places; times the number of loops it gives
+-- back the total.
+create table simple_third as select id from simple where id % 3 = 0;
+alter table simple_third set (parallel_workers = 2);
+analyze simple_third;
+create or replace function hash_join_outer_unmatched(query text)
+returns table (unmatched numeric, loops int)
+language plpgsql
+as
+$$
+declare
+  whole_plan jsonb;
+  node jsonb;
+begin
+  execute 'explain (analyze, costs off, timing off, summary off, buffers off, format json) '
+          || query into whole_plan;
+  select n into node
+    from jsonb_path_query(whole_plan, 'lax $.**') as n
+    where jsonb_typeof(n) = 'object' and n->>'Node Type' = 'Hash Join';
+  loops := (node->>'Actual Loops')::int;
+  unmatched := round((node->>'Outer Rows Unmatched')::numeric * loops);
+  return next;
+end;
+$$;
+
+-- non-parallel, one batch
+savepoint settings;
+set local max_parallel_workers_per_gather = 0;
+set local work_mem = '4MB';
+set local hash_mem_multiplier = 1.0;
+select unmatched, loops from hash_join_outer_unmatched(
+$$
+  select count(*) from simple r join simple_third s using (id)
+$$);
+rollback to settings;
+
+-- non-parallel, several batches
+savepoint settings;
+set local max_parallel_workers_per_gather = 0;
+set local work_mem = '64kB';
+set local hash_mem_multiplier = 1.0;
+select final > 1 as multibatch
+  from hash_join_batches(
+$$
+  select count(*) from simple r join simple_third s using (id)
+$$);
+select unmatched, loops from hash_join_outer_unmatched(
+$$
+  select count(*) from simple r join simple_third s using (id)
+$$);
+rollback to settings;
+
+-- parallel with parallel-oblivious hash join
+savepoint settings;
+set local max_parallel_workers_per_gather = 2;
+set local work_mem = '4MB';
+set local hash_mem_multiplier = 1.0;
+set local enable_parallel_hash = off;
+-- keep the inner side serial, so that every worker builds its own hash table
+alter table simple_third set (parallel_workers = 0);
+explain (costs off)
+  select count(*) from simple r join simple_third s using (id);
+select unmatched from hash_join_outer_unmatched(
+$$
+  select count(*) from simple r join simple_third s using (id)
+$$);
+rollback to settings;
+
+-- parallel with parallel-aware hash join, several batches
+savepoint settings;
+set local max_parallel_workers_per_gather = 2;
+set local work_mem = '64kB';
+set local hash_mem_multiplier = 1.0;
+set local enable_parallel_hash = on;
+explain (costs off)
+  select count(*) from simple r join simple_third s using (id);
+select unmatched from hash_join_outer_unmatched(
+$$
+  select count(*) from simple r join simple_third s using (id)
+$$);
+rollback to settings;
+
 -- Hash join reuses the HOT status bit to indicate match status. This can only
 -- be guaranteed to produce correct results if all the hash join tuple match
 -- bits are reset before reuse. This is done upon loading them into the
