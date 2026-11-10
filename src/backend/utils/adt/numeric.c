@@ -6476,7 +6476,9 @@ int2_avg_accum(PG_FUNCTION_ARGS)
 
 	if (ARR_HASNULL(transarray) ||
 		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
+		ereport(ERROR,
+				(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
+				 errmsg("expected 2-element int8 array")));
 
 	transdata = (Int8TransTypeData *) ARR_DATA_PTR(transarray);
 
@@ -6511,7 +6513,9 @@ int4_avg_accum(PG_FUNCTION_ARGS)
 
 	if (ARR_HASNULL(transarray) ||
 		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
+		ereport(ERROR,
+				(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
+				 errmsg("expected 2-element int8 array")));
 
 	transdata = (Int8TransTypeData *) ARR_DATA_PTR(transarray);
 
@@ -6543,11 +6547,15 @@ int4_avg_combine(PG_FUNCTION_ARGS)
 
 	if (ARR_HASNULL(transarray1) ||
 		ARR_SIZE(transarray1) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
+		ereport(ERROR,
+				(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
+				 errmsg("expected 2-element int8 array")));
 
 	if (ARR_HASNULL(transarray2) ||
 		ARR_SIZE(transarray2) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
+		ereport(ERROR,
+				(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
+				 errmsg("expected 2-element int8 array")));
 
 	state1 = (Int8TransTypeData *) ARR_DATA_PTR(transarray1);
 	state2 = (Int8TransTypeData *) ARR_DATA_PTR(transarray2);
@@ -6582,7 +6590,9 @@ int2_avg_accum_inv(PG_FUNCTION_ARGS)
 
 	if (ARR_HASNULL(transarray) ||
 		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
+		ereport(ERROR,
+				(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
+				 errmsg("expected 2-element int8 array")));
 
 	transdata = (Int8TransTypeData *) ARR_DATA_PTR(transarray);
 	transdata->count--;
@@ -6610,7 +6620,9 @@ int4_avg_accum_inv(PG_FUNCTION_ARGS)
 
 	if (ARR_HASNULL(transarray) ||
 		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
+		ereport(ERROR,
+				(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
+				 errmsg("expected 2-element int8 array")));
 
 	transdata = (Int8TransTypeData *) ARR_DATA_PTR(transarray);
 	transdata->count--;
@@ -6629,7 +6641,9 @@ int8_avg(PG_FUNCTION_ARGS)
 
 	if (ARR_HASNULL(transarray) ||
 		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
+		ereport(ERROR,
+				(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
+				 errmsg("expected 2-element int8 array")));
 	transdata = (Int8TransTypeData *) ARR_DATA_PTR(transarray);
 
 	/* SQL defines AVG of no values to be NULL */
@@ -6654,7 +6668,9 @@ int2int4_sum(PG_FUNCTION_ARGS)
 
 	if (ARR_HASNULL(transarray) ||
 		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
-		elog(ERROR, "expected 2-element int8 array");
+		ereport(ERROR,
+				(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
+				 errmsg("expected 2-element int8 array")));
 	transdata = (Int8TransTypeData *) ARR_DATA_PTR(transarray);
 
 	/* SQL defines SUM of no values to be NULL */
