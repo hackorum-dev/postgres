@@ -162,6 +162,18 @@ set local enable_sort = off;
 explain (costs off) select * from t left join (select * from (select * from t order by a) v order by a, b) s on s.a = t.a where t.a in (1, 2);
 select * from t left join (select * from (select * from t order by a) v order by a, b) s on s.a = t.a where t.a in (1, 2);
 rollback;
+-- Test a bounded rescan after an unbounded first scan.
+begin;
+set local enable_seqscan = off;
+set local enable_bitmapscan = off;
+explain (costs off)
+select o.n, count(*) from (values (null::int), (3)) o(n),
+  lateral (select unique1 from tenk1 where hundred < 2 order by hundred, unique1 limit o.n) s
+group by o.n;
+select o.n, count(*) from (values (null::int), (3)) o(n),
+  lateral (select unique1 from tenk1 where hundred < 2 order by hundred, unique1 limit o.n) s
+group by o.n;
+rollback;
 -- Test EXPLAIN ANALYZE with both fullsort and presorted groups.
 select explain_analyze_without_memory('select * from (select * from t order by a) s order by a, b limit 70');
 select jsonb_pretty(explain_analyze_inc_sort_nodes_without_memory('select * from (select * from t order by a) s order by a, b limit 70'));

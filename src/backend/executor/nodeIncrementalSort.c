@@ -582,9 +582,11 @@ ExecIncrementalSort(PlanState *pstate)
 			 * isCurrentGroup(). It's correct to do this along with the
 			 * initial initialization for the full sort state (and not for the
 			 * prefix sort state) since we always load the full sort state
-			 * first.
+			 * first.  A rescan may have freed the full sort state, but the
+			 * presorted column info can be kept.
 			 */
-			preparePresortedCols(node);
+			if (node->presorted_keys == NULL)
+				preparePresortedCols(node);
 
 			/*
 			 * Since we optimize small prefix key groups by accumulating a
@@ -1062,6 +1064,28 @@ ExecEndIncrementalSort(IncrementalSortState *node)
 	ExecEndNode(outerPlanState(node));
 }
 
+/*
+ * resetSortState
+ *
+ * Reset a sort state for a rescan, or free it if it can't be used for a
+ * bounded sort when one is needed.
+ */
+static void
+resetSortState(Tuplesortstate **state, bool bounded)
+{
+	if (*state == NULL)
+		return;
+
+	if (bounded &&
+		(TuplesortstateGetPublic(*state)->sortopt & TUPLESORT_ALLOWBOUNDED) == 0)
+	{
+		tuplesort_end(*state);
+		*state = NULL;
+	}
+	else
+		tuplesort_reset(*state);
+}
+
 void
 ExecReScanIncrementalSort(IncrementalSortState *node)
 {
@@ -1098,16 +1122,13 @@ ExecReScanIncrementalSort(IncrementalSortState *node)
 
 	/*
 	 * If we've set up either of the sort states yet, we need to reset them.
-	 * We could end them and null out the pointers, but there's no reason to
-	 * repay the setup cost, and because ExecIncrementalSort guards presorted
-	 * column functions by checking to see if the full sort state has been
-	 * initialized yet, setting the sort states to null here might actually
-	 * cause a leak.
+	 * There's no reason to repay the setup cost, unless the node is bounded
+	 * now but a sort state was created while it was not.  Such a sort state
+	 * does not support bounded sorts, so free it and let ExecIncrementalSort
+	 * create a new one.
 	 */
-	if (node->fullsort_state != NULL)
-		tuplesort_reset(node->fullsort_state);
-	if (node->prefixsort_state != NULL)
-		tuplesort_reset(node->prefixsort_state);
+	resetSortState(&node->fullsort_state, node->bounded);
+	resetSortState(&node->prefixsort_state, node->bounded);
 
 	/*
 	 * If chgParam of subnode is not null, then the plan will be re-scanned by
