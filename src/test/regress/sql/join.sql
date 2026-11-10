@@ -5076,3 +5076,143 @@ FROM (VALUES (1)) AS v(z) LEFT JOIN
 WHERE s.x = s.c;
 
 ROLLBACK;
+
+--
+-- EXPLAIN ANALYZE "Outer Rows Unmatched": the number of outer rows that found
+-- no partner.  The executor counts matched rows, which must not depend on the
+-- join method; unmatched ones are the outer child's rows minus matched.
+--
+BEGIN;
+
+CREATE TEMP TABLE om_o (a int, b int);
+INSERT INTO om_o SELECT i, i % 4 FROM generate_series(1, 1000) i;
+INSERT INTO om_o SELECT NULL, 0 FROM generate_series(1, 5);  -- NULL keys
+CREATE TEMP TABLE om_i (a int, c int);
+-- two inner rows per key 1..10, so a matched outer row has two partners
+INSERT INTO om_i SELECT i % 10 + 1, i FROM generate_series(1, 20) i;
+CREATE TEMP TABLE om_u (a int PRIMARY KEY);
+INSERT INTO om_u SELECT generate_series(1, 10);
+ANALYZE om_o, om_i, om_u;
+
+-- Hide lines whose content depends on the platform
+CREATE FUNCTION explain_om(query text) RETURNS SETOF text
+LANGUAGE plpgsql AS
+$$
+DECLARE
+    ln text;
+BEGIN
+    FOR ln IN
+        EXECUTE format('EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF) %s',
+                       query)
+    LOOP
+        IF ln ~ 'Buckets:|Sort Method:|Storage:|Batches:' THEN
+            CONTINUE;
+        END IF;
+        RETURN NEXT ln;
+    END LOOP;
+END;
+$$;
+
+-- Report the unmatched outer-row count of every join node, from the JSON
+-- format
+CREATE FUNCTION explain_om_json(query text)
+RETURNS TABLE (node_type text, join_type text, loops text, unmatched text)
+LANGUAGE plpgsql AS
+$$
+DECLARE
+    plan jsonb;
+BEGIN
+    EXECUTE format('EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF, FORMAT JSON) %s',
+                   query) INTO plan;
+    RETURN QUERY
+        SELECT n->>'Node Type', n->>'Join Type', n->>'Actual Loops',
+               n->>'Outer Rows Unmatched'
+        FROM jsonb_path_query(plan, 'lax $.**') AS n
+        WHERE jsonb_typeof(n) = 'object' AND n ? 'Join Type';
+END;
+$$;
+
+SET LOCAL max_parallel_workers_per_gather = 0;
+
+-- Same query, same outer side, three join methods: 10 outer rows match
+-- every time, so 1005 - 10 = 995 are left unmatched.  The two partners per
+-- key must not be counted twice, NULL keys never match.  A merge join stops
+-- reading its outer side once the inner one is exhausted and counts only the
+-- rows it has read.
+SET LOCAL enable_hashjoin = on;
+SET LOCAL enable_mergejoin = off;
+SET LOCAL enable_nestloop = off;
+SELECT explain_om('SELECT * FROM om_o o JOIN om_i i ON o.a = i.a');
+SELECT explain_om('SELECT * FROM om_o o LEFT JOIN om_i i ON o.a = i.a');
+SELECT explain_om('SELECT * FROM om_o o WHERE NOT EXISTS (SELECT 1 FROM om_i i WHERE o.a = i.a)');
+SELECT explain_om('SELECT * FROM om_o o FULL JOIN om_i i ON o.a = i.a');
+-- the residual Join Filter decides the match too: only keys 1, 8, 9, 10
+SELECT explain_om('SELECT * FROM om_o o JOIN om_i i ON o.a = i.a AND i.c > 15 + o.b');
+-- a row rejected only by the node's Filter is still matched
+SELECT explain_om('SELECT * FROM om_o o LEFT JOIN om_i i ON o.a = i.a
+                   WHERE coalesce(i.c, 0) NOT IN (3, 13)');
+
+SET LOCAL enable_hashjoin = off;
+SET LOCAL enable_mergejoin = on;
+SELECT explain_om('SELECT * FROM om_o o JOIN om_i i ON o.a = i.a');
+SELECT explain_om('SELECT * FROM om_o o LEFT JOIN om_i i ON o.a = i.a');
+SELECT explain_om('SELECT * FROM om_o o WHERE NOT EXISTS (SELECT 1 FROM om_i i WHERE o.a = i.a)');
+SELECT explain_om('SELECT * FROM om_o o FULL JOIN om_i i ON o.a = i.a');
+SELECT explain_om('SELECT * FROM om_o o JOIN om_i i ON o.a = i.a AND i.c > 15 + o.b');
+SELECT explain_om('SELECT * FROM om_o o LEFT JOIN om_i i ON o.a = i.a
+                   WHERE coalesce(i.c, 0) NOT IN (3, 13)');
+
+SET LOCAL enable_mergejoin = off;
+SET LOCAL enable_nestloop = on;
+SELECT explain_om('SELECT * FROM om_o o JOIN om_i i ON o.a = i.a');
+SELECT explain_om('SELECT * FROM om_o o LEFT JOIN om_i i ON o.a = i.a');
+SELECT explain_om('SELECT * FROM om_o o WHERE NOT EXISTS (SELECT 1 FROM om_i i WHERE o.a = i.a)');
+SELECT explain_om('SELECT * FROM om_o o JOIN om_i i ON o.a = i.a AND i.c > 15 + o.b');
+SELECT explain_om('SELECT * FROM om_o o LEFT JOIN om_i i ON o.a = i.a
+                   WHERE coalesce(i.c, 0) NOT IN (3, 13)');
+
+-- Parameterized Nested Loop: the join keys move to the inner Index Cond,
+-- the number stays the same
+CREATE INDEX ON om_i (a);
+SET LOCAL enable_material = off;
+SELECT explain_om('SELECT * FROM om_o o LEFT JOIN om_i i ON o.a = i.a');
+RESET enable_material;
+RESET enable_hashjoin;
+RESET enable_mergejoin;
+
+-- Cross-checks without a Filter: SEMI and INNER with a unique inner side
+-- return each matched outer row once, so rows + Outer Rows Unmatched gives
+-- the rows of the outer side
+SET LOCAL enable_hashagg = off;
+SET LOCAL enable_sort = off;
+SELECT explain_om('SELECT * FROM om_o o WHERE EXISTS (SELECT 1 FROM om_i i WHERE o.a = i.a)');
+RESET enable_hashagg;
+RESET enable_sort;
+SELECT explain_om('SELECT * FROM om_o o JOIN om_u u ON o.a = u.a');
+
+-- Rescan: the join runs once per VALUES row, 5 and 3 matches, so
+-- (1000 + 1002) / 2 unmatched on average
+SELECT explain_om('SELECT * FROM (VALUES (15), (17)) v(x) CROSS JOIN LATERAL
+                     (SELECT count(*) FROM om_o o JOIN om_i i
+                        ON o.a = i.a AND i.c > v.x OFFSET 0) s');
+-- The second loop gets an empty hash table and does not read its outer side
+-- at all, so it adds zero to the count.  They are averaged over the join's
+-- own loops, like every other counter on its line.
+SELECT explain_om('SELECT * FROM (VALUES (15), (100)) v(x) CROSS JOIN LATERAL
+                     (SELECT count(*) FROM om_o o JOIN om_i i
+                        ON o.a = i.a AND i.c > v.x OFFSET 0) s');
+SELECT * FROM explain_om_json('SELECT * FROM (VALUES (15), (100)) v(x) CROSS JOIN LATERAL
+                     (SELECT count(*) FROM om_o o JOIN om_i i
+                        ON o.a = i.a AND i.c > v.x OFFSET 0) s');
+
+-- Every outer row matched: no line in text, JSON still has the key
+SELECT explain_om('SELECT * FROM om_i i JOIN om_u u ON i.a = u.a');
+SELECT * FROM explain_om_json('SELECT * FROM om_i i JOIN om_u u ON i.a = u.a');
+
+-- Right semi join cannot tell matched outer rows: nothing in any format
+SET LOCAL enable_nestloop = off;
+SET LOCAL enable_mergejoin = off;
+SELECT explain_om('SELECT * FROM om_i i WHERE EXISTS (SELECT 1 FROM om_o o WHERE o.a = i.a)');
+SELECT * FROM explain_om_json('SELECT * FROM om_i i WHERE EXISTS (SELECT 1 FROM om_o o WHERE o.a = i.a)');
+
+ROLLBACK;

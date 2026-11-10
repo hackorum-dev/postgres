@@ -691,6 +691,7 @@ WHERE t2.a IS NULL;', false);
 --------------------------------------------------------------------------------------------
  Aggregate (actual rows=1.00 loops=N)
    ->  Nested Loop Anti Join (actual rows=33.00 loops=N)
+         Outer Rows Unmatched: 33.00
          ->  Seq Scan on tab_anti t1 (actual rows=100.00 loops=N)
          ->  Memoize (actual rows=0.67 loops=N)
                Cache Key: (t1.a + 1), t1.a
@@ -704,7 +705,7 @@ WHERE t2.a IS NULL;', false);
                                  Sort Key: t2_1.a
                                  Sort Method: quicksort  Memory: NkB
                                  ->  Seq Scan on tab_anti t2_1 (actual rows=100.00 loops=N)
-(15 rows)
+(16 rows)
 
 -- And check we get the expected results.
 SELECT COUNT(*) FROM tab_anti t1 LEFT JOIN

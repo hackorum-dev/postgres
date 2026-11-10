@@ -2571,6 +2571,7 @@ begin
         ln := regexp_replace(ln, 'Workers Launched: \d+', 'Workers Launched: N');
         ln := regexp_replace(ln, 'actual rows=\d+(?:\.\d+)? loops=\d+', 'actual rows=N loops=N');
         ln := regexp_replace(ln, 'Rows Removed by Filter: \d+', 'Rows Removed by Filter: N');
+        ln := regexp_replace(ln, 'Outer Rows Unmatched: \d+(?:\.\d+)?', 'Outer Rows Unmatched: N');
         perform regexp_matches(ln, 'Index Searches: \d+');
         if found then
           continue;
@@ -2711,6 +2712,7 @@ select explain_parallel_append('select avg(ab.a) from ab inner join lprt_a a on 
          Workers Launched: N
          ->  Partial Aggregate (actual rows=N loops=N)
                ->  Nested Loop (actual rows=N loops=N)
+                     Outer Rows Unmatched: N
                      ->  Parallel Seq Scan on lprt_a a (actual rows=N loops=N)
                            Filter: (a = ANY ('{0,0,1}'::integer[]))
                      ->  Append (actual rows=N loops=N)
@@ -2732,7 +2734,7 @@ select explain_parallel_append('select avg(ab.a) from ab inner join lprt_a a on 
                                  Index Cond: (a = a.a)
                            ->  Index Scan using ab_a3_b3_a_idx on ab_a3_b3 ab_9 (never executed)
                                  Index Cond: (a = a.a)
-(27 rows)
+(28 rows)
 
 -- Ensure the same partitions are pruned when we make the nested loop
 -- parameter an Expr rather than a plain Param.
@@ -2745,6 +2747,7 @@ select explain_parallel_append('select avg(ab.a) from ab inner join lprt_a a on 
          Workers Launched: N
          ->  Partial Aggregate (actual rows=N loops=N)
                ->  Nested Loop (actual rows=N loops=N)
+                     Outer Rows Unmatched: N
                      ->  Parallel Seq Scan on lprt_a a (actual rows=N loops=N)
                            Filter: (a = ANY ('{0,0,1}'::integer[]))
                      ->  Append (actual rows=N loops=N)
@@ -2766,7 +2769,7 @@ select explain_parallel_append('select avg(ab.a) from ab inner join lprt_a a on 
                                  Index Cond: (a = (a.a + 0))
                            ->  Index Scan using ab_a3_b3_a_idx on ab_a3_b3 ab_9 (never executed)
                                  Index Cond: (a = (a.a + 0))
-(27 rows)
+(28 rows)
 
 insert into lprt_a values(3),(3);
 select explain_parallel_append('select avg(ab.a) from ab inner join lprt_a a on ab.a = a.a where a.a in(1, 0, 3)');
@@ -2778,6 +2781,7 @@ select explain_parallel_append('select avg(ab.a) from ab inner join lprt_a a on 
          Workers Launched: N
          ->  Partial Aggregate (actual rows=N loops=N)
                ->  Nested Loop (actual rows=N loops=N)
+                     Outer Rows Unmatched: N
                      ->  Parallel Seq Scan on lprt_a a (actual rows=N loops=N)
                            Filter: (a = ANY ('{1,0,3}'::integer[]))
                      ->  Append (actual rows=N loops=N)
@@ -2799,7 +2803,7 @@ select explain_parallel_append('select avg(ab.a) from ab inner join lprt_a a on 
                                  Index Cond: (a = a.a)
                            ->  Index Scan using ab_a3_b3_a_idx on ab_a3_b3 ab_9 (actual rows=N loops=N)
                                  Index Cond: (a = a.a)
-(27 rows)
+(28 rows)
 
 select explain_parallel_append('select avg(ab.a) from ab inner join lprt_a a on ab.a = a.a where a.a in(1, 0, 0)');
                                         explain_parallel_append                                         
@@ -2810,6 +2814,7 @@ select explain_parallel_append('select avg(ab.a) from ab inner join lprt_a a on 
          Workers Launched: N
          ->  Partial Aggregate (actual rows=N loops=N)
                ->  Nested Loop (actual rows=N loops=N)
+                     Outer Rows Unmatched: N
                      ->  Parallel Seq Scan on lprt_a a (actual rows=N loops=N)
                            Filter: (a = ANY ('{1,0,0}'::integer[]))
                            Rows Removed by Filter: N
@@ -2832,7 +2837,7 @@ select explain_parallel_append('select avg(ab.a) from ab inner join lprt_a a on 
                                  Index Cond: (a = a.a)
                            ->  Index Scan using ab_a3_b3_a_idx on ab_a3_b3 ab_9 (never executed)
                                  Index Cond: (a = a.a)
-(28 rows)
+(29 rows)
 
 delete from lprt_a where a = 1;
 select explain_parallel_append('select avg(ab.a) from ab inner join lprt_a a on ab.a = a.a where a.a in(1, 0, 0)');
@@ -2844,6 +2849,7 @@ select explain_parallel_append('select avg(ab.a) from ab inner join lprt_a a on 
          Workers Launched: N
          ->  Partial Aggregate (actual rows=N loops=N)
                ->  Nested Loop (actual rows=N loops=N)
+                     Outer Rows Unmatched: N
                      ->  Parallel Seq Scan on lprt_a a (actual rows=N loops=N)
                            Filter: (a = ANY ('{1,0,0}'::integer[]))
                            Rows Removed by Filter: N
@@ -2866,7 +2872,7 @@ select explain_parallel_append('select avg(ab.a) from ab inner join lprt_a a on 
                                  Index Cond: (a = a.a)
                            ->  Index Scan using ab_a3_b3_a_idx on ab_a3_b3 ab_9 (never executed)
                                  Index Cond: (a = a.a)
-(28 rows)
+(29 rows)
 
 reset enable_hashjoin;
 reset enable_mergejoin;
@@ -3318,6 +3324,7 @@ select * from tbl1 inner join tprt on tbl1.col1 = tprt.col1;
                                  QUERY PLAN                                  
 -----------------------------------------------------------------------------
  Nested Loop (actual rows=3.00 loops=1)
+   Outer Rows Unmatched: 2.00
    ->  Seq Scan on tbl1 (actual rows=5.00 loops=1)
    ->  Append (actual rows=0.60 loops=5)
          ->  Index Scan using tprt1_idx on tprt_1 (never executed)
@@ -3338,7 +3345,7 @@ select * from tbl1 inner join tprt on tbl1.col1 = tprt.col1;
          ->  Index Scan using tprt6_idx on tprt_6 (never executed)
                Index Cond: (col1 = tbl1.col1)
                Index Searches: 0
-(21 rows)
+(22 rows)
 
 select tbl1.col1, tprt.col1 from tbl1
 inner join tprt on tbl1.col1 > tprt.col1
@@ -3426,6 +3433,7 @@ select * from tbl1 join tprt on tbl1.col1 = tprt.col1;
                             QUERY PLAN                             
 -------------------------------------------------------------------
  Nested Loop (actual rows=0.00 loops=1)
+   Outer Rows Unmatched: 1.00
    ->  Seq Scan on tbl1 (actual rows=1.00 loops=1)
    ->  Append (actual rows=0.00 loops=1)
          ->  Index Scan using tprt1_idx on tprt_1 (never executed)
@@ -3446,7 +3454,7 @@ select * from tbl1 join tprt on tbl1.col1 = tprt.col1;
          ->  Index Scan using tprt6_idx on tprt_6 (never executed)
                Index Cond: (col1 = tbl1.col1)
                Index Searches: 0
-(21 rows)
+(22 rows)
 
 select tbl1.col1, tprt.col1 from tbl1
 inner join tprt on tbl1.col1 = tprt.col1

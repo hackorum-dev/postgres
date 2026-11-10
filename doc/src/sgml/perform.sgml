@@ -973,6 +973,56 @@ EXPLAIN ANALYZE SELECT * FROM tenk1 WHERE ten &lt; 7;
    </para>
 
    <para>
+    Nested Loop, Hash Join and Merge Join nodes can also show how many rows
+    of their outer input found no partner:
+
+<screen>
+EXPLAIN ANALYZE SELECT * FROM generate_series(1, 100) x JOIN generate_series(1, 10) y ON x = y;
+
+                                                           QUERY PLAN
+-------------------------------------------------------------------&zwsp;--------------------------------------------------------------
+ Hash Join  (cost=0.23..1.71 rows=10 width=8) (actual time=0.025..0.034 rows=10.00 loops=1)
+   Hash Cond: (x.x = y.y)
+   Outer Rows Unmatched: 90.00
+   -&gt;  Function Scan on generate_series x  (cost=0.00..1.00 rows=100 width=4) (actual time=0.011..0.014 rows=100.00 loops=1)
+   -&gt;  Hash  (cost=0.10..0.10 rows=10 width=4) (actual time=0.007..0.008 rows=10.00 loops=1)
+         Buckets: 1024  Batches: 1  Memory Usage: 9kB
+         -&gt;  Function Scan on generate_series y  (cost=0.00..0.10 rows=10 width=4) (actual time=0.003..0.004 rows=10.00 loops=1)
+ Planning Time: 0.102 ms
+ Execution Time: 0.065 ms
+</screen>
+
+    An outer row counts as matched if the join keys and the
+    <quote>Join Filter</quote> condition hold for at least one inner row;
+    the plain <quote>Filter</quote> of the join node does not matter.
+    The remaining outer rows are unmatched: here 90 of 100.  With an index
+    on the join key of the larger input, a parameterized nested loop could
+    have avoided reading them at all.  Unlike <quote>Rows Removed by Join
+    Filter</quote>, which depends on where the planner put the join keys,
+    the number of matched outer rows is the same whichever join method
+    executes the query, as long as the same input is on the outer side;
+    the number of unmatched ones differs only when a join method stops
+    reading its outer input early, see below.
+    In text format the line appears only when at least one outer row was
+    left unmatched; other output formats always show it.
+   </para>
+
+   <para>
+    Like the actual row count, the value is averaged over the loops of the
+    join node and shown with two decimal places, so multiplying it by the
+    join's <literal>loops</literal> gives back the total.
+    Only the outer rows the join node actually read are taken into account:
+    a merge join that stops early or a hash join with an empty hash table
+    does not read all of its outer input, and the rows it skipped are
+    counted neither as matched nor as unmatched.  If a <literal>LIMIT</literal>
+    above the join stops execution, the outer row being processed at that
+    moment may still be counted as unmatched because its search for a
+    partner was cut short; this adds at most one row per loop.  A hash join
+    executing a right semi join (<quote>Hash Right Semi Join</quote>)
+    cannot tell which outer rows were matched and does not show the value.
+   </para>
+
+   <para>
     A case similar to filter conditions occurs with <quote>lossy</quote>
     index scans.  For example, consider this search for polygons containing a
     specific point:
