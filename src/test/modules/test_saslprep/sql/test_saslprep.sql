@@ -16,4 +16,20 @@ SELECT
     test_saslprep(set_byte('\x00'::bytea, 0, a)) AS saslprep
   FROM generate_series(0,127) AS a;
 
+-- Test prohibited code points and bidi rules after normalization
+WITH cases(name, src, expected_status, expected_res) AS (
+    VALUES
+    ('step3', decode('61cd80', 'hex'),
+     'SUCCESS', decode('c3a0', 'hex')),
+    ('step4', decode('efac9d', 'hex'),
+     'PROHIBITED', NULL::bytea)
+)
+SELECT name,
+       status,
+       encode(res, 'hex') AS result,
+       status = expected_status
+           AND res IS NOT DISTINCT FROM expected_res AS passed
+FROM cases
+CROSS JOIN LATERAL test_saslprep(src);
+
 DROP EXTENSION test_saslprep;
