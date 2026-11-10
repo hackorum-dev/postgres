@@ -382,6 +382,16 @@ update_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid)
 								   old_catalog_xmin != slot->data.catalog_xmin);
 		}
 	}
+	else if (slot->slotsync_skip_reason == SS_SKIP_NO_CONSISTENT_SNAPSHOT)
+	{
+		/*
+		 * The remote slot has not advanced since the previous cycle failed to
+		 * build a consistent snapshot, so the slot still cannot build one.
+		 */
+		Assert(slot->data.persistency == RS_TEMPORARY);
+
+		skip_reason = SS_SKIP_NO_CONSISTENT_SNAPSHOT;
+	}
 
 	/* Update slot sync skip stats */
 	update_slotsync_skip_stats(skip_reason);
