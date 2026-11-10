@@ -25,6 +25,11 @@ SELECT avg(a) AS avg_32 FROM aggtest WHERE a < 100;
  32.6666666666666667
 (1 row)
 
+-- verify malformed aggregate transition states use a data exception SQLSTATE
+\set VERBOSITY sqlstate
+SELECT int8_avg(ARRAY[1]::int8[]);
+ERROR:  2202E
+\set VERBOSITY default
 SELECT any_value(v) FROM (VALUES (1), (2), (3)) AS v (v);
  any_value 
 -----------

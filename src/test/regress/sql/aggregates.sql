@@ -24,6 +24,11 @@ SELECT avg(four) AS avg_1 FROM onek;
 
 SELECT avg(a) AS avg_32 FROM aggtest WHERE a < 100;
 
+-- verify malformed aggregate transition states use a data exception SQLSTATE
+\set VERBOSITY sqlstate
+SELECT int8_avg(ARRAY[1]::int8[]);
+\set VERBOSITY default
+
 SELECT any_value(v) FROM (VALUES (1), (2), (3)) AS v (v);
 SELECT any_value(v) FROM (VALUES (NULL)) AS v (v);
 SELECT any_value(v) FROM (VALUES (NULL), (1), (2)) AS v (v);
