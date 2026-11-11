@@ -380,6 +380,11 @@ extern double vac_estimate_reltuples(Relation relation,
 									 BlockNumber total_pages,
 									 BlockNumber scanned_pages,
 									 double scanned_tuples);
+extern double vac_estimate_reltuples_extended(Relation relation,
+											  BlockNumber total_pages,
+											  BlockNumber scanned_pages,
+											  BlockNumber scanned_new_pages,
+											  double scanned_tuples);
 extern void vac_update_relstats(Relation relation,
 								BlockNumber num_pages,
 								double num_tuples,

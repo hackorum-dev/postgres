@@ -1343,7 +1343,8 @@ vacuum_xid_failsafe_check(const struct VacuumCutoffs *cutoffs)
 }
 
 /*
- * vac_estimate_reltuples() -- estimate the new value for pg_class.reltuples
+ * vac_estimate_reltuples_extended() -- estimate the new value for
+ * pg_class.reltuples
  *
  *		If we scanned the whole relation then we should just use the count of
  *		live tuples seen; but if we did not, we should not blindly extrapolate
@@ -1356,20 +1357,28 @@ vacuum_xid_failsafe_check(const struct VacuumCutoffs *cutoffs)
  *		pg_class.reltuples is defined that way.
  */
 double
-vac_estimate_reltuples(Relation relation,
-					   BlockNumber total_pages,
-					   BlockNumber scanned_pages,
-					   double scanned_tuples)
+vac_estimate_reltuples_extended(Relation relation,
+								BlockNumber total_pages,
+								BlockNumber scanned_pages,
+								BlockNumber scanned_new_pages,
+								double scanned_tuples)
 {
 	BlockNumber old_rel_pages = relation->rd_rel->relpages;
+	BlockNumber sampled_pages;
+	BlockNumber sampleable_pages;
 	double		old_rel_tuples = relation->rd_rel->reltuples;
 	double		old_density;
 	double		unscanned_pages;
 	double		total_tuples;
 
+	Assert(scanned_new_pages <= scanned_pages);
+
 	/* If we did scan the whole table, just use the count as-is */
 	if (scanned_pages >= total_pages)
 		return scanned_tuples;
+
+	sampled_pages = scanned_pages - scanned_new_pages;
+	sampleable_pages = total_pages - scanned_new_pages;
 
 	/*
 	 * With no prior density, a tiny non-random sample is not sufficient to
@@ -1378,11 +1387,11 @@ vac_estimate_reltuples(Relation relation,
 	 */
 	if (old_rel_tuples < 0 || old_rel_pages == 0)
 	{
-		if (scanned_pages <= 1 ||
-			scanned_pages < (double) total_pages * 0.02)
+		if (sampled_pages <= 1 ||
+			sampled_pages < (double) sampleable_pages * 0.02)
 			return -1;
 
-		return floor((scanned_tuples / scanned_pages) * total_pages + 0.5);
+		return floor((scanned_tuples / sampled_pages) * sampleable_pages + 0.5);
 	}
 
 	/*
@@ -1402,8 +1411,8 @@ vac_estimate_reltuples(Relation relation,
 	 * (Note: we might be returning -1 here.)
 	 */
 	if (old_rel_pages == total_pages &&
-		(scanned_pages <= 1 ||
-		 scanned_pages < (double) total_pages * 0.02))
+		(sampled_pages <= 1 ||
+		 sampled_pages < (double) sampleable_pages * 0.02))
 		return old_rel_tuples;
 
 	/*
@@ -1413,9 +1422,22 @@ vac_estimate_reltuples(Relation relation,
 	 * and finally add on the number of tuples in the scanned pages.
 	 */
 	old_density = old_rel_tuples / old_rel_pages;
-	unscanned_pages = (double) total_pages - (double) scanned_pages;
+	unscanned_pages = (double) sampleable_pages - (double) sampled_pages;
 	total_tuples = old_density * unscanned_pages + scanned_tuples;
 	return floor(total_tuples + 0.5);
+}
+
+/*
+ * Compatibility wrapper for callers that don't distinguish PageIsNew pages.
+ */
+double
+vac_estimate_reltuples(Relation relation,
+					   BlockNumber total_pages,
+					   BlockNumber scanned_pages,
+					   double scanned_tuples)
+{
+	return vac_estimate_reltuples_extended(relation, total_pages,
+										   scanned_pages, 0, scanned_tuples);
 }
 
 
