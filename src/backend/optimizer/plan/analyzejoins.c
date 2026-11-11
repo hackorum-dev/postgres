@@ -1758,6 +1758,35 @@ match_unique_clauses(RelOptInfo *outer, List *uclauses, Index relid)
 }
 
 /*
+ * Check whether a relation has any restriction clauses containing volatile
+ * functions.  Self-join elimination can rewrite or relocate such clauses,
+ * which could change the number or timing of their evaluations.
+ */
+static bool
+rel_has_volatile_quals(RelOptInfo *rel)
+{
+	ListCell   *lc;
+
+	foreach(lc, rel->baserestrictinfo)
+	{
+		RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
+
+		if (contain_volatile_functions((Node *) rinfo))
+			return true;
+	}
+
+	foreach(lc, rel->joininfo)
+	{
+		RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
+
+		if (contain_volatile_functions((Node *) rinfo))
+			return true;
+	}
+
+	return false;
+}
+
+/*
  * Find and remove unique self-joins in a group of base relations that have
  * the same Oid.
  *
@@ -1803,6 +1832,15 @@ remove_self_joins_one_group(PlannerInfo *root, Relids relids)
 			/* A sanity check: the relations have the same Oid. */
 			Assert(root->simple_rte_array[k]->relid ==
 				   root->simple_rte_array[r]->relid);
+
+			/*
+			 * Removing either relation would rewrite or relocate its restriction
+			 * clauses.  Do not do that if any of them contain volatile functions,
+			 * since their evaluation count or timing is observable.
+			 */
+			if (rel_has_volatile_quals(rrel) ||
+				rel_has_volatile_quals(krel))
+				continue;
 
 			/*
 			 * It is impossible to eliminate the join of two relations if they
