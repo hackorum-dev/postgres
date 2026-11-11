@@ -181,6 +181,32 @@ SELECT corr(0.1, 'NaN'), regr_r2(0.1, 'NaN') FROM generate_series(1, 30) g;
 SELECT corr('NaN', 0.1), regr_r2('NaN', 0.1) FROM generate_series(1, 30) g;
 SELECT corr('NaN', 'NaN'), regr_r2('NaN', 'NaN') FROM generate_series(1, 30) g;
 
+-- float8_regr_combine must treat constant inputs, and Inf/NaN with a
+-- constant other input, the same way float8_regr_accum does, so that
+-- partial aggregation gives the same results as a serial plan
+CREATE TABLE regr_part (k int, x float8, y float8) PARTITION BY LIST (k);
+CREATE TABLE regr_part_1 PARTITION OF regr_part FOR VALUES IN (1);
+CREATE TABLE regr_part_2 PARTITION OF regr_part FOR VALUES IN (2);
+CREATE TABLE regr_part_3 PARTITION OF regr_part FOR VALUES IN (3);
+INSERT INTO regr_part SELECT 1 + g % 3, 1.0 / 3, g FROM generate_series(1, 80) g;
+ANALYZE regr_part;
+SET enable_partitionwise_aggregate = on;
+EXPLAIN (COSTS OFF)
+SELECT corr(x, x) FROM regr_part;
+SELECT corr(x, x), regr_r2(x, x), regr_slope(y, x), regr_sxx(y, x), covar_pop(x, y)
+FROM regr_part;
+-- an Inf or NaN in one partition, the other input constant
+INSERT INTO regr_part VALUES (2, 'Infinity', 1);
+SELECT covar_pop(x, 0::float8), covar_pop(0::float8, x) FROM regr_part;
+UPDATE regr_part SET x = 'NaN' WHERE x = 'Infinity';
+SELECT covar_pop(x, 0::float8), covar_pop(0::float8, x) FROM regr_part;
+RESET enable_partitionwise_aggregate;
+SELECT covar_pop(x, 0::float8), covar_pop(0::float8, x) FROM regr_part;
+DELETE FROM regr_part WHERE x = 'NaN';
+SELECT corr(x, x), regr_r2(x, x), regr_slope(y, x), regr_sxx(y, x), covar_pop(x, y)
+FROM regr_part;
+DROP TABLE regr_part;
+
 -- test accum and combine functions directly
 CREATE TABLE regr_test (x float8, y float8);
 INSERT INTO regr_test VALUES (10,150),(20,250),(30,350),(80,540),(100,200);
