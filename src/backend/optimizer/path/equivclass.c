@@ -2458,6 +2458,10 @@ reconsider_full_join_clause(PlannerInfo *root, OuterJoinClauseInfo *ojcinfo)
 	left_relids = rinfo->left_relids;
 	right_relids = rinfo->right_relids;
 
+	if (contain_nonstrict_functions((Node *) leftvar) ||
+		contain_nonstrict_functions((Node *) rightvar))
+		return false;
+
 	/*
 	 * Identify the child JoinDomains within which LEFTVAR = CONSTANT and
 	 * RIGHTVAR = CONSTANT would hold.  We mustn't assume that LEFTVAR comes
