@@ -258,6 +258,7 @@ pgstat_drop_relation(Relation rel)
 
 /*
  * Report that the table was just vacuumed and flush IO statistics.
+ * livetuples is -1 if VACUUM could not produce a new estimate.
  */
 void
 pgstat_report_vacuum(Relation rel, PgStat_Counter livetuples,
@@ -284,7 +285,8 @@ pgstat_report_vacuum(Relation rel, PgStat_Counter livetuples,
 	shtabentry = (PgStatShared_Relation *) entry_ref->shared_stats;
 	tabentry = &shtabentry->stats;
 
-	tabentry->live_tuples = livetuples;
+	if (livetuples >= 0)
+		tabentry->live_tuples = livetuples;
 	tabentry->dead_tuples = deadtuples;
 
 	/*
