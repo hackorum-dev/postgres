@@ -1775,7 +1775,7 @@ match_unique_clauses(RelOptInfo *outer, List *uclauses, Index relid)
  * cannot make one that isn't justified.
  */
 static bool
-remove_self_joins_one_group(PlannerInfo *root, Relids relids)
+remove_self_joins_one_group(PlannerInfo *root, Relids relids, Relids grouping_relids)
 {
 	bool		removed = false;
 	int			k;				/* Index of kept relation */
@@ -1803,6 +1803,11 @@ remove_self_joins_one_group(PlannerInfo *root, Relids relids)
 			/* A sanity check: the relations have the same Oid. */
 			Assert(root->simple_rte_array[k]->relid ==
 				   root->simple_rte_array[r]->relid);
+
+			/* SJE must not rewrite expressions used as grouping items. */
+			if (bms_overlap(grouping_relids, rrel->relids) ||
+				bms_overlap(grouping_relids, krel->relids))
+				continue;
 
 			/*
 			 * It is impossible to eliminate the join of two relations if they
@@ -1943,7 +1948,7 @@ remove_self_joins_one_group(PlannerInfo *root, Relids relids)
  * Return true if we removed any joins.
  */
 static bool
-remove_self_joins_recurse(PlannerInfo *root, List *joinlist)
+remove_self_joins_recurse(PlannerInfo *root, List *joinlist, Relids grouping_relids)
 {
 	bool		removed = false;
 	ListCell   *jl;
@@ -2000,7 +2005,7 @@ remove_self_joins_recurse(PlannerInfo *root, List *joinlist)
 		else if (IsA(jlnode, List))
 		{
 			/* Recursively perform SJE within the sub-joinlist */
-			removed |= remove_self_joins_recurse(root, (List *) jlnode);
+			removed |= remove_self_joins_recurse(root, (List *) jlnode, grouping_relids);
 		}
 		else
 			elog(ERROR, "unrecognized joinlist node type: %d",
@@ -2068,7 +2073,7 @@ remove_self_joins_recurse(PlannerInfo *root, List *joinlist)
 				relids = bms_del_members(relids, group);
 
 				/* Try to remove self-joins from the group */
-				removed |= remove_self_joins_one_group(root, group);
+				removed |= remove_self_joins_one_group(root, group, grouping_relids);
 				bms_free(group);
 			}
 			else
@@ -2144,11 +2149,45 @@ self_join_candidates_cmp(const void *a, const void *b)
 bool
 remove_useless_self_joins(PlannerInfo *root, List *joinlist)
 {
+	Relids		grouping_relids = NULL;
+	bool		removed;
+
 	/* Skip if SJE is disabled, or if the joinlist has less than 2 members. */
 	if (!enable_self_join_elimination || joinlist == NIL ||
 		(list_length(joinlist) == 1 && !IsA(linitial(joinlist), List)))
 		return false;
 
-	/* Try to merge pairs of self-joined relations. */
-	return remove_self_joins_recurse(root, joinlist);
+	/*
+	 * With grouping sets, grouping items that become the same expression
+	 * after SJE are not necessarily interchangeable: either item may be
+	 * replaced with NULL independently.  Collect the base relids referenced
+	 * by grouping expressions, so that only SJE candidates that could affect
+	 * those expressions are rejected.
+	 *
+	 * GroupingSet nodes contain sortgrouprefs rather than expressions, so use
+	 * groupClause to locate the corresponding target-list expressions.
+	 */
+	if (root->parse->groupingSets != NIL)
+	{
+		ListCell   *lc;
+
+		foreach(lc, root->parse->groupClause)
+		{
+			SortGroupClause *sgc = lfirst_node(SortGroupClause, lc);
+			TargetEntry *tle;
+			Relids		expr_relids;
+
+			tle = get_sortgroupclause_tle(sgc, root->parse->targetList);
+			expr_relids = pull_varnos(root, (Node *) tle->expr);
+			grouping_relids = bms_add_members(grouping_relids, expr_relids);
+			bms_free(expr_relids);
+		}
+	}
+
+	/* Try to merge one pair of relations participating in a self-join. */
+	removed = remove_self_joins_recurse(root, joinlist, grouping_relids);
+
+	bms_free(grouping_relids);
+
+	return removed;
 }
