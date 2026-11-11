@@ -645,6 +645,18 @@ LaunchParallelWorkers(ParallelContext *pcxt)
 			shm_mq_detach(pcxt->worker[i].error_mqh);
 			pcxt->worker[i].error_mqh = NULL;
 		}
+if (i == 0)
+{
+instr_time  start, now;
+int msec = rand() % 100;
+elog(LOG, "!!!ParallelWorkerMain| i: %d, sleep: %d", i, msec);
+INSTR_TIME_SET_CURRENT(start);
+do
+{
+pg_usleep(10000); INSTR_TIME_SET_CURRENT(now); INSTR_TIME_SUBTRACT(now, start);
+}
+while (INSTR_TIME_GET_MILLISEC(now) < msec);
+}
 	}
 
 	/*
