@@ -1096,11 +1096,11 @@ array_in_safe(FmgrInfo *array_in, const char *s, Oid typid, int32 typmod,
 		return (Datum) 0;
 	}
 
-	if (ARR_NDIM(DatumGetArrayTypeP(result)) != 1)
+	if (ARR_NDIM(DatumGetArrayTypeP(result)) > 1)
 	{
 		ereport(WARNING,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("could not import element \"%s\" in expression %d: must be a one-dimensional array",
+				 errmsg("could not import element \"%s\" in expression %d: must be a one-dimensional array or empty",
 						element_name, exprnum)));
 		return (Datum) 0;
 	}
@@ -1369,8 +1369,8 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 		{
 			ArrayType  *vals_arr = DatumGetArrayTypeP(stavalues);
 			ArrayType  *nums_arr = DatumGetArrayTypeP(stanumbers);
-			int			nvals = ARR_DIMS(vals_arr)[0];
-			int			nnums = ARR_DIMS(nums_arr)[0];
+			int			nvals = (ARR_NDIM(vals_arr) > 0) ? ARR_DIMS(vals_arr)[0] : 0;
+			int			nnums = (ARR_NDIM(nums_arr) > 0) ? ARR_DIMS(nums_arr)[0] : 0;
 
 			if (nvals != nnums)
 			{

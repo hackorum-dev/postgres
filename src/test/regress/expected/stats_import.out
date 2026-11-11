@@ -3246,7 +3246,7 @@ SELECT pg_catalog.pg_restore_extended_stats(
               { "most_common_vals": "{{1,2},{3,4}}", "most_common_freqs": "{0.3,0.25,0.05,0.04}" },
               { "most_common_vals": "{2}", "most_common_freqs": "{0.5}" }
           ]'::jsonb);
-WARNING:  could not import element "most_common_vals" in expression -1: must be a one-dimensional array
+WARNING:  could not import element "most_common_vals" in expression -1: must be a one-dimensional array or empty
  pg_restore_extended_stats 
 ---------------------------
  f
@@ -4355,6 +4355,59 @@ AND attname = 'id';
  most_common_vals | most_common_freqs 
 ------------------+-------------------
  {}               | {}
+(1 row)
+
+-- BUG #19842
+TRUNCATE TABLE stats_import.test;
+INSERT INTO stats_import.test(id, arange)
+VALUES (1, int4range(1,5)), (2, 'empty'::int4range);
+CREATE STATISTICS stats_import.range_stat ON (arange * int4range(1,10))
+FROM stats_import.test;
+ANALYZE stats_import.test;
+SELECT * FROM pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'range_stat',
+  'inherited', 'f'::boolean,
+  'exprs', '[{"avg_width": "13","null_frac": "0","n_distinct": "-1",
+              "range_empty_frac": "0.5"}]'::jsonb
+);
+WARNING:  could not parse "exprs": invalid element in expression -1
+HINT:  "range_length_histogram" and "range_empty_frac" must be both either strings or nulls.
+ pg_restore_extended_stats 
+---------------------------
+ f
+(1 row)
+
+SELECT * FROM pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'range_stat',
+  'inherited', 'f'::boolean,
+  'exprs', '[{"avg_width": "13","null_frac": "0","n_distinct": "-1",
+              "range_length_histogram": "{}", "range_empty_frac": "0.5"}]'::jsonb
+);
+ pg_restore_extended_stats 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pg_catalog.pg_restore_attribute_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test',
+  'attname', 'arange',
+  'inherited', 'f'::boolean,
+  'null_frac', '0'::real,
+  'avg_width', '10'::integer,
+  'n_distinct', '-1'::real,
+  'range_length_histogram', '{}'::text,
+  'range_empty_frac', '0.5'::real
+);
+ pg_restore_attribute_stats 
+----------------------------
+ t
 (1 row)
 
 DROP SCHEMA stats_import CASCADE;
