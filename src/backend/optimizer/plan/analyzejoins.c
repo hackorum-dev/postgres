@@ -2144,9 +2144,14 @@ self_join_candidates_cmp(const void *a, const void *b)
 bool
 remove_useless_self_joins(PlannerInfo *root, List *joinlist)
 {
-	/* Skip if SJE is disabled, or if the joinlist has less than 2 members. */
+	/*
+	 * Skip if SJE is disabled, if the joinlist has less than 2 members, or if
+	 * eliminating a relation could change the number or timing of volatile
+	 * function evaluations.
+	 */
 	if (!enable_self_join_elimination || joinlist == NIL ||
-		(list_length(joinlist) == 1 && !IsA(linitial(joinlist), List)))
+		(list_length(joinlist) == 1 && !IsA(linitial(joinlist), List)) ||
+		contain_volatile_functions((Node *) root->parse->jointree))
 		return false;
 
 	/* Try to merge pairs of self-joined relations. */

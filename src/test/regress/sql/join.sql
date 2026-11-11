@@ -4978,3 +4978,22 @@ FROM (VALUES (1)) AS v(z) LEFT JOIN
 WHERE s.x = s.c;
 
 ROLLBACK;
+
+-- Self-join elimination must preserve separately observable evaluations of
+-- volatile quals, even when Var replacement makes the quals identical.
+BEGIN;
+
+CREATE TEMP TABLE sje_volatile (id int PRIMARY KEY);
+CREATE TEMP SEQUENCE sje_volatile_seq;
+INSERT INTO sje_volatile VALUES (1);
+
+SELECT setval('sje_volatile_seq', 1, false);
+SELECT count(*)
+FROM sje_volatile a
+JOIN sje_volatile b ON a.id = b.id
+WHERE (nextval('sje_volatile_seq') + a.id) % 2 = 0
+  AND (nextval('sje_volatile_seq') + b.id) % 2 = 0;
+
+SELECT last_value FROM sje_volatile_seq;
+
+ROLLBACK;
