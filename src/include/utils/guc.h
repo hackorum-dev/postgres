@@ -472,9 +472,9 @@ extern ArrayType *GUCArrayAdd(ArrayType *array, const char *name, const char *va
 extern ArrayType *GUCArrayDelete(ArrayType *array, const char *name);
 extern ArrayType *GUCArrayReset(ArrayType *array);
 
-extern void *guc_malloc(int elevel, size_t size);
+pg_attribute_malloc extern void *guc_malloc(int elevel, size_t size);
 pg_nodiscard extern void *guc_realloc(int elevel, void *old, size_t size);
-extern char *guc_strdup(int elevel, const char *src);
+pg_attribute_malloc extern char *guc_strdup(int elevel, const char *src);
 extern void guc_free(void *ptr);
 
 #ifdef EXEC_BACKEND

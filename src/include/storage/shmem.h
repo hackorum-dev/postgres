@@ -186,8 +186,8 @@ extern void ShmemRequestHashWithOpts(const ShmemHashOpts *options);
 extern void *ShmemInitStruct(const char *name, Size size, bool *foundPtr);
 extern HTAB *ShmemInitHash(const char *name, int64 nelems,
 						   HASHCTL *infoP, int hash_flags);
-extern void *ShmemAlloc(Size size);
-extern void *ShmemAllocNoError(Size size);
+pg_attribute_malloc extern void *ShmemAlloc(Size size);
+pg_attribute_malloc extern void *ShmemAllocNoError(Size size);
 
 extern PGDLLIMPORT Size pg_get_shmem_pagesize(void);
 

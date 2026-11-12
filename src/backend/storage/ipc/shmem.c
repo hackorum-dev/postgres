@@ -243,7 +243,7 @@ typedef struct ShmemAllocatorData
 
 #define ShmemIndexLock (&ShmemAllocator->index_lock)
 
-static void *ShmemAllocRaw(Size size, Size alignment, Size *allocated_size);
+pg_attribute_malloc static void *ShmemAllocRaw(Size size, Size alignment, Size *allocated_size);
 
 /* shared memory global variables */
 

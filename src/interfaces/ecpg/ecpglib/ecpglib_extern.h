@@ -168,14 +168,14 @@ bool		ecpg_get_data(const PGresult *, int, int, int, enum ECPGttype type,
 
 void		ecpg_pthreads_init(void);
 struct connection *ecpg_get_connection(const char *connection_name);
-char	   *ecpg_alloc(long size, int lineno);
-char	   *ecpg_auto_alloc(long size, int lineno);
+pg_attribute_malloc char *ecpg_alloc(long size, int lineno);
+pg_attribute_malloc char *ecpg_auto_alloc(long size, int lineno);
 char	   *ecpg_realloc(void *ptr, long size, int lineno);
 void		ecpg_free(void *ptr);
 bool		ecpg_init(const struct connection *con,
 					  const char *connection_name,
 					  const int lineno);
-char	   *ecpg_strdup(const char *string, int lineno, bool *alloc_failed);
+pg_attribute_malloc char *ecpg_strdup(const char *string, int lineno, bool *alloc_failed);
 const char *ecpg_type_name(enum ECPGttype typ);
 int			ecpg_dynamic_type(Oid type);
 int			sqlda_dynamic_type(Oid type, enum COMPAT_MODE compat);

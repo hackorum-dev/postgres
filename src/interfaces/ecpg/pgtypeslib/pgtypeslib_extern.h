@@ -39,7 +39,7 @@ int			pgtypes_fmt_replace(union un_fmt_comb replace_val,
 								int replace_type, char **output,
 								int *pstr_len);
 
-char	   *pgtypes_alloc(long size);
-char	   *pgtypes_strdup(const char *str);
+pg_attribute_malloc char *pgtypes_alloc(long size);
+pg_attribute_malloc char *pgtypes_strdup(const char *str);
 
 #endif							/* _ECPG_PGTYPESLIB_EXTERN_H */
