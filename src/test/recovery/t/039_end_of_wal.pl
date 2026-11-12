@@ -141,8 +141,8 @@ note "Single-page end-of-WAL detection";
 ###########################################################################
 
 # xl_tot_len is 0 (a common case, we hit trailing zeroes).
-$node->emit_wal(0);
-$end_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
+$end_lsn = $node->emit_wal(0);
+$end_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE, $end_lsn);
 $node->stop('immediate');
 my $log_size = -s $node->logfile;
 $node->start;
@@ -152,8 +152,8 @@ ok( $node->log_contains(
 	"xl_tot_len zero");
 
 # xl_tot_len is < 24 (presumably recycled garbage).
-$node->emit_wal(0);
-$end_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
+$end_lsn = $node->emit_wal(0);
+$end_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE, $end_lsn);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE, build_record_header(23));
 $log_size = -s $node->logfile;
@@ -190,8 +190,8 @@ ok( $node->log_contains(
 	"xl_tot_len short at end-of-page");
 
 # Need more pages, but xl_prev check fails first.
-$node->emit_wal(0);
-$end_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
+$end_lsn = $node->emit_wal(0);
+$end_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE, $end_lsn);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
 	build_record_header(2 * 1024 * 1024, 0, 0xdeadbeef));
@@ -202,8 +202,8 @@ ok( $node->log_contains(
 	"xl_prev bad");
 
 # xl_crc check fails.
-$node->emit_wal(0);
-$node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
+$end_lsn = $node->emit_wal(0);
+$node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE, $end_lsn);
 $end_lsn = $node->emit_wal(10);
 $node->stop('immediate');
 # Corrupt a byte in that record, breaking its CRC.
@@ -224,8 +224,8 @@ note "Multi-page end-of-WAL detection, header is not split";
 # written to WAL.
 
 # Good xl_prev, we hit zero page next (zero magic).
-$node->emit_wal(0);
-$prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
+$end_lsn = $node->emit_wal(0);
+$prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE, $end_lsn);
 $end_lsn = $node->emit_wal(0);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
@@ -236,8 +236,8 @@ ok($node->log_contains("invalid magic number 0000 .* LSN .*", $log_size),
 	"xlp_magic zero");
 
 # Good xl_prev, we hit garbage page next (bad magic).
-$node->emit_wal(0);
-$prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
+$end_lsn = $node->emit_wal(0);
+$prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE, $end_lsn);
 $end_lsn = $node->emit_wal(0);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
@@ -251,8 +251,8 @@ ok($node->log_contains("invalid magic number CAFE .* LSN .*", $log_size),
 
 # Good xl_prev, we hit typical recycled page (good xlp_magic, bad
 # xlp_pageaddr).
-$node->emit_wal(0);
-$prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
+$end_lsn = $node->emit_wal(0);
+$prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE, $end_lsn);
 $end_lsn = $node->emit_wal(0);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
@@ -266,8 +266,8 @@ ok( $node->log_contains(
 	"xlp_pageaddr bad");
 
 # Good xl_prev, xlp_magic, xlp_pageaddr, but bogus xlp_info.
-$node->emit_wal(0);
-$prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
+$end_lsn = $node->emit_wal(0);
+$prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE, $end_lsn);
 $end_lsn = $node->emit_wal(0);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
@@ -285,8 +285,8 @@ ok($node->log_contains("invalid info bits 1234 in .*, LSN .*,", $log_size),
 
 # Good xl_prev, xlp_magic, xlp_pageaddr, but xlp_info doesn't mention
 # continuation record.
-$node->emit_wal(0);
-$prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
+$end_lsn = $node->emit_wal(0);
+$prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE, $end_lsn);
 $end_lsn = $node->emit_wal(0);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
@@ -301,8 +301,8 @@ ok($node->log_contains("there is no contrecord flag at .*", $log_size),
 
 # Good xl_prev, xlp_magic, xlp_pageaddr, xlp_info but xlp_rem_len doesn't add
 # up.
-$node->emit_wal(0);
-$prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
+$end_lsn = $node->emit_wal(0);
+$prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE, $end_lsn);
 $end_lsn = $node->emit_wal(0);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
