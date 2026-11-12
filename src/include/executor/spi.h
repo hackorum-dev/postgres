@@ -164,7 +164,7 @@ extern char *SPI_gettype(TupleDesc tupdesc, int fnumber);
 extern Oid	SPI_gettypeid(TupleDesc tupdesc, int fnumber);
 extern char *SPI_getrelname(Relation rel);
 extern char *SPI_getnspname(Relation rel);
-extern void *SPI_palloc(Size size);
+pg_attribute_malloc extern void *SPI_palloc(Size size);
 extern void *SPI_repalloc(void *pointer, Size size);
 extern void SPI_pfree(void *pointer);
 extern Datum SPI_datumTransfer(Datum value, bool typByVal, int typLen);
