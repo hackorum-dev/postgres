@@ -3674,6 +3674,105 @@ select * from sj t1
     on true
 where t1.a = s.a;
 
+-- Ensure that SJE is not performed on relations referenced in grouping sets,
+-- since grouping sets can independently nullify columns that would otherwise
+-- be considered equivalent.
+-- 1. CUBE with aggregates
+explain (costs off)
+select t1.a, t2.a, count(*), sum(t1.b) from sj t1 join sj t2 on t1.a = t2.a
+group by cube (t1.a, t2.a) order by 1, 2;
+
+select t1.a, t2.a, count(*), sum(t1.b) from sj t1 join sj t2 on t1.a = t2.a
+group by cube (t1.a, t2.a) order by 1, 2;
+
+-- 2. ROLLUP
+explain (costs off)
+select t1.a, t2.a, count(*) from sj t1 join sj t2 on t1.a = t2.a
+group by rollup (t1.a, t2.a) order by 1, 2;
+
+select t1.a, t2.a, count(*) from sj t1 join sj t2 on t1.a = t2.a
+group by rollup (t1.a, t2.a) order by 1, 2;
+
+-- 3. Explicit GROUPING SETS
+explain (costs off)
+select t1.a, t2.a, count(*) from sj t1 join sj t2 on t1.a = t2.a
+group by grouping sets ((t1.a, t2.a), (t1.a), (t2.a), ()) order by 1, 2;
+
+select t1.a, t2.a, count(*) from sj t1 join sj t2 on t1.a = t2.a
+group by grouping sets ((t1.a, t2.a), (t1.a), (t2.a), ()) order by 1, 2;
+
+-- 4. Asymmetric GROUPING SETS
+explain (costs off)
+select t1.a, t2.a, count(*) from sj t1 join sj t2 on t1.a = t2.a
+group by grouping sets ((t1.a), (t2.a)) order by 1, 2;
+
+select t1.a, t2.a, count(*) from sj t1 join sj t2 on t1.a = t2.a
+group by grouping sets ((t1.a), (t2.a)) order by 1, 2;
+
+-- 5. Multiple unique keys with CUBE
+explain (costs off)
+select t1.a, t2.c, count(*) from sj t1 join sj t2 on t1.a = t2.a and t1.c = t2.c
+group by cube (t1.a, t2.c) order by 1, 2;
+
+select t1.a, t2.c, count(*) from sj t1 join sj t2 on t1.a = t2.a and t1.c = t2.c
+group by cube (t1.a, t2.c) order by 1, 2;
+
+-- 6. Pulled-up subquery with self-join under grouping sets
+explain (costs off)
+select x, y, count(*)
+from (select t1.a as x, t2.a as y from sj t1 join sj t2 on t1.a = t2.a) s
+group by cube (x, y) order by 1, 2;
+
+select x, y, count(*)
+from (select t1.a as x, t2.a as y from sj t1 join sj t2 on t1.a = t2.a) s
+group by cube (x, y) order by 1, 2;
+
+-- 7. CUBE with HAVING and non-Var targetlist expression
+select t1.a, t2.a, coalesce(t2.a, -1)
+from sj t1 join sj t2 on t1.a = t2.a
+group by cube (t1.a, t2.a)
+having t2.a is null
+order by 1, 2;
+
+-- 8. 3-way self-join where t1 and t3 are in GROUP BY (SJE must not
+-- transitively merge t1 and t3 via t2)
+explain (costs off)
+select t1.a, t3.a, count(*)
+from sj t1 join sj t2 on t1.a = t2.a join sj t3 on t2.a = t3.a
+group by cube (t1.a, t3.a) order by 1, 2;
+
+select t1.a, t3.a, count(*)
+from sj t1 join sj t2 on t1.a = t2.a join sj t3 on t2.a = t3.a
+group by cube (t1.a, t3.a) order by 1, 2;
+
+-- 9. Grouping sets not referencing the self-joined relations (SJE should
+-- still apply to t1 and t2)
+explain (costs off)
+select t3.b, count(*)
+from sj t1 join sj t2 on t1.a = t2.a join sj t3 on t1.a = t3.a
+group by rollup (t3.b) order by 1, 2;
+
+select t3.b, count(*)
+from sj t1 join sj t2 on t1.a = t2.a join sj t3 on t1.a = t3.a
+group by rollup (t3.b) order by 1, 2;
+
+-- 10. Constant in GROUPING SETS (SJE should still apply)
+explain (costs off)
+select 1, count(*)
+from sj t1 join sj t2 on t1.a = t2.a
+group by rollup (1);
+
+-- 11. Outer self-join with inner subquery containing grouping sets (SJE should
+-- still apply)
+explain (costs off)
+select t1.a, t2.a, sub.ct from sj t1 join sj t2 on t1.a = t2.a
+join (select a, count(*) as ct from sj group by rollup(a)) sub on t1.a = sub.a
+order by 1, 2;
+
+select t1.a, t2.a, sub.ct from sj t1 join sj t2 on t1.a = t2.a
+join (select a, count(*) as ct from sj group by rollup(a)) sub on t1.a = sub.a
+order by 1, 2;
+
 -- Degenerated case.
 explain (costs off)
 select * from
