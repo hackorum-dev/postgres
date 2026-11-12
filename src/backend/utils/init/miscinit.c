@@ -210,6 +210,12 @@ InitStandaloneProcess(const char *argv0)
 	pqinitmask();
 	sigprocmask(SIG_SETMASK, &BlockSig, NULL);
 
+	/*
+	 * Reset SIGCHLD, in case we were started with it ignored.  See
+	 * InitPostmasterChild.
+	 */
+	pqsignal(SIGCHLD, PG_SIG_DFL);
+
 	/* Compute paths, no postmaster to inherit from */
 	if (my_exec_path[0] == '\0')
 	{
