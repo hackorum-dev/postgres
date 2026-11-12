@@ -3885,7 +3885,15 @@ start_repack_decoding_worker(Oid relid)
 	/*
 	 * Transmit any relevant settings to the worker too.  These would override
 	 * any role- or database-level configuration with that from this session.
+	 * The static assertions make sure the fields keep the type of the GUC
+	 * variables, should any of them change.
 	 */
+	StaticAssertVariableIsOfTypeMacro(LockTimeout,
+									  typeof(shared->lock_timeout));
+	StaticAssertVariableIsOfTypeMacro(TransactionTimeout,
+									  typeof(shared->transaction_timeout));
+	StaticAssertVariableIsOfTypeMacro(temp_file_limit,
+									  typeof(shared->temp_file_limit));
 	shared->lock_timeout = LockTimeout;
 	shared->transaction_timeout = TransactionTimeout;
 	shared->temp_file_limit = temp_file_limit;
