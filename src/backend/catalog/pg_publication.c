@@ -1078,6 +1078,27 @@ GetAllTablesPublications(void)
 }
 
 /*
+ * relispartition stays set until DETACH PARTITION ... FINALIZE.
+ * get_partition_ancestors() is empty after the first transaction of
+ * DETACH PARTITION ... CONCURRENTLY commits. The table is then published
+ * as itself.
+ */
+static bool
+pub_rel_is_partition(Oid relid, bool relispartition)
+{
+	List	   *ancestors;
+	bool		result;
+
+	if (!relispartition)
+		return false;
+
+	ancestors = get_partition_ancestors(relid);
+	result = (ancestors != NIL);
+	list_free(ancestors);
+	return result;
+}
+
+/*
  * Gets list of all relations published by FOR ALL TABLES/SEQUENCES
  * publication.
  *
@@ -1122,7 +1143,8 @@ GetAllPublicationRelations(Oid pubid, char relkind, bool pubviaroot)
 		Oid			relid = relForm->oid;
 
 		if (is_publishable_class(relid, relForm) &&
-			!(relForm->relispartition && pubviaroot) &&
+			!(pubviaroot &&
+			  pub_rel_is_partition(relid, relForm->relispartition)) &&
 			!list_member_oid(exceptlist, relid))
 			result = lappend_oid(result, relid);
 	}
@@ -1144,7 +1166,7 @@ GetAllPublicationRelations(Oid pubid, char relkind, bool pubviaroot)
 			Oid			relid = relForm->oid;
 
 			if (is_publishable_class(relid, relForm) &&
-				!relForm->relispartition &&
+				!pub_rel_is_partition(relid, relForm->relispartition) &&
 				!list_member_oid(exceptlist, relid))
 				result = lappend_oid(result, relid);
 		}
@@ -1388,10 +1410,12 @@ is_table_publishable_in_publication(Oid relid, Publication *pub)
 	if (pub->alltables)
 	{
 		/*
-		 * ALL TABLES with pubviaroot includes only regular tables or top-most
-		 * partitioned tables -- never child partitions.
+		 * ALL TABLES with pubviaroot publishes regular tables and top-most
+		 * partitioned tables. A partition that still has ancestors is covered
+		 * by its root. Pending detach leaves that list empty, so the table is
+		 * published as itself.
 		 */
-		if (pub->pubviaroot && relispartition)
+		if (pub->pubviaroot && ancestors != NIL)
 			return false;
 
 		/*
@@ -1400,10 +1424,6 @@ is_table_publishable_in_publication(Oid relid, Publication *pub)
 		 * EXCEPT clause, so exclusion must be evaluated at the top-most
 		 * ancestor if it has. These publications store only EXCEPT'ed tables
 		 * in pg_publication_rel, so checking existence is sufficient.
-		 *
-		 * Note that this existence check below would incorrectly return true
-		 * (published) for partitions when pubviaroot is enabled; however,
-		 * that case is already caught and returned false by the above check.
 		 */
 		return !SearchSysCacheExists2(PUBLICATIONRELMAP,
 									  ObjectIdGetDatum(ancestors

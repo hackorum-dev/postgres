@@ -135,5 +135,6 @@ test: lock-nowait
 test: ddl-dependency-locking
 test: tablespace-dependency-locking
 test: pub-concurrent-drop
+test: pub-detach-pending
 test: type-ddl-locking
 test: drop-owned-grant

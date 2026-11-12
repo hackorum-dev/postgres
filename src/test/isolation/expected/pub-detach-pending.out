@@ -1,0 +1,13 @@
+Parsed test spec with 3 sessions
+
+starting permutation: lock detach listed unlock
+step lock: BEGIN; LOCK TABLE parent_tbl IN ACCESS SHARE MODE;
+step detach: ALTER TABLE parent_tbl DETACH PARTITION child_tbl CONCURRENTLY; <waiting ...>
+step listed: SELECT tablename FROM pg_publication_tables WHERE pubname = 'pub' AND tablename = 'child_tbl';
+tablename
+---------
+child_tbl
+(1 row)
+
+step unlock: COMMIT;
+step detach: <... completed>
