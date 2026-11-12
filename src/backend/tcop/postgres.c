@@ -3721,8 +3721,8 @@ ProcessInterrupts(void)
 	if (LogMemoryContextPending)
 		ProcessLogMemoryContextInterrupt();
 
-	if (ParallelApplyMessagePending)
-		ProcessParallelApplyMessages();
+	if (ParallelApplyWorkerExitPending)
+		ProcessParallelApplyWorkerExits();
 
 	if (SlotSyncShutdownPending)
 		ProcessSlotSyncMessage();
