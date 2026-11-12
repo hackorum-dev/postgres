@@ -2172,11 +2172,25 @@ fix_expr_common(PlannerInfo *root, Node *node)
 	{
 		Const	   *con = (Const *) node;
 
+		record_plan_type_dependency(root, con->consttype);
+
 		/* Check for regclass reference */
 		if (ISREGCLASSCONST(con))
 			root->glob->relationOids =
 				lappend_oid(root->glob->relationOids,
 							DatumGetObjectId(con->constvalue));
+	}
+	else if (IsA(node, RowExpr))
+	{
+		record_plan_type_dependency(root, ((RowExpr *) node)->row_typeid);
+	}
+	else if (IsA(node, ArrayExpr))
+	{
+		record_plan_type_dependency(root, ((ArrayExpr *) node)->array_typeid);
+	}
+	else if (IsA(node, CoerceViaIO))
+	{
+		record_plan_type_dependency(root, ((CoerceViaIO *) node)->resulttype);
 	}
 	else if (IsA(node, GroupingFunc))
 	{
