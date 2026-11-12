@@ -1305,9 +1305,12 @@ GetAllSchemaPublicationRelations(Oid pubid, PublicationPartOpt pub_partopt)
  * Get publication using oid
  *
  * The Publication struct and its data are palloc'ed here.
+ *
+ * If missing_ok is true, return NULL when the publication does not exist
+ * (e.g., it was dropped concurrently); otherwise raise an error.
  */
-Publication *
-GetPublication(Oid pubid)
+static Publication *
+get_publication_internal(Oid pubid, bool missing_ok)
 {
 	HeapTuple	tup;
 	Publication *pub;
@@ -1315,7 +1318,11 @@ GetPublication(Oid pubid)
 
 	tup = SearchSysCache1(PUBLICATIONOID, ObjectIdGetDatum(pubid));
 	if (!HeapTupleIsValid(tup))
+	{
+		if (missing_ok)
+			return NULL;
 		elog(ERROR, "cache lookup failed for publication %u", pubid);
+	}
 
 	pubform = (Form_pg_publication) GETSTRUCT(tup);
 
@@ -1334,6 +1341,12 @@ GetPublication(Oid pubid)
 	ReleaseSysCache(tup);
 
 	return pub;
+}
+
+Publication *
+GetPublication(Oid pubid)
+{
+	return get_publication_internal(pubid, false);
 }
 
 /*
@@ -1647,10 +1660,22 @@ pg_get_publication_tables(FunctionCallInfo fcinfo, ArrayType *pubnames,
 			continue;
 
 		/*
+		 * Likewise, the publication OIDs were collected earlier and we don't
+		 * hold a lock on the publication, so it may have been dropped
+		 * concurrently (for instance, while we waited for the lock on the
+		 * table above, which also processes pending invalidations). Skip the
+		 * row in that case, for the same point-in-time reasoning as above.
+		 */
+		pub = get_publication_internal(table_info->pubid, true);
+		if (pub == NULL)
+		{
+			table_close(rel, AccessShareLock);
+			continue;
+		}
+
+		/*
 		 * Form tuple with appropriate data.
 		 */
-
-		pub = GetPublication(table_info->pubid);
 
 		values[0] = ObjectIdGetDatum(pub->oid);
 		values[1] = ObjectIdGetDatum(relid);
