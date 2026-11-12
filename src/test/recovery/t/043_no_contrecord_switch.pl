@@ -79,9 +79,9 @@ $TLI = $primary->safe_psql('postgres',
 # Get close to the end of the current WAL page, enough to fit the
 # beginning of a record that spans on two pages, generating a
 # continuation record.
-$primary->emit_wal(0);
-my $end_lsn =
-  $primary->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
+my $end_lsn = $primary->emit_wal(0);
+$end_lsn =
+  $primary->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE, $end_lsn);
 
 # Do some math to find the record size that will overflow the page, and
 # write it.

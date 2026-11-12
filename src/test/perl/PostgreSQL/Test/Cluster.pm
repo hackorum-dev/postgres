@@ -3249,18 +3249,30 @@ Returns the end LSN up to which WAL has advanced, in bytes.
 
 sub advance_wal_out_of_record_splitting_zone
 {
-	my ($self, $wal_block_size) = @_;
+	my ($self, $wal_block_size, $end_lsn) = @_;
 
 	my $page_threshold = $wal_block_size / 4;
-	my $end_lsn = $self->_get_insert_lsn();
-	my $page_offset = $end_lsn % $wal_block_size;
+	my $insert_lsn = $self->_get_insert_lsn();
+
+	if (defined($end_lsn))
+	{
+		# both lsns should be on the same page to avoid edge cases when new WAL
+		# page hasn't been initialized yet.
+		while(int($insert_lsn / $wal_block_size) != int($end_lsn / $wal_block_size))
+		{
+			$end_lsn = $self->emit_wal(0);
+			$insert_lsn = $self->_get_insert_lsn();
+		}
+	}
+
+	my $page_offset = $insert_lsn % $wal_block_size;
 	while ($page_offset >= $wal_block_size - $page_threshold)
 	{
 		$self->emit_wal($page_threshold);
-		$end_lsn = $self->_get_insert_lsn();
-		$page_offset = $end_lsn % $wal_block_size;
+		$insert_lsn = $self->_get_insert_lsn();
+		$page_offset = $insert_lsn % $wal_block_size;
 	}
-	return $end_lsn;
+	return $insert_lsn;
 }
 
 =pod
