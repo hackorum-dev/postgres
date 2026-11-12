@@ -1575,6 +1575,8 @@ StartLogicalReplication(StartReplicationCmd *cmd)
 							  WalSndUpdateProgress);
 	xlogreader = logical_decoding_ctx->reader;
 
+	streamingDoneSending = streamingDoneReceiving = false;
+
 	WalSndSetState(WALSNDSTATE_CATCHUP);
 
 	/* Send a CopyBothResponse message, and start streaming */
