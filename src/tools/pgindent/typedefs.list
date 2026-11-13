@@ -3062,6 +3062,7 @@ SyncStandbySlotsConfigData
 SyncingRelationsState
 SysCacheIdentifier
 SysFKRelationship
+SysScanArrayKey
 SysScanDesc
 SysScanDescData
 SyscacheCallbackFunction
