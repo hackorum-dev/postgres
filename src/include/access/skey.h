@@ -49,6 +49,8 @@
  * SK_SEARCHARRAY, SK_SEARCHNULL and SK_SEARCHNOTNULL are supported only
  * for index scans, not heap scans; and not all index AMs support them,
  * only those that set amsearcharray or amsearchnulls respectively.
+ * (systable_beginscan() checks SK_SEARCHARRAY keys itself when it falls
+ * back to a heap scan.)
  *
  * A ScanKey can also represent an ordering operator invocation, that is
  * an ordering requirement "ORDER BY indexedcol op constant".  This looks

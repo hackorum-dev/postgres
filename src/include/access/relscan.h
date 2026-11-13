@@ -232,6 +232,9 @@ typedef struct SysScanDescData
 	struct IndexScanDescData *iscan;	/* only valid in index-scan case */
 	struct SnapshotData *snapshot;	/* snapshot to unregister at end of scan */
 	struct TupleTableSlot *slot;
+	/* SK_SEARCHARRAY keys, checked by genam.c in heap-scan case */
+	int			narraykeys;
+	struct SysScanArrayKey *arraykeys;
 } SysScanDescData;
 
 #endif							/* RELSCAN_H */

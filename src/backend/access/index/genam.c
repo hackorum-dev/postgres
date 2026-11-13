@@ -19,8 +19,10 @@
 
 #include "postgres.h"
 
+#include "access/amapi.h"
 #include "access/genam.h"
 #include "access/heapam.h"
+#include "access/htup_details.h"
 #include "access/relscan.h"
 #include "access/tableam.h"
 #include "access/transam.h"
@@ -30,6 +32,7 @@
 #include "storage/bufmgr.h"
 #include "storage/procarray.h"
 #include "utils/acl.h"
+#include "utils/array.h"
 #include "utils/injection_point.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -377,6 +380,96 @@ index_compute_xid_horizon_for_tuples(Relation irel,
  * ----------------------------------------------------------------
  */
 
+/* An SK_SEARCHARRAY key of a heap scan, with its array deconstructed */
+typedef struct SysScanArrayKey
+{
+	ScanKeyData key;
+	Datum	   *elems;			/* its non-null elements */
+	int			nelems;
+	ArrayType  *detoasted;		/* copy made by detoasting, or NULL */
+} SysScanArrayKey;
+
+/*
+ * Set aside the SK_SEARCHARRAY keys of a heap scan in sysscan->arraykeys,
+ * and return the other keys, *nheapkeys of them, for the heap scan itself.
+ */
+static ScanKey
+systable_split_array_keys(SysScanDesc sysscan, int nkeys, ScanKey key,
+						  int *nheapkeys)
+{
+	ScanKey		heapkey = palloc_array(ScanKeyData, nkeys);
+
+	sysscan->arraykeys = palloc_array(SysScanArrayKey, nkeys);
+	*nheapkeys = 0;
+	for (int i = 0; i < nkeys; i++)
+	{
+		SysScanArrayKey *akey;
+		ArrayType  *arr;
+		int16		elmlen;
+		bool		elmbyval;
+		char		elmalign;
+		bool	   *nulls;
+		int			n;
+
+		if (!(key[i].sk_flags & SK_SEARCHARRAY))
+		{
+			heapkey[(*nheapkeys)++] = key[i];
+			continue;
+		}
+
+		akey = &sysscan->arraykeys[sysscan->narraykeys++];
+		akey->key = key[i];
+		akey->elems = NULL;
+		akey->nelems = 0;
+		akey->detoasted = NULL;
+		if (key[i].sk_flags & SK_ISNULL)
+			continue;			/* a null array matches nothing */
+
+		arr = DatumGetArrayTypeP(key[i].sk_argument);
+		if ((Pointer) arr != DatumGetPointer(key[i].sk_argument))
+			akey->detoasted = arr;
+		get_typlenbyvalalign(ARR_ELEMTYPE(arr), &elmlen, &elmbyval, &elmalign);
+		deconstruct_array(arr, ARR_ELEMTYPE(arr), elmlen, elmbyval, elmalign,
+						  &akey->elems, &nulls, &n);
+		/* the operator is strict, so null elements match nothing */
+		for (int j = 0; j < n; j++)
+		{
+			if (!nulls[j])
+				akey->elems[akey->nelems++] = akey->elems[j];
+		}
+		pfree(nulls);
+	}
+
+	return heapkey;
+}
+
+/*
+ * Does a heap tuple satisfy every SK_SEARCHARRAY key of the scan?
+ */
+static bool
+systable_match_array_keys(SysScanDesc sysscan, HeapTuple tup)
+{
+	TupleDesc	tupdesc = RelationGetDescr(sysscan->heap_rel);
+
+	for (int i = 0; i < sysscan->narraykeys; i++)
+	{
+		SysScanArrayKey *akey = &sysscan->arraykeys[i];
+		Datum		value;
+		bool		isnull;
+		bool		match = false;
+
+		value = heap_getattr(tup, akey->key.sk_attno, tupdesc, &isnull);
+		for (int j = 0; j < akey->nelems && !isnull && !match; j++)
+			match = DatumGetBool(FunctionCall2Coll(&akey->key.sk_func,
+												   akey->key.sk_collation,
+												   value, akey->elems[j]));
+		if (!match)
+			return false;
+	}
+
+	return true;
+}
+
 /*
  * systable_beginscan --- set up for heap-or-index scan
  *
@@ -395,6 +488,14 @@ index_compute_xid_horizon_for_tuples(Relation irel,
  * The routine checks the normal cases for whether an indexscan is safe,
  * but caller can make additional checks and pass indexOK=false if needed.
  * In standard case indexOK can simply be constant TRUE.
+ *
+ * A scan key can be SK_SEARCHARRAY, "column = ANY (array)": set the flag
+ * after ScanKeyInit(), with sk_argument an array of the operator's right-hand
+ * input type, which the caller keeps until systable_endscan().  A row matches
+ * if the (strict) operator is true for the column and any non-null element.
+ * The index must support such keys (amsearcharray).  A heap scan cannot
+ * handle them (see skey.h), so in the heapscan case we leave them out of it
+ * and check them in systable_getnext() instead.
  */
 SysScanDesc
 systable_beginscan(Relation heapRelation,
@@ -405,6 +506,8 @@ systable_beginscan(Relation heapRelation,
 {
 	SysScanDesc sysscan;
 	Relation	irel;
+	ScanKey		heapkey = key;
+	int			nheapkeys = nkeys;
 
 	if (indexOK &&
 		!IgnoreSystemIndexes &&
@@ -413,7 +516,7 @@ systable_beginscan(Relation heapRelation,
 	else
 		irel = NULL;
 
-	sysscan = palloc_object(SysScanDescData);
+	sysscan = palloc0_object(SysScanDescData);
 
 	sysscan->heap_rel = heapRelation;
 	sysscan->irel = irel;
@@ -430,6 +533,25 @@ systable_beginscan(Relation heapRelation,
 	{
 		/* Caller is responsible for any snapshot. */
 		sysscan->snapshot = NULL;
+	}
+
+	/*
+	 * In the heapscan case, set aside the SK_SEARCHARRAY keys now, before
+	 * bsysscan is set below: that may look up the array's element type in the
+	 * syscache, and the systable_endscan() of a nested catalog scan would
+	 * clear bsysscan before table_beginscan_strat() checks it.
+	 */
+	if (irel == NULL)
+	{
+		for (int i = 0; i < nkeys; i++)
+		{
+			if (key[i].sk_flags & SK_SEARCHARRAY)
+			{
+				heapkey = systable_split_array_keys(sysscan, nkeys, key,
+													&nheapkeys);
+				break;
+			}
+		}
 	}
 
 	/*
@@ -464,6 +586,10 @@ systable_beginscan(Relation heapRelation,
 			}
 			if (j == IndexRelationGetNumberOfAttributes(irel))
 				elog(ERROR, "column is not in index");
+			if ((key[i].sk_flags & SK_SEARCHARRAY) &&
+				!irel->rd_indam->amsearcharray)
+				elog(ERROR, "index \"%s\" does not support array scan keys",
+					 RelationGetRelationName(irel));
 		}
 
 		sysscan->iscan = index_beginscan(heapRelation, irel, false,
@@ -484,9 +610,12 @@ systable_beginscan(Relation heapRelation,
 		 * it's unlikely that such scans will occur in parallel.
 		 */
 		sysscan->scan = table_beginscan_strat(heapRelation, snapshot,
-											  nkeys, key,
+											  nheapkeys, heapkey,
 											  true, false);
 		sysscan->iscan = NULL;
+
+		if (heapkey != key)
+			pfree(heapkey);
 	}
 
 	return sysscan;
@@ -552,12 +681,17 @@ systable_getnext(SysScanDesc sysscan)
 	}
 	else
 	{
-		if (table_scan_getnextslot(sysscan->scan, ForwardScanDirection, sysscan->slot))
+		while (table_scan_getnextslot(sysscan->scan, ForwardScanDirection, sysscan->slot))
 		{
 			bool		shouldFree;
 
 			htup = ExecFetchSlotHeapTuple(sysscan->slot, false, &shouldFree);
 			Assert(!shouldFree);
+
+			if (sysscan->narraykeys == 0 ||
+				systable_match_array_keys(sysscan, htup))
+				break;
+			htup = NULL;
 		}
 	}
 
@@ -630,6 +764,16 @@ systable_endscan(SysScanDesc sysscan)
 	else
 		table_endscan(sysscan->scan);
 
+	for (int i = 0; i < sysscan->narraykeys; i++)
+	{
+		if (sysscan->arraykeys[i].elems)
+			pfree(sysscan->arraykeys[i].elems);
+		if (sysscan->arraykeys[i].detoasted)
+			pfree(sysscan->arraykeys[i].detoasted);
+	}
+	if (sysscan->arraykeys)
+		pfree(sysscan->arraykeys);
+
 	if (sysscan->snapshot)
 		UnregisterSnapshot(sysscan->snapshot);
 
@@ -681,7 +825,7 @@ systable_beginscan_ordered(Relation heapRelation,
 		elog(WARNING, "using index \"%s\" despite IgnoreSystemIndexes",
 			 RelationGetRelationName(indexRelation));
 
-	sysscan = palloc_object(SysScanDescData);
+	sysscan = palloc0_object(SysScanDescData);
 
 	sysscan->heap_rel = heapRelation;
 	sysscan->irel = indexRelation;
