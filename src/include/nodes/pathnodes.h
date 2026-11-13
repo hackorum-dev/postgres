@@ -1614,6 +1614,14 @@ typedef struct JoinDomain
  * entry: consider SELECT random() AS a, random() AS b ... ORDER BY b,a.
  * So we record the SortGroupRef of the originating sort clause.
  *
+ * Grouping sets have the same hazard.  SELECT a AS x, a AS y GROUP BY
+ * GROUPING SETS ((x), (y)) ORDER BY y puts different values in x and y,
+ * because each set nulls only one of them.  equal() does not see that.
+ * A shared EC sorts by the first target entry and can treat the aggregate
+ * output as already ordered.  A column that some sets null gets an EC with
+ * ec_sortref_specific set, matched only by ec_sortref.  Pathkeys for the
+ * grouping input are not marked.  Before nulling, those values are equal.
+ *
  * Derived equality clauses are stored in ec_derives_list. For small queries,
  * this list is scanned directly during lookup. For larger queries -- e.g.,
  * with many partitions or joins -- a hash table (ec_derives_hash) is built
@@ -1673,6 +1681,7 @@ typedef struct EquivalenceClass
 								 * for child members (see below) */
 	bool		ec_has_const;	/* any pseudoconstants in ec_members? */
 	bool		ec_has_volatile;	/* the (sole) member is a volatile expr */
+	bool		ec_sortref_specific;	/* match this EC only by ec_sortref */
 	bool		ec_broken;		/* failed to generate needed clauses? */
 	Index		ec_sortref;		/* originating sortclause label, or 0 */
 	Index		ec_min_security;	/* minimum security_level in ec_sources */
@@ -1686,6 +1695,14 @@ typedef struct EquivalenceClass
  */
 #define EC_MUST_BE_REDUNDANT(eclass)  \
 	((eclass)->ec_has_const)
+
+/*
+ * True when the expression does not identify the value.  Match the EC to
+ * ec_sortref.  Volatile sort keys are one case.  A grouping-set output that
+ * only some sets null is the other.
+ */
+#define EC_SORTREF_SPECIFIC(eclass) \
+	((eclass)->ec_has_volatile || (eclass)->ec_sortref_specific)
 
 /*
  * EquivalenceMember - one member expression of an EquivalenceClass

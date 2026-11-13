@@ -1010,7 +1010,7 @@ get_eclass_for_sortgroupclause(PlannerInfo *root, SortGroupClause *sgc,
 	/* Now find a matching EquivalenceClass */
 	return get_eclass_for_sort_expr(root, expr, opfamilies, opcintype,
 									collation, sgc->tleSortGroupRef,
-									NULL, false);
+									NULL, false, false);
 }
 
 /*****************************************************************************

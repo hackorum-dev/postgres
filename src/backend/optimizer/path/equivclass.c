@@ -308,8 +308,8 @@ process_equivalence(PlannerInfo *root,
 		EquivalenceClass *cur_ec = (EquivalenceClass *) lfirst(lc1);
 		ListCell   *lc2;
 
-		/* Never match to a volatile EC */
-		if (cur_ec->ec_has_volatile)
+		/* Value is not identified by the expression alone */
+		if (EC_SORTREF_SPECIFIC(cur_ec))
 			continue;
 
 		/*
@@ -491,6 +491,7 @@ process_equivalence(PlannerInfo *root,
 		ec->ec_relids = NULL;
 		ec->ec_has_const = false;
 		ec->ec_has_volatile = false;
+		ec->ec_sortref_specific = false;
 		ec->ec_broken = false;
 		ec->ec_sortref = 0;
 		ec->ec_min_security = restrictinfo->security_level;
@@ -701,6 +702,36 @@ add_child_eq_member(PlannerInfo *root, EquivalenceClass *ec, int ec_index,
 	return em;
 }
 
+/*
+ * sortref_nulled_by_grouping_sets
+ *		True when some grouping sets include this sortref and others do not.
+ *
+ * The output column is then NULL in some sets and the underlying value in
+ * others.  A column that is in every set is never nulled.
+ */
+static bool
+sortref_nulled_by_grouping_sets(PlannerInfo *root, Index sortref)
+{
+	ListCell   *lc;
+	bool		in_some = false;
+	bool		missing_from_some = false;
+
+	if (sortref == 0 || root->parse->groupingSets == NIL)
+		return false;
+
+	foreach(lc, root->parse->groupingSets)
+	{
+		if (list_member_int((List *) lfirst(lc), (int) sortref))
+			in_some = true;
+		else
+			missing_from_some = true;
+
+		if (in_some && missing_from_some)
+			return true;
+	}
+
+	return false;
+}
 
 /*
  * get_eclass_for_sort_expr
@@ -710,6 +741,12 @@ add_child_eq_member(PlannerInfo *root, EquivalenceClass *ec, int ec_index,
  *
  * sortref is the SortGroupRef of the originating SortGroupClause, if any,
  * or zero if not.  (It should never be zero if the expression is volatile!)
+ *
+ * below_grouping is true when the expression is the grouping input, after
+ * the grouping step's nulling bit has been removed.  Those values are equal
+ * across sortrefs that grouping sets will later null separately, so they
+ * share an ordinary EC.  A post-grouping reference to a column that only
+ * some sets null does not.
  *
  * If rel is not NULL, it identifies a specific relation we're considering
  * a path for, and indicates that child EC members for that relation can be
@@ -741,7 +778,8 @@ get_eclass_for_sort_expr(PlannerInfo *root,
 						 Oid collation,
 						 Index sortref,
 						 Relids relids,
-						 bool create_it)
+						 bool create_it,
+						 bool below_grouping)
 {
 	JoinDomain *jdomain;
 	Relids		expr_relids;
@@ -749,11 +787,15 @@ get_eclass_for_sort_expr(PlannerInfo *root,
 	EquivalenceMember *newem;
 	ListCell   *lc1;
 	MemoryContext oldcontext;
+	bool		sortref_specific;
 
 	/*
 	 * Ensure the expression exposes the correct type and collation.
 	 */
 	expr = canonicalize_ec_expression(expr, opcintype, collation);
+
+	sortref_specific = (!below_grouping &&
+						sortref_nulled_by_grouping_sets(root, sortref));
 
 	/*
 	 * Since SortGroupClause nodes are top-level expressions (GROUP BY, ORDER
@@ -771,11 +813,19 @@ get_eclass_for_sort_expr(PlannerInfo *root,
 		EquivalenceMember *cur_em;
 
 		/*
-		 * Never match to a volatile EC, except when we are looking at another
-		 * reference to the same volatile SortGroupClause.
+		 * A volatile EC matches only another reference to the same
+		 * SortGroupClause.  A grouping-set EC matches only that sortref, and
+		 * not a below-grouping reference to the same expression.  A
+		 * post-grouping column that only some sets null must not join an
+		 * ordinary EC for the same expr.
 		 */
 		if (cur_ec->ec_has_volatile &&
 			(sortref == 0 || sortref != cur_ec->ec_sortref))
+			continue;
+		if (cur_ec->ec_sortref_specific &&
+			(below_grouping || sortref != cur_ec->ec_sortref))
+			continue;
+		if (sortref_specific && !cur_ec->ec_sortref_specific)
 			continue;
 
 		if (collation != cur_ec->ec_collation)
@@ -829,14 +879,16 @@ get_eclass_for_sort_expr(PlannerInfo *root,
 	newec->ec_relids = NULL;
 	newec->ec_has_const = false;
 	newec->ec_has_volatile = contain_volatile_functions((Node *) expr);
+	newec->ec_sortref_specific = sortref_specific;
 	newec->ec_broken = false;
 	newec->ec_sortref = sortref;
 	newec->ec_min_security = UINT_MAX;
 	newec->ec_max_security = 0;
 	newec->ec_merged = NULL;
 
-	if (newec->ec_has_volatile && sortref == 0) /* should not happen */
-		elog(ERROR, "volatile EquivalenceClass has no sortref");
+	if ((newec->ec_has_volatile || newec->ec_sortref_specific) &&
+		sortref == 0)			/* should not happen */
+		elog(ERROR, "sortref-specific EquivalenceClass has no sortref");
 
 	/*
 	 * Get the precise set of relids appearing in the expression.
@@ -855,6 +907,7 @@ get_eclass_for_sort_expr(PlannerInfo *root,
 	if (newec->ec_has_const)
 	{
 		if (newec->ec_has_volatile ||
+			newec->ec_sortref_specific ||
 			expression_returns_set((Node *) expr) ||
 			contain_agg_clause((Node *) expr) ||
 			contain_window_function((Node *) expr))
@@ -1087,9 +1140,11 @@ relation_can_be_sorted_early(PlannerInfo *root, RelOptInfo *rel,
 	ListCell   *lc;
 
 	/*
-	 * Reject volatile ECs immediately; such sorts must always be postponed.
+	 * Reject ECs whose value is not the expression.  A volatile sort must run
+	 * at the right plan step.  A grouping-set output that only some sets null
+	 * cannot be produced by sorting the input relation.
 	 */
-	if (ec->ec_has_volatile)
+	if (EC_SORTREF_SPECIFIC(ec))
 		return false;
 
 	/*
@@ -2353,8 +2408,8 @@ reconsider_outer_join_clause(PlannerInfo *root, OuterJoinClauseInfo *ojcinfo,
 		/* Ignore EC unless it contains pseudoconstants */
 		if (!cur_ec->ec_has_const)
 			continue;
-		/* Never match to a volatile EC */
-		if (cur_ec->ec_has_volatile)
+		/* Value is not identified by the expression alone */
+		if (EC_SORTREF_SPECIFIC(cur_ec))
 			continue;
 		/* It has to match the outer-join clause as to semantics, too */
 		if (collation != cur_ec->ec_collation)
@@ -2497,8 +2552,8 @@ reconsider_full_join_clause(PlannerInfo *root, OuterJoinClauseInfo *ojcinfo)
 		/* Ignore EC unless it contains pseudoconstants */
 		if (!cur_ec->ec_has_const)
 			continue;
-		/* Never match to a volatile EC */
-		if (cur_ec->ec_has_volatile)
+		/* Value is not identified by the expression alone */
+		if (EC_SORTREF_SPECIFIC(cur_ec))
 			continue;
 		/* It has to match the outer-join clause as to semantics, too */
 		if (collation != cur_ec->ec_collation)
@@ -2683,8 +2738,8 @@ exprs_known_equal(PlannerInfo *root, Node *item1, Node *item2, Oid opfamily)
 		bool		item2member = false;
 		ListCell   *lc2;
 
-		/* Never match to a volatile EC */
-		if (ec->ec_has_volatile)
+		/* Value is not identified by the expression alone */
+		if (EC_SORTREF_SPECIFIC(ec))
 			continue;
 
 		/*
@@ -2765,8 +2820,8 @@ match_eclasses_to_foreign_key_col(PlannerInfo *root,
 		EquivalenceMember *item2_em = NULL;
 		ListCell   *lc2;
 
-		/* Never match to a volatile EC */
-		if (ec->ec_has_volatile)
+		/* Value is not identified by the expression alone */
+		if (EC_SORTREF_SPECIFIC(ec))
 			continue;
 
 		/*
@@ -2879,11 +2934,10 @@ add_child_rel_equivalences(PlannerInfo *root,
 		EquivalenceClass *cur_ec = (EquivalenceClass *) list_nth(root->eq_classes, i);
 
 		/*
-		 * If this EC contains a volatile expression, then generating child
-		 * EMs would be downright dangerous, so skip it.  We rely on a
-		 * volatile EC having only one EM.
+		 * Skip an EC whose value is not the expression.  It has one member,
+		 * and a child copy would not be that same value.
 		 */
-		if (cur_ec->ec_has_volatile)
+		if (EC_SORTREF_SPECIFIC(cur_ec))
 			continue;
 
 		/* Sanity check eclass_indexes only contain ECs for parent_rel */
@@ -2993,11 +3047,10 @@ add_child_join_rel_equivalences(PlannerInfo *root,
 		EquivalenceClass *cur_ec = (EquivalenceClass *) list_nth(root->eq_classes, i);
 
 		/*
-		 * If this EC contains a volatile expression, then generating child
-		 * EMs would be downright dangerous, so skip it.  We rely on a
-		 * volatile EC having only one EM.
+		 * Skip an EC whose value is not the expression.  It has one member,
+		 * and a child copy would not be that same value.
 		 */
-		if (cur_ec->ec_has_volatile)
+		if (EC_SORTREF_SPECIFIC(cur_ec))
 			continue;
 
 		/* Sanity check on get_eclass_indexes_for_relids result */
@@ -3109,7 +3162,7 @@ add_child_rel_pathkey_equivalences(PlannerInfo *root, RelOptInfo *child_rel,
 	{
 		EquivalenceClass *ec = lfirst_node(PathKey, lc)->pk_eclass;
 
-		if (ec->ec_has_volatile)
+		if (EC_SORTREF_SPECIFIC(ec))
 			continue;
 
 		foreach_node(EquivalenceMember, cur_em, ec->ec_members)

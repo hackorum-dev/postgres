@@ -6288,15 +6288,16 @@ prepare_sort_from_pathkeys(PlannerInfo *root, Plan *lefttree, List *pathkeys,
 		Oid			sortop;
 		ListCell   *j;
 
-		if (ec->ec_has_volatile)
+		if (EC_SORTREF_SPECIFIC(ec))
 		{
 			/*
-			 * If the pathkey's EquivalenceClass is volatile, then it must
-			 * have come from an ORDER BY clause, and we have to match it to
-			 * that same targetlist entry.
+			 * The pathkey's EquivalenceClass does not identify a value by
+			 * expression alone.  Match it to the sortref's targetlist entry.
+			 * Volatile ORDER BY keys are one case.  A grouping-set output
+			 * that only some sets null is the other.
 			 */
 			if (ec->ec_sortref == 0)	/* can't happen */
-				elog(ERROR, "volatile EquivalenceClass has no sortref");
+				elog(ERROR, "sortref-specific EquivalenceClass has no sortref");
 			tle = get_sortgroupref_tle(ec->ec_sortref, tlist);
 			Assert(tle);
 			Assert(list_length(ec->ec_members) == 1);
@@ -6833,15 +6834,16 @@ make_unique_from_pathkeys(Plan *lefttree, List *pathkeys, int numCols,
 		if (keyno >= numCols)
 			break;
 
-		if (ec->ec_has_volatile)
+		if (EC_SORTREF_SPECIFIC(ec))
 		{
 			/*
-			 * If the pathkey's EquivalenceClass is volatile, then it must
-			 * have come from an ORDER BY clause, and we have to match it to
-			 * that same targetlist entry.
+			 * The pathkey's EquivalenceClass does not identify a value by
+			 * expression alone.  Match it to the sortref's targetlist entry.
+			 * Volatile ORDER BY keys are one case.  A grouping-set output
+			 * that only some sets null is the other.
 			 */
 			if (ec->ec_sortref == 0)	/* can't happen */
-				elog(ERROR, "volatile EquivalenceClass has no sortref");
+				elog(ERROR, "sortref-specific EquivalenceClass has no sortref");
 			tle = get_sortgroupref_tle(ec->ec_sortref, plan->targetlist);
 			Assert(tle);
 			Assert(list_length(ec->ec_members) == 1);

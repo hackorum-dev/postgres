@@ -3737,8 +3737,12 @@ match_pathkeys_to_index(IndexOptInfo *index, List *pathkeys,
 		if (pathkey->pk_cmptype != COMPARE_LT || pathkey->pk_nulls_first)
 			return;
 
-		/* If eclass is volatile, no hope of using an indexscan */
-		if (pathkey->pk_eclass->ec_has_volatile)
+		/*
+		 * No index order matches an EC whose value is not the expression.
+		 * That is a volatile key, or a grouping-set output that only some
+		 * sets null.
+		 */
+		if (EC_SORTREF_SPECIFIC(pathkey->pk_eclass))
 			return;
 
 		/*

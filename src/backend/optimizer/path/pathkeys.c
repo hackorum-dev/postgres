@@ -193,6 +193,9 @@ pathkey_is_redundant(PathKey *new_pathkey, List *pathkeys)
  * create_it is true if we should create any missing EquivalenceClass
  * needed to represent the sort key.  If it's false, we return NULL if the
  * sort key isn't already present in any EquivalenceClass.
+ *
+ * below_grouping is true when expr is a grouping input whose grouping
+ * nulling bit has been removed.  See get_eclass_for_sort_expr.
  */
 static PathKey *
 make_pathkey_from_sortinfo(PlannerInfo *root,
@@ -204,7 +207,8 @@ make_pathkey_from_sortinfo(PlannerInfo *root,
 						   bool nulls_first,
 						   Index sortref,
 						   Relids rel,
-						   bool create_it)
+						   bool create_it,
+						   bool below_grouping)
 {
 	CompareType cmptype;
 	Oid			equality_op;
@@ -234,7 +238,8 @@ make_pathkey_from_sortinfo(PlannerInfo *root,
 	/* Now find or (optionally) create a matching EquivalenceClass */
 	eclass = get_eclass_for_sort_expr(root, expr,
 									  opfamilies, opcintype, collation,
-									  sortref, rel, create_it);
+									  sortref, rel, create_it,
+									  below_grouping);
 
 	/* Fail if no EC and !create_it */
 	if (!eclass)
@@ -259,7 +264,8 @@ make_pathkey_from_sortop(PlannerInfo *root,
 						 bool reverse_sort,
 						 bool nulls_first,
 						 Index sortref,
-						 bool create_it)
+						 bool create_it,
+						 bool below_grouping)
 {
 	Oid			opfamily,
 				opcintype,
@@ -284,7 +290,8 @@ make_pathkey_from_sortop(PlannerInfo *root,
 									  nulls_first,
 									  sortref,
 									  NULL,
-									  create_it);
+									  create_it,
+									  below_grouping);
 }
 
 
@@ -790,6 +797,7 @@ build_index_pathkeys(PlannerInfo *root,
 											  nulls_first,
 											  0,
 											  index->rel->relids,
+											  false,
 											  false);
 
 		if (cpathkey)
@@ -949,6 +957,7 @@ build_partition_pathkeys(PlannerInfo *root, RelOptInfo *partrel,
 											  ScanDirectionIsBackward(scandir),
 											  0,
 											  partrel->relids,
+											  false,
 											  false);
 
 
@@ -1024,7 +1033,8 @@ build_expression_pathkey(PlannerInfo *root,
 										  (cmptype == COMPARE_GT),
 										  0,
 										  rel,
-										  create_it);
+										  create_it,
+										  false);
 
 	if (cpathkey)
 		pathkeys = list_make1(cpathkey);
@@ -1066,18 +1076,19 @@ convert_subquery_pathkeys(PlannerInfo *root, RelOptInfo *rel,
 		EquivalenceClass *sub_eclass = sub_pathkey->pk_eclass;
 		PathKey    *best_pathkey = NULL;
 
-		if (sub_eclass->ec_has_volatile)
+		if (EC_SORTREF_SPECIFIC(sub_eclass))
 		{
 			/*
-			 * If the sub_pathkey's EquivalenceClass is volatile, then it must
-			 * have come from an ORDER BY clause, and we have to match it to
-			 * that same targetlist entry.
+			 * The sub_pathkey's EquivalenceClass does not identify a value by
+			 * expression alone.  Match it to the sortref's targetlist entry.
+			 * Volatile ORDER BY keys are one case.  A grouping-set output
+			 * that only some sets null is the other.
 			 */
 			TargetEntry *tle;
 			Var		   *outer_var;
 
 			if (sub_eclass->ec_sortref == 0)	/* can't happen */
-				elog(ERROR, "volatile EquivalenceClass has no sortref");
+				elog(ERROR, "sortref-specific EquivalenceClass has no sortref");
 			tle = get_sortgroupref_tle(sub_eclass->ec_sortref, subquery_tlist);
 			Assert(tle);
 			/* Is TLE actually available to the outer query? */
@@ -1107,6 +1118,7 @@ convert_subquery_pathkeys(PlannerInfo *root, RelOptInfo *rel,
 											 sub_eclass->ec_collation,
 											 0,
 											 rel->relids,
+											 false,
 											 false);
 
 				/*
@@ -1189,6 +1201,7 @@ convert_subquery_pathkeys(PlannerInfo *root, RelOptInfo *rel,
 														sub_expr_coll,
 														0,
 														rel->relids,
+														false,
 														false);
 
 					/*
@@ -1424,7 +1437,8 @@ make_pathkeys_for_sortclauses_extended(PlannerInfo *root,
 										   sortcl->reverse_sort,
 										   sortcl->nulls_first,
 										   sortcl->tleSortGroupRef,
-										   true);
+										   true,
+										   remove_group_rtindex);
 		if (pathkey->pk_eclass->ec_sortref == 0 && set_ec_sortref)
 		{
 			/*
@@ -1492,7 +1506,8 @@ initialize_mergeclause_eclasses(PlannerInfo *root, RestrictInfo *restrictinfo)
 								 ((OpExpr *) clause)->inputcollid,
 								 0,
 								 NULL,
-								 true);
+								 true,
+								 false);
 	restrictinfo->right_ec =
 		get_eclass_for_sort_expr(root,
 								 (Expr *) get_rightop(clause),
@@ -1501,7 +1516,8 @@ initialize_mergeclause_eclasses(PlannerInfo *root, RestrictInfo *restrictinfo)
 								 ((OpExpr *) clause)->inputcollid,
 								 0,
 								 NULL,
-								 true);
+								 true,
+								 false);
 }
 
 /*

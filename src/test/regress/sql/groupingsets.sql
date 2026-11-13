@@ -827,4 +827,40 @@ set enable_hashagg = true;
 select i as ai1, i as ai2 from generate_series(1,3) i
   group by ai2, rollup(ai1) order by ai2, ai1;
 
+
+-- Two outputs of one expression still compare equal when both carry the
+-- same grouping nulling bit.  ORDER BY, LIMIT and DISTINCT ON must follow
+-- the requested column.  y, x breaks ties.
+-- A sorted aggregate can treat its output as already ordered.
+create temp table gstest_dup (a int);
+insert into gstest_dup values (1), (2);
+
+set enable_hashagg = false;
+
+select a as x, a as y from gstest_dup
+  group by grouping sets ((x), (y)) order by y, x;
+select a as x, a as y from gstest_dup
+  group by grouping sets ((x), (y)) order by x, y;
+select a as x, a as y from gstest_dup
+  group by grouping sets ((x), (y)) order by y, x limit 1;
+select distinct on (y) a as x, a as y from gstest_dup
+  group by grouping sets ((x), (y)) order by y, x;
+select a + 1 as x, a + 1 as y from gstest_dup
+  group by grouping sets ((x), (y)) order by y, x;
+
+-- Both outputs are nulled in the same sets, so the values stay equal.
+select a as x, a as y from gstest_dup
+  group by grouping sets ((x, y), ()) order by y, x;
+
+-- A constant is not a redundant sort key once a grouping set can null it.
+select 1 as x, 1 as y
+  group by grouping sets ((x), (y)) order by y, x;
+
+set enable_hashagg = true;
+
+select a as x, a as y from gstest_dup
+  group by grouping sets ((x), (y)) order by y, x;
+
+drop table gstest_dup;
+
 -- end
