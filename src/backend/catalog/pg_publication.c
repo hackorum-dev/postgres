@@ -49,18 +49,12 @@ typedef struct
 								 * table. */
 } published_rel;
 
-/*
- * Check if relation can be in given publication and throws appropriate
- * error if not.
- */
-static void
-check_publication_add_relation(PublicationRelInfo *pri)
+static int
+errmsg_publication_relation(bool except, Relation targetrel)
 {
-	Relation	targetrel = pri->relation;
 	const char *relname;
-	const char *errormsg;
 
-	if (pri->except)
+	if (except)
 	{
 		/*
 		 * The name parts must not be quoted here, because the message already
@@ -69,13 +63,23 @@ check_publication_add_relation(PublicationRelInfo *pri)
 		relname = psprintf("%s.%s",
 						   get_namespace_name(RelationGetNamespace(targetrel)),
 						   RelationGetRelationName(targetrel));
-		errormsg = gettext_noop("cannot specify relation \"%s\" in the publication EXCEPT clause");
+		return errmsg("cannot specify relation \"%s\" in the publication EXCEPT clause", relname);
 	}
 	else
 	{
 		relname = RelationGetRelationName(targetrel);
-		errormsg = gettext_noop("cannot add relation \"%s\" to publication");
+		return errmsg("cannot add relation \"%s\" to publication", relname);
 	}
+}
+
+/*
+ * Check if relation can be in given publication and throws appropriate
+ * error if not.
+ */
+static void
+check_publication_add_relation(PublicationRelInfo *pri)
+{
+	Relation	targetrel = pri->relation;
 
 	/* If in EXCEPT clause, must be root partitioned table */
 	if (pri->except && targetrel->rd_rel->relispartition)
@@ -83,13 +87,13 @@ check_publication_add_relation(PublicationRelInfo *pri)
 		if (PartitionHasPendingDetach(RelationGetRelid(targetrel)))
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg(errormsg, relname),
+					 errmsg_publication_relation(pri->except, targetrel),
 					 errdetail("This operation is not supported for partitions with an incomplete detach."),
 					 errhint("Use ALTER TABLE ... DETACH PARTITION ... FINALIZE to complete the pending detach operation.")));
 
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg(errormsg, relname),
+				 errmsg_publication_relation(pri->except, targetrel),
 				 errdetail("This operation is not supported for individual partitions.")));
 	}
 
@@ -98,33 +102,33 @@ check_publication_add_relation(PublicationRelInfo *pri)
 		RelationGetForm(targetrel)->relkind != RELKIND_PARTITIONED_TABLE)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg(errormsg, relname),
+				 errmsg_publication_relation(pri->except, targetrel),
 				 errdetail_relkind_not_supported(RelationGetForm(targetrel)->relkind)));
 
 	/* Can't be system table */
 	if (IsCatalogRelation(targetrel))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg(errormsg, relname),
+				 errmsg_publication_relation(pri->except, targetrel),
 				 errdetail("This operation is not supported for system tables.")));
 
 	/* Can't be conflict log table */
 	if (IsConflictLogTableNamespace(RelationGetNamespace(targetrel)))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg(errormsg, relname),
+				 errmsg_publication_relation(pri->except, targetrel),
 				 errdetail("This operation is not supported for conflict log tables.")));
 
 	/* UNLOGGED and TEMP relations cannot be part of publication. */
 	if (targetrel->rd_rel->relpersistence == RELPERSISTENCE_TEMP)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg(errormsg, relname),
+				 errmsg_publication_relation(pri->except, targetrel),
 				 errdetail("This operation is not supported for temporary tables.")));
 	else if (targetrel->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg(errormsg, relname),
+				 errmsg_publication_relation(pri->except, targetrel),
 				 errdetail("This operation is not supported for unlogged tables.")));
 }
 

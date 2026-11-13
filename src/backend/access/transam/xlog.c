@@ -9890,8 +9890,9 @@ assign_wal_sync_method(int new_wal_sync_method, void *extra)
 void
 issue_xlog_fsync(int fd, XLogSegNo segno, TimeLineID tli)
 {
-	char	   *msg = NULL;
 	instr_time	start;
+	char		xlogfname[MAXFNAMELEN];
+	int			save_errno;
 
 	Assert(tli != 0);
 
@@ -9914,17 +9915,38 @@ issue_xlog_fsync(int fd, XLogSegNo segno, TimeLineID tli)
 	{
 		case WAL_SYNC_METHOD_FSYNC:
 			if (pg_fsync_no_writethrough(fd) != 0)
-				msg = _("could not fsync file \"%s\": %m");
+			{
+				save_errno = errno;
+				XLogFileName(xlogfname, tli, segno, wal_segment_size);
+				errno = save_errno;
+				ereport(PANIC,
+						(errcode_for_file_access(),
+						 errmsg("could not fsync file \"%s\": %m", xlogfname)));
+			}
 			break;
 #ifdef HAVE_FSYNC_WRITETHROUGH
 		case WAL_SYNC_METHOD_FSYNC_WRITETHROUGH:
 			if (pg_fsync_writethrough(fd) != 0)
-				msg = _("could not fsync write-through file \"%s\": %m");
+			{
+				save_errno = errno;
+				XLogFileName(xlogfname, tli, segno, wal_segment_size);
+				errno = save_errno;
+				ereport(PANIC,
+						(errcode_for_file_access(),
+						 errmsg("could not fsync write-through file \"%s\": %m", xlogfname)));
+			}
 			break;
 #endif
 		case WAL_SYNC_METHOD_FDATASYNC:
 			if (pg_fdatasync(fd) != 0)
-				msg = _("could not fdatasync file \"%s\": %m");
+			{
+				save_errno = errno;
+				XLogFileName(xlogfname, tli, segno, wal_segment_size);
+				errno = save_errno;
+				ereport(PANIC,
+						(errcode_for_file_access(),
+						 errmsg("could not fdatasync file \"%s\": %m", xlogfname)));
+			}
 			break;
 		case WAL_SYNC_METHOD_OPEN:
 		case WAL_SYNC_METHOD_OPEN_DSYNC:
@@ -9936,19 +9958,6 @@ issue_xlog_fsync(int fd, XLogSegNo segno, TimeLineID tli)
 					errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					errmsg_internal("unrecognized \"wal_sync_method\": %d", wal_sync_method));
 			break;
-	}
-
-	/* PANIC if failed to fsync */
-	if (msg)
-	{
-		char		xlogfname[MAXFNAMELEN];
-		int			save_errno = errno;
-
-		XLogFileName(xlogfname, tli, segno, wal_segment_size);
-		errno = save_errno;
-		ereport(PANIC,
-				(errcode_for_file_access(),
-				 errmsg(msg, xlogfname)));
 	}
 
 	pgstat_report_wait_end();

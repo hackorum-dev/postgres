@@ -516,8 +516,6 @@ struct oauth_parse
 static void
 report_type_mismatch(struct oauth_parse *ctx)
 {
-	char	   *msgfmt;
-
 	Assert(ctx->active);
 
 	/*
@@ -527,23 +525,21 @@ report_type_mismatch(struct oauth_parse *ctx)
 	switch (ctx->active->type)
 	{
 		case JSON_TOKEN_STRING:
-			msgfmt = gettext_noop("field \"%s\" must be a string");
+			oauth_parse_set_error(ctx, "field \"%s\" must be a string", ctx->active->name);
 			break;
 
 		case JSON_TOKEN_NUMBER:
-			msgfmt = gettext_noop("field \"%s\" must be a number");
+			oauth_parse_set_error(ctx, "field \"%s\" must be a number", ctx->active->name);
 			break;
 
 		case JSON_TOKEN_ARRAY_START:
-			msgfmt = gettext_noop("field \"%s\" must be an array of strings");
+			oauth_parse_set_error(ctx, "field \"%s\" must be an array of strings", ctx->active->name);
 			break;
 
 		default:
 			Assert(false);
-			msgfmt = gettext_noop("field \"%s\" has unexpected type");
+			oauth_parse_set_error_internal(ctx, "field \"%s\" has unexpected type", ctx->active->name);
 	}
-
-	oauth_parse_set_error(ctx, msgfmt, ctx->active->name);
 }
 
 static JsonParseErrorType

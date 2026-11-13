@@ -38,21 +38,27 @@ typedef enum
 	RECURSION_EXCEPT,			/* underneath EXCEPT (ALL) */
 } RecursionContext;
 
-/* Associated error messages --- each must have one %s for CTE name */
-static const char *const recursion_errormsgs[] = {
-	/* RECURSION_OK */
-	NULL,
-	/* RECURSION_NONRECURSIVETERM */
-	gettext_noop("recursive reference to query \"%s\" must not appear within its non-recursive term"),
-	/* RECURSION_SUBLINK */
-	gettext_noop("recursive reference to query \"%s\" must not appear within a subquery"),
-	/* RECURSION_OUTERJOIN */
-	gettext_noop("recursive reference to query \"%s\" must not appear within an outer join"),
-	/* RECURSION_INTERSECT */
-	gettext_noop("recursive reference to query \"%s\" must not appear within INTERSECT"),
-	/* RECURSION_EXCEPT */
-	gettext_noop("recursive reference to query \"%s\" must not appear within EXCEPT")
-};
+static int
+errmsg_recursion(RecursionContext context, const char *ctename)
+{
+	switch (context)
+	{
+		case RECURSION_OK:
+			return 0;
+		case RECURSION_NONRECURSIVETERM:
+			return errmsg("recursive reference to query \"%s\" must not appear within its non-recursive term", ctename);
+		case RECURSION_SUBLINK:
+			return errmsg("recursive reference to query \"%s\" must not appear within a subquery", ctename);
+		case RECURSION_OUTERJOIN:
+			return errmsg("recursive reference to query \"%s\" must not appear within an outer join", ctename);
+		case RECURSION_INTERSECT:
+			return errmsg("recursive reference to query \"%s\" must not appear within INTERSECT", ctename);
+		case RECURSION_EXCEPT:
+			return errmsg("recursive reference to query \"%s\" must not appear within EXCEPT", ctename);
+	}
+
+	return 0;
+}
 
 /*
  * For WITH RECURSIVE, we have to find an ordering of the clause members
@@ -1063,8 +1069,8 @@ checkWellFormedRecursionWalker(Node *node, CteState *cstate)
 				if (cstate->context != RECURSION_OK)
 					ereport(ERROR,
 							(errcode(ERRCODE_INVALID_RECURSION),
-							 errmsg(recursion_errormsgs[cstate->context],
-									mycte->ctename),
+							 errmsg_recursion(cstate->context,
+											  mycte->ctename),
 							 parser_errposition(cstate->pstate,
 												rv->location)));
 				/* Count references */

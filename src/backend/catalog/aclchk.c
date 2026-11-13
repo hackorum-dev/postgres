@@ -385,6 +385,50 @@ restrict_and_check_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 	return this_privileges;
 }
 
+static int
+errmsg_invalid_privilege_type(ObjectType objtype, AclMode priv)
+{
+	const char *ps = privilege_to_string(priv);
+
+	switch (objtype)
+	{
+		case OBJECT_TABLE:
+			return errmsg("invalid privilege type %s for relation", ps);
+		case OBJECT_SEQUENCE:
+			return errmsg("invalid privilege type %s for sequence", ps);
+		case OBJECT_DATABASE:
+			return errmsg("invalid privilege type %s for database", ps);
+		case OBJECT_DOMAIN:
+			return errmsg("invalid privilege type %s for domain", ps);
+		case OBJECT_FUNCTION:
+			return errmsg("invalid privilege type %s for function", ps);
+		case OBJECT_LANGUAGE:
+			return errmsg("invalid privilege type %s for language", ps);
+		case OBJECT_LARGEOBJECT:
+			return errmsg("invalid privilege type %s for large object", ps);
+		case OBJECT_SCHEMA:
+			return errmsg("invalid privilege type %s for schema", ps);
+		case OBJECT_PROCEDURE:
+			return errmsg("invalid privilege type %s for procedure", ps);
+		case OBJECT_ROUTINE:
+			return errmsg("invalid privilege type %s for routine", ps);
+		case OBJECT_TABLESPACE:
+			return errmsg("invalid privilege type %s for tablespace", ps);
+		case OBJECT_TYPE:
+			return errmsg("invalid privilege type %s for type", ps);
+		case OBJECT_FDW:
+			return errmsg("invalid privilege type %s for foreign-data wrapper", ps);
+		case OBJECT_FOREIGN_SERVER:
+			return errmsg("invalid privilege type %s for foreign server", ps);
+		case OBJECT_PARAMETER_ACL:
+			return errmsg("invalid privilege type %s for parameter", ps);
+		default:
+			elog(ERROR, "unrecognized GrantStmt.objtype: %d", (int) objtype);
+	}
+
+	return 0;
+}
+
 /*
  * Called to execute the utility commands GRANT and REVOKE
  */
@@ -393,7 +437,6 @@ ExecuteGrantStmt(GrantStmt *stmt)
 {
 	InternalGrant istmt;
 	ListCell   *cell;
-	const char *errormsg;
 	AclMode		all_privileges;
 
 	/*
@@ -462,70 +505,54 @@ ExecuteGrantStmt(GrantStmt *stmt)
 			 * the object type.
 			 */
 			all_privileges = ACL_ALL_RIGHTS_RELATION | ACL_ALL_RIGHTS_SEQUENCE;
-			errormsg = gettext_noop("invalid privilege type %s for relation");
 			break;
 		case OBJECT_SEQUENCE:
 			all_privileges = ACL_ALL_RIGHTS_SEQUENCE;
-			errormsg = gettext_noop("invalid privilege type %s for sequence");
 			break;
 		case OBJECT_DATABASE:
 			all_privileges = ACL_ALL_RIGHTS_DATABASE;
-			errormsg = gettext_noop("invalid privilege type %s for database");
 			break;
 		case OBJECT_DOMAIN:
 			all_privileges = ACL_ALL_RIGHTS_TYPE;
-			errormsg = gettext_noop("invalid privilege type %s for domain");
 			break;
 		case OBJECT_FUNCTION:
 			all_privileges = ACL_ALL_RIGHTS_FUNCTION;
-			errormsg = gettext_noop("invalid privilege type %s for function");
 			break;
 		case OBJECT_LANGUAGE:
 			all_privileges = ACL_ALL_RIGHTS_LANGUAGE;
-			errormsg = gettext_noop("invalid privilege type %s for language");
 			break;
 		case OBJECT_LARGEOBJECT:
 			all_privileges = ACL_ALL_RIGHTS_LARGEOBJECT;
-			errormsg = gettext_noop("invalid privilege type %s for large object");
 			break;
 		case OBJECT_SCHEMA:
 			all_privileges = ACL_ALL_RIGHTS_SCHEMA;
-			errormsg = gettext_noop("invalid privilege type %s for schema");
 			break;
 		case OBJECT_PROCEDURE:
 			all_privileges = ACL_ALL_RIGHTS_FUNCTION;
-			errormsg = gettext_noop("invalid privilege type %s for procedure");
 			break;
 		case OBJECT_ROUTINE:
 			all_privileges = ACL_ALL_RIGHTS_FUNCTION;
-			errormsg = gettext_noop("invalid privilege type %s for routine");
 			break;
 		case OBJECT_TABLESPACE:
 			all_privileges = ACL_ALL_RIGHTS_TABLESPACE;
-			errormsg = gettext_noop("invalid privilege type %s for tablespace");
 			break;
 		case OBJECT_TYPE:
 			all_privileges = ACL_ALL_RIGHTS_TYPE;
-			errormsg = gettext_noop("invalid privilege type %s for type");
 			break;
 		case OBJECT_FDW:
 			all_privileges = ACL_ALL_RIGHTS_FDW;
-			errormsg = gettext_noop("invalid privilege type %s for foreign-data wrapper");
 			break;
 		case OBJECT_FOREIGN_SERVER:
 			all_privileges = ACL_ALL_RIGHTS_FOREIGN_SERVER;
-			errormsg = gettext_noop("invalid privilege type %s for foreign server");
 			break;
 		case OBJECT_PARAMETER_ACL:
 			all_privileges = ACL_ALL_RIGHTS_PARAMETER_ACL;
-			errormsg = gettext_noop("invalid privilege type %s for parameter");
 			break;
 		default:
 			elog(ERROR, "unrecognized GrantStmt.objtype: %d",
 				 (int) stmt->objtype);
 			/* keep compiler quiet */
 			all_privileges = ACL_NO_RIGHTS;
-			errormsg = NULL;
 	}
 
 	if (stmt->privileges == NIL)
@@ -569,7 +596,7 @@ ExecuteGrantStmt(GrantStmt *stmt)
 			if (priv & ~all_privileges)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_GRANT_OPERATION),
-						 errmsg(errormsg, privilege_to_string(priv))));
+						 errmsg_invalid_privilege_type(stmt->objtype, priv)));
 
 			istmt.privileges |= priv;
 		}
@@ -909,7 +936,6 @@ ExecAlterDefaultPrivilegesStmt(ParseState *pstate, AlterDefaultPrivilegesStmt *s
 	DefElem    *drolespecs = NULL;
 	DefElem    *dnspnames = NULL;
 	AclMode		all_privileges;
-	const char *errormsg;
 
 	/* Deconstruct the "options" part of the statement */
 	foreach(cell, stmt->options)
@@ -979,42 +1005,33 @@ ExecAlterDefaultPrivilegesStmt(ParseState *pstate, AlterDefaultPrivilegesStmt *s
 	{
 		case OBJECT_TABLE:
 			all_privileges = ACL_ALL_RIGHTS_RELATION;
-			errormsg = gettext_noop("invalid privilege type %s for relation");
 			break;
 		case OBJECT_SEQUENCE:
 			all_privileges = ACL_ALL_RIGHTS_SEQUENCE;
-			errormsg = gettext_noop("invalid privilege type %s for sequence");
 			break;
 		case OBJECT_FUNCTION:
 			all_privileges = ACL_ALL_RIGHTS_FUNCTION;
-			errormsg = gettext_noop("invalid privilege type %s for function");
 			break;
 		case OBJECT_PROCEDURE:
 			all_privileges = ACL_ALL_RIGHTS_FUNCTION;
-			errormsg = gettext_noop("invalid privilege type %s for procedure");
 			break;
 		case OBJECT_ROUTINE:
 			all_privileges = ACL_ALL_RIGHTS_FUNCTION;
-			errormsg = gettext_noop("invalid privilege type %s for routine");
 			break;
 		case OBJECT_TYPE:
 			all_privileges = ACL_ALL_RIGHTS_TYPE;
-			errormsg = gettext_noop("invalid privilege type %s for type");
 			break;
 		case OBJECT_SCHEMA:
 			all_privileges = ACL_ALL_RIGHTS_SCHEMA;
-			errormsg = gettext_noop("invalid privilege type %s for schema");
 			break;
 		case OBJECT_LARGEOBJECT:
 			all_privileges = ACL_ALL_RIGHTS_LARGEOBJECT;
-			errormsg = gettext_noop("invalid privilege type %s for large object");
 			break;
 		default:
 			elog(ERROR, "unrecognized GrantStmt.objtype: %d",
 				 (int) action->objtype);
 			/* keep compiler quiet */
 			all_privileges = ACL_NO_RIGHTS;
-			errormsg = NULL;
 	}
 
 	if (action->privileges == NIL)
@@ -1049,7 +1066,7 @@ ExecAlterDefaultPrivilegesStmt(ParseState *pstate, AlterDefaultPrivilegesStmt *s
 			if (priv & ~all_privileges)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_GRANT_OPERATION),
-						 errmsg(errormsg, privilege_to_string(priv))));
+						 errmsg_invalid_privilege_type(action->objtype, priv)));
 
 			iacls.privileges |= priv;
 		}
@@ -2639,6 +2656,209 @@ privilege_to_string(AclMode privilege)
  * Note: we do not double-quote the %s's below, because many callers
  * supply strings that might be already quoted.
  */
+
+static int
+errmsg_permission_denied(ObjectType objtype, const char *objectname)
+{
+	switch (objtype)
+	{
+		case OBJECT_AGGREGATE:
+			return errmsg("permission denied for aggregate %s", objectname);
+		case OBJECT_COLLATION:
+			return errmsg("permission denied for collation %s", objectname);
+		case OBJECT_COLUMN:
+			return errmsg("permission denied for column %s", objectname);
+		case OBJECT_CONVERSION:
+			return errmsg("permission denied for conversion %s", objectname);
+		case OBJECT_DATABASE:
+			return errmsg("permission denied for database %s", objectname);
+		case OBJECT_DOMAIN:
+			return errmsg("permission denied for domain %s", objectname);
+		case OBJECT_EVENT_TRIGGER:
+			return errmsg("permission denied for event trigger %s", objectname);
+		case OBJECT_EXTENSION:
+			return errmsg("permission denied for extension %s", objectname);
+		case OBJECT_FDW:
+			return errmsg("permission denied for foreign-data wrapper %s", objectname);
+		case OBJECT_FOREIGN_SERVER:
+			return errmsg("permission denied for foreign server %s", objectname);
+		case OBJECT_FOREIGN_TABLE:
+			return errmsg("permission denied for foreign table %s", objectname);
+		case OBJECT_FUNCTION:
+			return errmsg("permission denied for function %s", objectname);
+		case OBJECT_INDEX:
+			return errmsg("permission denied for index %s", objectname);
+		case OBJECT_LANGUAGE:
+			return errmsg("permission denied for language %s", objectname);
+		case OBJECT_LARGEOBJECT:
+			return errmsg("permission denied for large object %s", objectname);
+		case OBJECT_MATVIEW:
+			return errmsg("permission denied for materialized view %s", objectname);
+		case OBJECT_OPCLASS:
+			return errmsg("permission denied for operator class %s", objectname);
+		case OBJECT_OPERATOR:
+			return errmsg("permission denied for operator %s", objectname);
+		case OBJECT_OPFAMILY:
+			return errmsg("permission denied for operator family %s", objectname);
+		case OBJECT_PARAMETER_ACL:
+			return errmsg("permission denied for parameter %s", objectname);
+		case OBJECT_POLICY:
+			return errmsg("permission denied for policy %s", objectname);
+		case OBJECT_PROCEDURE:
+			return errmsg("permission denied for procedure %s", objectname);
+		case OBJECT_PUBLICATION:
+			return errmsg("permission denied for publication %s", objectname);
+		case OBJECT_ROUTINE:
+			return errmsg("permission denied for routine %s", objectname);
+		case OBJECT_SCHEMA:
+			return errmsg("permission denied for schema %s", objectname);
+		case OBJECT_SEQUENCE:
+			return errmsg("permission denied for sequence %s", objectname);
+		case OBJECT_STATISTIC_EXT:
+			return errmsg("permission denied for statistics object %s", objectname);
+		case OBJECT_SUBSCRIPTION:
+			return errmsg("permission denied for subscription %s", objectname);
+		case OBJECT_TABLE:
+			return errmsg("permission denied for table %s", objectname);
+		case OBJECT_TABLESPACE:
+			return errmsg("permission denied for tablespace %s", objectname);
+		case OBJECT_TSCONFIGURATION:
+			return errmsg("permission denied for text search configuration %s", objectname);
+		case OBJECT_TSDICTIONARY:
+			return errmsg("permission denied for text search dictionary %s", objectname);
+		case OBJECT_TYPE:
+			return errmsg("permission denied for type %s", objectname);
+		case OBJECT_VIEW:
+			return errmsg("permission denied for view %s", objectname);
+			/* these currently aren't used */
+		case OBJECT_ACCESS_METHOD:
+		case OBJECT_AMOP:
+		case OBJECT_AMPROC:
+		case OBJECT_ATTRIBUTE:
+		case OBJECT_CAST:
+		case OBJECT_DEFAULT:
+		case OBJECT_DEFACL:
+		case OBJECT_DOMCONSTRAINT:
+		case OBJECT_PUBLICATION_EXCLUDED_REL:
+		case OBJECT_PUBLICATION_NAMESPACE:
+		case OBJECT_PUBLICATION_REL:
+		case OBJECT_ROLE:
+		case OBJECT_RULE:
+		case OBJECT_TABCONSTRAINT:
+		case OBJECT_TRANSFORM:
+		case OBJECT_TRIGGER:
+		case OBJECT_TSPARSER:
+		case OBJECT_TSTEMPLATE:
+		case OBJECT_USER_MAPPING:
+			elog(ERROR, "unsupported object type: %d", objtype);
+	}
+
+	return 0;
+}
+
+static int
+errmsg_not_owner(ObjectType objtype, const char *objectname)
+{
+	switch (objtype)
+	{
+		case OBJECT_AGGREGATE:
+			return errmsg("must be owner of aggregate %s", objectname);
+		case OBJECT_COLLATION:
+			return errmsg("must be owner of collation %s", objectname);
+		case OBJECT_CONVERSION:
+			return errmsg("must be owner of conversion %s", objectname);
+		case OBJECT_DATABASE:
+			return errmsg("must be owner of database %s", objectname);
+		case OBJECT_DOMAIN:
+			return errmsg("must be owner of domain %s", objectname);
+		case OBJECT_EVENT_TRIGGER:
+			return errmsg("must be owner of event trigger %s", objectname);
+		case OBJECT_EXTENSION:
+			return errmsg("must be owner of extension %s", objectname);
+		case OBJECT_FDW:
+			return errmsg("must be owner of foreign-data wrapper %s", objectname);
+		case OBJECT_FOREIGN_SERVER:
+			return errmsg("must be owner of foreign server %s", objectname);
+		case OBJECT_FOREIGN_TABLE:
+			return errmsg("must be owner of foreign table %s", objectname);
+		case OBJECT_FUNCTION:
+			return errmsg("must be owner of function %s", objectname);
+		case OBJECT_INDEX:
+			return errmsg("must be owner of index %s", objectname);
+		case OBJECT_LANGUAGE:
+			return errmsg("must be owner of language %s", objectname);
+		case OBJECT_LARGEOBJECT:
+			return errmsg("must be owner of large object %s", objectname);
+		case OBJECT_MATVIEW:
+			return errmsg("must be owner of materialized view %s", objectname);
+		case OBJECT_OPCLASS:
+			return errmsg("must be owner of operator class %s", objectname);
+		case OBJECT_OPERATOR:
+			return errmsg("must be owner of operator %s", objectname);
+		case OBJECT_OPFAMILY:
+			return errmsg("must be owner of operator family %s", objectname);
+		case OBJECT_PROCEDURE:
+			return errmsg("must be owner of procedure %s", objectname);
+		case OBJECT_PUBLICATION:
+			return errmsg("must be owner of publication %s", objectname);
+		case OBJECT_ROUTINE:
+			return errmsg("must be owner of routine %s", objectname);
+		case OBJECT_SEQUENCE:
+			return errmsg("must be owner of sequence %s", objectname);
+		case OBJECT_SUBSCRIPTION:
+			return errmsg("must be owner of subscription %s", objectname);
+		case OBJECT_TABLE:
+			return errmsg("must be owner of table %s", objectname);
+		case OBJECT_TYPE:
+			return errmsg("must be owner of type %s", objectname);
+		case OBJECT_VIEW:
+			return errmsg("must be owner of view %s", objectname);
+		case OBJECT_SCHEMA:
+			return errmsg("must be owner of schema %s", objectname);
+		case OBJECT_STATISTIC_EXT:
+			return errmsg("must be owner of statistics object %s", objectname);
+		case OBJECT_TABLESPACE:
+			return errmsg("must be owner of tablespace %s", objectname);
+		case OBJECT_TSCONFIGURATION:
+			return errmsg("must be owner of text search configuration %s", objectname);
+		case OBJECT_TSDICTIONARY:
+			return errmsg("must be owner of text search dictionary %s", objectname);
+
+			/*
+			 * Special cases: For these, the error message talks about
+			 * "relation", because that's where the ownership is attached. See
+			 * also check_object_ownership().
+			 */
+		case OBJECT_COLUMN:
+		case OBJECT_POLICY:
+		case OBJECT_RULE:
+		case OBJECT_TABCONSTRAINT:
+		case OBJECT_TRIGGER:
+			return errmsg("must be owner of relation %s", objectname);
+			/* these currently aren't used */
+		case OBJECT_ACCESS_METHOD:
+		case OBJECT_AMOP:
+		case OBJECT_AMPROC:
+		case OBJECT_ATTRIBUTE:
+		case OBJECT_CAST:
+		case OBJECT_DEFAULT:
+		case OBJECT_DEFACL:
+		case OBJECT_DOMCONSTRAINT:
+		case OBJECT_PARAMETER_ACL:
+		case OBJECT_PUBLICATION_EXCLUDED_REL:
+		case OBJECT_PUBLICATION_NAMESPACE:
+		case OBJECT_PUBLICATION_REL:
+		case OBJECT_ROLE:
+		case OBJECT_TRANSFORM:
+		case OBJECT_TSPARSER:
+		case OBJECT_TSTEMPLATE:
+		case OBJECT_USER_MAPPING:
+			elog(ERROR, "unsupported object type: %d", objtype);
+	}
+
+	return 0;
+}
+
 void
 aclcheck_error(AclResult aclerr, ObjectType objtype,
 			   const char *objectname)
@@ -2649,280 +2869,15 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 			/* no error, so return to caller */
 			break;
 		case ACLCHECK_NO_PRIV:
-			{
-				const char *msg = "???";
-
-				switch (objtype)
-				{
-					case OBJECT_AGGREGATE:
-						msg = gettext_noop("permission denied for aggregate %s");
-						break;
-					case OBJECT_COLLATION:
-						msg = gettext_noop("permission denied for collation %s");
-						break;
-					case OBJECT_COLUMN:
-						msg = gettext_noop("permission denied for column %s");
-						break;
-					case OBJECT_CONVERSION:
-						msg = gettext_noop("permission denied for conversion %s");
-						break;
-					case OBJECT_DATABASE:
-						msg = gettext_noop("permission denied for database %s");
-						break;
-					case OBJECT_DOMAIN:
-						msg = gettext_noop("permission denied for domain %s");
-						break;
-					case OBJECT_EVENT_TRIGGER:
-						msg = gettext_noop("permission denied for event trigger %s");
-						break;
-					case OBJECT_EXTENSION:
-						msg = gettext_noop("permission denied for extension %s");
-						break;
-					case OBJECT_FDW:
-						msg = gettext_noop("permission denied for foreign-data wrapper %s");
-						break;
-					case OBJECT_FOREIGN_SERVER:
-						msg = gettext_noop("permission denied for foreign server %s");
-						break;
-					case OBJECT_FOREIGN_TABLE:
-						msg = gettext_noop("permission denied for foreign table %s");
-						break;
-					case OBJECT_FUNCTION:
-						msg = gettext_noop("permission denied for function %s");
-						break;
-					case OBJECT_INDEX:
-						msg = gettext_noop("permission denied for index %s");
-						break;
-					case OBJECT_LANGUAGE:
-						msg = gettext_noop("permission denied for language %s");
-						break;
-					case OBJECT_LARGEOBJECT:
-						msg = gettext_noop("permission denied for large object %s");
-						break;
-					case OBJECT_MATVIEW:
-						msg = gettext_noop("permission denied for materialized view %s");
-						break;
-					case OBJECT_OPCLASS:
-						msg = gettext_noop("permission denied for operator class %s");
-						break;
-					case OBJECT_OPERATOR:
-						msg = gettext_noop("permission denied for operator %s");
-						break;
-					case OBJECT_OPFAMILY:
-						msg = gettext_noop("permission denied for operator family %s");
-						break;
-					case OBJECT_PARAMETER_ACL:
-						msg = gettext_noop("permission denied for parameter %s");
-						break;
-					case OBJECT_POLICY:
-						msg = gettext_noop("permission denied for policy %s");
-						break;
-					case OBJECT_PROCEDURE:
-						msg = gettext_noop("permission denied for procedure %s");
-						break;
-					case OBJECT_PUBLICATION:
-						msg = gettext_noop("permission denied for publication %s");
-						break;
-					case OBJECT_ROUTINE:
-						msg = gettext_noop("permission denied for routine %s");
-						break;
-					case OBJECT_SCHEMA:
-						msg = gettext_noop("permission denied for schema %s");
-						break;
-					case OBJECT_SEQUENCE:
-						msg = gettext_noop("permission denied for sequence %s");
-						break;
-					case OBJECT_STATISTIC_EXT:
-						msg = gettext_noop("permission denied for statistics object %s");
-						break;
-					case OBJECT_SUBSCRIPTION:
-						msg = gettext_noop("permission denied for subscription %s");
-						break;
-					case OBJECT_TABLE:
-						msg = gettext_noop("permission denied for table %s");
-						break;
-					case OBJECT_TABLESPACE:
-						msg = gettext_noop("permission denied for tablespace %s");
-						break;
-					case OBJECT_TSCONFIGURATION:
-						msg = gettext_noop("permission denied for text search configuration %s");
-						break;
-					case OBJECT_TSDICTIONARY:
-						msg = gettext_noop("permission denied for text search dictionary %s");
-						break;
-					case OBJECT_TYPE:
-						msg = gettext_noop("permission denied for type %s");
-						break;
-					case OBJECT_VIEW:
-						msg = gettext_noop("permission denied for view %s");
-						break;
-						/* these currently aren't used */
-					case OBJECT_ACCESS_METHOD:
-					case OBJECT_AMOP:
-					case OBJECT_AMPROC:
-					case OBJECT_ATTRIBUTE:
-					case OBJECT_CAST:
-					case OBJECT_DEFAULT:
-					case OBJECT_DEFACL:
-					case OBJECT_DOMCONSTRAINT:
-					case OBJECT_PUBLICATION_EXCLUDED_REL:
-					case OBJECT_PUBLICATION_NAMESPACE:
-					case OBJECT_PUBLICATION_REL:
-					case OBJECT_ROLE:
-					case OBJECT_RULE:
-					case OBJECT_TABCONSTRAINT:
-					case OBJECT_TRANSFORM:
-					case OBJECT_TRIGGER:
-					case OBJECT_TSPARSER:
-					case OBJECT_TSTEMPLATE:
-					case OBJECT_USER_MAPPING:
-						elog(ERROR, "unsupported object type: %d", objtype);
-				}
-
-				ereport(ERROR,
-						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-						 errmsg(msg, objectname)));
-				break;
-			}
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg_permission_denied(objtype, objectname)));
+			break;
 		case ACLCHECK_NOT_OWNER:
-			{
-				const char *msg = "???";
-
-				switch (objtype)
-				{
-					case OBJECT_AGGREGATE:
-						msg = gettext_noop("must be owner of aggregate %s");
-						break;
-					case OBJECT_COLLATION:
-						msg = gettext_noop("must be owner of collation %s");
-						break;
-					case OBJECT_CONVERSION:
-						msg = gettext_noop("must be owner of conversion %s");
-						break;
-					case OBJECT_DATABASE:
-						msg = gettext_noop("must be owner of database %s");
-						break;
-					case OBJECT_DOMAIN:
-						msg = gettext_noop("must be owner of domain %s");
-						break;
-					case OBJECT_EVENT_TRIGGER:
-						msg = gettext_noop("must be owner of event trigger %s");
-						break;
-					case OBJECT_EXTENSION:
-						msg = gettext_noop("must be owner of extension %s");
-						break;
-					case OBJECT_FDW:
-						msg = gettext_noop("must be owner of foreign-data wrapper %s");
-						break;
-					case OBJECT_FOREIGN_SERVER:
-						msg = gettext_noop("must be owner of foreign server %s");
-						break;
-					case OBJECT_FOREIGN_TABLE:
-						msg = gettext_noop("must be owner of foreign table %s");
-						break;
-					case OBJECT_FUNCTION:
-						msg = gettext_noop("must be owner of function %s");
-						break;
-					case OBJECT_INDEX:
-						msg = gettext_noop("must be owner of index %s");
-						break;
-					case OBJECT_LANGUAGE:
-						msg = gettext_noop("must be owner of language %s");
-						break;
-					case OBJECT_LARGEOBJECT:
-						msg = gettext_noop("must be owner of large object %s");
-						break;
-					case OBJECT_MATVIEW:
-						msg = gettext_noop("must be owner of materialized view %s");
-						break;
-					case OBJECT_OPCLASS:
-						msg = gettext_noop("must be owner of operator class %s");
-						break;
-					case OBJECT_OPERATOR:
-						msg = gettext_noop("must be owner of operator %s");
-						break;
-					case OBJECT_OPFAMILY:
-						msg = gettext_noop("must be owner of operator family %s");
-						break;
-					case OBJECT_PROCEDURE:
-						msg = gettext_noop("must be owner of procedure %s");
-						break;
-					case OBJECT_PUBLICATION:
-						msg = gettext_noop("must be owner of publication %s");
-						break;
-					case OBJECT_ROUTINE:
-						msg = gettext_noop("must be owner of routine %s");
-						break;
-					case OBJECT_SEQUENCE:
-						msg = gettext_noop("must be owner of sequence %s");
-						break;
-					case OBJECT_SUBSCRIPTION:
-						msg = gettext_noop("must be owner of subscription %s");
-						break;
-					case OBJECT_TABLE:
-						msg = gettext_noop("must be owner of table %s");
-						break;
-					case OBJECT_TYPE:
-						msg = gettext_noop("must be owner of type %s");
-						break;
-					case OBJECT_VIEW:
-						msg = gettext_noop("must be owner of view %s");
-						break;
-					case OBJECT_SCHEMA:
-						msg = gettext_noop("must be owner of schema %s");
-						break;
-					case OBJECT_STATISTIC_EXT:
-						msg = gettext_noop("must be owner of statistics object %s");
-						break;
-					case OBJECT_TABLESPACE:
-						msg = gettext_noop("must be owner of tablespace %s");
-						break;
-					case OBJECT_TSCONFIGURATION:
-						msg = gettext_noop("must be owner of text search configuration %s");
-						break;
-					case OBJECT_TSDICTIONARY:
-						msg = gettext_noop("must be owner of text search dictionary %s");
-						break;
-
-						/*
-						 * Special cases: For these, the error message talks
-						 * about "relation", because that's where the
-						 * ownership is attached.  See also
-						 * check_object_ownership().
-						 */
-					case OBJECT_COLUMN:
-					case OBJECT_POLICY:
-					case OBJECT_RULE:
-					case OBJECT_TABCONSTRAINT:
-					case OBJECT_TRIGGER:
-						msg = gettext_noop("must be owner of relation %s");
-						break;
-						/* these currently aren't used */
-					case OBJECT_ACCESS_METHOD:
-					case OBJECT_AMOP:
-					case OBJECT_AMPROC:
-					case OBJECT_ATTRIBUTE:
-					case OBJECT_CAST:
-					case OBJECT_DEFAULT:
-					case OBJECT_DEFACL:
-					case OBJECT_DOMCONSTRAINT:
-					case OBJECT_PARAMETER_ACL:
-					case OBJECT_PUBLICATION_EXCLUDED_REL:
-					case OBJECT_PUBLICATION_NAMESPACE:
-					case OBJECT_PUBLICATION_REL:
-					case OBJECT_ROLE:
-					case OBJECT_TRANSFORM:
-					case OBJECT_TSPARSER:
-					case OBJECT_TSTEMPLATE:
-					case OBJECT_USER_MAPPING:
-						elog(ERROR, "unsupported object type: %d", objtype);
-				}
-
-				ereport(ERROR,
-						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-						 errmsg(msg, objectname)));
-				break;
-			}
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg_not_owner(objtype, objectname)));
+			break;
 		default:
 			elog(ERROR, "unrecognized AclResult: %d", (int) aclerr);
 			break;

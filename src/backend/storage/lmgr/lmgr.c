@@ -854,43 +854,60 @@ XactLockTableWaitErrorCb(void *arg)
 	if (info->oper != XLTW_None &&
 		ItemPointerIsValid(info->ctid) && RelationIsValid(info->rel))
 	{
-		const char *cxt;
-
 		switch (info->oper)
 		{
 			case XLTW_Update:
-				cxt = gettext_noop("while updating tuple (%u,%u) in relation \"%s\"");
+				errcontext("while updating tuple (%u,%u) in relation \"%s\"",
+						   ItemPointerGetBlockNumber(info->ctid),
+						   ItemPointerGetOffsetNumber(info->ctid),
+						   RelationGetRelationName(info->rel));
 				break;
 			case XLTW_Delete:
-				cxt = gettext_noop("while deleting tuple (%u,%u) in relation \"%s\"");
+				errcontext("while deleting tuple (%u,%u) in relation \"%s\"",
+						   ItemPointerGetBlockNumber(info->ctid),
+						   ItemPointerGetOffsetNumber(info->ctid),
+						   RelationGetRelationName(info->rel));
 				break;
 			case XLTW_Lock:
-				cxt = gettext_noop("while locking tuple (%u,%u) in relation \"%s\"");
+				errcontext("while locking tuple (%u,%u) in relation \"%s\"",
+						   ItemPointerGetBlockNumber(info->ctid),
+						   ItemPointerGetOffsetNumber(info->ctid),
+						   RelationGetRelationName(info->rel));
 				break;
 			case XLTW_LockUpdated:
-				cxt = gettext_noop("while locking updated version (%u,%u) of tuple in relation \"%s\"");
+				errcontext("while locking updated version (%u,%u) of tuple in relation \"%s\"",
+						   ItemPointerGetBlockNumber(info->ctid),
+						   ItemPointerGetOffsetNumber(info->ctid),
+						   RelationGetRelationName(info->rel));
 				break;
 			case XLTW_InsertIndex:
-				cxt = gettext_noop("while inserting index tuple (%u,%u) in relation \"%s\"");
+				errcontext("while inserting index tuple (%u,%u) in relation \"%s\"",
+						   ItemPointerGetBlockNumber(info->ctid),
+						   ItemPointerGetOffsetNumber(info->ctid),
+						   RelationGetRelationName(info->rel));
 				break;
 			case XLTW_InsertIndexUnique:
-				cxt = gettext_noop("while checking uniqueness of tuple (%u,%u) in relation \"%s\"");
+				errcontext("while checking uniqueness of tuple (%u,%u) in relation \"%s\"",
+						   ItemPointerGetBlockNumber(info->ctid),
+						   ItemPointerGetOffsetNumber(info->ctid),
+						   RelationGetRelationName(info->rel));
 				break;
 			case XLTW_FetchUpdated:
-				cxt = gettext_noop("while rechecking updated tuple (%u,%u) in relation \"%s\"");
+				errcontext("while rechecking updated tuple (%u,%u) in relation \"%s\"",
+						   ItemPointerGetBlockNumber(info->ctid),
+						   ItemPointerGetOffsetNumber(info->ctid),
+						   RelationGetRelationName(info->rel));
 				break;
 			case XLTW_RecheckExclusionConstr:
-				cxt = gettext_noop("while checking exclusion constraint on tuple (%u,%u) in relation \"%s\"");
+				errcontext("while checking exclusion constraint on tuple (%u,%u) in relation \"%s\"",
+						   ItemPointerGetBlockNumber(info->ctid),
+						   ItemPointerGetOffsetNumber(info->ctid),
+						   RelationGetRelationName(info->rel));
 				break;
 
 			default:
 				return;
 		}
-
-		errcontext(cxt,
-				   ItemPointerGetBlockNumber(info->ctid),
-				   ItemPointerGetOffsetNumber(info->ctid),
-				   RelationGetRelationName(info->rel));
 	}
 }
 

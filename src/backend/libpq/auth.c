@@ -218,6 +218,43 @@ static int	pg_SSPI_make_upn(char *accountname,
  */
 ClientAuthentication_hook_type ClientAuthentication_hook = NULL;
 
+static int
+errmsg_auth_failed(UserAuth auth_method, const char *user_name)
+{
+	switch (auth_method)
+	{
+		case uaReject:
+		case uaImplicitReject:
+			return errmsg("authentication failed for user \"%s\": host rejected", user_name);
+		case uaTrust:
+			return errmsg("\"trust\" authentication failed for user \"%s\"", user_name);
+		case uaIdent:
+			return errmsg("Ident authentication failed for user \"%s\"", user_name);
+		case uaPeer:
+			return errmsg("Peer authentication failed for user \"%s\"", user_name);
+		case uaPassword:
+		case uaMD5:
+		case uaSCRAM:
+			return errmsg("password authentication failed for user \"%s\"", user_name);
+		case uaGSS:
+			return errmsg("GSSAPI authentication failed for user \"%s\"", user_name);
+		case uaSSPI:
+			return errmsg("SSPI authentication failed for user \"%s\"", user_name);
+		case uaPAM:
+			return errmsg("PAM authentication failed for user \"%s\"", user_name);
+		case uaBSD:
+			return errmsg("BSD authentication failed for user \"%s\"", user_name);
+		case uaLDAP:
+			return errmsg("LDAP authentication failed for user \"%s\"", user_name);
+		case uaCert:
+			return errmsg("certificate authentication failed for user \"%s\"", user_name);
+		case uaOAuth:
+			return errmsg("OAuth bearer authentication failed for user \"%s\"", user_name);
+		default:
+			return errmsg("authentication failed for user \"%s\": invalid authentication method", user_name);
+	}
+}
+
 /*
  * Tell the user the authentication failed, but not (much about) why.
  *
@@ -235,9 +272,8 @@ ClientAuthentication_hook_type ClientAuthentication_hook = NULL;
 static void
 auth_failed(Port *port, int elevel, int status, const char *logdetail)
 {
-	const char *errstr;
 	char	   *cdetail;
-	int			errcode_return = ERRCODE_INVALID_AUTHORIZATION_SPECIFICATION;
+	int			errcode_return;
 
 	Assert(elevel >= FATAL);	/* we must exit here */
 
@@ -256,50 +292,14 @@ auth_failed(Port *port, int elevel, int status, const char *logdetail)
 
 	switch (port->hba->auth_method)
 	{
-		case uaReject:
-		case uaImplicitReject:
-			errstr = gettext_noop("authentication failed for user \"%s\": host rejected");
-			break;
-		case uaTrust:
-			errstr = gettext_noop("\"trust\" authentication failed for user \"%s\"");
-			break;
-		case uaIdent:
-			errstr = gettext_noop("Ident authentication failed for user \"%s\"");
-			break;
-		case uaPeer:
-			errstr = gettext_noop("Peer authentication failed for user \"%s\"");
-			break;
 		case uaPassword:
 		case uaMD5:
 		case uaSCRAM:
-			errstr = gettext_noop("password authentication failed for user \"%s\"");
 			/* We use it to indicate if a .pgpass password failed. */
 			errcode_return = ERRCODE_INVALID_PASSWORD;
 			break;
-		case uaGSS:
-			errstr = gettext_noop("GSSAPI authentication failed for user \"%s\"");
-			break;
-		case uaSSPI:
-			errstr = gettext_noop("SSPI authentication failed for user \"%s\"");
-			break;
-		case uaPAM:
-			errstr = gettext_noop("PAM authentication failed for user \"%s\"");
-			break;
-		case uaBSD:
-			errstr = gettext_noop("BSD authentication failed for user \"%s\"");
-			break;
-		case uaLDAP:
-			errstr = gettext_noop("LDAP authentication failed for user \"%s\"");
-			break;
-		case uaCert:
-			errstr = gettext_noop("certificate authentication failed for user \"%s\"");
-			break;
-		case uaOAuth:
-			errstr = gettext_noop("OAuth bearer authentication failed for user \"%s\"");
-			break;
 		default:
-			errstr = gettext_noop("authentication failed for user \"%s\": invalid authentication method");
-			break;
+			errcode_return = ERRCODE_INVALID_AUTHORIZATION_SPECIFICATION;
 	}
 
 	cdetail = psprintf(_("Connection matched file \"%s\" line %d: \"%s\""),
@@ -312,7 +312,7 @@ auth_failed(Port *port, int elevel, int status, const char *logdetail)
 
 	ereport(elevel,
 			(errcode(errcode_return),
-			 errmsg(errstr, port->user_name),
+			 errmsg_auth_failed(port->hba->auth_method, port->user_name),
 			 logdetail ? errdetail_log("%s", logdetail) : 0));
 
 	/* doesn't return */
