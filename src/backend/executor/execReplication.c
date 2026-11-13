@@ -176,6 +176,29 @@ should_refetch_tuple(TM_Result res, TM_FailureData *tmfd)
 }
 
 /*
+ * Return true if 'searchslot' has a NULL in a key column of 'idxrel' and the
+ * index can't search for NULLs (e.g. hash). Such a scan finds nothing.
+ */
+static bool
+replindex_key_has_unsearchable_null(Relation idxrel, TupleTableSlot *searchslot)
+{
+	int2vector *indkey = &idxrel->rd_index->indkey;
+
+	if (idxrel->rd_indam->amsearchnulls)
+		return false;
+
+	for (int i = 0; i < IndexRelationGetNumberOfKeyAttributes(idxrel); i++)
+	{
+		AttrNumber	attno = indkey->values[i];
+
+		if (AttributeNumberIsValid(attno) && searchslot->tts_isnull[attno - 1])
+			return true;
+	}
+
+	return false;
+}
+
+/*
  * Search the relation 'rel' for tuple using the index.
  *
  * If a matching tuple is found, lock it with lockmode, fill the slot with its
@@ -206,6 +229,18 @@ RelationFindReplTupleByIndex(Relation rel, Oid idxoid,
 
 	/* Open the index. */
 	idxrel = index_open(idxoid, RowExclusiveLock);
+
+	/*
+	 * Fall back to a sequential scan if the index cannot search for a NULL
+	 * key. !skipduplicates means the index was chosen for REPLICA IDENTITY
+	 * FULL, so 'searchslot' has the whole row.
+	 */
+	if (!skipduplicates &&
+		replindex_key_has_unsearchable_null(idxrel, searchslot))
+	{
+		index_close(idxrel, NoLock);
+		return RelationFindReplTupleSeq(rel, lockmode, searchslot, outslot);
+	}
 
 	InitDirtySnapshot(snap);
 
@@ -732,9 +767,22 @@ RelationFindDeletedTupleInfoByIndex(Relation rel, Oid idxoid,
 	*delete_time = 0;
 	*delete_origin = InvalidReplOriginId;
 
-	scanslot = table_slot_create(rel, NULL);
-
 	idxrel = index_open(idxoid, RowExclusiveLock);
+
+	/*
+	 * Fall back to a sequential scan if the index cannot search for a NULL
+	 * key. See RelationFindReplTupleByIndex().
+	 */
+	if (!skipduplicates &&
+		replindex_key_has_unsearchable_null(idxrel, searchslot))
+	{
+		index_close(idxrel, NoLock);
+		return RelationFindDeletedTupleInfoSeq(rel, InvalidOid, searchslot,
+											   oldestxmin, delete_xid,
+											   delete_origin, delete_time);
+	}
+
+	scanslot = table_slot_create(rel, NULL);
 
 	/* Build scan key. */
 	skey_attoff = build_replindex_scan_key(skey, rel, idxrel, searchslot);
