@@ -2789,15 +2789,17 @@ recoveryStopsAfter(XLogReaderState *record)
 		return true;
 	}
 
-	if (rmid != RM_XACT_ID)
-		return false;
-
+	/*
+	 * Don't return early for other record types: the immediate-target check
+	 * at the bottom must be reached for every record.
+	 */
 	xact_info = info & XLOG_XACT_OPMASK;
 
-	if (xact_info == XLOG_XACT_COMMIT ||
-		xact_info == XLOG_XACT_COMMIT_PREPARED ||
-		xact_info == XLOG_XACT_ABORT ||
-		xact_info == XLOG_XACT_ABORT_PREPARED)
+	if (rmid == RM_XACT_ID &&
+		(xact_info == XLOG_XACT_COMMIT ||
+		 xact_info == XLOG_XACT_COMMIT_PREPARED ||
+		 xact_info == XLOG_XACT_ABORT ||
+		 xact_info == XLOG_XACT_ABORT_PREPARED))
 	{
 		TransactionId recordXid;
 
