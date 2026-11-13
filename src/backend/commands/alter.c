@@ -75,73 +75,89 @@ static Oid	AlterObjectNamespace_internal(Relation rel, Oid objid, Oid nspOid);
 static void
 report_name_conflict(Oid classId, const char *name)
 {
-	char	   *msgfmt;
-
 	switch (classId)
 	{
 		case EventTriggerRelationId:
-			msgfmt = gettext_noop("event trigger \"%s\" already exists");
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("event trigger \"%s\" already exists", name)));
 			break;
 		case ForeignDataWrapperRelationId:
-			msgfmt = gettext_noop("foreign-data wrapper \"%s\" already exists");
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("foreign-data wrapper \"%s\" already exists", name)));
 			break;
 		case ForeignServerRelationId:
-			msgfmt = gettext_noop("server \"%s\" already exists");
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("server \"%s\" already exists", name)));
 			break;
 		case LanguageRelationId:
-			msgfmt = gettext_noop("language \"%s\" already exists");
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("language \"%s\" already exists", name)));
 			break;
 		case PublicationRelationId:
-			msgfmt = gettext_noop("publication \"%s\" already exists");
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("publication \"%s\" already exists", name)));
 			break;
 		case SubscriptionRelationId:
-			msgfmt = gettext_noop("subscription \"%s\" already exists");
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("subscription \"%s\" already exists", name)));
 			break;
 		default:
 			elog(ERROR, "unsupported object class: %u", classId);
 			break;
 	}
-
-	ereport(ERROR,
-			(errcode(ERRCODE_DUPLICATE_OBJECT),
-			 errmsg(msgfmt, name)));
 }
 
 static void
 report_namespace_conflict(Oid classId, const char *name, Oid nspOid)
 {
-	char	   *msgfmt;
+	char	   *nspname;
 
 	Assert(OidIsValid(nspOid));
+
+	nspname = get_namespace_name(nspOid);
 
 	switch (classId)
 	{
 		case ConversionRelationId:
-			msgfmt = gettext_noop("conversion \"%s\" already exists in schema \"%s\"");
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("conversion \"%s\" already exists in schema \"%s\"", name, nspname)));
 			break;
 		case StatisticExtRelationId:
-			msgfmt = gettext_noop("statistics object \"%s\" already exists in schema \"%s\"");
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("statistics object \"%s\" already exists in schema \"%s\"", name, nspname)));
 			break;
 		case TSParserRelationId:
-			msgfmt = gettext_noop("text search parser \"%s\" already exists in schema \"%s\"");
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("text search parser \"%s\" already exists in schema \"%s\"", name, nspname)));
 			break;
 		case TSDictionaryRelationId:
-			msgfmt = gettext_noop("text search dictionary \"%s\" already exists in schema \"%s\"");
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("text search dictionary \"%s\" already exists in schema \"%s\"", name, nspname)));
 			break;
 		case TSTemplateRelationId:
-			msgfmt = gettext_noop("text search template \"%s\" already exists in schema \"%s\"");
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("text search template \"%s\" already exists in schema \"%s\"", name, nspname)));
 			break;
 		case TSConfigRelationId:
-			msgfmt = gettext_noop("text search configuration \"%s\" already exists in schema \"%s\"");
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("text search configuration \"%s\" already exists in schema \"%s\"", name, nspname)));
 			break;
 		default:
 			elog(ERROR, "unsupported object class: %u", classId);
 			break;
 	}
-
-	ereport(ERROR,
-			(errcode(ERRCODE_DUPLICATE_OBJECT),
-			 errmsg(msgfmt, name, get_namespace_name(nspOid))));
 }
 
 /*

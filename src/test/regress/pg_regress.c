@@ -2435,22 +2435,22 @@ regression_main(int argc, char *argv[],
 		else
 		{
 #ifndef WIN32
-			const char *copycmd = "cp -RPp \"%s\" \"%s/data\"";
-			int			expected_exitcode = 0;
+#define COPYCMD "cp -RPp \"%s\" \"%s/data\""
+#define COPYCMD_EXPECTED_EXITCODE 0
 #else
-			const char *copycmd = "robocopy /E /NJS /NJH /NFL /NDL /NP \"%s\" \"%s/data\"";
-			int			expected_exitcode = 1;	/* 1 denotes files were copied */
+#define COPYCMD "robocopy /E /NJS /NJH /NFL /NDL /NP \"%s\" \"%s/data\""
+#define COPYCMD_EXPECTED_EXITCODE 1 /* 1 denotes files were copied */
 #endif
 
 			note("initializing database system by copying initdb template");
 
 			appendStringInfo(&cmd,
-							 copycmd,
+							 COPYCMD,
 							 initdb_template_dir,
 							 temp_instance);
 			appendStringInfo(&cmd, " > \"%s/log/initdb.log\" 2>&1", outputdir);
 			fflush(NULL);
-			if (system(cmd.data) != expected_exitcode)
+			if (system(cmd.data) != COPYCMD_EXPECTED_EXITCODE)
 			{
 				bail("copying of initdb template failed\n"
 					 "# Examine \"%s/log/initdb.log\" for the reason.\n"

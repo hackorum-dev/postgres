@@ -231,10 +231,6 @@ ECPGdebug(int n, FILE *dbgs)
 void
 ecpg_log(const char *format, ...)
 {
-	va_list		ap;
-	const char *intl_format;
-	int			bufsize;
-	char	   *fmt;
 	struct sqlca_t *sqlca;
 
 	/*
@@ -245,23 +241,6 @@ ecpg_log(const char *format, ...)
 	if (!simple_debug)
 		return;
 
-	/* localize the error message string */
-	intl_format = ecpg_gettext(format);
-
-	/*
-	 * Insert PID into the format, unless ecpg_internal_regression_mode is set
-	 * (regression tests want unchanging output).
-	 */
-	bufsize = strlen(intl_format) + 100;
-	fmt = (char *) malloc(bufsize);
-	if (fmt == NULL)
-		return;
-
-	if (ecpg_internal_regression_mode)
-		snprintf(fmt, bufsize, "[NO_PID]: %s", intl_format);
-	else
-		snprintf(fmt, bufsize, "[%d]: %s", (int) getpid(), intl_format);
-
 	sqlca = ECPGget_sqlca();
 
 	pthread_mutex_lock(&debug_mutex);
@@ -269,8 +248,19 @@ ecpg_log(const char *format, ...)
 	/* Now that we hold the mutex, recheck simple_debug */
 	if (simple_debug)
 	{
+		va_list		ap;
+
+		/*
+		 * Print PID, unless ecpg_internal_regression_mode is set (regression
+		 * tests want unchanging output).
+		 */
+		if (ecpg_internal_regression_mode)
+			fprintf(debugstream, "[NO_PID]: ");
+		else
+			fprintf(debugstream, "[%d]: ", (int) getpid());
+
 		va_start(ap, format);
-		vfprintf(debugstream, fmt, ap);
+		vfprintf(debugstream, ecpg_gettext(format), ap);
 		va_end(ap);
 
 		/* dump out internal sqlca variables */
@@ -284,8 +274,6 @@ ecpg_log(const char *format, ...)
 	}
 
 	pthread_mutex_unlock(&debug_mutex);
-
-	free(fmt);
 }
 
 void

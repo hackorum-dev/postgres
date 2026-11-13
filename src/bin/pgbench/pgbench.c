@@ -5039,14 +5039,11 @@ static void
 initPopulateTable(PGconn *con, const char *table, int64 base,
 				  initRowMethod init_row)
 {
-	int			n;
 	int64		k;
 	int			chars = 0;
 	int			prev_chars = 0;
 	PGresult   *res;
 	PQExpBufferData sql;
-	char		copy_statement[256];
-	const char *copy_statement_fmt = "copy %s from stdin";
 	int64		total = base * scale;
 
 	/* used to track elapsed time and estimate of the remaining time */
@@ -5061,20 +5058,17 @@ initPopulateTable(PGconn *con, const char *table, int64 base,
 	/* Use COPY with FREEZE on v14 and later for all ordinary tables */
 	if ((PQserverVersion(con) >= 140000) &&
 		get_table_relkind(con, table) == RELKIND_RELATION)
-		copy_statement_fmt = "copy %s from stdin with (freeze on)";
+		printfPQExpBuffer(&sql, "copy %s from stdin with (freeze on)", table);
+	else
+		printfPQExpBuffer(&sql, "copy %s from stdin", table);
 
-
-	n = pg_snprintf(copy_statement, sizeof(copy_statement), copy_statement_fmt, table);
-	if (n >= sizeof(copy_statement))
-		pg_fatal("invalid buffer size: must be at least %d characters long", n);
-	else if (n == -1)
-		pg_fatal("invalid format string");
-
-	res = PQexec(con, copy_statement);
+	res = PQexec(con, sql.data);
 
 	if (PQresultStatus(res) != PGRES_COPY_IN)
 		pg_fatal("unexpected copy in result: %s", PQerrorMessage(con));
 	PQclear(res);
+
+	resetPQExpBuffer(&sql);
 
 	start = pg_time_now();
 

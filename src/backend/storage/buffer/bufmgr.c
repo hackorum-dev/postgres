@@ -8847,10 +8847,6 @@ buffer_readv_report(PgAioResult result, const PgAioTargetData *td,
 				checkfail_count,
 				first_off;
 	uint8		affected_count;
-	const char *msg_one,
-			   *msg_mult,
-			   *det_mult,
-			   *hint_mult;
 
 	buffer_readv_decode_error(result, &zeroed_any, &ignored_any,
 							  &zeroed_or_error_count,
@@ -8892,37 +8888,56 @@ buffer_readv_report(PgAioResult result, const PgAioTargetData *td,
 	{
 		Assert(!zeroed_any);	/* can't have invalid pages when zeroing them */
 		affected_count = zeroed_or_error_count;
-		msg_one = _("invalid page in block %u of relation \"%s\"");
-		msg_mult = _("%u invalid pages among blocks %u..%u of relation \"%s\"");
-		det_mult = _("Block %u held the first invalid page.");
-		hint_mult = _("See server log for the other %u invalid block(s).");
+		ereport(elevel,
+				errcode(ERRCODE_DATA_CORRUPTED),
+				affected_count == 1 ?
+				errmsg("invalid page in block %u of relation \"%s\"", first + first_off, rpath.str) :
+				errmsg_plural("%u invalid page among blocks %u..%u of relation \"%s\"",
+							  "%u invalid pages among blocks %u..%u of relation \"%s\"",
+							  affected_count,
+							  affected_count, first, last, rpath.str),
+				affected_count > 1 ? errdetail("Block %u held the first invalid page.", first + first_off) : 0,
+				affected_count > 1 ? errhint_plural("See server log for the other %u invalid block.",
+													"See server log for the other %u invalid blocks.",
+													affected_count - 1,
+													affected_count - 1) : 0);
 	}
 	else if (zeroed_any && !ignored_any)
 	{
 		affected_count = zeroed_or_error_count;
-		msg_one = _("invalid page in block %u of relation \"%s\"; zeroing out page");
-		msg_mult = _("zeroing out %u invalid pages among blocks %u..%u of relation \"%s\"");
-		det_mult = _("Block %u held the first zeroed page.");
-		hint_mult = _("See server log for the other %u zeroed block(s).");
+		ereport(elevel,
+				errcode(ERRCODE_DATA_CORRUPTED),
+				affected_count == 1 ?
+				errmsg("invalid page in block %u of relation \"%s\"; zeroing out page", first + first_off, rpath.str) :
+				errmsg_plural("zeroing out %u invalid page among blocks %u..%u of relation \"%s\"",
+							  "zeroing out %u invalid pages among blocks %u..%u of relation \"%s\"",
+							  affected_count,
+							  affected_count, first, last, rpath.str),
+				affected_count > 1 ? errdetail("Block %u held the first zeroed page.", first + first_off) : 0,
+				affected_count > 1 ? errhint_plural("See server log for the other %u zeroed block.",
+													"See server log for the other %u zeroed blocks.",
+													affected_count - 1,
+													affected_count - 1) : 0);
 	}
 	else if (!zeroed_any && ignored_any)
 	{
 		affected_count = checkfail_count;
-		msg_one = _("ignoring checksum failure in block %u of relation \"%s\"");
-		msg_mult = _("ignoring %u checksum failures among blocks %u..%u of relation \"%s\"");
-		det_mult = _("Block %u held the first ignored page.");
-		hint_mult = _("See server log for the other %u ignored block(s).");
+		ereport(elevel,
+				errcode(ERRCODE_DATA_CORRUPTED),
+				affected_count == 1 ?
+				errmsg("ignoring checksum failure in block %u of relation \"%s\"", first + first_off, rpath.str) :
+				errmsg_plural("ignoring %u checksum failure among blocks %u..%u of relation \"%s\"",
+							  "ignoring %u checksum failures among blocks %u..%u of relation \"%s\"",
+							  affected_count,
+							  affected_count, first, last, rpath.str),
+				affected_count > 1 ? errdetail("Block %u held the first ignored page.", first + first_off) : 0,
+				affected_count > 1 ? errhint_plural("See server log for the other %u ignored block.",
+													"See server log for the other %u ignored blocks.",
+													affected_count - 1,
+													affected_count - 1) : 0);
 	}
 	else
 		pg_unreachable();
-
-	ereport(elevel,
-			errcode(ERRCODE_DATA_CORRUPTED),
-			affected_count == 1 ?
-			errmsg_internal(msg_one, first + first_off, rpath.str) :
-			errmsg_internal(msg_mult, affected_count, first, last, rpath.str),
-			affected_count > 1 ? errdetail_internal(det_mult, first + first_off) : 0,
-			affected_count > 1 ? errhint_internal(hint_mult, affected_count - 1) : 0);
 }
 
 static void

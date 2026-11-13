@@ -996,7 +996,6 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 			WalUsage	walusage;
 			BufferUsage bufferusage;
 			StringInfoData buf;
-			char	   *msgfmt;
 			int32		diff;
 			double		read_rate = 0,
 						write_rate = 0;
@@ -1025,7 +1024,12 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 				 * VACUUM VERBOSE ereport
 				 */
 				Assert(!params->is_wraparound);
-				msgfmt = _("finished vacuuming \"%s.%s.%s\": index scans: %d\n");
+				appendStringInfo(&buf,
+								 _("finished vacuuming \"%s.%s.%s\": index scans: %d\n"),
+								 vacrel->dbname,
+								 vacrel->relnamespace,
+								 vacrel->relname,
+								 vacrel->num_index_scans);
 			}
 			else if (params->is_wraparound)
 			{
@@ -1036,22 +1040,37 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 				 * case all the same, just in case.
 				 */
 				if (vacrel->aggressive)
-					msgfmt = _("automatic aggressive vacuum to prevent wraparound of table \"%s.%s.%s\": index scans: %d\n");
+					appendStringInfo(&buf,
+									 _("automatic aggressive vacuum to prevent wraparound of table \"%s.%s.%s\": index scans: %d\n"),
+									 vacrel->dbname,
+									 vacrel->relnamespace,
+									 vacrel->relname,
+									 vacrel->num_index_scans);
 				else
-					msgfmt = _("automatic vacuum to prevent wraparound of table \"%s.%s.%s\": index scans: %d\n");
+					appendStringInfo(&buf,
+									 _("automatic vacuum to prevent wraparound of table \"%s.%s.%s\": index scans: %d\n"),
+									 vacrel->dbname,
+									 vacrel->relnamespace,
+									 vacrel->relname,
+									 vacrel->num_index_scans);
 			}
 			else
 			{
 				if (vacrel->aggressive)
-					msgfmt = _("automatic aggressive vacuum of table \"%s.%s.%s\": index scans: %d\n");
+					appendStringInfo(&buf,
+									 _("automatic aggressive vacuum of table \"%s.%s.%s\": index scans: %d\n"),
+									 vacrel->dbname,
+									 vacrel->relnamespace,
+									 vacrel->relname,
+									 vacrel->num_index_scans);
 				else
-					msgfmt = _("automatic vacuum of table \"%s.%s.%s\": index scans: %d\n");
+					appendStringInfo(&buf,
+									 _("automatic vacuum of table \"%s.%s.%s\": index scans: %d\n"),
+									 vacrel->dbname,
+									 vacrel->relnamespace,
+									 vacrel->relname,
+									 vacrel->num_index_scans);
 			}
-			appendStringInfo(&buf, msgfmt,
-							 vacrel->dbname,
-							 vacrel->relnamespace,
-							 vacrel->relname,
-							 vacrel->num_index_scans);
 			appendStringInfo(&buf, _("pages: %u removed, %u remain, %u scanned (%.2f%% of total), %u eagerly scanned\n"),
 							 vacrel->removed_pages,
 							 new_rel_pages,
@@ -1111,7 +1130,12 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 				else
 					appendStringInfoString(&buf, _("index scan needed: "));
 
-				msgfmt = _("%u pages from table (%.2f%% of total) had %" PRId64 " dead item identifiers removed\n");
+				appendStringInfo(&buf,
+								 _("%u pages from table (%.2f%% of total) had %" PRId64 " dead item identifiers removed\n"),
+								 vacrel->lpdead_item_pages,
+								 orig_rel_pages == 0 ? 100.0 :
+								 100.0 * vacrel->lpdead_item_pages / orig_rel_pages,
+								 vacrel->lpdead_items);
 			}
 			else
 			{
@@ -1120,13 +1144,13 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 				else
 					appendStringInfoString(&buf, _("index scan bypassed by failsafe: "));
 
-				msgfmt = _("%u pages from table (%.2f%% of total) have %" PRId64 " dead item identifiers\n");
+				appendStringInfo(&buf,
+								 _("%u pages from table (%.2f%% of total) have %" PRId64 " dead item identifiers\n"),
+								 vacrel->lpdead_item_pages,
+								 orig_rel_pages == 0 ? 100.0 :
+								 100.0 * vacrel->lpdead_item_pages / orig_rel_pages,
+								 vacrel->lpdead_items);
 			}
-			appendStringInfo(&buf, msgfmt,
-							 vacrel->lpdead_item_pages,
-							 orig_rel_pages == 0 ? 100.0 :
-							 100.0 * vacrel->lpdead_item_pages / orig_rel_pages,
-							 vacrel->lpdead_items);
 
 			if (vacrel->worker_usage.vacuum.nplanned > 0)
 				appendStringInfo(&buf,

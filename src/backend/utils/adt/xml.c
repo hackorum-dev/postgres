@@ -2331,34 +2331,23 @@ xml_errorHandler(void *data, PgXmlErrorPtr error)
 static int
 errdetail_for_xml_code(int code)
 {
-	const char *det;
-
 	switch (code)
 	{
 		case XML_ERR_INVALID_CHAR:
-			det = gettext_noop("Invalid character value.");
-			break;
+			return errdetail("Invalid character value.");
 		case XML_ERR_SPACE_REQUIRED:
-			det = gettext_noop("Space required.");
-			break;
+			return errdetail("Space required.");
 		case XML_ERR_STANDALONE_VALUE:
-			det = gettext_noop("standalone accepts only 'yes' or 'no'.");
-			break;
+			return errdetail("standalone accepts only 'yes' or 'no'.");
 		case XML_ERR_VERSION_MISSING:
-			det = gettext_noop("Malformed declaration: missing version.");
-			break;
+			return errdetail("Malformed declaration: missing version.");
 		case XML_ERR_MISSING_ENCODING:
-			det = gettext_noop("Missing encoding in text declaration.");
-			break;
+			return errdetail("Missing encoding in text declaration.");
 		case XML_ERR_XMLDECL_NOT_FINISHED:
-			det = gettext_noop("Parsing XML declaration: '?>' expected.");
-			break;
+			return errdetail("Parsing XML declaration: '?>' expected.");
 		default:
-			det = gettext_noop("Unrecognized libxml error code: %d.");
-			break;
+			return errdetail("Unrecognized libxml error code: %d.", code);
 	}
-
-	return errdetail(det, code);
 }
 
 

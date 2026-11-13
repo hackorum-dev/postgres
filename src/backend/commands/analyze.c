@@ -777,7 +777,6 @@ do_analyze_rel(Relation onerel, const VacuumParams *params,
 			WalUsage	walusage;
 			double		read_rate = 0;
 			double		write_rate = 0;
-			char	   *msgfmt;
 			StringInfoData buf;
 			int64		total_blks_hit;
 			int64		total_blks_read;
@@ -833,14 +832,15 @@ do_analyze_rel(Relation onerel, const VacuumParams *params,
 			initStringInfo(&buf);
 
 			if (AmAutoVacuumWorkerProcess())
-				msgfmt = _("automatic analyze of table \"%s.%s.%s\"\n");
+				appendStringInfo(&buf, _("automatic analyze of table \"%s.%s.%s\"\n"),
+								 get_database_name(MyDatabaseId),
+								 get_namespace_name(RelationGetNamespace(onerel)),
+								 RelationGetRelationName(onerel));
 			else
-				msgfmt = _("finished analyzing table \"%s.%s.%s\"\n");
-
-			appendStringInfo(&buf, msgfmt,
-							 get_database_name(MyDatabaseId),
-							 get_namespace_name(RelationGetNamespace(onerel)),
-							 RelationGetRelationName(onerel));
+				appendStringInfo(&buf, _("finished analyzing table \"%s.%s.%s\"\n"),
+								 get_database_name(MyDatabaseId),
+								 get_namespace_name(RelationGetNamespace(onerel)),
+								 RelationGetRelationName(onerel));
 			if (track_cost_delay_timing)
 			{
 				/*

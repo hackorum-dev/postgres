@@ -710,16 +710,10 @@ PQprintTuples(const PGresult *res,
 	int			nTups;
 	int			i,
 				j;
-	char		formatString[80];
 	char	   *tborder = NULL;
 
 	nFields = PQnfields(res);
 	nTups = PQntuples(res);
-
-	if (colWidth > 0)
-		sprintf(formatString, "%%s %%-%ds", colWidth);
-	else
-		sprintf(formatString, "%%s %%s");
 
 	if (nFields > 0)
 	{							/* only print rows with at least 1 field.  */
@@ -745,9 +739,15 @@ PQprintTuples(const PGresult *res,
 		{
 			if (PrintAttNames)
 			{
-				fprintf(fout, formatString,
-						TerseOutput ? "" : "|",
-						PQfname(res, i));
+				if (colWidth > 0)
+					fprintf(fout, "%s %-*s",
+							TerseOutput ? "" : "|",
+							colWidth,
+							PQfname(res, i));
+				else
+					fprintf(fout, "%s %s",
+							TerseOutput ? "" : "|",
+							PQfname(res, i));
 			}
 		}
 
@@ -765,9 +765,15 @@ PQprintTuples(const PGresult *res,
 			{
 				const char *pval = PQgetvalue(res, i, j);
 
-				fprintf(fout, formatString,
-						TerseOutput ? "" : "|",
-						pval ? pval : "");
+				if (colWidth > 0)
+					fprintf(fout, "%s %-*s",
+							TerseOutput ? "" : "|",
+							colWidth,
+							pval ? pval : "");
+				else
+					fprintf(fout, "%s %s",
+							TerseOutput ? "" : "|",
+							pval ? pval : "");
 			}
 			if (TerseOutput)
 				fprintf(fout, "\n");
