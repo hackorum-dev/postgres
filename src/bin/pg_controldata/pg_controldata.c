@@ -101,7 +101,6 @@ main(int argc, char *argv[])
 	char		pgctime_str[128];
 	char		ckpttime_str[128];
 	char		mock_auth_nonce_str[MOCK_AUTH_NONCE_LEN * 2 + 1];
-	const char *strftime_fmt = "%c";
 	const char *progname;
 	char		xlogfilename[MAXFNAMELEN];
 	int			c;
@@ -199,15 +198,12 @@ main(int argc, char *argv[])
 	 * timestamps are within the range of time_t; that should be the case in
 	 * all foreseeable circumstances, so we don't bother importing the
 	 * backend's timezone library into pg_controldata.
-	 *
-	 * Use variable for format to suppress overly-anal-retentive gcc warning
-	 * about %c
 	 */
 	time_tmp = (time_t) ControlFile->time;
 	tm_tmp = localtime(&time_tmp);
 
 	if (tm_tmp != NULL)
-		strftime(pgctime_str, sizeof(pgctime_str), strftime_fmt, tm_tmp);
+		strftime(pgctime_str, sizeof(pgctime_str), "%c", tm_tmp);
 	else
 		snprintf(pgctime_str, sizeof(pgctime_str), _("???"));
 
@@ -215,7 +211,7 @@ main(int argc, char *argv[])
 	tm_tmp = localtime(&time_tmp);
 
 	if (tm_tmp != NULL)
-		strftime(ckpttime_str, sizeof(ckpttime_str), strftime_fmt, tm_tmp);
+		strftime(ckpttime_str, sizeof(ckpttime_str), "%c", tm_tmp);
 	else
 		snprintf(ckpttime_str, sizeof(ckpttime_str), _("???"));
 
