@@ -1305,9 +1305,12 @@ GetAllSchemaPublicationRelations(Oid pubid, PublicationPartOpt pub_partopt)
  * Get publication using oid
  *
  * The Publication struct and its data are palloc'ed here.
+ *
+ * If missing_ok is true, return NULL when the publication does not exist
+ * (e.g., it was dropped concurrently); otherwise raise an error.
  */
-Publication *
-GetPublication(Oid pubid)
+static Publication *
+get_publication_internal(Oid pubid, bool missing_ok)
 {
 	HeapTuple	tup;
 	Publication *pub;
@@ -1315,7 +1318,11 @@ GetPublication(Oid pubid)
 
 	tup = SearchSysCache1(PUBLICATIONOID, ObjectIdGetDatum(pubid));
 	if (!HeapTupleIsValid(tup))
+	{
+		if (missing_ok)
+			return NULL;
 		elog(ERROR, "cache lookup failed for publication %u", pubid);
+	}
 
 	pubform = (Form_pg_publication) GETSTRUCT(tup);
 
@@ -1334,6 +1341,12 @@ GetPublication(Oid pubid)
 	ReleaseSysCache(tup);
 
 	return pub;
+}
+
+Publication *
+GetPublication(Oid pubid)
+{
+	return get_publication_internal(pubid, false);
 }
 
 /*
@@ -1445,6 +1458,27 @@ is_table_publishable_in_publication(Oid relid, Publication *pub)
 }
 
 /*
+ * A helper function for pg_get_publication_tables() to get the name of the
+ * publication with the given OID from the list of publications collected on
+ * the first call.  It is used to report a publication that has been dropped
+ * concurrently, whose name can no longer be looked up in the catalog.
+ */
+static char *
+get_pubname_from_list(List *pubs, Oid pubid)
+{
+	foreach_ptr(Publication, pub, pubs)
+	{
+		if (pub->oid == pubid)
+			return pub->name;
+	}
+
+	/* The publication must have been collected on the first call. */
+	elog(ERROR, "could not find publication %u in the list of publications",
+		 pubid);
+	return NULL;				/* keep compiler quiet */
+}
+
+/*
  * Helper function to get information of the tables in the given
  * publication(s).
  *
@@ -1471,6 +1505,7 @@ pg_get_publication_tables(FunctionCallInfo fcinfo, ArrayType *pubnames,
 	typedef struct
 	{
 		List	   *table_infos;	/* list of published_rel */
+		List	   *pubs;			/* list of Publication, for error messages */
 		int			curr_idx;	/* current index into table_infos */
 	} publication_tables_state;
 
@@ -1483,6 +1518,7 @@ pg_get_publication_tables(FunctionCallInfo fcinfo, ArrayType *pubnames,
 		TupleDesc	tupdesc;
 		MemoryContext oldcontext;
 		List	   *table_infos = NIL;
+		List	   *pubs = NIL;
 		Datum	   *elems;
 		int			nelems,
 					i;
@@ -1520,6 +1556,8 @@ pg_get_publication_tables(FunctionCallInfo fcinfo, ArrayType *pubnames,
 
 			if (pub_elem == NULL)
 				continue;
+
+			pubs = lappend(pubs, pub_elem);
 
 			if (filter_by_relid)
 			{
@@ -1609,6 +1647,7 @@ pg_get_publication_tables(FunctionCallInfo fcinfo, ArrayType *pubnames,
 		/* Store the state to be used across SRF calls. */
 		ptstate = palloc_object(publication_tables_state);
 		ptstate->table_infos = table_infos;
+		ptstate->pubs = pubs;
 		ptstate->curr_idx = 0;
 		funcctx->user_fctx = ptstate;
 
@@ -1647,10 +1686,35 @@ pg_get_publication_tables(FunctionCallInfo fcinfo, ArrayType *pubnames,
 			continue;
 
 		/*
+		 * The publication OIDs were also collected earlier and we don't hold
+		 * a lock on the publication, so it may have been dropped concurrently
+		 * (for instance, while we waited for the lock on the table above,
+		 * which also processes pending invalidations).
+		 *
+		 * Unlike a dropped table, we can't just skip it: rows for this
+		 * publication may already have been returned, so the result would be
+		 * a misleading partial list. Report it as an error instead, unless
+		 * the caller asked for missing publications to be ignored, which is
+		 * consistent with how they are treated on the first call.
+		 */
+		pub = get_publication_internal(table_info->pubid, true);
+		if (pub == NULL)
+		{
+			if (!pub_missing_ok)
+				ereport(ERROR,
+						errcode(ERRCODE_UNDEFINED_OBJECT),
+						errmsg("publication \"%s\" does not exist",
+							   get_pubname_from_list(ptstate->pubs,
+													 table_info->pubid)),
+						errdetail("The publication was dropped concurrently."));
+
+			table_close(rel, AccessShareLock);
+			continue;
+		}
+
+		/*
 		 * Form tuple with appropriate data.
 		 */
-
-		pub = GetPublication(table_info->pubid);
 
 		values[0] = ObjectIdGetDatum(pub->oid);
 		values[1] = ObjectIdGetDatum(relid);
