@@ -2446,7 +2446,8 @@ create_nestloop_path(PlannerInfo *root,
 		{
 			RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
 
-			if (!join_clause_is_movable_into(rinfo,
+			if (!join_clause_is_movable_onto(root,
+											 rinfo,
 											 inner_path->parent->relids,
 											 inner_and_outer))
 				jclauses = lappend(jclauses, rinfo);

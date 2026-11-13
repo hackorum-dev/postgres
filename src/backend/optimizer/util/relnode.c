@@ -1447,13 +1447,16 @@ get_joinrel_parampathinfo(PlannerInfo *root, RelOptInfo *joinrel,
 	{
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
 
-		if (join_clause_is_movable_into(rinfo,
+		if (join_clause_is_movable_onto(root,
+										rinfo,
 										joinrel->relids,
 										join_and_req) &&
-			!join_clause_is_movable_into(rinfo,
+			!join_clause_is_movable_onto(root,
+										 rinfo,
 										 outer_path->parent->relids,
 										 outer_and_req) &&
-			!join_clause_is_movable_into(rinfo,
+			!join_clause_is_movable_onto(root,
+										 rinfo,
 										 inner_path->parent->relids,
 										 inner_and_req))
 			pclauses = lappend(pclauses, rinfo);
@@ -1470,23 +1473,20 @@ get_joinrel_parampathinfo(PlannerInfo *root, RelOptInfo *joinrel,
 	{
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
 
-		/*
-		 * In principle, join_clause_is_movable_into() should accept anything
-		 * returned by generate_join_implied_equalities(); but because its
-		 * analysis is only approximate, sometimes it doesn't.  So we
-		 * currently cannot use this Assert; instead just assume it's okay to
-		 * apply the joinclause at this level.
-		 */
-#ifdef NOT_USED
-		Assert(join_clause_is_movable_into(rinfo,
-										   joinrel->relids,
-										   join_and_req));
-#endif
-		if (join_clause_is_movable_into(rinfo,
+		/* If the rinfo deduced from EC is not movable to joinrel, skip it */
+		if(!join_clause_is_movable_onto(root,
+									   rinfo,
+									   joinrel->relids,
+									   join_and_req))
+			continue;						   
+		
+		if (join_clause_is_movable_onto(root,
+										rinfo,
 										outer_path->parent->relids,
 										outer_and_req))
 			continue;			/* drop if movable into LHS */
-		if (join_clause_is_movable_into(rinfo,
+		if (join_clause_is_movable_onto(root,
+										rinfo,
 										inner_path->parent->relids,
 										inner_and_req))
 		{
@@ -1544,13 +1544,12 @@ get_joinrel_parampathinfo(PlannerInfo *root, RelOptInfo *joinrel,
 		{
 			RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
 
-			/* As above, can't quite assert this here */
-#ifdef NOT_USED
-			Assert(join_clause_is_movable_into(rinfo,
+			Assert(join_clause_is_movable_onto(root,
+											   rinfo,
 											   outer_path->parent->relids,
 											   real_outer_and_req));
-#endif
-			if (!join_clause_is_movable_into(rinfo,
+			if (!join_clause_is_movable_onto(root,
+											 rinfo,
 											 outer_path->parent->relids,
 											 outer_and_req))
 				pclauses = lappend(pclauses, rinfo);

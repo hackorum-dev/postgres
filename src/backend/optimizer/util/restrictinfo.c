@@ -653,3 +653,66 @@ join_clause_is_movable_into(RestrictInfo *rinfo,
 
 	return true;
 }
+
+/*
+ * If currentrelids is a joinrel, join_clause_is_movable_into() may be overly
+ * restrictive, keeping some clause movable to a parameterized path from
+ * being moved down. For example, consider this query:
+ * select * from a, b left join lateral(select a4+b4 x, * from c) SQ on b1=c1
+ * where a2=c2;
+ * At the top level query, the path of SQ is parameterized by both a and b. The
+ * paths of joinrel (b left join SQ) are all parameterized by a. The clause
+ * a2=c2 is movable to the paths of joinrel (b left join SQ), however,
+ * join_clause_is_movable_into() judges it as not movable due to SQ is on
+ * the nullable side of left join. join_clause_is_movable_onto() loosen the
+ * restriction to allow the movable clauses to be moved.
+ */
+bool
+join_clause_is_movable_onto(PlannerInfo *root, RestrictInfo *rinfo,
+                                                       Relids currentrelids,
+                                                       Relids current_and_outer)
+{
+	ListCell   *l;
+	/* Clause must be evaluable given available context */
+	if (!bms_is_subset(rinfo->clause_relids, current_and_outer))
+		return false;
+	/* Clause must physically reference at least one target rel */
+	if (!bms_overlap(currentrelids, rinfo->clause_relids))
+		return false;
+ 
+	/* Cannot move an outer-join clause into the join's outer side */
+    if (bms_overlap(currentrelids, rinfo->outer_relids))
+		return false;
+	/*
+	 * If there is any special join whose min_righthand overlaps currentrelids,
+	 * and currentrelids don't contain both its min_lefthand and min_righthand,
+	 * rinfo can't be moved, otherwise the nullable side of the special join
+	 * will undergo premature filtering, resulting incorrect query result.
+	 * Furthermore, if the special join is a full join, its min_lefthand 
+	 * overlaps currentrelids, and currentrelids don't contain both its 
+	 * min_lefthand and min_righthand, rinfo can't be moved too.
+	 */
+	foreach(l, root->join_info_list)
+	{
+		SpecialJoinInfo *sjinfo = (SpecialJoinInfo *) lfirst(l);
+		if ((bms_overlap(sjinfo->min_righthand, currentrelids) &&
+			!bms_overlap(sjinfo->min_lefthand, currentrelids)) ||
+			(sjinfo->jointype == JOIN_FULL &&
+			bms_overlap(sjinfo->min_lefthand, currentrelids) &&
+			!bms_overlap(sjinfo->min_righthand, currentrelids)))
+		{
+			if (!bms_is_subset(rinfo->required_relids,
+						bms_union(sjinfo->min_lefthand,sjinfo->min_righthand)))
+				return false;
+			if (bms_is_subset(rinfo->required_relids, sjinfo->min_righthand))
+				continue;
+			if(sjinfo->jointype == JOIN_FULL &&
+				bms_is_subset(rinfo->required_relids, sjinfo->min_righthand))
+				continue;
+			if(rinfo->is_pushed_down)
+				return false;
+		}
+	}
+	return true;
+}
+

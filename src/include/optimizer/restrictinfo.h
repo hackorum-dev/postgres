@@ -47,5 +47,10 @@ extern bool join_clause_is_movable_to(RestrictInfo *rinfo, RelOptInfo *baserel);
 extern bool join_clause_is_movable_into(RestrictInfo *rinfo,
 										Relids currentrelids,
 										Relids current_and_outer);
+extern bool join_clause_is_movable_onto(PlannerInfo *root, 
+													 RestrictInfo *rinfo,
+                                                     Relids currentrelids,
+                                                     Relids current_and_outer) ;
+
 
 #endif							/* RESTRICTINFO_H */
