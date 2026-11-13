@@ -1214,6 +1214,78 @@ SKIP:
 	$stale_session->quit;
 }
 
+# 11e. When the last record ends exactly at a WAL page boundary,
+# pg_current_wal_insert_lsn() points past the next page's header, while the
+# flush, write, and replay positions stay at the boundary.  WAIT must treat
+# both positions as the same point instead of waiting for unrelated WAL.
+#
+# Fill the current page with a flushed nontransactional logical message.  Its
+# record takes 55 bytes besides the payload: XLogRecord (24), long data header
+# (5), xl_logical_message (24) and the "p" prefix with its terminator (2).
+# Retry if other WAL gets in the way.
+my $page_size = $rcv_primary->safe_psql('postgres', "SHOW wal_block_size");
+my $past_header_lsn;
+for (my $attempt = 0; $attempt < 10 && !defined($past_header_lsn); $attempt++)
+{
+	my $room = $rcv_primary->safe_psql('postgres',
+		"SELECT $page_size - (pg_current_wal_insert_lsn() - '0/0'::pg_lsn) % $page_size"
+	);
+
+	# Leave enough room for the long data header; otherwise move to the
+	# next page first.
+	if ($room < 512)
+	{
+		$rcv_primary->safe_psql('postgres',
+			"SELECT pg_logical_emit_message(false, 'p', repeat('x', 1024), true)"
+		);
+		next;
+	}
+
+	my $payload = $room - 55;
+	$rcv_primary->safe_psql('postgres',
+		"SELECT pg_logical_emit_message(false, 'p', repeat('x', $payload), true)"
+	);
+	$past_header_lsn = $rcv_primary->safe_psql(
+		'postgres', qq[
+		SELECT lsn FROM (SELECT pg_current_wal_insert_lsn() AS lsn) s
+		WHERE (lsn - '0/0'::pg_lsn) % $page_size =
+			CASE WHEN (lsn - '0/0'::pg_lsn) %
+				pg_size_bytes(current_setting('wal_segment_size')) < $page_size
+			THEN 40 ELSE 24 END
+	]);
+	$past_header_lsn = undef if $past_header_lsn eq '';
+}
+ok(defined($past_header_lsn),
+	"insert LSN points past a WAL page header after the last record")
+  or die "could not make the last WAL record end at a page boundary";
+
+my $page_start_lsn = $rcv_primary->safe_psql('postgres',
+	"SELECT '$past_header_lsn'::pg_lsn - ('$past_header_lsn'::pg_lsn - '0/0'::pg_lsn) % $page_size"
+);
+$rcv_standby->poll_query_until('postgres',
+	"SELECT pg_last_wal_replay_lsn() >= '$page_start_lsn'::pg_lsn")
+  or die "rcv_standby did not replay up to the page boundary";
+
+# The timeout only bounds the failure case; the targets are reached already.
+is( $rcv_primary->safe_psql(
+		'postgres', qq[
+		WAIT FOR LSN '$past_header_lsn'
+			WITH (MODE 'primary_flush', timeout '3s', no_throw);
+	]),
+	'success',
+	"primary_flush: target past a page header is reached at the boundary");
+
+foreach my $mode ('standby_replay', 'standby_write', 'standby_flush')
+{
+	is( $rcv_standby->safe_psql(
+			'postgres', qq[
+			WAIT FOR LSN '$past_header_lsn'
+				WITH (MODE '$mode', timeout '3s', no_throw);
+		]),
+		'success',
+		"$mode: target past a page header is reached at the boundary");
+}
+
 $rcv_standby->stop;
 $rcv_primary->stop;
 
