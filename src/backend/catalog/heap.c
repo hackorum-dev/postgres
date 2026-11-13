@@ -4107,13 +4107,21 @@ heap_truncate_find_FKs(List *relationIds)
 	SysScanDesc fkeyScan;
 	HeapTuple	tuple;
 	bool		restart;
+	Datum	   *elems;
+	int			nelems;
+	int			nsearched = 0;
+	ArrayType  *arr;
 
 	oids = list_copy(relationIds);
 
 	/*
-	 * Must scan pg_constraint.  It is a seqscan although confrelid is
-	 * indexed, because probing the index once for each relation in the list
-	 * costs more than one pass over a small catalog.
+	 * Must scan pg_constraint.  Look up all the relations in our list in one
+	 * scan of the index on confrelid, which is only set nonzero by FK
+	 * constraints, so we visit just the foreign keys that reference our list.
+	 * One scan with confrelid = ANY rather than a probe per relation, because
+	 * each probe pays for setting up an index scan, which adds up for long
+	 * lists such as those of ON COMMIT DELETE ROWS.  A restart only needs to
+	 * look up the relations added since the previous pass.
 	 */
 	fkeyRel = table_open(ConstraintRelationId, AccessShareLock);
 
@@ -4121,19 +4129,28 @@ restart:
 	restart = false;
 	parent_cons = NIL;
 
-	fkeyScan = systable_beginscan(fkeyRel, InvalidOid, false,
-								  NULL, 0, NULL);
+	/* confrelid = ANY (the relations not looked up yet) */
+	elems = palloc_array(Datum, list_length(oids) - nsearched);
+	nelems = 0;
+	for_each_from(cell, oids, nsearched)
+		elems[nelems++] = ObjectIdGetDatum(lfirst_oid(cell));
+	nsearched = list_length(oids);
+	arr = construct_array_builtin(elems, nelems, OIDOID);
+	ScanKeyInit(&key,
+				Anum_pg_constraint_confrelid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				PointerGetDatum(arr));
+	key.sk_flags |= SK_SEARCHARRAY;
+
+	fkeyScan = systable_beginscan(fkeyRel, ConstraintForeignRelIndexId,
+								  true, NULL, 1, &key);
 
 	while (HeapTupleIsValid(tuple = systable_getnext(fkeyScan)))
 	{
 		Form_pg_constraint con = (Form_pg_constraint) GETSTRUCT(tuple);
 
-		/* Not a foreign key */
+		/* Only foreign keys set confrelid, but check anyway */
 		if (con->contype != CONSTRAINT_FOREIGN)
-			continue;
-
-		/* Not referencing one of our list of tables */
-		if (!list_member_oid(oids, con->confrelid))
 			continue;
 
 		/*
@@ -4155,6 +4172,8 @@ restart:
 	}
 
 	systable_endscan(fkeyScan);
+	pfree(arr);
+	pfree(elems);
 
 	/*
 	 * Process each parent constraint we found to add the list of referenced
