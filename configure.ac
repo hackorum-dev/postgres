@@ -535,8 +535,8 @@ fi
 # but has its own.  Also check other compiler-specific flags here.
 
 if test "$GCC" = yes -a "$ICC" = no; then
-  CFLAGS="-Wall -Wmissing-prototypes -Wpointer-arith"
-  CXXFLAGS="-Wall -Wpointer-arith"
+  CFLAGS="-Wall -Wformat-nonliteral -Wmissing-prototypes -Wpointer-arith"
+  CXXFLAGS="-Wall -Wformat-nonliteral -Wpointer-arith"
   # These work in some but not all gcc versions
   save_CFLAGS=$CFLAGS
   PGAC_PROG_CC_CFLAGS_OPT([-Wdeclaration-after-statement])
