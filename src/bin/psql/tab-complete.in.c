@@ -6126,9 +6126,16 @@ _complete_from_query(const char *simple_query,
 		{
 			Assert(simple_query);
 			/* simple_query is an sprintf-style format string */
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#endif
 			appendPQExpBuffer(&query_buffer, simple_query,
 							  e_object_like,
 							  e_ref_object, e_ref_schema);
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 		}
 
 		/* Limit the number of records in the result */
