@@ -607,6 +607,86 @@ $node_subscriber->safe_psql('postgres', "DROP TABLE test_replica_id_full");
 # =============================================================================
 
 # =============================================================================
+# Testcase start: Subscription finds rows with NULL keys when using hash index
+#
+# Hash indexes do not store NULLs, so an index scan for a NULL key value finds
+# nothing.  UPDATE/DELETE of a row whose hash-indexed column is NULL must still
+# be applied, rather than being reported as update_missing/delete_missing.
+
+# create table, initial data (including rows with NULL in the indexed column)
+# and publication on pub
+$node_publisher->safe_psql(
+	'postgres', q[
+	CREATE TABLE test_hash_null (x int, y text);
+	ALTER TABLE test_hash_null REPLICA IDENTITY FULL;
+	INSERT INTO test_hash_null VALUES
+		(1, 'one'), (2, 'two'),
+		(NULL, 'null-1'), (NULL, 'null-2'), (NULL, 'null-3');
+	CREATE PUBLICATION tap_pub_hash_null FOR TABLE test_hash_null;
+]);
+
+# create table, hash index and subscription on sub
+$node_subscriber->safe_psql(
+	'postgres', qq[
+	CREATE TABLE test_hash_null (x int, y text);
+	CREATE INDEX test_hash_null_idx ON test_hash_null USING HASH (x);
+	CREATE SUBSCRIPTION tap_sub_hash_null CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION tap_pub_hash_null;
+]);
+
+# wait for initial table synchronization to finish
+$node_subscriber->wait_for_subscription_sync($node_publisher, $appname);
+
+# update a row with a non-NULL key, and make sure the hash index is used
+$node_publisher->safe_psql('postgres',
+	"UPDATE test_hash_null SET y = 'two updated' WHERE x = 2");
+$node_publisher->wait_for_catchup($appname);
+$node_subscriber->poll_query_until('postgres',
+	q{select (idx_scan = 1) from pg_stat_all_indexes where indexrelname = 'test_hash_null_idx';}
+  )
+  or die
+  "Timed out while waiting for check subscriber tap_sub_hash_null updates one row via index";
+
+# update and delete rows with a NULL key, and set the key of a row with a
+# NULL key to a non-NULL value
+$node_publisher->safe_psql(
+	'postgres', q[
+	UPDATE test_hash_null SET y = 'null-1 updated' WHERE y = 'null-1';
+	DELETE FROM test_hash_null WHERE y = 'null-2';
+	UPDATE test_hash_null SET x = 3 WHERE y = 'null-3';
+]);
+$node_publisher->wait_for_catchup($appname);
+
+# make sure that the subscriber has the same data as the publisher
+my $pub_result = $node_publisher->safe_psql('postgres',
+	"SELECT x, y FROM test_hash_null ORDER BY y");
+$result = $node_subscriber->safe_psql('postgres',
+	"SELECT x, y FROM test_hash_null ORDER BY y");
+is($result, $pub_result,
+	'ensure subscriber applies UPDATE/DELETE of rows with NULL in hash-indexed column'
+);
+is( $result, qq(|null-1 updated
+3|null-3
+1|one
+2|two updated),
+	'ensure subscriber has the correct data at the end of the test');
+
+# cleanup pub
+$node_publisher->safe_psql(
+	'postgres', q[
+	DROP PUBLICATION tap_pub_hash_null;
+	DROP TABLE test_hash_null;
+]);
+# cleanup sub
+$node_subscriber->safe_psql(
+	'postgres', q[
+	DROP SUBSCRIPTION tap_sub_hash_null;
+	DROP TABLE test_hash_null;
+]);
+
+# Testcase end: Subscription finds rows with NULL keys when using hash index
+# =============================================================================
+
+# =============================================================================
 # Testcase start: Subscription keeps using an index that concurrent DDL has
 # demoted from replica identity
 #
