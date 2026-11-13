@@ -176,6 +176,29 @@ should_refetch_tuple(TM_Result res, TM_FailureData *tmfd)
 }
 
 /*
+ * Return true if 'searchslot' has a NULL in a key column of 'idxrel' and the
+ * index can't search for NULLs (e.g. hash). Such a scan finds nothing.
+ */
+static bool
+replindex_key_unsearchable(Relation idxrel, TupleTableSlot *searchslot)
+{
+	int2vector *indkey = &idxrel->rd_index->indkey;
+
+	if (idxrel->rd_indam->amsearchnulls)
+		return false;
+
+	for (int i = 0; i < IndexRelationGetNumberOfKeyAttributes(idxrel); i++)
+	{
+		AttrNumber	attno = indkey->values[i];
+
+		if (AttributeNumberIsValid(attno) && searchslot->tts_isnull[attno - 1])
+			return true;
+	}
+
+	return false;
+}
+
+/*
  * Search the relation 'rel' for tuple using the index.
  *
  * If a matching tuple is found, lock it with lockmode, fill the slot with its
@@ -206,6 +229,17 @@ RelationFindReplTupleByIndex(Relation rel, Oid idxoid,
 
 	/* Open the index. */
 	idxrel = index_open(idxoid, RowExclusiveLock);
+
+	/*
+	 * The index can't find this row, so use a sequential scan.
+	 * !skipduplicates means the index was chosen for REPLICA IDENTITY FULL,
+	 * so 'searchslot' has the whole row.
+	 */
+	if (!skipduplicates && replindex_key_unsearchable(idxrel, searchslot))
+	{
+		index_close(idxrel, NoLock);
+		return RelationFindReplTupleSeq(rel, lockmode, searchslot, outslot);
+	}
 
 	InitDirtySnapshot(snap);
 
@@ -735,6 +769,16 @@ RelationFindDeletedTupleInfoByIndex(Relation rel, Oid idxoid,
 	scanslot = table_slot_create(rel, NULL);
 
 	idxrel = index_open(idxoid, RowExclusiveLock);
+
+	/* The index can't find this row, so use a sequential scan. */
+	if (!skipduplicates && replindex_key_unsearchable(idxrel, searchslot))
+	{
+		index_close(idxrel, NoLock);
+		ExecDropSingleTupleTableSlot(scanslot);
+		return RelationFindDeletedTupleInfoSeq(rel, InvalidOid, searchslot,
+											   oldestxmin, delete_xid,
+											   delete_origin, delete_time);
+	}
 
 	/* Build scan key. */
 	skey_attoff = build_replindex_scan_key(skey, rel, idxrel, searchslot);
