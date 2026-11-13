@@ -5928,7 +5928,6 @@ do_watch(PQExpBuffer query_buf, double sleep, int iter, int min_rows)
 {
 	long		sleep_ms = (long) (sleep * 1000);
 	printQueryOpt myopt = pset.popt;
-	const char *strftime_fmt;
 	const char *user_title;
 	char	   *title;
 	const char *pagerprog = NULL;
@@ -6009,13 +6008,6 @@ do_watch(PQExpBuffer query_buf, double sleep, int iter, int min_rows)
 	}
 
 	/*
-	 * Choose format for timestamps.  We might eventually make this a \pset
-	 * option.  In the meantime, using a variable for the format suppresses
-	 * overly-anal-retentive gcc warnings about %c being Y2K sensitive.
-	 */
-	strftime_fmt = "%c";
-
-	/*
 	 * Set up rendering options, in particular, disable the pager unless
 	 * PSQL_WATCH_PAGER was successfully launched.
 	 */
@@ -6043,7 +6035,7 @@ do_watch(PQExpBuffer query_buf, double sleep, int iter, int min_rows)
 		 * makes for reasonably nicely formatted output in simple cases.
 		 */
 		timer = time(NULL);
-		strftime(timebuf, sizeof(timebuf), strftime_fmt, localtime(&timer));
+		strftime(timebuf, sizeof(timebuf), "%c", localtime(&timer));
 
 		if (user_title)
 			snprintf(title, title_len, _("%s\t%s (every %gs)\n"),
