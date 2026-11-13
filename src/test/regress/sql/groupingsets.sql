@@ -812,4 +812,19 @@ from (values (1, 1), (2, 2)) as t (a, b)
 group by rollup(a, ab)
 order by 1, 2;
 
+-- substitute_grouped_columns() bound a repeated grouping expression to the
+-- first group clause.  GROUP BY ai2, ROLLUP(ai1) then left ai1 without a
+-- nulling bit, and ORDER BY treated the two outputs as one value.
+set enable_hashagg = false;
+
+select i as ai1, i as ai2 from generate_series(1,3) i
+  group by ai2, rollup(ai1) order by ai1, ai2;
+select i as ai1, i as ai2 from generate_series(1,3) i
+  group by ai2, rollup(ai1) order by ai2, ai1;
+
+set enable_hashagg = true;
+
+select i as ai1, i as ai2 from generate_series(1,3) i
+  group by ai2, rollup(ai1) order by ai2, ai1;
+
 -- end
