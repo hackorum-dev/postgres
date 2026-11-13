@@ -1114,7 +1114,7 @@ static Form_pg_attribute
 AllocateAttribute(void)
 {
 	return (Form_pg_attribute)
-		MemoryContextAllocZero(TopMemoryContext, ATTRIBUTE_FIXED_PART_SIZE);
+		MemoryContextAllocZero(TopMemoryContext, sizeof(FormData_pg_attribute));
 }
 
 /*
