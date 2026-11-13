@@ -373,6 +373,7 @@ pg_stat_get_progress_info(PG_FUNCTION_ARGS)
 	{
 		LocalPgBackendStatus *local_beentry;
 		PgBackendStatus *beentry;
+		PgBackendProgress	*st_progress;
 		Datum		values[PG_STAT_GET_PROGRESS_COLS] = {0};
 		bool		nulls[PG_STAT_GET_PROGRESS_COLS] = {0};
 		int			i;
@@ -384,7 +385,11 @@ pg_stat_get_progress_info(PG_FUNCTION_ARGS)
 		 * Report values for only those backends which are running the given
 		 * command.
 		 */
-		if (beentry->st_progress_command != cmdtype)
+		if (beentry->st_progress.command == cmdtype)
+			st_progress = &beentry->st_progress;
+		else if (beentry->st_progress_top.command == cmdtype)
+			st_progress = &beentry->st_progress_top;
+		else
 			continue;
 
 		/* Value available to all callers */
@@ -394,9 +399,9 @@ pg_stat_get_progress_info(PG_FUNCTION_ARGS)
 		/* show rest of the values including relid only to role members */
 		if (HAS_PGSTAT_PERMISSIONS(beentry->st_userid))
 		{
-			values[2] = ObjectIdGetDatum(beentry->st_progress_command_target);
+			values[2] = ObjectIdGetDatum(st_progress->command_target);
 			for (i = 0; i < PGSTAT_NUM_PROGRESS_PARAM; i++)
-				values[i + 3] = Int64GetDatum(beentry->st_progress_param[i]);
+				values[i + 3] = Int64GetDatum(st_progress->param[i]);
 		}
 		else
 		{

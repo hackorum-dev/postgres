@@ -41,7 +41,7 @@ extern void pgstat_progress_incr_param(int index, int64 incr);
 extern void pgstat_progress_parallel_incr_param(int index, int64 incr);
 extern void pgstat_progress_update_multi_param(int nparam, const int *index,
 											   const int64 *val);
-extern void pgstat_progress_end_command(void);
+extern void pgstat_progress_end_command(bool xact);
 
 
 #endif							/* BACKEND_PROGRESS_H */

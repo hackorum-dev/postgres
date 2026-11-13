@@ -218,6 +218,8 @@ typedef struct TransactionStateData
 	bool		parallelChildXact;	/* is any parent transaction parallel? */
 	bool		chain;			/* start a new block after this one */
 	bool		topXidLogged;	/* for a subxact: is top-level XID logged? */
+	int			progress_depth; /* progress tracking state before subxact
+								 * started */
 	struct TransactionStateData *parent;	/* back link to parent */
 } TransactionStateData;
 
@@ -2268,6 +2270,12 @@ StartTransaction(void)
 	 */
 	s->state = TRANS_INPROGRESS;
 
+	/*
+	 * Top transaction always terminates progress tracking on abort, so this
+	 * field is not needed, but be tidy.
+	 */
+	s->progress_depth = 0;
+
 	/* Schedule transaction timeout */
 	if (TransactionTimeout > 0)
 		enable_timeout_after(TRANSACTION_TIMEOUT, TransactionTimeout);
@@ -2899,7 +2907,7 @@ AbortTransaction(void)
 
 	/* Clear wait information and command progress indicator */
 	pgstat_report_wait_end();
-	pgstat_progress_end_command();
+	pgstat_progress_end_command(true);
 
 	pgaio_error_cleanup();
 
@@ -5184,6 +5192,8 @@ StartSubTransaction(void)
 
 	s->state = TRANS_INPROGRESS;
 
+	s->progress_depth = 0;
+
 	/*
 	 * Call start-of-subxact callbacks
 	 */
@@ -5343,7 +5353,7 @@ AbortSubTransaction(void)
 	WaitLSNCleanup();
 
 	pgstat_report_wait_end();
-	pgstat_progress_end_command();
+	pgstat_progress_end_command(true);
 
 	pgaio_error_cleanup();
 
@@ -6547,4 +6557,39 @@ xact_redo(XLogReaderState *record)
 	}
 	else
 		elog(PANIC, "xact_redo: unknown op code %u", info);
+}
+
+
+/*
+ *  XactStartProgressReporting
+ *
+ * Start progress reporting in the current transaction.
+ */
+void
+XactStartProgressReporting(void)
+{
+	TransactionState s = CurrentTransactionState;
+
+	s->progress_depth++;
+}
+
+/*
+ *  XactEndProgressReporting
+ *
+ * End progress reporting in the current transaction.
+ *
+ * Return true if the nesting level was decreased, false if it's already zero.
+ */
+bool
+XactEndProgressReporting(void)
+{
+	TransactionState s = CurrentTransactionState;
+
+	if (s->progress_depth == 0)
+		return false;
+
+	Assert(s->progress_depth > 0);
+	s->progress_depth--;
+
+	return true;
 }

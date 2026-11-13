@@ -535,4 +535,7 @@ extern void EnterParallelMode(void);
 extern void ExitParallelMode(void);
 extern bool IsInParallelMode(void);
 
+extern void XactStartProgressReporting(void);
+extern bool XactEndProgressReporting(void);
+
 #endif							/* XACT_H */
