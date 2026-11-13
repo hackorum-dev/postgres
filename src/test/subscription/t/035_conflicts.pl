@@ -526,6 +526,73 @@ $node_A->safe_psql('postgres', "DROP TABLE tab_mr");
 $node_B->safe_psql('postgres', "DROP TABLE tab_mr");
 
 ###############################################################################
+# Check that the search for a deleted tuple finds a row whose key is NULL in a
+# hash index chosen for REPLICA IDENTITY FULL. Hash indexes do not store NULLs,
+# so the row must be found without the index scan, and the conflict reported
+# as update_deleted instead of update_missing.
+###############################################################################
+
+# Publisher table holding the row that will be updated.
+$node_B->safe_psql(
+	'postgres', "
+	CREATE TABLE tab_hash_null (a int, b text);
+	ALTER TABLE tab_hash_null REPLICA IDENTITY FULL;
+	INSERT INTO tab_hash_null VALUES (NULL, 'null-1');
+	ALTER PUBLICATION tap_pub_B ADD TABLE tab_hash_null;
+");
+
+# Subscriber table with the hash index. The index is created before the
+# conflict detection slot's xmin is pinned below, so that it can be used to
+# find deleted tuples.
+$node_A->safe_psql(
+	'postgres', "
+	CREATE TABLE tab_hash_null (a int, b text);
+	CREATE INDEX tab_hash_null_idx ON tab_hash_null USING HASH (a);
+	ALTER SUBSCRIPTION $subname_AB REFRESH PUBLICATION;
+");
+$node_A->wait_for_subscription_sync($node_B, $subname_AB);
+
+# Pin the conflict detection slot's xmin, as above.
+$holder = $node_A->background_psql('postgres');
+$holder->query_safe('BEGIN');
+$pinned_xid = $holder->query_safe('SELECT txid_current()');
+
+ok( $node_A->poll_query_until(
+		'postgres',
+		"SELECT xmin = $pinned_xid FROM pg_replication_slots WHERE slot_name = 'pg_conflict_detection'"
+	),
+	"conflict detection slot xmin pinned at $pinned_xid");
+
+# Delete the row locally, then update it on the publisher.
+$node_A->safe_psql('postgres',
+	"DELETE FROM tab_hash_null WHERE b = 'null-1'");
+
+$log_location = -s $node_A->logfile;
+
+$node_B->safe_psql('postgres',
+	"UPDATE tab_hash_null SET b = 'null-1 updated' WHERE b = 'null-1'");
+
+$node_B->wait_for_catchup($subname_AB);
+
+$logfile = slurp_file($node_A->logfile(), $log_location);
+like(
+	$logfile,
+	qr/conflict detected on relation "public.tab_hash_null": conflict=update_deleted.*
+.*DETAIL:.* Could not find the row to be updated: remote row \(null, null-1 updated\), replica identity full \(null, null-1\).
+.*The row to be updated was deleted locally in transaction [0-9]+ at .*/,
+	'update target row with NULL key was deleted in tab_hash_null');
+
+# Clean up
+$holder->query_safe('COMMIT');
+ok($holder->quit, 'release the pinned transaction');
+$node_B->safe_psql('postgres',
+	"ALTER PUBLICATION tap_pub_B DROP TABLE tab_hash_null");
+$node_A->safe_psql('postgres',
+	"ALTER SUBSCRIPTION $subname_AB REFRESH PUBLICATION");
+$node_A->safe_psql('postgres', "DROP TABLE tab_hash_null");
+$node_B->safe_psql('postgres', "DROP TABLE tab_hash_null");
+
+###############################################################################
 # Check that the xmin value of the conflict detection slot can be advanced when
 # the subscription has no tables.
 ###############################################################################
