@@ -397,7 +397,14 @@ dttofmtasc_replace(timestamp * ts, date dDate, int dow, struct tm *tm,
 						 * strftime's month is 0 based, ours is 1 based
 						 */
 						tm->tm_mon -= 1;
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#endif
 						i = strftime(q, *pstr_len, tmp, tm);
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 						if (i == 0)
 							return -1;
 						while (*q)

@@ -522,7 +522,14 @@ _conv(int n, const char *format, char *pt, const char *ptlim)
 {
 	char		buf[INT_STRLEN_MAXIMUM(int) + 1];
 
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#endif
 	sprintf(buf, format, n);
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 	return _add(buf, pt, ptlim);
 }
 
