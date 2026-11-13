@@ -36,6 +36,14 @@
 #include <math.h>
 
 /*
+ * This file contains numerous violations of this warning, which is in the
+ * nature of what it does.  So just disabling it globally is simplest.
+ */
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#endif
+
+/*
  * We used to use the platform's NL_ARGMAX here, but that's a bad idea,
  * first because the point of this module is to remove platform dependencies
  * not perpetuate them, and second because some platforms use ridiculously

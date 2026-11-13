@@ -1074,7 +1074,10 @@ errcode_for_socket_access(void)
 			int			needed; \
 			errno = edata->saved_errno; \
 			va_start(args, n); \
+			_Pragma("GCC diagnostic push") \
+			_Pragma("GCC diagnostic ignored \"-Wformat-nonliteral\"") \
 			needed = appendStringInfoVA(&buf, fmt, args); \
+			_Pragma("GCC diagnostic pop") \
 			va_end(args); \
 			if (needed == 0) \
 				break; \

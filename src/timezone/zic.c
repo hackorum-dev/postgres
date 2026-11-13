@@ -11,6 +11,13 @@
 #include "postgres_fe.h"
 
 /*
+ * Disabled for the whole file, to keep upstream merges simpler.
+ */
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#endif
+
+/*
  * Disable some warnings on MSVC.  See also
  * <https://lists.iana.org/hyperkitty/list/tz@iana.org/thread/PJBVERYHQZEXIREYIHC5OJGZMNVQC2SD/>.
  */
