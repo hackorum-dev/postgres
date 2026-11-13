@@ -10,6 +10,7 @@ tests += {
       'setconfig',
       'alter_system_table',
       'guc_privs',
+      'truncate_heapscan',
     ],
     'regress_args': ['--create-role=regress_authenticated_user_db_sr',
                      '--create-role=regress_authenticated_user_db_ssa',
