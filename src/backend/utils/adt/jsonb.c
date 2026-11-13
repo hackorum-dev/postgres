@@ -1841,37 +1841,43 @@ JsonbExtractScalar(JsonbContainer *jbc, JsonbValue *res)
 	return true;
 }
 
-/*
- * Emit correct, translatable cast error message
- */
+static int
+errmsg_cannot_cast_jsonb(enum jbvType type, const char *sqltype)
+{
+	switch (type)
+	{
+		case jbvNull:
+			return errmsg("cannot cast jsonb null to type %s", sqltype);
+		case jbvString:
+			return errmsg("cannot cast jsonb string to type %s", sqltype);
+		case jbvNumeric:
+			return errmsg("cannot cast jsonb numeric to type %s", sqltype);
+		case jbvBool:
+			return errmsg("cannot cast jsonb boolean to type %s", sqltype);
+		case jbvArray:
+			return errmsg("cannot cast jsonb array to type %s", sqltype);
+		case jbvObject:
+			return errmsg("cannot cast jsonb object to type %s", sqltype);
+		case jbvBinary:
+			return errmsg("cannot cast jsonb array or object to type %s", sqltype);
+		case jbvDatetime:
+			/* rejected by caller */
+			break;
+	}
+	elog(ERROR, "unknown jsonb type: %d", (int) type);
+	return 0;
+}
+
 static Datum
 cannotCastJsonbValue(enum jbvType type, const char *sqltype, Node *escontext)
 {
-	static const struct
-	{
-		enum jbvType type;
-		const char *msg;
-	}
-				messages[] =
-	{
-		{jbvNull, gettext_noop("cannot cast jsonb null to type %s")},
-		{jbvString, gettext_noop("cannot cast jsonb string to type %s")},
-		{jbvNumeric, gettext_noop("cannot cast jsonb numeric to type %s")},
-		{jbvBool, gettext_noop("cannot cast jsonb boolean to type %s")},
-		{jbvArray, gettext_noop("cannot cast jsonb array to type %s")},
-		{jbvObject, gettext_noop("cannot cast jsonb object to type %s")},
-		{jbvBinary, gettext_noop("cannot cast jsonb array or object to type %s")}
-	};
-
-	for (size_t i = 0; i < lengthof(messages); i++)
-		if (messages[i].type == type)
-			ereturn(escontext, (Datum) 0,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg(messages[i].msg, sqltype)));
-
 	/* should be unreachable */
-	elog(ERROR, "unknown jsonb type: %d", (int) type);
-	return (Datum) 0;
+	if (type == jbvDatetime)
+		elog(ERROR, "unexpected jsonb type: %d", (int) type);
+
+	ereturn(escontext, (Datum) 0,
+			(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+			 errmsg_cannot_cast_jsonb(type, sqltype)));
 }
 
 Datum

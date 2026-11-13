@@ -618,14 +618,27 @@ ConfigOptionIsVisible(const struct config_generic *conf)
 		return true;
 }
 
+static char *
+guc_print_int(int val, int flags)
+{
+	if (flags & GUC_SHOW_IN_OCTAL)
+		return psprintf("0%03o", val);
+	else
+		return psprintf("%d", val);
+}
+
+static char *
+guc_print_real(double val)
+{
+	return psprintf("%g", val);
+}
+
 /*
  * Extract fields to show in pg_settings for given variable.
  */
 static void
 GetConfigOptionValues(const struct config_generic *conf, const char **values)
 {
-	char		buffer[256];
-
 	/* first get the generic attributes */
 
 	/* name */
@@ -682,32 +695,21 @@ GetConfigOptionValues(const struct config_generic *conf, const char **values)
 		case PGC_INT:
 			{
 				const struct config_int *lconf = &conf->_int;
-				const char *fmt;
-
-				/* choose display format */
-				if (conf->flags & GUC_SHOW_IN_OCTAL)
-					fmt = "0%03o";
-				else
-					fmt = "%d";
 
 				/* min_val */
-				snprintf(buffer, sizeof(buffer), fmt, lconf->min);
-				values[9] = pstrdup(buffer);
+				values[9] = guc_print_int(lconf->min, conf->flags);
 
 				/* max_val */
-				snprintf(buffer, sizeof(buffer), fmt, lconf->max);
-				values[10] = pstrdup(buffer);
+				values[10] = guc_print_int(lconf->max, conf->flags);
 
 				/* enumvals */
 				values[11] = NULL;
 
 				/* boot_val */
-				snprintf(buffer, sizeof(buffer), fmt, lconf->boot_val);
-				values[12] = pstrdup(buffer);
+				values[12] = guc_print_int(lconf->boot_val, conf->flags);
 
 				/* reset_val */
-				snprintf(buffer, sizeof(buffer), fmt, lconf->reset_val);
-				values[13] = pstrdup(buffer);
+				values[13] = guc_print_int(lconf->reset_val, conf->flags);
 			}
 			break;
 
@@ -716,23 +718,19 @@ GetConfigOptionValues(const struct config_generic *conf, const char **values)
 				const struct config_real *lconf = &conf->_real;
 
 				/* min_val */
-				snprintf(buffer, sizeof(buffer), "%g", lconf->min);
-				values[9] = pstrdup(buffer);
+				values[9] = guc_print_real(lconf->min);
 
 				/* max_val */
-				snprintf(buffer, sizeof(buffer), "%g", lconf->max);
-				values[10] = pstrdup(buffer);
+				values[10] = guc_print_real(lconf->max);
 
 				/* enumvals */
 				values[11] = NULL;
 
 				/* boot_val */
-				snprintf(buffer, sizeof(buffer), "%g", lconf->boot_val);
-				values[12] = pstrdup(buffer);
+				values[12] = guc_print_real(lconf->boot_val);
 
 				/* reset_val */
-				snprintf(buffer, sizeof(buffer), "%g", lconf->reset_val);
-				values[13] = pstrdup(buffer);
+				values[13] = guc_print_real(lconf->reset_val);
 			}
 			break;
 
@@ -825,8 +823,7 @@ GetConfigOptionValues(const struct config_generic *conf, const char **values)
 		has_privs_of_role(GetUserId(), ROLE_PG_READ_ALL_SETTINGS))
 	{
 		values[14] = conf->sourcefile;
-		snprintf(buffer, sizeof(buffer), "%d", conf->sourceline);
-		values[15] = pstrdup(buffer);
+		values[15] = psprintf("%d", conf->sourceline);
 	}
 	else
 	{

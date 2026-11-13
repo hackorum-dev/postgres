@@ -245,77 +245,6 @@ typedef struct NewColumnValue
 	bool		is_generated;	/* is it a GENERATED expression? */
 } NewColumnValue;
 
-/*
- * Error-reporting support for RemoveRelations
- */
-struct dropmsgstrings
-{
-	char		kind;
-	int			nonexistent_code;
-	const char *nonexistent_msg;
-	const char *skipping_msg;
-	const char *nota_msg;
-	const char *drophint_msg;
-};
-
-static const struct dropmsgstrings dropmsgstringarray[] = {
-	{RELKIND_RELATION,
-		ERRCODE_UNDEFINED_TABLE,
-		gettext_noop("table \"%s\" does not exist"),
-		gettext_noop("table \"%s\" does not exist, skipping"),
-		gettext_noop("\"%s\" is not a table"),
-	gettext_noop("Use DROP TABLE to remove a table.")},
-	{RELKIND_SEQUENCE,
-		ERRCODE_UNDEFINED_TABLE,
-		gettext_noop("sequence \"%s\" does not exist"),
-		gettext_noop("sequence \"%s\" does not exist, skipping"),
-		gettext_noop("\"%s\" is not a sequence"),
-	gettext_noop("Use DROP SEQUENCE to remove a sequence.")},
-	{RELKIND_VIEW,
-		ERRCODE_UNDEFINED_TABLE,
-		gettext_noop("view \"%s\" does not exist"),
-		gettext_noop("view \"%s\" does not exist, skipping"),
-		gettext_noop("\"%s\" is not a view"),
-	gettext_noop("Use DROP VIEW to remove a view.")},
-	{RELKIND_MATVIEW,
-		ERRCODE_UNDEFINED_TABLE,
-		gettext_noop("materialized view \"%s\" does not exist"),
-		gettext_noop("materialized view \"%s\" does not exist, skipping"),
-		gettext_noop("\"%s\" is not a materialized view"),
-	gettext_noop("Use DROP MATERIALIZED VIEW to remove a materialized view.")},
-	{RELKIND_INDEX,
-		ERRCODE_UNDEFINED_OBJECT,
-		gettext_noop("index \"%s\" does not exist"),
-		gettext_noop("index \"%s\" does not exist, skipping"),
-		gettext_noop("\"%s\" is not an index"),
-	gettext_noop("Use DROP INDEX to remove an index.")},
-	{RELKIND_COMPOSITE_TYPE,
-		ERRCODE_UNDEFINED_OBJECT,
-		gettext_noop("type \"%s\" does not exist"),
-		gettext_noop("type \"%s\" does not exist, skipping"),
-		gettext_noop("\"%s\" is not a type"),
-	gettext_noop("Use DROP TYPE to remove a type.")},
-	{RELKIND_FOREIGN_TABLE,
-		ERRCODE_UNDEFINED_OBJECT,
-		gettext_noop("foreign table \"%s\" does not exist"),
-		gettext_noop("foreign table \"%s\" does not exist, skipping"),
-		gettext_noop("\"%s\" is not a foreign table"),
-	gettext_noop("Use DROP FOREIGN TABLE to remove a foreign table.")},
-	{RELKIND_PARTITIONED_TABLE,
-		ERRCODE_UNDEFINED_TABLE,
-		gettext_noop("table \"%s\" does not exist"),
-		gettext_noop("table \"%s\" does not exist, skipping"),
-		gettext_noop("\"%s\" is not a table"),
-	gettext_noop("Use DROP TABLE to remove a table.")},
-	{RELKIND_PARTITIONED_INDEX,
-		ERRCODE_UNDEFINED_OBJECT,
-		gettext_noop("index \"%s\" does not exist"),
-		gettext_noop("index \"%s\" does not exist, skipping"),
-		gettext_noop("\"%s\" is not an index"),
-	gettext_noop("Use DROP INDEX to remove an index.")},
-	{'\0', 0, NULL, NULL, NULL, NULL}
-};
-
 /* communication between RemoveRelations and RangeVarCallbackForDropRelation */
 struct DropRelationCallbackState
 {
@@ -1506,8 +1435,6 @@ BuildDescForRelation(const List *columns)
 static void
 DropErrorMsgNonExistent(RangeVar *rel, char rightkind, bool missing_ok)
 {
-	const struct dropmsgstrings *rentry;
-
 	if (rel->schemaname != NULL &&
 		!OidIsValid(LookupNamespaceNoError(rel->schemaname)))
 	{
@@ -1526,25 +1453,137 @@ DropErrorMsgNonExistent(RangeVar *rel, char rightkind, bool missing_ok)
 		return;
 	}
 
-	for (rentry = dropmsgstringarray; rentry->kind != '\0'; rentry++)
+	if (!missing_ok)
 	{
-		if (rentry->kind == rightkind)
+		switch (rightkind)
 		{
-			if (!missing_ok)
-			{
+			case RELKIND_RELATION:
+			case RELKIND_PARTITIONED_TABLE:
 				ereport(ERROR,
-						(errcode(rentry->nonexistent_code),
-						 errmsg(rentry->nonexistent_msg, rel->relname)));
-			}
-			else
-			{
-				ereport(NOTICE, (errmsg(rentry->skipping_msg, rel->relname)));
+						errcode(ERRCODE_UNDEFINED_TABLE),
+						errmsg("table \"%s\" does not exist", rel->relname));
 				break;
-			}
+			case RELKIND_SEQUENCE:
+				ereport(ERROR,
+						errcode(ERRCODE_UNDEFINED_TABLE),
+						errmsg("sequence \"%s\" does not exist", rel->relname));
+				break;
+			case RELKIND_VIEW:
+				ereport(ERROR,
+						errcode(ERRCODE_UNDEFINED_TABLE),
+						errmsg("view \"%s\" does not exist", rel->relname));
+				break;
+			case RELKIND_MATVIEW:
+				ereport(ERROR,
+						errcode(ERRCODE_UNDEFINED_TABLE),
+						errmsg("materialized view \"%s\" does not exist", rel->relname));
+				break;
+			case RELKIND_INDEX:
+			case RELKIND_PARTITIONED_INDEX:
+				ereport(ERROR,
+						errcode(ERRCODE_UNDEFINED_OBJECT),
+						errmsg("index \"%s\" does not exist", rel->relname));
+				break;
+			case RELKIND_COMPOSITE_TYPE:
+				ereport(ERROR,
+						errcode(ERRCODE_UNDEFINED_OBJECT),
+						errmsg("type \"%s\" does not exist", rel->relname));
+				break;
+			case RELKIND_FOREIGN_TABLE:
+				ereport(ERROR,
+						errcode(ERRCODE_UNDEFINED_OBJECT),
+						errmsg("foreign table \"%s\" does not exist", rel->relname));
+				break;
 		}
 	}
+	else
+	{
+		switch (rightkind)
+		{
+			case RELKIND_RELATION:
+			case RELKIND_PARTITIONED_TABLE:
+				ereport(NOTICE,
+						errmsg("table \"%s\" does not exist, skipping", rel->relname));
+				break;
+			case RELKIND_SEQUENCE:
+				ereport(NOTICE,
+						errmsg("sequence \"%s\" does not exist, skipping", rel->relname));
+				break;
+			case RELKIND_VIEW:
+				ereport(NOTICE,
+						errmsg("view \"%s\" does not exist, skipping", rel->relname));
+				break;
+			case RELKIND_MATVIEW:
+				ereport(NOTICE,
+						errmsg("materialized view \"%s\" does not exist, skipping", rel->relname));
+				break;
+			case RELKIND_INDEX:
+			case RELKIND_PARTITIONED_INDEX:
+				ereport(NOTICE,
+						errmsg("index \"%s\" does not exist, skipping", rel->relname));
+				break;
+			case RELKIND_COMPOSITE_TYPE:
+				ereport(NOTICE,
+						errmsg("type \"%s\" does not exist, skipping", rel->relname));
+				break;
+			case RELKIND_FOREIGN_TABLE:
+				ereport(NOTICE,
+						errmsg("foreign table \"%s\" does not exist, skipping", rel->relname));
+				break;
+		}
+	}
+}
 
-	Assert(rentry->kind != '\0');	/* Should be impossible */
+static int
+errmsg_nota(char relkind, const char *relname)
+{
+	switch (relkind)
+	{
+		case RELKIND_RELATION:
+		case RELKIND_PARTITIONED_TABLE:
+			return errmsg("\"%s\" is not a table", relname);
+		case RELKIND_SEQUENCE:
+			return errmsg("\"%s\" is not a sequence", relname);
+		case RELKIND_VIEW:
+			return errmsg("\"%s\" is not a view", relname);
+		case RELKIND_MATVIEW:
+			return errmsg("\"%s\" is not a materialized view", relname);
+		case RELKIND_INDEX:
+		case RELKIND_PARTITIONED_INDEX:
+			return errmsg("\"%s\" is not an index", relname);
+		case RELKIND_COMPOSITE_TYPE:
+			return errmsg("\"%s\" is not a type", relname);
+		case RELKIND_FOREIGN_TABLE:
+			return errmsg("\"%s\" is not a foreign table", relname);
+	}
+	Assert(false);
+	return 0;
+}
+
+static int
+errhint_dropcmd(char relkind)
+{
+	switch (relkind)
+	{
+		case RELKIND_RELATION:
+		case RELKIND_PARTITIONED_TABLE:
+			return errhint("Use DROP TABLE to remove a table.");
+		case RELKIND_SEQUENCE:
+			return errhint("Use DROP SEQUENCE to remove a sequence.");
+		case RELKIND_VIEW:
+			return errhint("Use DROP VIEW to remove a view.");
+		case RELKIND_MATVIEW:
+			return errhint("Use DROP MATERIALIZED VIEW to remove a materialized view.");
+		case RELKIND_INDEX:
+		case RELKIND_PARTITIONED_INDEX:
+			return errhint("Use DROP INDEX to remove an index.");
+		case RELKIND_COMPOSITE_TYPE:
+			return errhint("Use DROP TYPE to remove a type.");
+		case RELKIND_FOREIGN_TABLE:
+			return errhint("Use DROP FOREIGN TABLE to remove a foreign table.");
+	}
+	/* relkind could be something we don't handle here ... */
+	return 0;
 }
 
 /*
@@ -1554,23 +1593,10 @@ DropErrorMsgNonExistent(RangeVar *rel, char rightkind, bool missing_ok)
 static void
 DropErrorMsgWrongType(const char *relname, char wrongkind, char rightkind)
 {
-	const struct dropmsgstrings *rentry;
-	const struct dropmsgstrings *wentry;
-
-	for (rentry = dropmsgstringarray; rentry->kind != '\0'; rentry++)
-		if (rentry->kind == rightkind)
-			break;
-	Assert(rentry->kind != '\0');
-
-	for (wentry = dropmsgstringarray; wentry->kind != '\0'; wentry++)
-		if (wentry->kind == wrongkind)
-			break;
-	/* wrongkind could be something we don't have in our table... */
-
 	ereport(ERROR,
 			(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-			 errmsg(rentry->nota_msg, relname),
-			 (wentry->kind != '\0') ? errhint("%s", _(wentry->drophint_msg)) : 0));
+			 errmsg_nota(rightkind, relname),
+			 errhint_dropcmd(wrongkind)));
 }
 
 /*
