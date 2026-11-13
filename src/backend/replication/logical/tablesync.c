@@ -838,6 +838,20 @@ fetch_remote_table_info(char *nspname, char *relname, LogicalRepRelation *lrel,
 							nspname, relname, pubres->err)));
 
 		/*
+		 * No rows means that none of the subscribed publications publishes
+		 * the table anymore, for instance because a publication was dropped
+		 * or the table was removed from it after the subscription was created
+		 * or refreshed.  Don't take that as "no column list", which would
+		 * copy all columns.
+		 */
+		if (tuplestore_tuple_count(pubres->tuplestore) == 0)
+			ereport(ERROR,
+					errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					errmsg("table \"%s.%s\" is not published by any of the publications of subscription \"%s\"",
+						   nspname, relname, MySubscription->name),
+					errhint("Use ALTER SUBSCRIPTION ... REFRESH PUBLICATION to remove the table from the subscription, or publish the table again."));
+
+		/*
 		 * We don't support the case where the column list is different for
 		 * the same table when combining publications. See comments atop
 		 * fetch_relation_list. So there should be only one row returned.
@@ -1029,6 +1043,20 @@ fetch_remote_table_info(char *nspname, char *relname, LogicalRepRelation *lrel,
 			ereport(ERROR,
 					(errmsg("could not fetch table WHERE clause info for table \"%s.%s\" from publisher: %s",
 							nspname, relname, res->err)));
+
+		/*
+		 * No rows means that none of the subscribed publications publishes
+		 * the table anymore.  As the column-list query above did return rows,
+		 * this can only happen if a publication was dropped, or the table was
+		 * removed from it, after that query.  Don't take that as "no row
+		 * filter", which would copy all rows.
+		 */
+		if (tuplestore_tuple_count(res->tuplestore) == 0)
+			ereport(ERROR,
+					errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					errmsg("table \"%s.%s\" is not published by any of the publications of subscription \"%s\"",
+						   nspname, relname, MySubscription->name),
+					errhint("Use ALTER SUBSCRIPTION ... REFRESH PUBLICATION to remove the table from the subscription, or publish the table again."));
 
 		/*
 		 * Multiple row filter expressions for the same table will be combined
