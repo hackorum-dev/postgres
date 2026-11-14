@@ -303,6 +303,11 @@ $node->issues_sql_like(
 	],
 	qr/statement:\ REINDEX INDEX "s'4"."i'4";/,
 	'parallel reindexdb for index with quotes in name');
+# The schema name given to REINDEX SCHEMA must be quoted.
+$node->issues_sql_like(
+	[ 'reindexdb', '--schema' => q{s'4}, 'postgres' ],
+	qr/statement: REINDEX SCHEMA "s'4";/,
+	'reindexdb for schema with quotes in name');
 # Note that the ordering of the commands is not stable, so the second
 # command for s2.t2 is not checked after.
 $node->issues_sql_like(
