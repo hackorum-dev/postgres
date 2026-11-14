@@ -217,17 +217,26 @@ update_slotsync_skip_stats(SlotSyncSkipReason skip_reason)
  *
  * If no update was needed (the data of the remote slot is the same as the
  * local slot) return false, otherwise true.
+ *
+ * *found_consistent_snapshot will be true iff the remote slot's LSN or xmin is
+ * synced in this call, and decoding from the corresponding LSN's can reach a
+ * consistent snapshot.
  */
 static bool
-update_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid)
+update_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid,
+						 bool *found_consistent_snapshot)
 {
 	ReplicationSlot *slot = MyReplicationSlot;
 	bool		updated_xmin_or_lsn = false;
 	bool		updated_config = false;
+	bool		found_consistent = false;
 	SlotSyncSkipReason skip_reason = SS_SKIP_NONE;
 	XLogRecPtr	latestFlushPtr = GetStandbyFlushRecPtr(NULL);
 
 	Assert(slot->data.invalidated == RS_INVAL_NONE);
+
+	if (found_consistent_snapshot)
+		*found_consistent_snapshot = false;
 
 	/*
 	 * Make sure that concerned WAL is received and flushed before syncing
@@ -335,16 +344,16 @@ update_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid)
 			SpinLockRelease(&slot->mutex);
 
 			updated_xmin_or_lsn = true;
+			found_consistent = true;
 		}
 		else
 		{
-			bool		found_consistent_snapshot;
 			XLogRecPtr	old_confirmed_lsn = slot->data.confirmed_flush;
 			XLogRecPtr	old_restart_lsn = slot->data.restart_lsn;
 			TransactionId old_catalog_xmin = slot->data.catalog_xmin;
 
 			LogicalSlotAdvanceAndCheckSnapState(remote_slot->confirmed_lsn,
-												&found_consistent_snapshot);
+												&found_consistent);
 
 			/* Sanity check */
 			if (slot->data.confirmed_flush != remote_slot->confirmed_lsn)
@@ -359,7 +368,7 @@ update_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid)
 			 * If we can't reach a consistent snapshot, the slot won't be
 			 * persisted. See update_and_persist_local_synced_slot().
 			 */
-			if (!found_consistent_snapshot)
+			if (!found_consistent)
 			{
 				Assert(MyReplicationSlot->data.persistency == RS_TEMPORARY);
 
@@ -382,6 +391,18 @@ update_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid)
 								   old_catalog_xmin != slot->data.catalog_xmin);
 		}
 	}
+
+	/*
+	 * A temporary slot is not sync-ready until we find that decoding from its
+	 * restart_lsn reaches a consistent point. That's the case not only when
+	 * we failed to find one above, but also when the remote slot has not
+	 * advanced beyond the local slot and so we didn't attempt to sync it.
+	 */
+	if (slot->data.persistency == RS_TEMPORARY && !found_consistent)
+		skip_reason = SS_SKIP_NO_CONSISTENT_SNAPSHOT;
+
+	if (found_consistent_snapshot)
+		*found_consistent_snapshot = found_consistent;
 
 	/* Update slot sync skip stats */
 	update_slotsync_skip_stats(skip_reason);
@@ -687,21 +708,25 @@ update_and_persist_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 									 bool *slot_persistence_pending)
 {
 	ReplicationSlot *slot = MyReplicationSlot;
+	bool		found_consistent_snapshot;
 
 	/* Slotsync skip stats are handled in function update_local_synced_slot() */
-	(void) update_local_synced_slot(remote_slot, remote_dbid);
+	(void) update_local_synced_slot(remote_slot, remote_dbid,
+									&found_consistent_snapshot);
 
 	/*
-	 * Check if the slot cannot be synchronized. Refer to the comment atop the
-	 * file for details on this check.
+	 * Persist the slot only if this cycle has synced it to the remote slot
+	 * and found that decoding from its restart_lsn reaches a consistent
+	 * point. Refer to the comment atop the file for details on this check.
 	 */
-	if (slot->slotsync_skip_reason != SS_SKIP_NONE)
+	if (!found_consistent_snapshot)
 	{
 		/*
 		 * We reach this point when the remote slot didn't catch up to locally
 		 * reserved position, or it cannot reach the consistent point from the
 		 * restart_lsn, or the WAL prior to the remote confirmed flush LSN has
-		 * not been received and flushed.
+		 * not been received and flushed, or there was nothing to sync because
+		 * the remote slot has not advanced beyond the local slot.
 		 *
 		 * We do not drop the slot because the restart_lsn and confirmed_lsn
 		 * can be ahead of the current location when recreating the slot in
@@ -717,6 +742,8 @@ update_and_persist_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 
 		return false;
 	}
+
+	Assert(slot->slotsync_skip_reason == SS_SKIP_NONE);
 
 	ReplicationSlotPersist();
 
@@ -840,7 +867,8 @@ synchronize_one_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 										   LSN_FORMAT_ARGS(slot->data.confirmed_flush),
 										   LSN_FORMAT_ARGS(remote_slot->confirmed_lsn)));
 
-			slot_updated = update_local_synced_slot(remote_slot, remote_dbid);
+			slot_updated = update_local_synced_slot(remote_slot, remote_dbid,
+													NULL);
 		}
 	}
 	/* Otherwise create the slot first. */
