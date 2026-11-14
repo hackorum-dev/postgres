@@ -25,6 +25,7 @@
 #include "nodes/value.h"
 #include "parser/scansup.h"
 #include "utils/guc.h"
+#include "utils/memutils.h"
 #include "utils/varlena.h"
 
 PG_MODULE_MAGIC_EXT(
@@ -94,6 +95,14 @@ static const struct config_enum_entry loglevel_options[] = {
 	{"log", LOG, false},
 	{NULL, 0, false}
 };
+
+/* State belonging to a query selected for auto_explain. */
+typedef struct AutoExplainQueryState
+{
+	int			nesting_level;
+} AutoExplainQueryState;
+
+static int	auto_explain_queryDesc_id;
 
 /* Current nesting depth of ExecutorRun calls */
 static int	nesting_level = 0;
@@ -309,6 +318,8 @@ _PG_init(void)
 
 	MarkGUCPrefixReserved("auto_explain");
 
+	auto_explain_queryDesc_id = GetQueryDescExtensionId("auto_explain");
+
 	/* Install hooks. */
 	prev_ExecutorStart = ExecutorStart_hook;
 	ExecutorStart_hook = explain_ExecutorStart;
@@ -346,6 +357,17 @@ explain_ExecutorStart(QueryDesc *queryDesc, int eflags)
 
 	if (auto_explain_enabled())
 	{
+		AutoExplainQueryState *qstate;
+
+		/*
+		 * A cursor can outlive the current top-level statement.  Remember
+		 * that we selected this query, independently of later sampling.
+		 */
+		qstate = MemoryContextAlloc(GetMemoryChunkContext(queryDesc),
+									sizeof(AutoExplainQueryState));
+		qstate->nesting_level = nesting_level;
+		SetQueryDescExtensionState(queryDesc, auto_explain_queryDesc_id, qstate);
+
 		/* We're always interested in runtime */
 		queryDesc->query_instr_options |= INSTRUMENT_TIMER;
 
@@ -420,7 +442,13 @@ explain_ExecutorFinish(QueryDesc *queryDesc)
 static void
 explain_ExecutorEnd(QueryDesc *queryDesc)
 {
-	if (queryDesc->query_instr && auto_explain_enabled())
+	AutoExplainQueryState *qstate = GetQueryDescExtensionState(queryDesc,
+															  auto_explain_queryDesc_id);
+
+	/* Instrumentation requested by another extension is not a sampling decision. */
+	if (queryDesc->query_instr && qstate != NULL &&
+		auto_explain_log_min_duration >= 0 &&
+		(qstate->nesting_level == 0 || auto_explain_log_nested_statements))
 	{
 		MemoryContext oldcxt;
 		double		msec;

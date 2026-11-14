@@ -6,7 +6,7 @@ OBJS = \
 	auto_explain.o
 PGFILEDESC = "auto_explain - logging facility for execution plans"
 
-EXTRA_INSTALL = contrib/pg_overexplain
+EXTRA_INSTALL = contrib/pg_overexplain contrib/pg_stat_statements
 REGRESS = alter_reset extension_options
 
 TAP_TESTS = 1
