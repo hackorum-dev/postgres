@@ -210,6 +210,7 @@ PostgreSQL documentation
       <listitem>
        <para>
         Reindex <replaceable class="parameter">schema</replaceable> only.
+        (This name is processed as a double-quoted identifier.)
         Multiple schemas can be reindexed by writing multiple
         <option>-S</option> switches.
        </para>

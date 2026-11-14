@@ -569,7 +569,7 @@ gen_reindex_command(PGconn *conn, ReindexType type, const char *name,
 			appendQualifiedRelation(sql, name, conn, echo);
 			break;
 		case REINDEX_SCHEMA:
-			appendPQExpBufferStr(sql, name);
+			appendPQExpBufferStr(sql, fmtIdEnc(name, PQclientEncoding(conn)));
 			break;
 	}
 
