@@ -812,4 +812,15 @@ from (values (1, 1), (2, 2)) as t (a, b)
 group by rollup(a, ab)
 order by 1, 2;
 
+-- check that a repeated expression in ROLLUP sorts by the output
+-- that only some grouping sets null
+set enable_hashagg = false;
+
+explain (costs off)
+select i as ai1, i as ai2 from generate_series(1,3) i
+  group by ai2, rollup(ai1) order by ai1, ai2;
+
+select i as ai1, i as ai2 from generate_series(1,3) i
+  group by ai2, rollup(ai1) order by ai1, ai2;
+
 -- end
