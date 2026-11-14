@@ -56,6 +56,7 @@ typedef struct
 	List	  **func_grouped_rels;
 	int			sublevels_up;
 	bool		in_agg_direct_args;
+	Index		preferred_sortref;	/* this tlist entry's sortref, or 0 */
 } substitute_grouped_columns_context;
 
 static int	check_agg_arguments(ParseState *pstate,
@@ -72,6 +73,9 @@ static Node *substitute_grouped_columns(Node *node, ParseState *pstate, Query *q
 										List **func_grouped_rels);
 static Node *substitute_grouped_columns_mutator(Node *node,
 												substitute_grouped_columns_context *context);
+static Node *match_grouped_column(Node *node, List *groupClauses,
+								  substitute_grouped_columns_context *context,
+								  bool var_match);
 static void finalize_grouping_exprs(Node *node, ParseState *pstate, Query *qry,
 									List *groupClauses, bool hasJoinRTEs,
 									bool have_non_var_grouping);
@@ -1366,17 +1370,102 @@ substitute_grouped_columns(Node *node, ParseState *pstate, Query *qry,
 	context.func_grouped_rels = func_grouped_rels;
 	context.sublevels_up = 0;
 	context.in_agg_direct_args = false;
+	context.preferred_sortref = 0;
 	return substitute_grouped_columns_mutator(node, &context);
+}
+
+/*
+ * If node matches a GROUP BY item, return a Var for that grouping column.
+ * Otherwise return NULL.
+ *
+ * Several items can match one expression.  Use the item whose sortref is
+ * context->preferred_sortref.  Otherwise use the first match.
+ *
+ * var_match is true when every group item is a Var.  Two Vars then match on
+ * varno and varattno.  Otherwise the expressions must be equal().
+ */
+static Node *
+match_grouped_column(Node *node, List *groupClauses,
+					 substitute_grouped_columns_context *context,
+					 bool var_match)
+{
+	ListCell   *gl;
+	int			attnum = 0;
+	int			match_attnum = 0;
+	Index		match_ref = 0;
+	bool		matched = false;
+
+	foreach(gl, groupClauses)
+	{
+		TargetEntry *tle = (TargetEntry *) lfirst(gl);
+
+		attnum++;
+
+		if (var_match)
+		{
+			Var		   *var;
+			Var		   *gvar;
+
+			Assert(IsA(node, Var));
+			var = (Var *) node;
+			gvar = (Var *) tle->expr;
+
+			if (!(IsA(gvar, Var) &&
+				  gvar->varno == var->varno &&
+				  gvar->varattno == var->varattno &&
+				  gvar->varlevelsup == 0))
+				continue;
+		}
+		else if (!equal(node, tle->expr))
+			continue;
+
+		if (context->preferred_sortref != 0 &&
+			tle->ressortgroupref == context->preferred_sortref)
+		{
+			match_attnum = attnum;
+			match_ref = tle->ressortgroupref;
+			matched = true;
+			break;
+		}
+		if (!matched)
+		{
+			match_attnum = attnum;
+			match_ref = tle->ressortgroupref;
+			matched = true;
+		}
+	}
+
+	if (!matched)
+		return NULL;
+
+	return (Node *) buildGroupedVar(match_attnum, match_ref, context);
 }
 
 static Node *
 substitute_grouped_columns_mutator(Node *node,
 								   substitute_grouped_columns_context *context)
 {
-	ListCell   *gl;
-
 	if (node == NULL)
 		return NULL;
+
+	/*
+	 * Bind a repeated grouping expression to this targetlist entry's own
+	 * sortref.  Two outputs of one expression can be nulled by different
+	 * grouping sets.  The first matching group clause can be the other
+	 * column, and then this column loses its grouping nulling bit.
+	 */
+	if (IsA(node, TargetEntry) && context->sublevels_up == 0)
+	{
+		TargetEntry *tle = (TargetEntry *) node;
+		TargetEntry *newtle = flatCopyTargetEntry(tle);
+		Index		save_sortref = context->preferred_sortref;
+
+		context->preferred_sortref = tle->ressortgroupref;
+		newtle->expr = (Expr *)
+			substitute_grouped_columns_mutator((Node *) tle->expr, context);
+		context->preferred_sortref = save_sortref;
+		return (Node *) newtle;
+	}
 
 	if (IsA(node, Aggref))
 	{
@@ -1434,7 +1523,7 @@ substitute_grouped_columns_mutator(Node *node,
 	if (context->have_non_var_grouping)
 	{
 		List	   *groupClauses;
-		int			attnum = 0;
+		Node	   *match;
 
 		/* Within a subquery, we need a mutated version of the groupClauses */
 		if (context->sublevels_up == 0)
@@ -1443,19 +1532,9 @@ substitute_grouped_columns_mutator(Node *node,
 			groupClauses = list_nth(context->groupClauseSubLevels,
 									context->sublevels_up - 1);
 
-		foreach(gl, groupClauses)
-		{
-			TargetEntry *tle = (TargetEntry *) lfirst(gl);
-
-			attnum++;
-			if (equal(node, tle->expr))
-			{
-				/* acceptable, replace it with a GROUP Var */
-				return (Node *) buildGroupedVar(attnum,
-												tle->ressortgroupref,
-												context);
-			}
-		}
+		match = match_grouped_column(node, groupClauses, context, false);
+		if (match)
+			return match;
 	}
 
 	/*
@@ -1488,25 +1567,12 @@ substitute_grouped_columns_mutator(Node *node,
 		 */
 		if (!context->have_non_var_grouping)
 		{
-			int			attnum = 0;
+			Node	   *match;
 
-			foreach(gl, context->groupClauses)
-			{
-				TargetEntry *tle = (TargetEntry *) lfirst(gl);
-				Var		   *gvar = (Var *) tle->expr;
-
-				attnum++;
-				if (IsA(gvar, Var) &&
-					gvar->varno == var->varno &&
-					gvar->varattno == var->varattno &&
-					gvar->varlevelsup == 0)
-				{
-					/* acceptable, replace it with a GROUP Var */
-					return (Node *) buildGroupedVar(attnum,
-													tle->ressortgroupref,
-													context);
-				}
-			}
+			match = match_grouped_column(node, context->groupClauses,
+										 context, true);
+			if (match)
+				return match;
 		}
 
 		/*
@@ -1627,6 +1693,7 @@ finalize_grouping_exprs(Node *node, ParseState *pstate, Query *qry,
 	context.func_grouped_rels = NULL;
 	context.sublevels_up = 0;
 	context.in_agg_direct_args = false;
+	context.preferred_sortref = 0;
 	finalize_grouping_exprs_walker(node, &context);
 }
 
