@@ -21,7 +21,7 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-SET [ SESSION | LOCAL ] SESSION AUTHORIZATION <replaceable class="parameter">user_name</replaceable>
+SET [ SESSION | LOCAL ] SESSION AUTHORIZATION {<replaceable class="parameter">user_name</replaceable> | '<replaceable class="parameter">user_name</replaceable>'}
 SET [ SESSION | LOCAL ] SESSION AUTHORIZATION DEFAULT
 RESET SESSION AUTHORIZATION
 </synopsis>
