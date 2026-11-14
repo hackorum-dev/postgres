@@ -22,6 +22,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 
 #include "miscadmin.h"
 #ifdef PROFILE_PID_DIR
@@ -154,6 +155,13 @@ proc_exit(int code)
 
 	elog(DEBUG3, "exit(%d)", code);
 
+if (AmStartupProcess() && code == 0)
+{
+struct timeval current_time;
+pg_usleep(250000);
+do gettimeofday(&current_time, NULL); while ((current_time.tv_usec / 1000) % 100 >= 2);
+elog(LOG, "!!!proc_exit| delayed exit(0) for startup process");
+}
 	exit(code);
 }
 

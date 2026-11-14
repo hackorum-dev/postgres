@@ -68,6 +68,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <time.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <ctype.h>
 #include <sys/stat.h>
@@ -2253,6 +2254,16 @@ handle_pm_child_exit_signal(SIGNAL_ARGS)
 	SetLatch(MyLatch);
 }
 
+static pid_t
+_waitpid(pid_t pid, int *status, int options)
+{
+pid_t ret;
+elog(LOG, "!!!waitpid| pid: %d", pid);
+ret = waitpid(pid, status, options);
+elog(LOG, "!!!waitpid| ret: %d, status: %d", ret, *status);
+return ret;
+}
+
 /*
  * Cleanup after a child process dies.
  */
@@ -2267,7 +2278,7 @@ process_pm_child_exit(void)
 	ereport(DEBUG4,
 			(errmsg_internal("reaping dead processes")));
 
-	while ((pid = waitpid(-1, &exitstatus, WNOHANG)) > 0)
+	while ((pid = _waitpid(-1, &exitstatus, WNOHANG)) > 0)
 	{
 		PMChild    *pmchild;
 
@@ -3518,6 +3529,13 @@ signal_child(PMChild *pmchild, int signal)
 							 signal, pm_signame(signal),
 							 GetBackendTypeDesc(pmchild->bkend_type),
 							 (int) pmchild->pid)));
+
+if (pmchild == StartupPMChild && signal == SIGQUIT)
+{
+struct timeval current_time;
+do gettimeofday(&current_time, NULL); while ((current_time.tv_usec / 1000) % 100 >= 2);
+elog(LOG, "!!!signal_child| delayed signal %d/%s to startup process with pid %d", signal, pm_signame(signal), (int) pmchild->pid);
+}
 
 	if (kill(pid, signal) < 0)
 		elog(DEBUG3, "kill(%ld,%d) failed: %m", (long) pid, signal);
