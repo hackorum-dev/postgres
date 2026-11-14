@@ -301,4 +301,129 @@ like(
 	qr/without epoch must be greater than or equal to 3/,
 	"invalid recovery_target_xid (lower bound check)");
 
+# recovery_target = 'immediate' has to work when WAL ends where consistency
+# is reached, with no later record to stop at.  The restore_command set up
+# by enable_restoring() finds nothing, so recovery only has the WAL in
+# pg_wal.  In standby mode there is nothing to stream from either, and
+# recovery must not wait for more WAL.
+sub test_immediate_at_end_of_wal
+{
+	my ($test_name, $node, $standby, $num_rows) = @_;
+
+	$test_name .= $standby ? ', standby mode' : ', archive recovery';
+
+	$node->enable_restoring($node, $standby);
+	$node->append_conf(
+		'postgresql.conf', "recovery_target = 'immediate'
+recovery_target_action = 'promote'");
+	if (!$node->start(fail_ok => 1))
+	{
+		fail("recovery to immediate target: $test_name");
+		return;
+	}
+	if (!$node->poll_query_until(
+			'postgres', "SELECT NOT pg_is_in_recovery()"))
+	{
+		fail("recovery to immediate target: $test_name");
+		return;
+	}
+
+	ok( $node->log_contains(
+			"recovery stopping after reaching consistency"),
+		"recovery to immediate target: $test_name");
+	is($node->safe_psql('postgres', "SELECT count(*) FROM tab_imm"),
+		$num_rows, "check contents after recovery: $test_name");
+	$node->stop;
+}
+
+# Data directory left by a crash, and by a clean shutdown.  Consistency is
+# only reached when pg_wal runs out; after the clean shutdown there is no
+# record to replay at all.
+foreach my $stop_mode ('immediate', 'fast')
+{
+	foreach my $standby (0, 1)
+	{
+		my $node = PostgreSQL::Test::Cluster->new(
+			"immediate_stop_${stop_mode}_$standby");
+		$node->init(allows_streaming => 1);
+		$node->start;
+		$node->safe_psql('postgres',
+			"CREATE TABLE tab_imm AS SELECT generate_series(1, 10) AS a");
+		$node->stop($stop_mode);
+
+		test_immediate_at_end_of_wal("after $stop_mode shutdown",
+			$node, $standby, 10);
+	}
+}
+
+# Backups taken from a standby, with WAL ending at the backup end point.
+# The backup end point is the standby's minRecoveryPoint.
+my $node_imm_primary = PostgreSQL::Test::Cluster->new('immediate_primary');
+$node_imm_primary->init(allows_streaming => 1);
+$node_imm_primary->append_conf('postgresql.conf', 'autovacuum = off');
+$node_imm_primary->start;
+$node_imm_primary->backup('imm_backup');
+
+my $node_imm_standby = PostgreSQL::Test::Cluster->new('immediate_standby');
+$node_imm_standby->init_from_backup($node_imm_primary, 'imm_backup',
+	has_streaming => 1);
+$node_imm_standby->append_conf(
+	'postgresql.conf', 'bgwriter_lru_maxpages = 0
+wal_retrieve_retry_interval = 100ms');
+$node_imm_standby->start;
+
+# First a backup without any WAL to replay: stop the primary to make its
+# shutdown checkpoint the last record, and have the standby do a
+# restartpoint at it.
+$node_imm_primary->safe_psql('postgres',
+	"CREATE TABLE tab_imm AS SELECT generate_series(1, 10) AS a");
+$node_imm_primary->stop;
+
+my ($stdout_ctl, $stderr_ctl) =
+  run_command([ 'pg_controldata', $node_imm_primary->data_dir ]);
+$stdout_ctl =~ /^Latest checkpoint location:\s*(\S+)$/m
+  or die "could not find checkpoint location in pg_controldata output";
+my $shutdown_lsn = $1;
+$node_imm_standby->poll_query_until('postgres',
+	"SELECT pg_last_wal_replay_lsn() > '$shutdown_lsn'::pg_lsn")
+  or die "Timed out while waiting for standby to replay shutdown checkpoint";
+$node_imm_standby->safe_psql('postgres', "CHECKPOINT");
+$node_imm_standby->backup('imm_backup_no_redo');
+
+# Then a backup where the last record is not a commit.  The restartpoint
+# done for the backup sets minRecoveryPoint to the end of the replayed WAL,
+# as long as it has a page to flush that is newer than the old value.  Kill
+# the primary before the backup, so that no more WAL can arrive.
+$node_imm_primary->start;
+$node_imm_primary->safe_psql(
+	'postgres', qq{
+CHECKPOINT;
+INSERT INTO tab_imm VALUES (11);});
+
+# The restore point record is not flushed by its creation, wait for it
+# explicitly.
+my $imm_last_lsn = $node_imm_primary->safe_psql('postgres',
+	"SELECT pg_create_restore_point('imm_last_record')");
+$node_imm_primary->wait_for_catchup($node_imm_standby, 'replay',
+	$imm_last_lsn);
+$node_imm_primary->stop('immediate');
+$node_imm_standby->backup('imm_backup_redo');
+$node_imm_standby->stop;
+
+foreach my $standby (0, 1)
+{
+	my $node =
+	  PostgreSQL::Test::Cluster->new("immediate_backup_no_redo_$standby");
+	$node->init_from_backup($node_imm_standby, 'imm_backup_no_redo');
+	unlink($node->data_dir . '/standby.signal');
+	test_immediate_at_end_of_wal('standby backup without redo',
+		$node, $standby, 10);
+
+	$node = PostgreSQL::Test::Cluster->new("immediate_backup_redo_$standby");
+	$node->init_from_backup($node_imm_standby, 'imm_backup_redo');
+	unlink($node->data_dir . '/standby.signal');
+	test_immediate_at_end_of_wal('standby backup ending in a restore point',
+		$node, $standby, 11);
+}
+
 done_testing();
