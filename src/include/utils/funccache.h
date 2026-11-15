@@ -75,9 +75,10 @@ typedef struct CachedFunctionHashKey
 	Oid			trigOid;
 
 	/*
-	 * We must include the input collation as part of the hash key too,
-	 * because we have to generate different plans (with different Param
-	 * collations) for different collation settings.
+	 * Usually we must include the input collation as part of the hash key
+	 * too, because we have to generate different plans (with different Param
+	 * collations) for different collation settings.  Languages whose compiled
+	 * form doesn't depend on the collation can ask to leave this zero.
 	 */
 	Oid			inputCollation;
 
@@ -123,6 +124,7 @@ extern CachedFunction *cached_function_compile(FunctionCallInfo fcinfo,
 											   CachedFunctionDeleteCallback dcallback,
 											   Size cacheEntrySize,
 											   bool includeResultType,
+											   bool includeInputCollation,
 											   bool forValidator);
 extern void cfunc_resolve_polymorphic_argtypes(int numargs,
 											   Oid *argtypes,

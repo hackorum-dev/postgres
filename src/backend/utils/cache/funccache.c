@@ -252,6 +252,7 @@ compute_function_hashkey(FunctionCallInfo fcinfo,
 						 CachedFunctionHashKey *hashkey,
 						 Size cacheEntrySize,
 						 bool includeResultType,
+						 bool includeInputCollation,
 						 bool forValidator)
 {
 	/* Make sure pad bytes within fixed part of the struct are zero */
@@ -286,8 +287,9 @@ compute_function_hashkey(FunctionCallInfo fcinfo,
 		hashkey->trigOid = trigdata->tg_trigger->tgoid;
 	}
 
-	/* get input collation, if known */
-	hashkey->inputCollation = fcinfo->fncollation;
+	/* get input collation, if known and wanted */
+	if (includeInputCollation)
+		hashkey->inputCollation = fcinfo->fncollation;
 
 	/*
 	 * We include only input arguments in the hash key, since output argument
@@ -487,6 +489,10 @@ delete_function(CachedFunction *func)
  * If includeResultType is true and the function returns composite,
  * include the actual result descriptor in the cache lookup key.
  *
+ * If includeInputCollation is true, include the call's input collation in
+ * the cache lookup key.  Languages whose compiled form doesn't depend on the
+ * collation should pass false, to avoid building redundant cache entries.
+ *
  * If forValidator is true, we're only compiling for validation purposes,
  * and so some checks are skipped.  In this case the passed fcinfo need
  * only provide the function OID and indications of whether the function
@@ -507,6 +513,7 @@ cached_function_compile(FunctionCallInfo fcinfo,
 						CachedFunctionDeleteCallback dcallback,
 						Size cacheEntrySize,
 						bool includeResultType,
+						bool includeInputCollation,
 						bool forValidator)
 {
 	Oid			funcOid = fcinfo->flinfo->fn_oid;
@@ -535,7 +542,7 @@ recheck:
 		/* Compute hashkey using function signature and actual arg types */
 		compute_function_hashkey(fcinfo, procStruct, &hashkey,
 								 cacheEntrySize, includeResultType,
-								 forValidator);
+								 includeInputCollation, forValidator);
 		hashkey_valid = true;
 
 		/* And do the lookup */
@@ -591,7 +598,7 @@ recheck:
 		if (!hashkey_valid)
 			compute_function_hashkey(fcinfo, procStruct, &hashkey,
 									 cacheEntrySize, includeResultType,
-									 forValidator);
+									 includeInputCollation, forValidator);
 
 		/*
 		 * Create the new function struct, if not done already.  The function

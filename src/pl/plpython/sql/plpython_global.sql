@@ -54,3 +54,14 @@ return SD["n"]
 $$ LANGUAGE plpython3u;
 
 SELECT static_test_coll('a');
+
+-- Python global variables live in the compiled function, so this checks
+-- that we compile only once no matter what the input collation is
+CREATE FUNCTION global_var_coll(t text) RETURNS int4
+AS $$
+global n
+n = globals().get("n", 0) + 1
+return n
+$$ LANGUAGE plpython3u;
+
+SELECT global_var_coll('a'), global_var_coll('a' COLLATE "C");

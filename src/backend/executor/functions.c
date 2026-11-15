@@ -605,6 +605,7 @@ init_sql_fcache(FunctionCallInfo fcinfo, bool lazyEvalOK)
 								sql_delete_callback,
 								sizeof(SQLFunctionHashEntry),
 								true,
+								true,
 								false);
 
 	/*
