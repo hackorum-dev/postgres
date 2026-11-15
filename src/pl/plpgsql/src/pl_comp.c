@@ -122,6 +122,7 @@ plpgsql_compile(FunctionCallInfo fcinfo, bool forValidator)
 								plpgsql_delete_callback,
 								sizeof(PLpgSQL_function),
 								false,
+								true,
 								forValidator);
 
 	/*

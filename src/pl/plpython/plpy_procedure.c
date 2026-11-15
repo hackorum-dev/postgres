@@ -24,7 +24,7 @@
 /*
  * SD dictionaries, one per function (and per relation, for DML triggers).
  * funccache.c may build several PLyProcedures for one function, for example
- * one per input collation, and they must all see the same SD.
+ * one per trigger or per result rowtype, and they must all see the same SD.
  */
 typedef struct PLyStaticsKey
 {
@@ -129,7 +129,9 @@ PLy_procedure_get(FunctionCallInfo fcinfo, bool forValidator)
 	 * functions, make the hash key depend on the result of
 	 * get_call_result_type() when that's composite, so that we can safely
 	 * assume that we'll build a new hash entry if the composite rowtype
-	 * changes.
+	 * changes.  Nothing we build depends on the input collation, so leave
+	 * that out of the hash key; otherwise we'd compile the function again for
+	 * each collation it's called with.
 	 */
 	proc = (PLyProcedure *)
 		cached_function_compile(fcinfo,
@@ -138,6 +140,7 @@ PLy_procedure_get(FunctionCallInfo fcinfo, bool forValidator)
 								PLy_delete_callback,
 								sizeof(PLyProcedure),
 								true,
+								false,
 								forValidator);
 
 	/*
