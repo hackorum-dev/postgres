@@ -10022,7 +10022,15 @@ get_rule_expr(Node *node, deparse_context *context,
 					ReleaseTupleDesc(tupdesc);
 				}
 				appendStringInfoChar(buf, ')');
-				if (rowexpr->row_format == COERCE_EXPLICIT_CAST)
+
+				/*
+				 * Function and operator arguments need their actual types
+				 * preserved so that the same overload is selected on reparse.
+				 * A bare ROW() has type RECORD, even when the stored RowExpr
+				 * was implicitly coerced to a named composite type.
+				 */
+				if (rowexpr->row_format == COERCE_EXPLICIT_CAST ||
+					(showimplicit && rowexpr->row_typeid != RECORDOID))
 					appendStringInfo(buf, "::%s",
 									 format_type_with_typemod(rowexpr->row_typeid, -1));
 			}
