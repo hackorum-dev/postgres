@@ -135,6 +135,37 @@ REFRESH MATERIALIZED VIEW mvtest_mv;
 REFRESH MATERIALIZED VIEW CONCURRENTLY mvtest_mv;
 DROP TABLE mvtest_foo CASCADE;
 
+-- duplicate rows must be detected even if they have NULLs outside the
+-- unique-key columns
+CREATE TABLE mvtest_foo(a text, b text);
+INSERT INTO mvtest_foo VALUES ('test', NULL);
+CREATE MATERIALIZED VIEW mvtest_mv AS SELECT * FROM mvtest_foo;
+CREATE UNIQUE INDEX ON mvtest_mv(a);
+INSERT INTO mvtest_foo VALUES ('test', NULL);
+REFRESH MATERIALIZED VIEW mvtest_mv;
+REFRESH MATERIALIZED VIEW CONCURRENTLY mvtest_mv;
+SELECT * FROM mvtest_mv;
+DROP TABLE mvtest_foo CASCADE;
+
+-- but duplicate rows with a NULL in a unique-key column are allowed
+CREATE TABLE mvtest_foo(a int, b int);
+INSERT INTO mvtest_foo VALUES (NULL, NULL);
+CREATE MATERIALIZED VIEW mvtest_mv AS SELECT * FROM mvtest_foo;
+CREATE UNIQUE INDEX ON mvtest_mv(a);
+INSERT INTO mvtest_foo VALUES (NULL, NULL);
+REFRESH MATERIALIZED VIEW CONCURRENTLY mvtest_mv;
+SELECT * FROM mvtest_mv;
+DROP TABLE mvtest_foo CASCADE;
+
+CREATE TABLE mvtest_foo(a text, b text);
+INSERT INTO mvtest_foo VALUES ('test', NULL);
+CREATE MATERIALIZED VIEW mvtest_mv AS SELECT * FROM mvtest_foo;
+CREATE UNIQUE INDEX ON mvtest_mv(a, b);
+INSERT INTO mvtest_foo VALUES ('test', NULL);
+REFRESH MATERIALIZED VIEW CONCURRENTLY mvtest_mv;
+SELECT * FROM mvtest_mv;
+DROP TABLE mvtest_foo CASCADE;
+
 -- make sure that all columns covered by unique indexes works
 CREATE TABLE mvtest_foo(a, b, c) AS VALUES(1, 2, 3);
 CREATE MATERIALIZED VIEW mvtest_mv AS SELECT * FROM mvtest_foo;
