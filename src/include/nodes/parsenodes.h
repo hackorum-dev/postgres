@@ -227,6 +227,7 @@ typedef struct Query
 	List	   *distinctClause; /* a list of SortGroupClause's */
 
 	List	   *sortClause;		/* a list of SortGroupClause's */
+	bool		orderByAll;		/* was ORDER BY ALL used? */
 
 	Node	   *limitOffset;	/* # of result tuples to skip (int8 expr) */
 	Node	   *limitCount;		/* # of result tuples to return (int8 expr) */

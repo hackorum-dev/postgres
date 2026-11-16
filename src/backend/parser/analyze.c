@@ -1490,9 +1490,12 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt,
 	 */
 	qry->sortClause = transformSortClause(pstate,
 										  stmt->sortClause,
+										  sortClauseIsAll(stmt->sortClause),
 										  &qry->targetList,
 										  EXPR_KIND_ORDER_BY,
 										  false /* allow SQL92 rules */ );
+	/* Remember ORDER BY ALL, so that deparsing can reproduce it */
+	qry->orderByAll = sortClauseIsAll(stmt->sortClause);
 
 	qry->groupClause = transformGroupClause(pstate,
 											stmt->groupClause,
@@ -1753,9 +1756,12 @@ transformValuesClause(ParseState *pstate, SelectStmt *stmt)
 	 */
 	qry->sortClause = transformSortClause(pstate,
 										  stmt->sortClause,
+										  sortClauseIsAll(stmt->sortClause),
 										  &qry->targetList,
 										  EXPR_KIND_ORDER_BY,
 										  false /* allow SQL92 rules */ );
+	/* Remember ORDER BY ALL, so that deparsing can reproduce it */
+	qry->orderByAll = sortClauseIsAll(stmt->sortClause);
 
 	qry->limitOffset = transformLimitClause(pstate, stmt->limitOffset,
 											EXPR_KIND_OFFSET, "OFFSET",
@@ -1996,9 +2002,12 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 
 	qry->sortClause = transformSortClause(pstate,
 										  sortClause,
+										  sortClauseIsAll(sortClause),
 										  &qry->targetList,
 										  EXPR_KIND_ORDER_BY,
 										  false /* allow SQL92 rules */ );
+	/* Remember ORDER BY ALL, so that deparsing can reproduce it */
+	qry->orderByAll = sortClauseIsAll(sortClause);
 
 	/* restore namespace, remove join RTE from rtable */
 	pstate->p_namespace = sv_namespace;
