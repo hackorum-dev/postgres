@@ -117,3 +117,63 @@ PLyUnicode_FromString(const char *s)
 {
 	return PLyUnicode_FromStringAndSize(s, strlen(s));
 }
+
+/*
+ * Return obj. NULL means a Python exception is set. Report it with
+ * PLy_elog(ERROR) and do not return.
+ */
+PyObject *
+PLy_check(PyObject *obj)
+{
+	if (obj == NULL)
+		PLy_elog(ERROR, NULL);
+	return obj;
+}
+
+/*
+ * Insert value into dict under key.
+ *
+ * value is a new reference owned by the caller, or NULL with a Python
+ * exception set. A new reference is stolen. Py_None is borrowed, and this
+ * function takes its own reference. On failure the Python exception is
+ * reported with PLy_elog(ERROR).
+ */
+void
+PLy_dict_setitem_string(PyObject *dict, const char *key, PyObject *value)
+{
+	if (value == NULL)
+		PLy_elog(ERROR, NULL);
+
+	if (value == Py_None)
+		Py_INCREF(Py_None);
+
+	if (PyDict_SetItemString(dict, key, value) < 0)
+	{
+		Py_DECREF(value);
+		PLy_elog(ERROR, NULL);
+	}
+	Py_DECREF(value);
+}
+
+/*
+ * Store value at index i.
+ *
+ * value is a new reference owned by the caller, or NULL with a Python
+ * exception set. A new reference is stolen. Py_None is borrowed, and this
+ * function takes its own reference. listobject.h says PyList_SetItem
+ * decrements the new reference even when the item is not inserted, so it
+ * is not released again here. On failure the Python exception is reported
+ * with PLy_elog(ERROR).
+ */
+void
+PLy_list_setitem(PyObject *list, Py_ssize_t i, PyObject *value)
+{
+	if (value == NULL)
+		PLy_elog(ERROR, NULL);
+
+	if (value == Py_None)
+		Py_INCREF(Py_None);
+
+	if (PyList_SetItem(list, i, value) < 0)
+		PLy_elog(ERROR, NULL);
+}

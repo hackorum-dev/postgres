@@ -104,7 +104,7 @@ PLy_input_convert(PLyDatumToOb *arg, Datum val)
 
 	MemoryContextSwitchTo(oldcontext);
 
-	return result;
+	return PLy_check(result);
 }
 
 /*
@@ -149,7 +149,7 @@ PLy_input_from_tuple(PLyDatumToOb *arg, HeapTuple tuple, TupleDesc desc, bool in
 
 	MemoryContextSwitchTo(oldcontext);
 
-	return dict;
+	return PLy_check(dict);
 }
 
 /*
@@ -723,7 +723,7 @@ PLyList_FromArray_recurse(PLyDatumToOb *elm, int *dims, int ndim, int dim,
 
 			sublist = PLyList_FromArray_recurse(elm, dims, ndim, dim + 1,
 												dataptr_p, bitmap_p, bitmask_p);
-			PyList_SetItem(list, i, sublist);
+			PLy_list_setitem(list, i, sublist);
 		}
 	}
 	else
@@ -741,16 +741,13 @@ PLyList_FromArray_recurse(PLyDatumToOb *elm, int *dims, int ndim, int dim,
 		{
 			/* checking for NULL */
 			if (bitmap && (*bitmap & bitmask) == 0)
-			{
-				Py_INCREF(Py_None);
-				PyList_SetItem(list, i, Py_None);
-			}
+				PLy_list_setitem(list, i, Py_None);
 			else
 			{
 				Datum		itemvalue;
 
 				itemvalue = fetch_att(dataptr, elm->typbyval, elm->typlen);
-				PyList_SetItem(list, i, elm->func(elm, itemvalue));
+				PLy_list_setitem(list, i, elm->func(elm, itemvalue));
 				dataptr = att_addlength_pointer(dataptr, elm->typlen, dataptr);
 				dataptr = (char *) att_nominal_alignby(dataptr, typalignby);
 			}
@@ -835,7 +832,6 @@ PLyDict_FromTuple(PLyDatumToOb *arg, HeapTuple tuple, TupleDesc desc, bool inclu
 			char	   *key;
 			Datum		vattr;
 			bool		is_null;
-			PyObject   *value;
 
 			if (attr->attisdropped)
 				continue;
@@ -854,13 +850,9 @@ PLyDict_FromTuple(PLyDatumToOb *arg, HeapTuple tuple, TupleDesc desc, bool inclu
 			vattr = heap_getattr(tuple, (i + 1), desc, &is_null);
 
 			if (is_null)
-				PyDict_SetItemString(dict, key, Py_None);
+				PLy_dict_setitem_string(dict, key, Py_None);
 			else
-			{
-				value = att->func(att, vattr);
-				PyDict_SetItemString(dict, key, value);
-				Py_DECREF(value);
-			}
+				PLy_dict_setitem_string(dict, key, att->func(att, vattr));
 		}
 	}
 	PG_CATCH();
@@ -1037,22 +1029,25 @@ PLyObject_AsString(PyObject *plrv)
 	else if (PyFloat_Check(plrv))
 	{
 		/* use repr() for floats, str() is lossy */
-		PyObject   *s = PyObject_Repr(plrv);
+		PyObject   *s = PLy_check(PyObject_Repr(plrv));
 
 		plrv_bo = PLyUnicode_Bytes(s);
-		Py_XDECREF(s);
+		Py_DECREF(s);
 	}
 	else
 	{
-		PyObject   *s = PyObject_Str(plrv);
+		PyObject   *s = PLy_check(PyObject_Str(plrv));
 
 		plrv_bo = PLyUnicode_Bytes(s);
-		Py_XDECREF(s);
+		Py_DECREF(s);
 	}
 	if (!plrv_bo)
 		PLy_elog(ERROR, "could not create string representation of Python object");
 
-	plrv_sc = pstrdup(PyBytes_AsString(plrv_bo));
+	plrv_sc = PyBytes_AsString(plrv_bo);
+	if (plrv_sc == NULL)
+		PLy_elog(ERROR, "could not create string representation of Python object");
+	plrv_sc = pstrdup(plrv_sc);
 	plen = PyBytes_Size(plrv_bo);
 	slen = strlen(plrv_sc);
 
@@ -1381,11 +1376,20 @@ PLyMapping_ToComposite(PLyObToDatum *arg, TupleDesc desc, PyObject *mapping)
 		{
 			value = PyMapping_GetItemString(mapping, key);
 			if (!value)
+			{
+				/*
+				 * A missing key sets KeyError. Another exception, such as
+				 * MemoryError, is a real failure.
+				 */
+				if (!PyErr_ExceptionMatches(PyExc_KeyError))
+					PLy_elog(ERROR, NULL);
+				PyErr_Clear();
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_COLUMN),
 						 errmsg("key \"%s\" not found in mapping", key),
 						 errhint("To return null in a column, "
 								 "add the value None to the mapping with the key named after the column.")));
+			}
 
 			values[i] = att->func(att, value, &nulls[i], false);
 
@@ -1535,7 +1539,13 @@ PLyGenericObject_ToComposite(PLyObToDatum *arg, TupleDesc desc, PyObject *object
 				 * it's interpreted as a two-dimensional array, and we try to
 				 * interpret "123" as the composite type. See also similar
 				 * heuristic in PLyObject_ToScalar().
+				 *
+				 * A missing attribute sets AttributeError. Another exception,
+				 * such as MemoryError, is a real failure.
 				 */
+				if (!PyErr_ExceptionMatches(PyExc_AttributeError))
+					PLy_elog(ERROR, NULL);
+				PyErr_Clear();
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_COLUMN),
 						 errmsg("attribute \"%s\" does not exist in Python object", key),
