@@ -202,7 +202,7 @@ ExecAsyncEventWait(Bitmapset *asyncplans,
 	 * postmaster dies.
 	 */
 	AddWaitEventToSet(eventset, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET,
-					  NULL, NULL);
+					  0, NULL);
 
 	/* Give each waiting subplan a chance to add an event. */
 	i = -1;
@@ -222,8 +222,8 @@ ExecAsyncEventWait(Bitmapset *asyncplans,
 		return;
 
 	/*
-	 * Add the process latch to the set, so that we wake up to process the
-	 * standard interrupts with CHECK_FOR_INTERRUPTS().
+	 * Add the currently enabled interrupts to the set, so that we wake up to
+	 * process them with CHECK_FOR_INTERRUPTS().
 	 *
 	 * NOTE: For historical reasons, it's important that this is added to the
 	 * WaitEventSet after the ExecAsyncConfigureWait() calls.  Namely,
@@ -233,8 +233,8 @@ ExecAsyncEventWait(Bitmapset *asyncplans,
 	 * we cannot change it now.  The pattern has possibly been copied to other
 	 * extensions too.
 	 */
-	AddWaitEventToSet(eventset, WL_LATCH_SET, PGINVALID_SOCKET,
-					  MyLatch, NULL);
+	AddWaitEventToSet(eventset, WL_INTERRUPT, PGINVALID_SOCKET,
+					  CheckForInterruptsMask, NULL);
 
 	/* Return at most EVENT_BUFFER_SIZE events in one call. */
 	if (nevents > EVENT_BUFFER_SIZE)
@@ -272,12 +272,8 @@ ExecAsyncEventWait(Bitmapset *asyncplans,
 				ExecAsyncNotify(areq);
 			}
 		}
-
-		/* Handle standard interrupts */
-		if ((w->events & WL_LATCH_SET) != 0)
-		{
-			ResetLatch(MyLatch);
-			CHECK_FOR_INTERRUPTS();
-		}
 	}
+
+	/* Handle standard interrupts */
+	CHECK_FOR_INTERRUPTS();
 }
