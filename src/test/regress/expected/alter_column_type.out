@@ -101,8 +101,22 @@ create table atref(b text) partition by range ((('(1)'::attbl).a + length(b)));
 create table atref_part(b text);
 alter table atref attach partition atref_part for values from (1) to (2);
 alter table attbl alter column a type bigint;  -- someday this should work
-ERROR:  unexpected object depending on column: table atref
+ERROR:  cannot alter type of a column used in a partition key expression
+DETAIL:  Partition key of table atref depends on column "a".
 drop table atref, attbl;
+-- in PARTITION BY clause, selecting a field of a function's result.  The
+-- expression doesn't depend on the rowtype, only on the function and the
+-- column.
+create table attbl(a numeric);
+create function atref_func(text) returns attbl immutable language sql
+  as $$ select row(length($1))::public.attbl $$;
+create table atref(b text) partition by range (((atref_func(b)).a));
+alter table attbl alter column a type bigint;  -- fails
+ERROR:  cannot alter type of a column used in a partition key expression
+DETAIL:  Partition key of table atref depends on column "a".
+drop table atref;
+drop function atref_func;
+drop table attbl;
 -- in PARTITION BY clause, when the type is the expression's return type, but
 -- the exprssion doesn't otherwise depend on it
 CREATE TYPE atcomp AS (a bytea);

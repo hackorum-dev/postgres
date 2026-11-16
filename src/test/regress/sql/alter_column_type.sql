@@ -92,6 +92,18 @@ alter table atref attach partition atref_part for values from (1) to (2);
 alter table attbl alter column a type bigint;  -- someday this should work
 drop table atref, attbl;
 
+-- in PARTITION BY clause, selecting a field of a function's result.  The
+-- expression doesn't depend on the rowtype, only on the function and the
+-- column.
+create table attbl(a numeric);
+create function atref_func(text) returns attbl immutable language sql
+  as $$ select row(length($1))::public.attbl $$;
+create table atref(b text) partition by range (((atref_func(b)).a));
+alter table attbl alter column a type bigint;  -- fails
+drop table atref;
+drop function atref_func;
+drop table attbl;
+
 -- in PARTITION BY clause, when the type is the expression's return type, but
 -- the exprssion doesn't otherwise depend on it
 CREATE TYPE atcomp AS (a bytea);
