@@ -563,9 +563,10 @@ plpgsql_yyerror(YYLTYPE *yyllocp, PLpgSQL_stmt_block **plpgsql_parse_result_p, y
  * Given a location (a byte offset in the function source text),
  * return a line number.
  *
- * We expect that this is typically called for a sequence of increasing
- * location values, so optimize accordingly by tracking the endpoints
- * of the "current" line.
+ * We track the endpoints of the "current" line, and move it forwards or
+ * backwards a line at a time.  Locations mostly increase, but the grammar
+ * asks for the line number of an IF, ELSIF or CASE WHEN only when it reduces
+ * the statement, after the statements in its body have asked for theirs.
  */
 int
 plpgsql_location_to_lineno(int location, yyscan_t yyscanner)
@@ -576,9 +577,16 @@ plpgsql_location_to_lineno(int location, yyscan_t yyscanner)
 		return 0;				/* garbage in, garbage out */
 	loc = yyextra->scanorig + location;
 
-	/* be correct, but not fast, if input location goes backwards */
-	if (loc < yyextra->cur_line_start)
-		location_lineno_init(yyscanner);
+	while (loc < yyextra->cur_line_start)
+	{
+		const char *p = yyextra->cur_line_start - 1;	/* previous line's \n */
+
+		yyextra->cur_line_end = p;
+		while (p > yyextra->scanorig && p[-1] != '\n')
+			p--;
+		yyextra->cur_line_start = p;
+		yyextra->cur_line_num--;
+	}
 
 	while (yyextra->cur_line_end != NULL && loc > yyextra->cur_line_end)
 	{

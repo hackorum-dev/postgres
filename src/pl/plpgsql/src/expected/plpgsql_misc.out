@@ -110,3 +110,45 @@ do $$ declare x int; begin x := 1 $$;
 ERROR:  missing ";" at end of SQL statement
 LINE 1: do $$ declare x int; begin x := 1 $$;
                                           ^
+--
+-- Line numbers of statements whose location the grammar resolves only after
+-- their bodies (IF, ELSIF and CASE), so locations reach the scanner out of
+-- order
+--
+create function lineno_order(k int) returns int language plpgsql as $$
+declare
+  r int;
+begin
+  if k = 1 then
+    r := 1;
+  elsif 1 / (k - 2) = 0 then
+    r := 2;
+  end if;
+  case 6 / (k - 3)
+    when 0 then
+      r := 3;
+    else
+      if k = 5 then
+        r := 1 / (k - 5);
+      end if;
+      r := 4;
+  end case;
+  if 1 / (k - 4) = 0 then
+    r := 5;
+  end if;
+  return r;
+end
+$$;
+select lineno_order(2);
+ERROR:  division by zero
+CONTEXT:  PL/pgSQL function lineno_order(integer) line 5 at IF
+select lineno_order(3);
+ERROR:  division by zero
+CONTEXT:  PL/pgSQL function lineno_order(integer) line 10 at CASE
+select lineno_order(4);
+ERROR:  division by zero
+CONTEXT:  PL/pgSQL function lineno_order(integer) line 19 at IF
+select lineno_order(5);
+ERROR:  division by zero
+CONTEXT:  PL/pgSQL function lineno_order(integer) line 15 at assignment
+drop function lineno_order(int);
