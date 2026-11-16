@@ -1524,6 +1524,9 @@ socket_putmessage_noblock(char msgtype, const char *s, size_t len)
 	int			res PG_USED_FOR_ASSERTS_ONLY;
 	int			required;
 
+	if (PqCommBusy)
+		return;
+
 	/*
 	 * Ensure we have enough space in the output buffer for the message header
 	 * as well as the message itself.
