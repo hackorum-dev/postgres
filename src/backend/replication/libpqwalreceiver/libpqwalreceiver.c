@@ -52,6 +52,8 @@ struct WalReceiverConn
 	bool		logical;
 	/* Buffer for currently read records */
 	char	   *recvBuf;
+	/* Set by receive() when CommandComplete ended the COPY */
+	bool		copyEnded;
 };
 
 /* Prototypes for interface functions */
@@ -710,6 +712,18 @@ libpqrcv_endstreaming(WalReceiverConn *conn, TimeLineID *next_tli)
 	PGresult   *res;
 
 	/*
+	 * Physical walsender can finish with CommandComplete ("COPY 0") and exit
+	 * without waiting for CopyDone.  receive() already consumed that result,
+	 * so there is no COPY left to end.
+	 */
+	if (conn->copyEnded)
+	{
+		conn->copyEnded = false;
+		*next_tli = 0;
+		return;
+	}
+
+	/*
 	 * Send copy-end message.  As in libpqsrv_exec, this could theoretically
 	 * block, but the risk seems small.
 	 */
@@ -887,6 +901,7 @@ libpqrcv_receive(WalReceiverConn *conn, char **buffer,
 		if (PQresultStatus(res) == PGRES_COMMAND_OK)
 		{
 			PQclear(res);
+			conn->copyEnded = true;
 
 			/* Verify that there are no more results. */
 			res = libpqsrv_get_result(conn->streamConn,
