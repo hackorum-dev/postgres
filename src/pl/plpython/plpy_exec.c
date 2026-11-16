@@ -563,15 +563,12 @@ PLy_function_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc)
 			PLyDatumToOb *arginfo = &proc->args[i];
 
 			if (fcinfo->args[i].isnull)
-				arg = NULL;
-			else
-				arg = PLy_input_convert(arginfo, fcinfo->args[i].value);
-
-			if (arg == NULL)
 			{
 				Py_INCREF(Py_None);
 				arg = Py_None;
 			}
+			else
+				arg = PLy_input_convert(arginfo, fcinfo->args[i].value);
 
 			if (PyList_SetItem(args, i, arg) == -1)
 				PLy_elog(ERROR, "PyList_SetItem() failed, while setting up arguments");
