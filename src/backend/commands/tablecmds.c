@@ -604,7 +604,7 @@ static ObjectAddress addFkConstraint(addFkConstraintSides fkside,
 									 Oid *pfeqoperators, Oid *ppeqoperators,
 									 Oid *ffeqoperators, int numfkdelsetcols,
 									 int16 *fkdelsetcols, bool is_internal,
-									 bool with_period);
+									 bool with_period, int *conname_pass);
 static void addFkRecurseReferenced(Constraint *fkconstraint,
 								   Relation rel, Relation pkrel, Oid indexOid, Oid parentConstr,
 								   int numfks, int16 *pkattnum, int16 *fkattnum,
@@ -612,7 +612,7 @@ static void addFkRecurseReferenced(Constraint *fkconstraint,
 								   int numfkdelsetcols, int16 *fkdelsetcols,
 								   bool old_check_ok,
 								   Oid parentDelTrigger, Oid parentUpdTrigger,
-								   bool with_period);
+								   bool with_period, int *conname_pass);
 static void addFkRecurseReferencing(List **wqueue, Constraint *fkconstraint,
 									Relation rel, Relation pkrel, Oid indexOid, Oid parentConstr,
 									int numfks, int16 *pkattnum, int16 *fkattnum,
@@ -10788,6 +10788,7 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	Oid			indexOid;
 	bool		old_check_ok;
 	ObjectAddress address;
+	int			conname_pass = 0;
 	ListCell   *old_pfeqop_item = list_head(fkconstraint->old_conpfeqop);
 
 	/*
@@ -11288,7 +11289,10 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 						  &intersectoperoid);
 	}
 
-	/* First, create the constraint catalog entry itself. */
+	/*
+	 * First, create the constraint catalog entry itself.  Its name is not
+	 * part of the series of names for the partitions, hence no conname_pass.
+	 */
 	address = addFkConstraint(addFkBothSides,
 							  fkconstraint->conname, fkconstraint, rel, pkrel,
 							  indexOid,
@@ -11302,7 +11306,8 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 							  numfkdelsetcols,
 							  fkdelsetcols,
 							  false,
-							  with_period);
+							  with_period,
+							  NULL);
 
 	/* Next process the action triggers at the referenced side and recurse */
 	addFkRecurseReferenced(fkconstraint, rel, pkrel,
@@ -11318,7 +11323,8 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 						   fkdelsetcols,
 						   old_check_ok,
 						   InvalidOid, InvalidOid,
-						   with_period);
+						   with_period,
+						   &conname_pass);
 
 	/* Lastly create the check triggers at the referencing side and recurse */
 	addFkRecurseReferencing(wqueue, fkconstraint, rel, pkrel,
@@ -11428,6 +11434,9 @@ validateFkOnDeleteSetColumns(int numfks, const int16 *fkattnums,
  * fkdelsetcols: the attnum array of the columns in the ON DELETE SET
  *      NULL/DEFAULT clause
  * with_period: true if this is a temporal FK
+ * conname_pass: if not NULL, the suffix number of the last name chosen for
+ *      the constraint rows created so far for this same rel and
+ *      constraintname (see addFkRecurseReferenced); updated on return
  */
 static ObjectAddress
 addFkConstraint(addFkConstraintSides fkside,
@@ -11436,7 +11445,7 @@ addFkConstraint(addFkConstraintSides fkside,
 				int numfks, int16 *pkattnum,
 				int16 *fkattnum, Oid *pfeqoperators, Oid *ppeqoperators,
 				Oid *ffeqoperators, int numfkdelsetcols, int16 *fkdelsetcols,
-				bool is_internal, bool with_period)
+				bool is_internal, bool with_period, int *conname_pass)
 {
 	ObjectAddress address;
 	Oid			constrOid;
@@ -11460,15 +11469,17 @@ addFkConstraint(addFkConstraintSides fkside,
 	 * Caller supplies us with a constraint name; however, it may be used in
 	 * this partition, so come up with a different one in that case.  Unless
 	 * truncation to NAMEDATALEN dictates otherwise, the new name will be the
-	 * supplied name with an underscore and digit(s) appended.
+	 * supplied name with an underscore and digit(s) appended.  conname_pass,
+	 * if given, lets a series of such names skip the suffixes already used.
 	 */
 	if (ConstraintNameIsUsed(CONSTRAINT_RELATION,
 							 RelationGetRelid(rel),
 							 constraintname))
-		conname = ChooseConstraintName(constraintname,
-									   NULL,
-									   "",
-									   RelationGetNamespace(rel), NIL);
+		conname = ChooseConstraintNameExtended(constraintname,
+											   NULL,
+											   "",
+											   RelationGetNamespace(rel), NIL,
+											   conname_pass);
 	else
 		conname = constraintname;
 
@@ -11606,6 +11617,12 @@ addFkConstraint(addFkConstraintSides fkside,
  *      partition, the OIDs of the parent action triggers for DELETE and
  *      UPDATE respectively.
  * with_period: true if this is a temporal FK
+ * conname_pass: points to the suffix number of the last name chosen in this
+ *      recursion (0 at the top), and is updated as names are chosen.  Every
+ *      row created here is on rel and named after fkconstraint->conname, and
+ *      each gets the lowest free suffix, so the lower ones are all taken and
+ *      the search for the next name can start after the last one.  See
+ *      ChooseConstraintNameExtended.
  */
 static void
 addFkRecurseReferenced(Constraint *fkconstraint, Relation rel,
@@ -11616,7 +11633,7 @@ addFkRecurseReferenced(Constraint *fkconstraint, Relation rel,
 					   int numfkdelsetcols, int16 *fkdelsetcols,
 					   bool old_check_ok,
 					   Oid parentDelTrigger, Oid parentUpdTrigger,
-					   bool with_period)
+					   bool with_period, int *conname_pass)
 {
 	Oid			deleteTriggerOid = InvalidOid,
 				updateTriggerOid = InvalidOid;
@@ -11685,7 +11702,8 @@ addFkRecurseReferenced(Constraint *fkconstraint, Relation rel,
 									  numfks, mapped_pkattnum,
 									  fkattnum, pfeqoperators, ppeqoperators,
 									  ffeqoperators, numfkdelsetcols,
-									  fkdelsetcols, true, with_period);
+									  fkdelsetcols, true, with_period,
+									  conname_pass);
 			/* ... and recurse to our children */
 			addFkRecurseReferenced(fkconstraint, rel, partRel,
 								   partIndexId, address.objectId, numfks,
@@ -11694,7 +11712,7 @@ addFkRecurseReferenced(Constraint *fkconstraint, Relation rel,
 								   numfkdelsetcols, fkdelsetcols,
 								   old_check_ok,
 								   deleteTriggerOid, updateTriggerOid,
-								   with_period);
+								   with_period, conname_pass);
 
 			/* Done -- clean up (but keep the lock) */
 			table_close(partRel, NoLock);
@@ -11884,7 +11902,7 @@ addFkRecurseReferencing(List **wqueue, Constraint *fkconstraint, Relation rel,
 									  mapped_fkattnum, pfeqoperators,
 									  ppeqoperators, ffeqoperators,
 									  numfkdelsetcols, fkdelsetcols, true,
-									  with_period);
+									  with_period, NULL);
 
 			/* call ourselves to finalize the creation and we're done */
 			addFkRecurseReferencing(wqueue, fkconstraint, partition, pkrel,
@@ -12028,6 +12046,7 @@ CloneFkReferenced(Relation parentRel, Relation partitionRel)
 		ObjectAddress address;
 		Oid			deleteTriggerOid = InvalidOid,
 					updateTriggerOid = InvalidOid;
+		int			conname_pass = 0;
 
 		tuple = SearchSysCache1(CONSTROID, ObjectIdGetDatum(constrOid));
 		if (!HeapTupleIsValid(tuple))
@@ -12118,7 +12137,7 @@ CloneFkReferenced(Relation parentRel, Relation partitionRel)
 								  numfks, mapped_confkey,
 								  conkey, conpfeqop, conppeqop, conffeqop,
 								  numfkdelsetcols, confdelsetcols, false,
-								  constrForm->conperiod);
+								  constrForm->conperiod, &conname_pass);
 		/* ... and recurse */
 		addFkRecurseReferenced(fkconstraint,
 							   fkRel,
@@ -12136,7 +12155,8 @@ CloneFkReferenced(Relation parentRel, Relation partitionRel)
 							   true,
 							   deleteTriggerOid,
 							   updateTriggerOid,
-							   constrForm->conperiod);
+							   constrForm->conperiod,
+							   &conname_pass);
 
 		table_close(fkRel, NoLock);
 		ReleaseSysCache(tuple);
@@ -12363,7 +12383,7 @@ CloneFkReferencing(List **wqueue, Relation parentRel, Relation partRel)
 								  mapped_conkey, conpfeqop,
 								  conppeqop, conffeqop,
 								  numfkdelsetcols, confdelsetcols,
-								  false, with_period);
+								  false, with_period, NULL);
 
 		/* Done with the cloned constraint's tuple */
 		ReleaseSysCache(tuple);
@@ -22650,6 +22670,7 @@ DetachPartitionFinalize(Relation rel, Relation partRel, bool concurrent,
 			int			numfkdelsetcols;
 			AttrNumber	confdelsetcols[INDEX_MAX_KEYS];
 			Relation	refdRel;
+			int			conname_pass = 0;
 
 			DeconstructFkConstraintRow(contup,
 									   &numfks,
@@ -22710,7 +22731,8 @@ DetachPartitionFinalize(Relation rel, Relation partRel, bool concurrent,
 								   confdelsetcols,
 								   true,
 								   InvalidOid, InvalidOid,
-								   conform->conperiod);
+								   conform->conperiod,
+								   &conname_pass);
 			table_close(refdRel, NoLock);	/* keep lock till end of xact */
 		}
 

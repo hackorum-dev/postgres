@@ -517,7 +517,30 @@ ChooseConstraintName(const char *name1, const char *name2,
 					 const char *label, Oid namespaceid,
 					 List *others)
 {
-	int			pass = 0;
+	return ChooseConstraintNameExtended(name1, name2, label, namespaceid,
+										others, NULL);
+}
+
+/*
+ * ChooseConstraintNameExtended
+ *		As ChooseConstraintName, for callers that choose several names with
+ *		the same name1, name2, label and namespace in a row.
+ *
+ * If passp is not NULL, the caller promises that the names numbered up to
+ * *passp (and the unmodified label, if *passp > 0) are taken, so the search
+ * starts at *passp + 1.  On return, *passp is set to the number used in the
+ * chosen name (0 for the unmodified label), so that passing it back for the
+ * next name of the series continues where this one stopped.  If the promise
+ * is wrong, the result is still a free name, just not the lowest one; that
+ * includes the case of a name being dropped concurrently, which is the same
+ * race described for ChooseConstraintName.
+ */
+char *
+ChooseConstraintNameExtended(const char *name1, const char *name2,
+							 const char *label, Oid namespaceid,
+							 List *others, int *passp)
+{
+	int			pass = passp ? *passp : 0;
 	char	   *conname = NULL;
 	char		modlabel[NAMEDATALEN];
 	Relation	conDesc;
@@ -528,8 +551,8 @@ ChooseConstraintName(const char *name1, const char *name2,
 
 	conDesc = table_open(ConstraintRelationId, AccessShareLock);
 
-	/* try the unmodified label first, unless it's empty */
-	if (label[0] != '\0')
+	/* try the unmodified label first, unless it's empty or known taken */
+	if (label[0] != '\0' && pass == 0)
 		strlcpy(modlabel, label, sizeof(modlabel));
 	else
 		snprintf(modlabel, sizeof(modlabel), "%s%d", label, ++pass);
@@ -578,6 +601,9 @@ ChooseConstraintName(const char *name1, const char *name2,
 	}
 
 	table_close(conDesc, AccessShareLock);
+
+	if (passp)
+		*passp = pass;
 
 	return conname;
 }

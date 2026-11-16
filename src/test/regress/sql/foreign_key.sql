@@ -2672,6 +2672,28 @@ WITH cte AS (
 DROP SCHEMA fkpart13 CASCADE;
 RESET search_path;
 
+-- The constraint rows created for each partition of a referenced partitioned
+-- table get the lowest suffix not taken in the schema, even when a name in the
+-- middle of the sequence is already taken, across levels of partitioning, and
+-- for a partition attached later.
+CREATE SCHEMA fkpart14;
+SET search_path TO fkpart14;
+CREATE TABLE pk (a int PRIMARY KEY) PARTITION BY RANGE (a);
+CREATE TABLE pk1 PARTITION OF pk FOR VALUES FROM (1) TO (2);
+CREATE TABLE pk2 PARTITION OF pk FOR VALUES FROM (2) TO (3);
+CREATE TABLE pk3 PARTITION OF pk FOR VALUES FROM (3) TO (5) PARTITION BY RANGE (a);
+CREATE TABLE pk31 PARTITION OF pk3 FOR VALUES FROM (3) TO (4);
+CREATE TABLE pk32 PARTITION OF pk3 FOR VALUES FROM (4) TO (5);
+CREATE TABLE pk4 PARTITION OF pk FOR VALUES FROM (5) TO (6);
+CREATE TABLE other (a int CONSTRAINT fk_a_fkey_3 CHECK (a > 0));
+CREATE TABLE fk (a int REFERENCES pk);
+CREATE TABLE pk5 (a int PRIMARY KEY);
+ALTER TABLE pk ATTACH PARTITION pk5 FOR VALUES FROM (6) TO (7);
+SELECT conname, confrelid::regclass FROM pg_constraint
+WHERE conrelid = 'fk'::regclass ORDER BY conname COLLATE "C";
+DROP SCHEMA fkpart14 CASCADE;
+RESET search_path;
+
 -- Test the fast-path ALTER TABLE validation path.  RLS on the referenced
 -- table makes RI_Initial_Check() decline the set-based check, so validation
 -- invokes the RI trigger once per referencing row.
