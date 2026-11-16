@@ -1458,6 +1458,26 @@ is_table_publishable_in_publication(Oid relid, Publication *pub)
 }
 
 /*
+ * A helper function for pg_get_publication_tables() to get the publication
+ * with the given OID from the list of publications collected on the first
+ * call, i.e. the publication as it was when the list of tables was built.
+ */
+static Publication *
+get_publication_from_list(List *pubs, Oid pubid)
+{
+	foreach_ptr(Publication, pub, pubs)
+	{
+		if (pub->oid == pubid)
+			return pub;
+	}
+
+	/* The publication must have been collected on the first call. */
+	elog(ERROR, "could not find publication %u in the list of publications",
+		 pubid);
+	return NULL;				/* keep compiler quiet */
+}
+
+/*
  * A helper function for pg_get_publication_tables() to get the name of the
  * publication with the given OID from the list of publications collected on
  * the first call.  It is used to report a publication that has been dropped
@@ -1466,16 +1486,9 @@ is_table_publishable_in_publication(Oid relid, Publication *pub)
 static char *
 get_pubname_from_list(List *pubs, Oid pubid)
 {
-	foreach_ptr(Publication, pub, pubs)
-	{
-		if (pub->oid == pubid)
-			return pub->name;
-	}
+	Publication *pub = get_publication_from_list(pubs, pubid);
 
-	/* The publication must have been collected on the first call. */
-	elog(ERROR, "could not find publication %u in the list of publications",
-		 pubid);
-	return NULL;				/* keep compiler quiet */
+	return pub->name;
 }
 
 /*
@@ -1505,7 +1518,7 @@ pg_get_publication_tables(FunctionCallInfo fcinfo, ArrayType *pubnames,
 	typedef struct
 	{
 		List	   *table_infos;	/* list of published_rel */
-		List	   *pubs;			/* list of Publication, for error messages */
+		List	   *pubs;		/* list of Publication, for error messages */
 		int			curr_idx;	/* current index into table_infos */
 	} publication_tables_state;
 
@@ -1734,19 +1747,29 @@ pg_get_publication_tables(FunctionCallInfo fcinfo, ArrayType *pubnames,
 										   ObjectIdGetDatum(pub->oid));
 
 			/*
-			 * No pg_publication_rel entry is normal for partitions published
-			 * via their parent. However, it can also mean the publication was
-			 * dropped concurrently, as the lookups above process pending
-			 * invalidations when opening the catalogs with a cold cache.
-			 * Distinguish these cases to avoid returning incorrect column
-			 * lists and row filters. If an entry was found, it represents the
-			 * publication definition before the drop.
+			 * A missing pg_publication_rel entry is normal for a partition
+			 * published via its ancestor.  In any other case, it means that
+			 * the table was concurrently removed from the publication, or
+			 * that the publication was concurrently dropped.  Building the
+			 * row would then wrongly show no column list and no row filter,
+			 * so skip the row if the table was removed.  If the publication
+			 * was dropped, raise the same error as when
+			 * get_publication_internal() above doesn't find it.
+			 *
+			 * Use the publication as it was on the first call, which built
+			 * our list of tables, so that a concurrent change of
+			 * publish_via_partition_root isn't mistaken for a removal.  Check
+			 * whether the publication still exists only afterwards, since
+			 * is_table_publishable_in_publication() may itself see the drop.
 			 */
 			if (!HeapTupleIsValid(pubtuple) &&
-				!SearchSysCacheExists1(PUBLICATIONOID,
-									   ObjectIdGetDatum(pub->oid)))
+				!is_table_publishable_in_publication(relid,
+													 get_publication_from_list(ptstate->pubs,
+																			   pub->oid)))
 			{
-				if (!pub_missing_ok)
+				if (!pub_missing_ok &&
+					!SearchSysCacheExists1(PUBLICATIONOID,
+										   ObjectIdGetDatum(pub->oid)))
 					ereport(ERROR,
 							errcode(ERRCODE_UNDEFINED_OBJECT),
 							errmsg("publication \"%s\" does not exist",
