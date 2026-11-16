@@ -76,6 +76,10 @@ static Datum PLyGenericObject_ToComposite(PLyObToDatum *arg, TupleDesc desc, PyO
  *
  * This is the outer-level entry point for any input conversion.  Internally,
  * the conversion functions recurse directly to each other.
+ *
+ * The individual conversion functions follow the Python convention of
+ * returning NULL, with a Python exception set, on failure.  Our callers
+ * aren't prepared for that, so we turn it into a PostgreSQL error here.
  */
 PyObject *
 PLy_input_convert(PLyDatumToOb *arg, Datum val)
@@ -103,6 +107,9 @@ PLy_input_convert(PLyDatumToOb *arg, Datum val)
 	result = arg->func(arg, val);
 
 	MemoryContextSwitchTo(oldcontext);
+
+	if (result == NULL)
+		PLy_elog(ERROR, "could not convert value to a Python object");
 
 	return result;
 }
@@ -148,6 +155,9 @@ PLy_input_from_tuple(PLyDatumToOb *arg, HeapTuple tuple, TupleDesc desc, bool in
 	dict = PLyDict_FromTuple(arg, tuple, desc, include_generated);
 
 	MemoryContextSwitchTo(oldcontext);
+
+	if (dict == NULL)
+		PLy_elog(ERROR, "could not convert row to a Python dictionary");
 
 	return dict;
 }
@@ -723,6 +733,11 @@ PLyList_FromArray_recurse(PLyDatumToOb *elm, int *dims, int ndim, int dim,
 
 			sublist = PLyList_FromArray_recurse(elm, dims, ndim, dim + 1,
 												dataptr_p, bitmap_p, bitmask_p);
+			if (sublist == NULL)
+			{
+				Py_DECREF(list);
+				return NULL;
+			}
 			PyList_SetItem(list, i, sublist);
 		}
 	}
@@ -748,9 +763,16 @@ PLyList_FromArray_recurse(PLyDatumToOb *elm, int *dims, int ndim, int dim,
 			else
 			{
 				Datum		itemvalue;
+				PyObject   *item;
 
 				itemvalue = fetch_att(dataptr, elm->typbyval, elm->typlen);
-				PyList_SetItem(list, i, elm->func(elm, itemvalue));
+				item = elm->func(elm, itemvalue);
+				if (item == NULL)
+				{
+					Py_DECREF(list);
+					return NULL;
+				}
+				PyList_SetItem(list, i, item);
 				dataptr = att_addlength_pointer(dataptr, elm->typlen, dataptr);
 				dataptr = (char *) att_nominal_alignby(dataptr, typalignby);
 			}
@@ -854,12 +876,21 @@ PLyDict_FromTuple(PLyDatumToOb *arg, HeapTuple tuple, TupleDesc desc, bool inclu
 			vattr = heap_getattr(tuple, (i + 1), desc, &is_null);
 
 			if (is_null)
-				PyDict_SetItemString(dict, key, Py_None);
+			{
+				if (PyDict_SetItemString(dict, key, Py_None) < 0)
+					PLy_elog(ERROR, "could not add column \"%s\" to Python dictionary", key);
+			}
 			else
 			{
+				int			rc;
+
 				value = att->func(att, vattr);
-				PyDict_SetItemString(dict, key, value);
+				if (value == NULL)
+					PLy_elog(ERROR, "could not convert column \"%s\" to a Python object", key);
+				rc = PyDict_SetItemString(dict, key, value);
 				Py_DECREF(value);
+				if (rc < 0)
+					PLy_elog(ERROR, "could not add column \"%s\" to Python dictionary", key);
 			}
 		}
 	}

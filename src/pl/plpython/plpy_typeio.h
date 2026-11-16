@@ -17,7 +17,10 @@ struct PLyProcedure;			/* avoid requiring plpy_procedure.h here */
  * "Input" conversion from PostgreSQL Datum to a Python object.
  *
  * arg is the previously-set-up conversion data, val is the value to convert.
- * val mustn't be NULL.
+ * val mustn't be NULL.  The result is a new reference, or NULL with a Python
+ * exception set if Python fails to construct the object.  Conversion can also
+ * throw a PostgreSQL error.  PLy_input_convert and PLy_input_from_tuple never
+ * return NULL.
  *
  * Note: the conversion data structs should be regarded as private to
  * plpy_typeio.c.  We declare them here only so that other modules can
