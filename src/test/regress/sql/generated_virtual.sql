@@ -510,6 +510,10 @@ CREATE DOMAIN gtestdomainnn AS int CHECK (VALUE IS NOT NULL);
 CREATE TABLE gtest24nn (a int, b gtestdomainnn GENERATED ALWAYS AS (a * 2) VIRTUAL);
 --INSERT INTO gtest24nn (a) VALUES (4);  -- ok
 --INSERT INTO gtest24nn (a) VALUES (NULL);  -- error
+-- a constraint reading the column, through a partitioned table
+CREATE TABLE gtest24p (a int, b gtestdomainnn GENERATED ALWAYS AS (a * 2) VIRTUAL CHECK (b < 100)) PARTITION BY RANGE (a);
+--CREATE TABLE gtest24p_1 PARTITION OF gtest24p FOR VALUES FROM (1) TO (10);
+--INSERT INTO gtest24p (a) VALUES (4);  -- ok
 
 -- typed tables (currently not supported)
 CREATE TYPE gtest_type AS (f1 integer, f2 text, f3 bigint);
