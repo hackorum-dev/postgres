@@ -2286,7 +2286,6 @@ typedef struct MaterialState
 } MaterialState;
 
 struct MemoizeEntry;
-struct MemoizeKey;
 
 /* ----------------
  *	 MemoizeState information

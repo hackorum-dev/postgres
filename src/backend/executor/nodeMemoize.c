@@ -90,22 +90,18 @@
  */
 #define MEMOIZE_NEXT_TUPLE_EXTRA_BYTES MAXALIGN(sizeof(MinimalTuple))
 
+/*
+ * The number of extra bytes we request from ExecCopySlotMinimalTupleExtra to
+ * allow storage of the lru node for a Memoize key.
+ */
+#define MEMOIZE_KEY_EXTRA_BYTES 		MAXALIGN(sizeof(dlist_node))
+
 /* Helper macros for memory accounting */
 #define EMPTY_ENTRY_MEMORY_BYTES(e)		(sizeof(MemoizeEntry) + \
-										 sizeof(MemoizeKey) + \
-										 (e)->key->params->t_len)
+										 MEMOIZE_KEY_EXTRA_BYTES + \
+										 (e)->key->t_len)
 #define CACHE_TUPLE_BYTES(t)			((t)->t_len + \
 										 MEMOIZE_NEXT_TUPLE_EXTRA_BYTES)
-
-/*
- * MemoizeKey
- * The hash table key for cached entries plus the LRU list link
- */
-typedef struct MemoizeKey
-{
-	MinimalTuple params;
-	dlist_node	lru_node;		/* Pointer to next/prev key in LRU list */
-} MemoizeKey;
 
 /*
  * MemoizeEntry
@@ -113,7 +109,7 @@ typedef struct MemoizeKey
  */
 typedef struct MemoizeEntry
 {
-	MemoizeKey *key;			/* Hash key for hash table lookups */
+	MinimalTuple key;			/* Hash key for hash table lookups */
 	MinimalTuple tuplehead;		/* Pointer to the first tuple or NULL if no
 								 * tuples are cached for this entry */
 	uint32		hash;			/* Hash value (cached) */
@@ -155,22 +151,40 @@ MemoizeSetNextTuple(MinimalTuple tup, MinimalTuple next)
 	*next_ptr = next;
 }
 
+/*
+ * The Memoize key is stored as a MinimalTuple, we make use of
+ * ExecCopySlotMinimalTupleExtra() so that the palloc for the MinimalTuple has
+ * enough extra bytes to store the lru node.
+ */
+
+static pg_always_inline MinimalTuple
+LruNodeGetMemoizeKey(dlist_node *lru_node)
+{
+	return (MinimalTuple) ((char *) lru_node + MEMOIZE_KEY_EXTRA_BYTES);
+}
+
+static pg_always_inline dlist_node *
+MemoizeKeyGetLruNode(MinimalTuple key)
+{
+	return (dlist_node *) ((char *) key - MEMOIZE_KEY_EXTRA_BYTES);
+}
+
 #define SH_PREFIX memoize
 #define SH_ELEMENT_TYPE MemoizeEntry
-#define SH_KEY_TYPE MemoizeKey *
+#define SH_KEY_TYPE MinimalTuple
 #define SH_SCOPE static inline
 #define SH_DECLARE
 #include "lib/simplehash.h"
 
 static uint32 MemoizeHash_hash(struct memoize_hash *tb,
-							   const MemoizeKey *key);
+							   MinimalTuple key);
 static bool MemoizeHash_equal(struct memoize_hash *tb,
-							  const MemoizeKey *key1,
-							  const MemoizeKey *key2);
+							  MinimalTuple key1,
+							  MinimalTuple key2);
 
 #define SH_PREFIX memoize
 #define SH_ELEMENT_TYPE MemoizeEntry
-#define SH_KEY_TYPE MemoizeKey *
+#define SH_KEY_TYPE MinimalTuple
 #define SH_KEY key
 #define SH_HASH_KEY(tb, key) MemoizeHash_hash(tb, key)
 #define SH_EQUAL(tb, a, b) MemoizeHash_equal(tb, a, b)
@@ -187,7 +201,7 @@ static bool MemoizeHash_equal(struct memoize_hash *tb,
  *		probeslot with the key values to be looked up.
  */
 static uint32
-MemoizeHash_hash(struct memoize_hash *tb, const MemoizeKey *key)
+MemoizeHash_hash(struct memoize_hash *tb, MinimalTuple key)
 {
 	MemoizeState *mstate = (MemoizeState *) tb->private_data;
 	ExprContext *econtext = mstate->ss.ps.ps_ExprContext;
@@ -250,8 +264,8 @@ MemoizeHash_hash(struct memoize_hash *tb, const MemoizeKey *key)
  *		probeslot is always populated with details of what's being looked up.
  */
 static bool
-MemoizeHash_equal(struct memoize_hash *tb, const MemoizeKey *key1,
-				  const MemoizeKey *key2)
+MemoizeHash_equal(struct memoize_hash *tb, MinimalTuple key1,
+				  MinimalTuple key2)
 {
 	MemoizeState *mstate = (MemoizeState *) tb->private_data;
 	ExprContext *econtext = mstate->ss.ps.ps_ExprContext;
@@ -259,7 +273,7 @@ MemoizeHash_equal(struct memoize_hash *tb, const MemoizeKey *key1,
 	TupleTableSlot *pslot = mstate->probeslot;
 
 	/* probeslot should have already been prepared by prepare_probe_slot() */
-	ExecStoreMinimalTuple(key1->params, tslot, false);
+	ExecStoreMinimalTuple(key1, tslot, false);
 
 	if (mstate->binary_mode)
 	{
@@ -331,7 +345,7 @@ build_hash_table(MemoizeState *mstate, uint32 size)
  *		mstate's param_exprs.
  */
 static inline void
-prepare_probe_slot(MemoizeState *mstate, MemoizeKey *key)
+prepare_probe_slot(MemoizeState *mstate, MinimalTuple key)
 {
 	TupleTableSlot *pslot = mstate->probeslot;
 	TupleTableSlot *tslot = mstate->tableslot;
@@ -357,7 +371,7 @@ prepare_probe_slot(MemoizeState *mstate, MemoizeKey *key)
 	else
 	{
 		/* Process the key's MinimalTuple and store the values in probeslot */
-		ExecStoreMinimalTuple(key->params, tslot, false);
+		ExecStoreMinimalTuple(key, tslot, false);
 		slot_getallattrs(tslot);
 		memcpy(pslot->tts_values, tslot->tts_values, sizeof(Datum) * numKeys);
 		memcpy(pslot->tts_isnull, tslot->tts_isnull, sizeof(bool) * numKeys);
@@ -404,9 +418,9 @@ entry_purge_tuples(MemoizeState *mstate, MemoizeEntry *entry)
 static void
 remove_cache_entry(MemoizeState *mstate, MemoizeEntry *entry)
 {
-	MemoizeKey *key = entry->key;
+	MinimalTuple key = entry->key;
 
-	dlist_delete(&entry->key->lru_node);
+	dlist_delete(MemoizeKeyGetLruNode(key));
 
 	/* Remove all of the tuples from this entry */
 	entry_purge_tuples(mstate, entry);
@@ -421,8 +435,7 @@ remove_cache_entry(MemoizeState *mstate, MemoizeEntry *entry)
 	/* Remove the entry from the cache */
 	memoize_delete_item(mstate->hashtable, entry);
 
-	pfree(key->params);
-	pfree(key);
+	pfree(MemoizeKeyGetLruNode(key));
 }
 
 /*
@@ -468,7 +481,7 @@ cache_purge_all(MemoizeState *mstate)
  * which the key belongs to is removed from the cache.
  */
 static bool
-cache_reduce_memory(MemoizeState *mstate, MemoizeKey *specialkey)
+cache_reduce_memory(MemoizeState *mstate, MinimalTuple specialkey)
 {
 	bool		specialkey_intact = true;	/* for now */
 	dlist_mutable_iter iter;
@@ -484,7 +497,7 @@ cache_reduce_memory(MemoizeState *mstate, MemoizeKey *specialkey)
 	/* Start the eviction process starting at the head of the LRU list. */
 	dlist_foreach_modify(iter, &mstate->lru_list)
 	{
-		MemoizeKey *key = dlist_container(MemoizeKey, lru_node, iter.cur);
+		MinimalTuple key = LruNodeGetMemoizeKey(iter.cur);
 		MemoizeEntry *entry;
 
 		/*
@@ -558,7 +571,7 @@ cache_reduce_memory(MemoizeState *mstate, MemoizeKey *specialkey)
 static MemoizeEntry *
 cache_lookup(MemoizeState *mstate, bool *found)
 {
-	MemoizeKey *key;
+	MinimalTuple key;
 	MemoizeEntry *entry;
 	MemoryContext oldcontext;
 
@@ -577,7 +590,7 @@ cache_lookup(MemoizeState *mstate, bool *found)
 		 * Move existing entry to the tail of the LRU list to mark it as the
 		 * most recently used item.
 		 */
-		dlist_move_tail(&mstate->lru_list, &entry->key->lru_node);
+		dlist_move_tail(&mstate->lru_list, MemoizeKeyGetLruNode(entry->key));
 
 		return entry;
 	}
@@ -585,8 +598,8 @@ cache_lookup(MemoizeState *mstate, bool *found)
 	oldcontext = MemoryContextSwitchTo(mstate->tableContext);
 
 	/* Allocate a new key */
-	entry->key = key = palloc_object(MemoizeKey);
-	key->params = ExecCopySlotMinimalTuple(mstate->probeslot);
+	entry->key = key = ExecCopySlotMinimalTupleExtra(mstate->probeslot,
+													 MEMOIZE_KEY_EXTRA_BYTES);
 
 	/* Update the total cache memory utilization */
 	mstate->mem_used += EMPTY_ENTRY_MEMORY_BYTES(entry);
@@ -599,7 +612,7 @@ cache_lookup(MemoizeState *mstate, bool *found)
 	 * Since this is the most recently used entry, push this entry onto the
 	 * end of the LRU list.
 	 */
-	dlist_push_tail(&mstate->lru_list, &entry->key->lru_node);
+	dlist_push_tail(&mstate->lru_list, MemoizeKeyGetLruNode(entry->key));
 
 	mstate->last_tuple = NULL;
 
@@ -703,7 +716,7 @@ cache_store_tuple(MemoizeState *mstate, TupleTableSlot *slot)
 	 */
 	if (mstate->mem_used > mstate->mem_limit)
 	{
-		MemoizeKey *key = entry->key;
+		MinimalTuple key = entry->key;
 
 		if (!cache_reduce_memory(mstate, key))
 			return false;
@@ -1233,7 +1246,7 @@ ExecReScanMemoize(MemoizeState *node)
 double
 ExecEstimateCacheEntryOverheadBytes(double ntuples)
 {
-	return sizeof(MemoizeEntry) + sizeof(MemoizeKey) +
+	return sizeof(MemoizeEntry) + MEMOIZE_KEY_EXTRA_BYTES +
 		MEMOIZE_NEXT_TUPLE_EXTRA_BYTES * ntuples;
 }
 
