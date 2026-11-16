@@ -46,7 +46,6 @@
 #include "optimizer/tlist.h"
 #include "parser/parse_coerce.h"
 #include "parser/parsetree.h"
-#include "utils/lsyscache.h"
 #include "utils/rel.h"
 
 static List *expand_insert_targetlist(PlannerInfo *root, List *tlist,
@@ -437,9 +436,10 @@ expand_insert_targetlist(PlannerInfo *root, List *tlist, Relation rel)
 			 * Another exception is that if the column is generated, the value
 			 * we produce here will be ignored, and we don't want to risk
 			 * throwing an error.  So in that case we *don't* want to apply
-			 * domain constraints, so we must produce a NULL of the base type.
-			 * Again, code comparing the finished plan to the target relation
-			 * must account for this.
+			 * domain constraints.  We produce a bare NULL constant, but still
+			 * label it with the column's type, since the executor may
+			 * evaluate the relation's constraints on the plan's output tuple
+			 * as is.
 			 */
 			Node	   *new_expr;
 
@@ -456,13 +456,9 @@ expand_insert_targetlist(PlannerInfo *root, List *tlist, Relation rel)
 			}
 			else if (att_tup->attgenerated)
 			{
-				/* Generated column, insert a NULL of the base type */
-				Oid			baseTypeId = att_tup->atttypid;
-				int32		baseTypeMod = att_tup->atttypmod;
-
-				baseTypeId = getBaseTypeAndTypmod(baseTypeId, &baseTypeMod);
-				new_expr = (Node *) makeConst(baseTypeId,
-											  baseTypeMod,
+				/* Generated column, insert a NULL without domain checks */
+				new_expr = (Node *) makeConst(att_tup->atttypid,
+											  att_tup->atttypmod,
 											  att_tup->attcollation,
 											  att_tup->attlen,
 											  (Datum) 0,
