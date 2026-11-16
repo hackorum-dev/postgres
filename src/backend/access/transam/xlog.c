@@ -451,6 +451,9 @@ typedef struct XLogCtlInsert
 	WALInsertLockPadded *WALInsertLocks;
 } XLogCtlInsert;
 
+/* number of replayed checkpoints remembered for hint bit decisions */
+#define NUM_REPLAYED_CKPTS	4
+
 /*
  * Total shared-memory state for XLOG.
  */
@@ -576,6 +579,19 @@ typedef struct XLogCtlData
 	 * since the server started.
 	 */
 	pg_atomic_uint64 lastChecksumChangeRecPtr;
+
+	/*
+	 * Redo pointer of the last checkpoint record replayed during recovery.
+	 * Reset to InvalidXLogRecPtr by the first checkpoint after recovery.
+	 */
+	pg_atomic_uint64 lastReplayedCheckPointRedo;
+
+	/*
+	 * Redo pointer and oldestActiveXid of the last replayed checkpoints,
+	 * newest first.  Protected by info_lck.
+	 */
+	XLogRecPtr	replayedCkptRedo[NUM_REPLAYED_CKPTS];
+	TransactionId replayedCkptOldestXid[NUM_REPLAYED_CKPTS];
 } XLogCtlData;
 
 /*
@@ -773,6 +789,7 @@ static void UpdateLastRemovedPtr(char *filename);
 static void ValidateXLOGDirectoryStructure(void);
 static void CleanupBackupHistory(void);
 static void UpdateMinRecoveryPoint(XLogRecPtr lsn, bool force);
+static void RememberReplayedCheckPoint(const CheckPoint *checkPoint);
 static bool PerformRecoveryXLogAction(void);
 static void CheckReplayedDataChecksumState(uint32 replayed_state);
 static void AdoptReplayedDataChecksumState(uint32 new_version, XLogRecPtr lsn);
@@ -5648,6 +5665,7 @@ XLOGShmemInit(void *arg)
 	pg_atomic_init_u64(&XLogCtl->logFlushResult, InvalidXLogRecPtr);
 	pg_atomic_init_u64(&XLogCtl->unloggedLSN, InvalidXLogRecPtr);
 	pg_atomic_init_u64(&XLogCtl->lastChecksumChangeRecPtr, InvalidXLogRecPtr);
+	pg_atomic_init_u64(&XLogCtl->lastReplayedCheckPointRedo, InvalidXLogRecPtr);
 }
 
 /*
@@ -6398,6 +6416,8 @@ StartupXLOG(void)
 	lastFullPageWrites = checkPoint.fullPageWrites;
 
 	RedoRecPtr = XLogCtl->RedoRecPtr = XLogCtl->Insert.RedoRecPtr = checkPoint.redo;
+	if (InRecovery)
+		RememberReplayedCheckPoint(&checkPoint);
 	doPageWrites = lastFullPageWrites;
 
 	/* REDO */
@@ -7219,6 +7239,73 @@ LocalSetXLogInsertAllowed(void)
 	LocalXLogInsertAllowed = 1;
 
 	return oldXLogAllowed;
+}
+
+/*
+ * Remember a checkpoint record replayed in recovery.
+ */
+static void
+RememberReplayedCheckPoint(const CheckPoint *checkPoint)
+{
+	SpinLockAcquire(&XLogCtl->info_lck);
+	memmove(&XLogCtl->replayedCkptRedo[1], &XLogCtl->replayedCkptRedo[0],
+			sizeof(XLogRecPtr) * (NUM_REPLAYED_CKPTS - 1));
+	memmove(&XLogCtl->replayedCkptOldestXid[1],
+			&XLogCtl->replayedCkptOldestXid[0],
+			sizeof(TransactionId) * (NUM_REPLAYED_CKPTS - 1));
+	XLogCtl->replayedCkptRedo[0] = checkPoint->redo;
+	XLogCtl->replayedCkptOldestXid[0] = checkPoint->oldestActiveXid;
+	SpinLockRelease(&XLogCtl->info_lck);
+
+	pg_atomic_write_membarrier_u64(&XLogCtl->lastReplayedCheckPointRedo,
+								   checkPoint->redo);
+}
+
+/*
+ * Did transaction 'xid' end before the first replayed checkpoint that
+ * started after 'page_lsn'?
+ *
+ * If so, no checkpoint lies between the last change of the page and the end
+ * of the transaction, and a hint bit for it is safe even if the buffer is
+ * still dirty from before the last replayed checkpoint.
+ */
+bool
+RecoveryHintXidIsSafe(TransactionId xid, XLogRecPtr page_lsn)
+{
+	static XLogRecPtr redo[NUM_REPLAYED_CKPTS];
+	static TransactionId oldestXid[NUM_REPLAYED_CKPTS];
+	TransactionId limit = InvalidTransactionId;
+	int			i;
+
+	if (!TransactionIdIsNormal(xid))
+		return false;
+
+	if (redo[0] != pg_atomic_read_u64(&XLogCtl->lastReplayedCheckPointRedo))
+	{
+		SpinLockAcquire(&XLogCtl->info_lck);
+		memcpy(redo, XLogCtl->replayedCkptRedo, sizeof(redo));
+		memcpy(oldestXid, XLogCtl->replayedCkptOldestXid, sizeof(oldestXid));
+		SpinLockRelease(&XLogCtl->info_lck);
+	}
+
+	for (i = 0; i < NUM_REPLAYED_CKPTS && redo[i] >= page_lsn; i++)
+		limit = oldestXid[i];
+
+	/* unknown if the page is older than all remembered checkpoints */
+	if (i == NUM_REPLAYED_CKPTS || !XLogRecPtrIsValid(redo[i]))
+		return false;
+
+	return TransactionIdIsValid(limit) && TransactionIdPrecedes(xid, limit);
+}
+
+/*
+ * Return the redo pointer of the last checkpoint record replayed in recovery,
+ * or InvalidXLogRecPtr once a checkpoint has completed after recovery.
+ */
+XLogRecPtr
+GetLastReplayedCheckPointRedo(void)
+{
+	return pg_atomic_read_u64(&XLogCtl->lastReplayedCheckPointRedo);
 }
 
 /*
@@ -8153,6 +8240,10 @@ CreateCheckPoint(int flags)
 
 	UpdateControlFile();
 	LWLockRelease(ControlFileLock);
+
+	/* all buffers dirtied during recovery have been written by now */
+	pg_atomic_write_membarrier_u64(&XLogCtl->lastReplayedCheckPointRedo,
+								   InvalidXLogRecPtr);
 
 	/*
 	 * We are now done with critical updates; no need for system panic if we
@@ -9412,6 +9503,7 @@ xlog_redo(XLogReaderState *record)
 					(errmsg("unexpected timeline ID %u (should be %u) in shutdown checkpoint record",
 							checkPoint.ThisTimeLineID, replayTLI)));
 
+		RememberReplayedCheckPoint(&checkPoint);
 		RecoveryRestartPoint(&checkPoint, record);
 
 		/*
@@ -9472,6 +9564,7 @@ xlog_redo(XLogReaderState *record)
 					(errmsg("unexpected timeline ID %u (should be %u) in online checkpoint record",
 							checkPoint.ThisTimeLineID, replayTLI)));
 
+		RememberReplayedCheckPoint(&checkPoint);
 		RecoveryRestartPoint(&checkPoint, record);
 
 		/*

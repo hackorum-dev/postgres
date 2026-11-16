@@ -1150,7 +1150,7 @@ XLogCheckBufferNeedsBackup(Buffer buffer)
  * had to write, InvalidXLogRecPtr otherwise.
  */
 XLogRecPtr
-XLogSaveBufferForHint(Buffer buffer, bool buffer_std)
+XLogSaveBufferForHint(Buffer buffer, bool buffer_std, bool force)
 {
 	XLogRecPtr	recptr = InvalidXLogRecPtr;
 	XLogRecPtr	lsn;
@@ -1177,7 +1177,7 @@ XLogSaveBufferForHint(Buffer buffer, bool buffer_std)
 	 */
 	lsn = PageGetLSN(BufferGetPage(buffer));
 
-	if (lsn <= RedoRecPtr)
+	if (lsn <= RedoRecPtr || force)
 	{
 		int			flags = 0;
 
