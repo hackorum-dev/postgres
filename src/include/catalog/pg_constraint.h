@@ -263,6 +263,9 @@ extern bool ConstraintNameExists(const char *conname, Oid namespaceid);
 extern char *ChooseConstraintName(const char *name1, const char *name2,
 								  const char *label, Oid namespaceid,
 								  List *others);
+extern char *ChooseConstraintNameExtended(const char *name1, const char *name2,
+										  const char *label, Oid namespaceid,
+										  List *others, int *passp);
 
 extern HeapTuple findNotNullConstraintAttnum(Oid relid, AttrNumber attnum);
 extern HeapTuple findNotNullConstraint(Oid relid, const char *colname);
