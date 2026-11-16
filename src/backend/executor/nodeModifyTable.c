@@ -253,9 +253,8 @@ ExecCheckPlanOutput(Relation resultRel, List *targetList)
 		{
 			/*
 			 * For a generated column, the planner will have inserted a null
-			 * of the column's base type (to avoid possibly failing on domain
-			 * not-null constraints).  It doesn't seem worth insisting on that
-			 * exact type though, since a null value is type-independent.  As
+			 * of the column's type, without applying domain constraints (to
+			 * avoid possibly failing on domain not-null constraints).  As
 			 * above, just insist on *some* NULL constant.
 			 */
 			if (!IsA(tle->expr, Const) ||
