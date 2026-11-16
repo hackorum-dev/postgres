@@ -224,10 +224,20 @@ update_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid)
 	ReplicationSlot *slot = MyReplicationSlot;
 	bool		updated_xmin_or_lsn = false;
 	bool		updated_config = false;
+	bool		found_consistent_snapshot = false;
 	SlotSyncSkipReason skip_reason = SS_SKIP_NONE;
 	XLogRecPtr	latestFlushPtr = GetStandbyFlushRecPtr(NULL);
 
 	Assert(slot->data.invalidated == RS_INVAL_NONE);
+
+	/*
+	 * A temporary slot is either newly created (confirmed_flush is invalid)
+	 * or was skipped in its previous sync attempt; if synchronization had
+	 * succeeded, the caller would have persisted the slot immediately.
+	 */
+	Assert(slot->data.persistency != RS_TEMPORARY ||
+		   !XLogRecPtrIsValid(slot->data.confirmed_flush) ||
+		   slot->slotsync_skip_reason != SS_SKIP_NONE);
 
 	/*
 	 * Make sure that concerned WAL is received and flushed before syncing
@@ -335,10 +345,10 @@ update_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid)
 			SpinLockRelease(&slot->mutex);
 
 			updated_xmin_or_lsn = true;
+			found_consistent_snapshot = true;
 		}
 		else
 		{
-			bool		found_consistent_snapshot;
 			XLogRecPtr	old_confirmed_lsn = slot->data.confirmed_flush;
 			XLogRecPtr	old_restart_lsn = slot->data.restart_lsn;
 			TransactionId old_catalog_xmin = slot->data.catalog_xmin;
@@ -355,22 +365,9 @@ update_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid)
 										   LSN_FORMAT_ARGS(remote_slot->confirmed_lsn),
 										   LSN_FORMAT_ARGS(slot->data.confirmed_flush)));
 
-			/*
-			 * If we can't reach a consistent snapshot, the slot won't be
-			 * persisted. See update_and_persist_local_synced_slot().
-			 */
-			if (!found_consistent_snapshot)
-			{
-				Assert(MyReplicationSlot->data.persistency == RS_TEMPORARY);
-
-				ereport(LOG,
-						errmsg("could not synchronize replication slot \"%s\"",
-							   remote_slot->name),
-						errdetail("Synchronization could lead to data loss, because the standby could not build a consistent snapshot to decode WALs at LSN %X/%08X.",
-								  LSN_FORMAT_ARGS(slot->data.restart_lsn)));
-
-				skip_reason = SS_SKIP_NO_CONSISTENT_SNAPSHOT;
-			}
+			/* A persistent slot must always reach a consistent snapshot. */
+			Assert(found_consistent_snapshot ||
+				   slot->data.persistency == RS_TEMPORARY);
 
 			/*
 			 * It is possible that the slot's xmin or LSNs are not updated,
@@ -381,6 +378,26 @@ update_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid)
 								   old_restart_lsn != slot->data.restart_lsn ||
 								   old_catalog_xmin != slot->data.catalog_xmin);
 		}
+	}
+
+	/*
+	 * A temporary slot is not sync-ready unless this call confirmed that
+	 * decoding from its restart_lsn reaches a consistent point (any temporary
+	 * slot that reached consistency in an earlier call would already have
+	 * been persisted by update_and_persist_local_synced_slot()). That's the
+	 * case both when advancing the slot above failed to build a consistent
+	 * snapshot and when we skipped advancing because the remote slot has not
+	 * moved ahead of the local slot.
+	 */
+	if (slot->data.persistency == RS_TEMPORARY && !found_consistent_snapshot)
+	{
+		ereport(LOG,
+				errmsg("could not synchronize replication slot \"%s\"",
+					   remote_slot->name),
+				errdetail("Synchronization could lead to data loss, because the standby could not build a consistent snapshot to decode WALs at LSN %X/%08X.",
+						  LSN_FORMAT_ARGS(slot->data.restart_lsn)));
+
+		skip_reason = SS_SKIP_NO_CONSISTENT_SNAPSHOT;
 	}
 
 	/* Update slot sync skip stats */
