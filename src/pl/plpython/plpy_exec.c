@@ -31,6 +31,7 @@ static PyObject *PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *p
 static HeapTuple PLy_modify_tuple(PLyProcedure *proc, PyObject *pltd,
 								  TriggerData *tdata, HeapTuple otup);
 static void plpython_trigger_error_callback(void *arg);
+static void PLy_td_set_item(PyObject *td, const char *key, PyObject *value);
 
 static PyObject *PLy_procedure_call(PLyProcedure *proc, const char *kargs, PyObject *vargs);
 static void PLy_abort_open_subtransactions(int save_subxact_level);
@@ -519,12 +520,10 @@ PLy_exec_event_trigger(FunctionCallInfo fcinfo, PLyProcedure *proc)
 			PLy_elog(ERROR, NULL);
 
 		pltevent = PLyUnicode_FromString(tdata->event);
-		PyDict_SetItemString(pltdata, "event", pltevent);
-		Py_DECREF(pltevent);
+		PLy_td_set_item(pltdata, "event", pltevent);
 
 		plttag = PLyUnicode_FromString(GetCommandTagName(tdata->tag));
-		PyDict_SetItemString(pltdata, "tag", plttag);
-		Py_DECREF(plttag);
+		PLy_td_set_item(pltdata, "tag", plttag);
 
 		PLy_procedure_call(proc, "TD", pltdata);
 
@@ -833,26 +832,22 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc, HeapTuple *r
 	PG_TRY();
 	{
 		pltname = PLyUnicode_FromString(tdata->tg_trigger->tgname);
-		PyDict_SetItemString(pltdata, "name", pltname);
-		Py_DECREF(pltname);
+		PLy_td_set_item(pltdata, "name", pltname);
 
 		stroid = DatumGetCString(DirectFunctionCall1(oidout,
 													 ObjectIdGetDatum(tdata->tg_relation->rd_id)));
 		pltrelid = PLyUnicode_FromString(stroid);
-		PyDict_SetItemString(pltdata, "relid", pltrelid);
-		Py_DECREF(pltrelid);
+		PLy_td_set_item(pltdata, "relid", pltrelid);
 		pfree(stroid);
 
 		stroid = SPI_getrelname(tdata->tg_relation);
 		plttablename = PLyUnicode_FromString(stroid);
-		PyDict_SetItemString(pltdata, "table_name", plttablename);
-		Py_DECREF(plttablename);
+		PLy_td_set_item(pltdata, "table_name", plttablename);
 		pfree(stroid);
 
 		stroid = SPI_getnspname(tdata->tg_relation);
 		plttableschema = PLyUnicode_FromString(stroid);
-		PyDict_SetItemString(pltdata, "table_schema", plttableschema);
-		Py_DECREF(plttableschema);
+		PLy_td_set_item(pltdata, "table_schema", plttableschema);
 		pfree(stroid);
 
 		if (TRIGGER_FIRED_BEFORE(tdata->tg_event))
@@ -866,14 +861,12 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc, HeapTuple *r
 			elog(ERROR, "unrecognized WHEN tg_event: %u", tdata->tg_event);
 			pltwhen = NULL;		/* keep compiler quiet */
 		}
-		PyDict_SetItemString(pltdata, "when", pltwhen);
-		Py_DECREF(pltwhen);
+		PLy_td_set_item(pltdata, "when", pltwhen);
 
 		if (TRIGGER_FIRED_FOR_ROW(tdata->tg_event))
 		{
 			pltlevel = PLyUnicode_FromString("ROW");
-			PyDict_SetItemString(pltdata, "level", pltlevel);
-			Py_DECREF(pltlevel);
+			PLy_td_set_item(pltdata, "level", pltlevel);
 
 			/*
 			 * Note: In BEFORE trigger, stored generated columns are not
@@ -884,26 +877,26 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc, HeapTuple *r
 			{
 				pltevent = PLyUnicode_FromString("INSERT");
 
-				PyDict_SetItemString(pltdata, "old", Py_None);
+				Py_INCREF(Py_None);
+				PLy_td_set_item(pltdata, "old", Py_None);
 				pytnew = PLy_input_from_tuple(&proc->result_in,
 											  tdata->tg_trigtuple,
 											  rel_descr,
 											  !TRIGGER_FIRED_BEFORE(tdata->tg_event));
-				PyDict_SetItemString(pltdata, "new", pytnew);
-				Py_DECREF(pytnew);
+				PLy_td_set_item(pltdata, "new", pytnew);
 				*rv = tdata->tg_trigtuple;
 			}
 			else if (TRIGGER_FIRED_BY_DELETE(tdata->tg_event))
 			{
 				pltevent = PLyUnicode_FromString("DELETE");
 
-				PyDict_SetItemString(pltdata, "new", Py_None);
+				Py_INCREF(Py_None);
+				PLy_td_set_item(pltdata, "new", Py_None);
 				pytold = PLy_input_from_tuple(&proc->result_in,
 											  tdata->tg_trigtuple,
 											  rel_descr,
 											  true);
-				PyDict_SetItemString(pltdata, "old", pytold);
-				Py_DECREF(pytold);
+				PLy_td_set_item(pltdata, "old", pytold);
 				*rv = tdata->tg_trigtuple;
 			}
 			else if (TRIGGER_FIRED_BY_UPDATE(tdata->tg_event))
@@ -914,14 +907,12 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc, HeapTuple *r
 											  tdata->tg_newtuple,
 											  rel_descr,
 											  !TRIGGER_FIRED_BEFORE(tdata->tg_event));
-				PyDict_SetItemString(pltdata, "new", pytnew);
-				Py_DECREF(pytnew);
+				PLy_td_set_item(pltdata, "new", pytnew);
 				pytold = PLy_input_from_tuple(&proc->result_in,
 											  tdata->tg_trigtuple,
 											  rel_descr,
 											  true);
-				PyDict_SetItemString(pltdata, "old", pytold);
-				Py_DECREF(pytold);
+				PLy_td_set_item(pltdata, "old", pytold);
 				*rv = tdata->tg_newtuple;
 			}
 			else
@@ -930,17 +921,17 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc, HeapTuple *r
 				pltevent = NULL;	/* keep compiler quiet */
 			}
 
-			PyDict_SetItemString(pltdata, "event", pltevent);
-			Py_DECREF(pltevent);
+			PLy_td_set_item(pltdata, "event", pltevent);
 		}
 		else if (TRIGGER_FIRED_FOR_STATEMENT(tdata->tg_event))
 		{
 			pltlevel = PLyUnicode_FromString("STATEMENT");
-			PyDict_SetItemString(pltdata, "level", pltlevel);
-			Py_DECREF(pltlevel);
+			PLy_td_set_item(pltdata, "level", pltlevel);
 
-			PyDict_SetItemString(pltdata, "old", Py_None);
-			PyDict_SetItemString(pltdata, "new", Py_None);
+			Py_INCREF(Py_None);
+			PLy_td_set_item(pltdata, "old", Py_None);
+			Py_INCREF(Py_None);
+			PLy_td_set_item(pltdata, "new", Py_None);
 			*rv = NULL;
 
 			if (TRIGGER_FIRED_BY_INSERT(tdata->tg_event))
@@ -957,8 +948,7 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc, HeapTuple *r
 				pltevent = NULL;	/* keep compiler quiet */
 			}
 
-			PyDict_SetItemString(pltdata, "event", pltevent);
-			Py_DECREF(pltevent);
+			PLy_td_set_item(pltdata, "event", pltevent);
 		}
 		else
 			elog(ERROR, "unrecognized LEVEL tg_event: %u", tdata->tg_event);
@@ -977,6 +967,8 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc, HeapTuple *r
 			for (i = 0; i < tdata->tg_trigger->tgnargs; i++)
 			{
 				pltarg = PLyUnicode_FromString(tdata->tg_trigger->tgargs[i]);
+				if (pltarg == NULL)
+					PLy_elog(ERROR, "could not build TD dictionary");
 
 				/*
 				 * stolen, don't Py_DECREF
@@ -988,7 +980,8 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc, HeapTuple *r
 		{
 			Assert(pltargs == Py_None);
 		}
-		PyDict_SetItemString(pltdata, "args", pltargs);
+		if (PyDict_SetItemString(pltdata, "args", pltargs) < 0)
+			PLy_elog(ERROR, "could not build TD dictionary");
 		Py_DECREF(pltargs);
 	}
 	PG_CATCH();
@@ -1000,6 +993,26 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc, HeapTuple *r
 	PG_END_TRY();
 
 	return pltdata;
+}
+
+/*
+ * Store "value" under "key" in a TD dictionary, raising an error on failure.
+ *
+ * This steals the reference to "value", which can be NULL (with a Python
+ * exception set) if creating it failed.
+ */
+static void
+PLy_td_set_item(PyObject *td, const char *key, PyObject *value)
+{
+	int			rc = -1;
+
+	if (value != NULL)
+	{
+		rc = PyDict_SetItemString(td, key, value);
+		Py_DECREF(value);
+	}
+	if (rc < 0)
+		PLy_elog(ERROR, "could not build TD dictionary");
 }
 
 /*
@@ -1151,7 +1164,10 @@ PLy_procedure_call(PLyProcedure *proc, const char *kargs, PyObject *vargs)
 	PyObject   *rv = NULL;
 	int volatile save_subxact_level = list_length(explicit_subtransactions);
 
-	PyDict_SetItemString(proc->globals, kargs, vargs);
+	/* vargs is NULL, with a Python exception set, if building it failed */
+	if (vargs == NULL ||
+		PyDict_SetItemString(proc->globals, kargs, vargs) < 0)
+		PLy_elog(ERROR, "could not set up arguments for PL/Python function");
 
 	PG_TRY();
 	{
