@@ -1409,7 +1409,6 @@ CREATE TABLE gtest31_2 (b text) PARTITION BY RANGE ((('(1)'::gtest31_1).a + leng
 ALTER TABLE gtest31_1 ALTER COLUMN a TYPE bigint;
 ERROR:  cannot alter table "gtest31_1" because table gtest31_2 uses its row type
 ALTER TABLE gtest31_1 ALTER COLUMN a SET EXPRESSION AS (124);
-ERROR:  unexpected object depending on column: table gtest31_2
 DROP TABLE gtest31_1, gtest31_2;
 -- triggers
 CREATE TABLE gtest26 (

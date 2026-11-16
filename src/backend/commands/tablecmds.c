@@ -16266,6 +16266,25 @@ RememberAllDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype,
 						 */
 						Assert(foundObject.objectSubId == 0);
 					}
+					else if (relKind == RELKIND_PARTITIONED_TABLE)
+					{
+						/*
+						 * A partition key expression can depend on a column
+						 * of another table by selecting a field of that
+						 * table's rowtype.  We have no way to rebuild a
+						 * partition key, so changing the column's type has to
+						 * be rejected.  Changing its generation expression is
+						 * harmless, though.
+						 */
+						Assert(foundObject.objectSubId == 0);
+						if (subtype == AT_AlterColumnType)
+							ereport(ERROR,
+									(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+									 errmsg("cannot alter type of a column used in a partition key expression"),
+									 errdetail("Partition key of %s depends on column \"%s\".",
+											   getObjectDescription(&foundObject, false),
+											   colName)));
+					}
 					else
 					{
 						/* Not expecting any other direct dependencies... */
