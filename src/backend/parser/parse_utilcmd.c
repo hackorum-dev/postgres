@@ -1422,15 +1422,29 @@ expandTableLikeClause(RangeVar *heapRel, TableLikeClause *table_like_clause)
 				Node	   *this_default;
 				AlterTableCmd *atsubcmd;
 				bool		found_whole_row;
+				TupleDesc	childdesc = RelationGetDescr(childrel);
+				AttrNumber	child_attno = attmap->attnums[parent_attno - 1];
 
 				this_default = TupleDescGetDefault(tupleDesc, parent_attno);
 				if (this_default == NULL)
 					elog(ERROR, "default expression not found for attribute %d of relation \"%s\"",
 						 parent_attno, RelationGetRelationName(relation));
 
+				/*
+				 * If the column was merged with an inherited generated
+				 * column, it can't take a plain default, just as if the
+				 * column had been written out (see MergeChildAttribute).
+				 */
+				if (!attribute->attgenerated &&
+					TupleDescAttr(childdesc, child_attno - 1)->attgenerated)
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_COLUMN_DEFINITION),
+							 errmsg("column \"%s\" inherits from generated column but specifies default",
+									NameStr(attribute->attname))));
+
 				atsubcmd = makeNode(AlterTableCmd);
 				atsubcmd->subtype = AT_CookedColumnDefault;
-				atsubcmd->num = attmap->attnums[parent_attno - 1];
+				atsubcmd->num = child_attno;
 				atsubcmd->def = map_variable_attnos(this_default,
 													1, 0,
 													attmap,
@@ -1449,6 +1463,35 @@ expandTableLikeClause(RangeVar *heapRel, TableLikeClause *table_like_clause)
 							 errdetail("Generation expression for column \"%s\" contains a whole-row reference to table \"%s\".",
 									   NameStr(attribute->attname),
 									   RelationGetRelationName(relation))));
+
+				/*
+				 * A column that the generation expression refers to may have
+				 * been merged with an inherited generated column.  The
+				 * expression was cooked against the LIKE table, so redo the
+				 * check of cookDefault against the new table.
+				 */
+				if (attribute->attgenerated)
+				{
+					Bitmapset  *attnos = NULL;
+					int			k = -1;
+
+					pull_varattnos(atsubcmd->def, 1, &attnos);
+					while ((k = bms_next_member(attnos, k)) >= 0)
+					{
+						AttrNumber	attno = k + FirstLowInvalidHeapAttributeNumber;
+						Form_pg_attribute refatt;
+
+						if (attno <= 0)
+							continue;
+						refatt = TupleDescAttr(childdesc, attno - 1);
+						if (refatt->attgenerated)
+							ereport(ERROR,
+									(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+									 errmsg("cannot use generated column \"%s\" in column generation expression",
+											NameStr(refatt->attname)),
+									 errdetail("A generated column cannot reference another generated column.")));
+					}
+				}
 
 				atsubcmds = lappend(atsubcmds, atsubcmd);
 			}
