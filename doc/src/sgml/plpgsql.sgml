@@ -4307,11 +4307,6 @@ ASSERT <replaceable class="parameter">condition</replaceable> <optional> , <repl
     triggers might still abort the entire operation by raising an error.
    </para>
 
-   <para>
-    <xref linkend="plpgsql-trigger-example"/> shows an example of a
-    trigger function in <application>PL/pgSQL</application>.
-   </para>
-
    <example id="plpgsql-trigger-example">
     <title>A <application>PL/pgSQL</application> Trigger Function</title>
 
@@ -4361,8 +4356,6 @@ CREATE TRIGGER emp_stamp BEFORE INSERT OR UPDATE ON emp
     Another way to log changes to a table involves creating a new table that
     holds a row for each insert, update, or delete that occurs. This approach
     can be thought of as auditing changes to a table.
-    <xref linkend="plpgsql-trigger-audit-example"/> shows an example of an
-    audit trigger function in <application>PL/pgSQL</application>.
    </para>
 
    <example id="plpgsql-trigger-audit-example">
@@ -4418,8 +4411,6 @@ AFTER INSERT OR UPDATE OR DELETE ON emp
     approach still records the full audit trail of changes to the table,
     but also presents a simplified view of the audit trail, showing just
     the last modified timestamp derived from the audit trail for each entry.
-    <xref linkend="plpgsql-view-trigger-audit-example"/> shows an example
-    of an audit trigger on a view in <application>PL/pgSQL</application>.
    </para>
 
    <example id="plpgsql-view-trigger-audit-example">
@@ -4498,9 +4489,6 @@ INSTEAD OF INSERT OR UPDATE OR DELETE ON emp_view
     times.
     This technique is commonly used in Data Warehousing, where the tables
     of measured or observed data (called fact tables) might be extremely large.
-    <xref linkend="plpgsql-trigger-summary-example"/> shows an example of a
-    trigger function in <application>PL/pgSQL</application> that maintains
-    a summary table for a fact table in a data warehouse.
    </para>
 
 
@@ -4652,7 +4640,6 @@ SELECT * FROM sales_summary_bytime;
     statement.  The <command>CREATE TRIGGER</command> command assigns names to one
     or both transition tables, and then the function can refer to those names
     as though they were read-only temporary tables.
-    <xref linkend="plpgsql-trigger-audit-transition-example"/> shows an example.
    </para>
 
    <example id="plpgsql-trigger-audit-transition-example">
@@ -4760,12 +4747,7 @@ CREATE TRIGGER emp_audit_del
    </variablelist>
   </para>
 
-   <para>
-    <xref linkend="plpgsql-event-trigger-example"/> shows an example of an
-    event trigger function in <application>PL/pgSQL</application>.
-   </para>
-
-   <example id="plpgsql-event-trigger-example">
+    <example id="plpgsql-event-trigger-example">
     <title>A <application>PL/pgSQL</application> Event Trigger Function</title>
 
     <para>
