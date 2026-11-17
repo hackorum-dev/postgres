@@ -17,6 +17,7 @@
 #include "access/nbtree.h"
 #include "access/sysattr.h"
 #include "catalog/pg_constraint.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
@@ -95,6 +96,7 @@ typedef struct GroupByColInfo
 
 
 static bool is_partial_agg_memory_risky(PlannerInfo *root);
+static bool eager_agg_support_func_is_volatile(PlannerInfo *root, Oid funcid);
 static void create_agg_clause_infos(PlannerInfo *root);
 static void create_grouping_expr_infos(PlannerInfo *root);
 static EquivalenceClass *get_eclass_for_sortgroupclause(PlannerInfo *root,
@@ -640,6 +642,8 @@ remove_useless_groupby_columns(PlannerInfo *root)
 void
 setup_eager_aggregation(PlannerInfo *root)
 {
+	ListCell   *lc;
+
 	/*
 	 * Don't apply eager aggregation if disabled by user.
 	 */
@@ -694,6 +698,17 @@ setup_eager_aggregation(PlannerInfo *root)
 	if (is_partial_agg_memory_risky(root))
 		return;
 
+	foreach(lc, root->aggtransinfos)
+	{
+		AggTransInfo *transinfo = lfirst_node(AggTransInfo, lc);
+
+		if (eager_agg_support_func_is_volatile(root, transinfo->transfn_oid) ||
+			eager_agg_support_func_is_volatile(root, transinfo->combinefn_oid) ||
+			eager_agg_support_func_is_volatile(root, transinfo->serialfn_oid) ||
+			eager_agg_support_func_is_volatile(root, transinfo->deserialfn_oid))
+			return;
+	}
+
 	/*
 	 * Collect aggregate expressions and plain Vars that appear in the
 	 * targetlist and havingQual.
@@ -711,6 +726,16 @@ setup_eager_aggregation(PlannerInfo *root)
 	 * Collect grouping expressions that appear in grouping clauses.
 	 */
 	create_grouping_expr_infos(root);
+}
+
+static bool
+eager_agg_support_func_is_volatile(PlannerInfo *root, Oid funcid)
+{
+	if (!OidIsValid(funcid))
+		return false;
+
+	record_plan_function_dependency(root, funcid);
+	return func_volatile(funcid) == PROVOLATILE_VOLATILE;
 }
 
 /*
