@@ -740,6 +740,17 @@ DETAIL:  Synchronization could lead to data loss, because the remote slot needs 
        </listitem>
       </varlistentry>
 
+      <varlistentry id="pgoutput-options-slot-two-phase">
+       <term><varname>slot_two_phase</varname> (<type>boolean</type>)</term>
+       <listitem>
+        <para>
+         Reports an error unless the selected replication slot's
+         <literal>two_phase</literal> property matches the specified value.
+         The slot property is checked only when this option is specified.
+        </para>
+       </listitem>
+      </varlistentry>
+
       <varlistentry id="pgoutput-options-slot-failover">
        <term><varname>slot_failover</varname> (<type>boolean</type>)</term>
        <listitem>

@@ -221,6 +221,22 @@ CREATE SUBSCRIPTION <replaceable class="parameter">subscription_name</replaceabl
           <literal>failover</literal> property does not match the subscription
           parameter.
          </para>
+
+         <para>
+          The named slot's <literal>two_phase</literal> property may likewise
+          differ from the state required by the subscription. Ensure these
+          values match as well. While the subscription's internal two-phase
+          state is <quote>pending</quote> and not all tables are synchronized
+          and ready, the required slot property is <literal>false</literal>,
+          even if the subscription's <literal>two_phase</literal> parameter is
+          <literal>true</literal>. This also applies to a subscription with no
+          tables, which remains in the <quote>pending</quote> state. Once all
+          tables are ready, <command>START_REPLICATION</command> can enable the
+          slot property, after which the apply worker updates the subscription
+          state. With a <productname>PostgreSQL</productname> 20 or later
+          publisher, the apply worker also reports an error when starting
+          replication if they do not match.
+         </para>
         </listitem>
        </varlistentry>
       </variablelist>

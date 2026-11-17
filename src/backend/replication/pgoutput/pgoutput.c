@@ -27,6 +27,7 @@
 #include "replication/logicalproto.h"
 #include "replication/origin.h"
 #include "replication/pgoutput.h"
+#include "replication/slot.h"
 #include "rewrite/rewriteHandler.h"
 #include "utils/builtins.h"
 #include "utils/inval.h"
@@ -296,6 +297,7 @@ parse_output_parameters(List *options, PGOutputData *data)
 	bool		messages_option_given = false;
 	bool		streaming_given = false;
 	bool		two_phase_option_given = false;
+	bool		slot_two_phase_option_given = false;
 	bool		slot_failover_option_given = false;
 	bool		origin_option_given = false;
 
@@ -304,6 +306,8 @@ parse_output_parameters(List *options, PGOutputData *data)
 	data->streaming = LOGICALREP_STREAM_OFF;
 	data->messages = false;
 	data->two_phase = false;
+	data->slot_two_phase = false;
+	data->slot_two_phase_set = false;
 	data->slot_failover = false;
 	data->slot_failover_set = false;
 	data->publish_no_origin = false;
@@ -398,6 +402,17 @@ parse_output_parameters(List *options, PGOutputData *data)
 			two_phase_option_given = true;
 
 			data->two_phase = defGetBoolean(defel);
+		}
+		else if (strcmp(defel->defname, "slot_two_phase") == 0)
+		{
+			if (slot_two_phase_option_given)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			slot_two_phase_option_given = true;
+
+			data->slot_two_phase = defGetBoolean(defel);
+			data->slot_two_phase_set = true;
 		}
 		else if (strcmp(defel->defname, "slot_failover") == 0)
 		{
@@ -563,6 +578,18 @@ pgoutput_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 					 errmsg("two-phase commit requested, but not supported by output plugin")));
 		else
 			ctx->twophase_opt_given = true;
+
+		if (data->slot_two_phase_set &&
+			data->slot_two_phase != MyReplicationSlot->data.two_phase)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("replication slot \"%s\" has two_phase %s",
+							NameStr(MyReplicationSlot->data.name),
+							MyReplicationSlot->data.two_phase ?
+							"enabled" : "disabled"),
+					 errdetail("The expected two_phase setting is %s.",
+							   data->slot_two_phase ?
+							   "enabled" : "disabled")));
 
 		if (data->slot_failover_set &&
 			data->slot_failover != MyReplicationSlot->data.failover)
