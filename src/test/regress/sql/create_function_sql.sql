@@ -568,6 +568,36 @@ CREATE FUNCTION test1 (anyelement) RETURNS anyarray LANGUAGE SQL
 SELECT test1(0);
 RESET check_function_bodies;
 
+BEGIN;
+CREATE TABLE t(a int);
+
+CREATE FUNCTION f_v() RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  set local client_min_messages to warning;
+  ALTER TABLE IF EXISTS t RENAME TO t_renamed;
+END $$;
+
+-- well, it's not so immutable as it claims
+CREATE FUNCTION f_h(int) RETURNS int LANGUAGE plpgsql IMMUTABLE AS $$
+BEGIN
+  PERFORM f_v();
+  BEGIN
+    PERFORM f_x(1);
+  EXCEPTION WHEN others THEN
+    NULL;
+  END;
+  RETURN $1;
+END $$;
+
+-- This function has to change settings to trigger plan invalidation
+CREATE FUNCTION f_x(i int) RETURNS int LANGUAGE sql SET work_mem TO 4096 AS $$
+  SELECT f_h(1) + i + (SELECT count(*)::int FROM t)
+$$;
+
+SELECT f_x(1);
+
+ROLLBACK;
+
 -- Cleanup
 DROP SCHEMA temp_func_test CASCADE;
 DROP USER regress_unpriv_user;

@@ -170,6 +170,7 @@ typedef struct CachedPlan
 	int			generation;		/* parent's generation number for this plan */
 	int			refcount;		/* count of live references to this struct */
 	MemoryContext context;		/* context containing this CachedPlan */
+	List	   *query_list;		/* list of Query nodes, or NIL if not valid */
 } CachedPlan;
 
 /*
