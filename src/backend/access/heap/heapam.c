@@ -89,6 +89,15 @@ static void compute_new_xmax_infomask(TransactionId xmax, uint16 old_infomask,
 									  LockTupleMode mode, bool is_update,
 									  TransactionId *result_xmax, uint16 *result_infomask,
 									  uint16 *result_infomask2);
+static void recompute_update_xmax_after_relock(MultiXactId cur_xmax,
+											   TransactionId xid,
+											   LockTupleMode mode,
+											   TransactionId *xmax_old_tuple,
+											   uint16 *infomask_old_tuple,
+											   uint16 *infomask2_old_tuple,
+											   TransactionId *xmax_new_tuple,
+											   uint16 *infomask_new_tuple,
+											   uint16 *infomask2_new_tuple);
 static TM_Result heap_lock_updated_tuple(Relation rel,
 										 uint16 prior_infomask,
 										 TransactionId prior_raw_xmax,
@@ -4061,6 +4070,44 @@ l2:
 				break;
 			}
 		}
+
+		/*
+		 * While we didn't hold the buffer lock, other transactions could
+		 * acquire a lock on the old tuple that doesn't conflict with ours
+		 * (FOR KEY SHARE, if this is not a key update).  Doing so replaced
+		 * the xmax we stored above with a new MultiXactId.  The xmax values
+		 * we computed for the update don't include those lockers, so their
+		 * locks would be lost.  Recompute them from the current xmax.
+		 */
+		if (xmax_infomask_changed(oldtup.t_data->t_infomask,
+								  infomask_lock_old_tuple) ||
+			!TransactionIdEquals(HeapTupleHeaderGetRawXmax(oldtup.t_data),
+								 xmax_lock_old_tuple))
+		{
+			HeapTupleHeader newtups[2] = {heaptup->t_data, newtup->t_data};
+
+			Assert(oldtup.t_data->t_infomask & HEAP_XMAX_IS_MULTI);
+			Assert(HEAP_XMAX_IS_LOCKED_ONLY(oldtup.t_data->t_infomask));
+
+			recompute_update_xmax_after_relock(HeapTupleHeaderGetRawXmax(oldtup.t_data),
+											   xid, *lockmode,
+											   &xmax_old_tuple,
+											   &infomask_old_tuple,
+											   &infomask2_old_tuple,
+											   &xmax_new_tuple,
+											   &infomask_new_tuple,
+											   &infomask2_new_tuple);
+
+			/* Fix the new tuple's xmax, in both copies of it */
+			for (int i = 0; i < lengthof(newtups); i++)
+			{
+				newtups[i]->t_infomask &= ~HEAP_XMAX_BITS;
+				newtups[i]->t_infomask2 &= ~HEAP_KEYS_UPDATED;
+				newtups[i]->t_infomask |= infomask_new_tuple;
+				newtups[i]->t_infomask2 |= infomask2_new_tuple;
+				HeapTupleHeaderSetXmax(newtups[i], xmax_new_tuple);
+			}
+		}
 	}
 	else
 	{
@@ -5797,6 +5844,108 @@ l5:
 	*result_infomask = new_infomask;
 	*result_infomask2 = new_infomask2;
 	*result_xmax = new_xmax;
+}
+
+/*
+ * Recompute the Xmax values for heap_update(), after it has temporarily
+ * released the buffer lock and other transactions have locked the old tuple
+ * in the meantime.
+ *
+ * While the buffer lock was released, the old tuple was marked as locked by
+ * our own transaction.  Other transactions could still lock it in a mode that
+ * doesn't conflict with that, which turned its Xmax into 'cur_xmax', a
+ * lock-only MultiXactId with our own lock and the new lockers as members.
+ *
+ * We could pass 'cur_xmax' to compute_new_xmax_infomask(), but the result
+ * would carry our own temporary lock around, in both the old and the new
+ * tuple.  Instead, look at the members, keep the other lockers that are
+ * still running, and add ourselves back as the updater.  Dropping our own
+ * locks is OK: they were weak enough to let the other lockers in, so the
+ * update is at least as strong, and they share its fate.  Locks held by our
+ * parent or by other subtransactions have a different XID, so they are kept.
+ *
+ * The new tuple gets the remaining lockers as Xmax, just like heap_update()
+ * does when it finds lockers before releasing the lock.
+ */
+static void
+recompute_update_xmax_after_relock(MultiXactId cur_xmax, TransactionId xid,
+								   LockTupleMode mode,
+								   TransactionId *xmax_old_tuple,
+								   uint16 *infomask_old_tuple,
+								   uint16 *infomask2_old_tuple,
+								   TransactionId *xmax_new_tuple,
+								   uint16 *infomask_new_tuple,
+								   uint16 *infomask2_new_tuple)
+{
+	MultiXactMember *members;
+	MultiXactMember *lockers;
+	int			nmembers;
+	int			nlockers = 0;
+
+	/*
+	 * A key update locks the tuple in a mode that conflicts with all other
+	 * lock modes, so nobody could have locked it while we weren't looking.
+	 */
+	Assert(mode != LockTupleExclusive);
+
+	nmembers = GetMultiXactIdMembers(cur_xmax, &members, false, true);
+	/* We are a member ourselves, and still running */
+	Assert(nmembers > 0);
+
+	lockers = palloc_array(MultiXactMember, nmembers + 1);
+	for (int i = 0; i < nmembers; i++)
+	{
+		/* Our own locks are superseded by the update */
+		if (TransactionIdEquals(members[i].xid, xid))
+			continue;
+		/* Lockers that are gone don't need to be preserved */
+		if (!TransactionIdIsInProgress(members[i].xid))
+			continue;
+		Assert(!ISUPDATE_from_mxstatus(members[i].status));
+		lockers[nlockers++] = members[i];
+	}
+	pfree(members);
+
+	if (nlockers == 0)
+	{
+		/* Nobody else holds a lock anymore; same as no lockers at all */
+		compute_new_xmax_infomask(InvalidTransactionId, HEAP_XMAX_INVALID, 0,
+								  xid, mode, true,
+								  xmax_old_tuple, infomask_old_tuple,
+								  infomask2_old_tuple);
+		*xmax_new_tuple = InvalidTransactionId;
+		*infomask_new_tuple = HEAP_XMAX_INVALID;
+		*infomask2_new_tuple = 0;
+	}
+	else
+	{
+		/*
+		 * The lockers carry over to the new tuple.  Like heap_update(), use a
+		 * plain XID rather than a MultiXactId for a single KEY SHARE locker.
+		 */
+		if (nlockers == 1 && lockers[0].status == MultiXactStatusForKeyShare)
+		{
+			*xmax_new_tuple = lockers[0].xid;
+			*infomask_new_tuple = HEAP_XMAX_KEYSHR_LOCK | HEAP_XMAX_LOCK_ONLY;
+			*infomask2_new_tuple = 0;
+		}
+		else
+		{
+			*xmax_new_tuple = MultiXactIdCreateFromMembers(nlockers, lockers);
+			GetMultiXactIdHintBits(*xmax_new_tuple, infomask_new_tuple,
+								   infomask2_new_tuple);
+		}
+
+		/* The old tuple has the lockers, plus us as the updater */
+		lockers[nlockers].xid = xid;
+		lockers[nlockers].status = get_mxact_status_for_lock(mode, true);
+		nlockers++;
+		*xmax_old_tuple = MultiXactIdCreateFromMembers(nlockers, lockers);
+		GetMultiXactIdHintBits(*xmax_old_tuple, infomask_old_tuple,
+							   infomask2_old_tuple);
+	}
+
+	pfree(lockers);
 }
 
 /*
