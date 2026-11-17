@@ -1041,17 +1041,22 @@ slot_fill_defaults(LogicalRepRelMapEntry *rel, EState *estate,
  * Store tuple data into slot.
  *
  * Incoming data can be either text or binary format.
+ *
+ * When check_nulls is true, pass explicit NULLs through the type input
+ * function, too, so that domain constraints are checked.  Leave this false
+ * for search tuples and conflict reporting: old key tuples can contain NULL
+ * placeholders for columns that are not part of the replica identity.
  */
 static void
 slot_store_data(TupleTableSlot *slot, LogicalRepRelMapEntry *rel,
-				LogicalRepTupleData *tupleData)
+				LogicalRepTupleData *tupleData, bool check_nulls)
 {
 	int			natts = slot->tts_tupleDescriptor->natts;
 	int			i;
 
 	ExecClearTuple(slot);
 
-	/* Call the "in" function for each non-dropped, non-null attribute */
+	/* Call the input function for each supplied attribute. */
 	Assert(natts == rel->attrmap->maplen);
 	for (i = 0; i < natts; i++)
 	{
@@ -1075,16 +1080,19 @@ slot_store_data(TupleTableSlot *slot, LogicalRepRelMapEntry *rel,
 			/* Set attnum for error callback */
 			remote_ctx.remote_attnum = remoteattnum;
 
-			if (tupleData->colstatus[remoteattnum] == LOGICALREP_COLUMN_TEXT)
+			if (tupleData->colstatus[remoteattnum] == LOGICALREP_COLUMN_TEXT ||
+				(check_nulls &&
+				 tupleData->colstatus[remoteattnum] == LOGICALREP_COLUMN_NULL))
 			{
 				Oid			typinput;
 				Oid			typioparam;
+				bool		isnull = tupleData->colstatus[remoteattnum] == LOGICALREP_COLUMN_NULL;
 
 				getTypeInputInfo(att->atttypid, &typinput, &typioparam);
 				slot->tts_values[i] =
-					OidInputFunctionCall(typinput, colvalue->data,
+					OidInputFunctionCall(typinput, isnull ? NULL : colvalue->data,
 										 typioparam, att->atttypmod);
-				slot->tts_isnull[i] = false;
+				slot->tts_isnull[i] = isnull;
 			}
 			else if (tupleData->colstatus[remoteattnum] == LOGICALREP_COLUMN_BINARY)
 			{
@@ -1113,9 +1121,8 @@ slot_store_data(TupleTableSlot *slot, LogicalRepRelMapEntry *rel,
 			else
 			{
 				/*
-				 * NULL value from remote.  (We don't expect to see
-				 * LOGICALREP_COLUMN_UNCHANGED here, but if we do, treat it as
-				 * NULL.)
+				 * An unchecked NULL, or an unchanged TOAST value used in a
+				 * search tuple or for conflict reporting.
 				 */
 				slot->tts_values[i] = (Datum) 0;
 				slot->tts_isnull[i] = true;
@@ -1196,16 +1203,19 @@ slot_modify_data(TupleTableSlot *slot, TupleTableSlot *srcslot,
 			/* Set attnum for error callback */
 			remote_ctx.remote_attnum = remoteattnum;
 
-			if (tupleData->colstatus[remoteattnum] == LOGICALREP_COLUMN_TEXT)
+			/* Pass explicit NULLs through input to check domain constraints. */
+			if (tupleData->colstatus[remoteattnum] == LOGICALREP_COLUMN_TEXT ||
+				tupleData->colstatus[remoteattnum] == LOGICALREP_COLUMN_NULL)
 			{
 				Oid			typinput;
 				Oid			typioparam;
+				bool		isnull = tupleData->colstatus[remoteattnum] == LOGICALREP_COLUMN_NULL;
 
 				getTypeInputInfo(att->atttypid, &typinput, &typioparam);
 				slot->tts_values[i] =
-					OidInputFunctionCall(typinput, colvalue->data,
+					OidInputFunctionCall(typinput, isnull ? NULL : colvalue->data,
 										 typioparam, att->atttypmod);
-				slot->tts_isnull[i] = false;
+				slot->tts_isnull[i] = isnull;
 			}
 			else if (tupleData->colstatus[remoteattnum] == LOGICALREP_COLUMN_BINARY)
 			{
@@ -1230,12 +1240,6 @@ slot_modify_data(TupleTableSlot *slot, TupleTableSlot *srcslot,
 							 errmsg("incorrect binary data format in logical replication column %d",
 									remoteattnum + 1)));
 				slot->tts_isnull[i] = false;
-			}
-			else
-			{
-				/* must be LOGICALREP_COLUMN_NULL */
-				slot->tts_values[i] = (Datum) 0;
-				slot->tts_isnull[i] = true;
 			}
 
 			/* Reset attnum for error callback */
@@ -2742,7 +2746,7 @@ apply_handle_insert(StringInfo s)
 
 	/* Process and store remote tuple in the slot */
 	oldctx = MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
-	slot_store_data(remoteslot, rel, &newtup);
+	slot_store_data(remoteslot, rel, &newtup, true);
 	slot_fill_defaults(rel, estate, remoteslot);
 	MemoryContextSwitchTo(oldctx);
 
@@ -2935,7 +2939,7 @@ apply_handle_update(StringInfo s)
 	/* Build the search tuple. */
 	oldctx = MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
 	slot_store_data(remoteslot, rel,
-					has_oldtup ? &oldtup : &newtup);
+					has_oldtup ? &oldtup : &newtup, false);
 	MemoryContextSwitchTo(oldctx);
 
 	/* For a partitioned table, apply update to correct partition. */
@@ -3009,7 +3013,7 @@ apply_handle_update_internal(ApplyExecutionData *edata,
 
 			/* Store the new tuple for conflict reporting */
 			newslot = table_slot_create(localrel, &estate->es_tupleTable);
-			slot_store_data(newslot, relmapentry, newtup);
+			slot_store_data(newslot, relmapentry, newtup, false);
 
 			/*
 			 * Convert xmin to a full transaction ID. This is safe because the
@@ -3058,7 +3062,7 @@ apply_handle_update_internal(ApplyExecutionData *edata,
 			type = CT_UPDATE_MISSING;
 
 		/* Store the new tuple for conflict reporting */
-		slot_store_data(newslot, relmapentry, newtup);
+		slot_store_data(newslot, relmapentry, newtup, false);
 
 		/*
 		 * The tuple to be updated could not be found or was deleted.  Do
@@ -3138,7 +3142,7 @@ apply_handle_delete(StringInfo s)
 
 	/* Build the search tuple. */
 	oldctx = MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
-	slot_store_data(remoteslot, rel, &oldtup);
+	slot_store_data(remoteslot, rel, &oldtup, false);
 	MemoryContextSwitchTo(oldctx);
 
 	/* For a partitioned table, apply delete to correct partition. */
@@ -3590,7 +3594,7 @@ apply_handle_tuple_routing(ApplyExecutionData *edata,
 						type = CT_UPDATE_MISSING;
 
 					/* Store the new tuple for conflict reporting */
-					slot_store_data(newslot, part_entry, newtup);
+					slot_store_data(newslot, part_entry, newtup, false);
 
 					/*
 					 * The tuple to be updated could not be found or was
@@ -3617,7 +3621,7 @@ apply_handle_tuple_routing(ApplyExecutionData *edata,
 
 					/* Store the new tuple for conflict reporting */
 					newslot = table_slot_create(partrel, &estate->es_tupleTable);
-					slot_store_data(newslot, part_entry, newtup);
+					slot_store_data(newslot, part_entry, newtup, false);
 
 					/*
 					 * Convert xmin to a full transaction ID. This is safe

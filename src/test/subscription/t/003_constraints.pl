@@ -135,6 +135,151 @@ $result = $node_subscriber->safe_psql('postgres',
 is($result, qq(2|1|2),
 	'check column trigger applied even on update for other column');
 
+# Domain constraints must also be checked for incoming NULLs.  Use different
+# types on the two nodes so that invalid values can originate on the publisher.
+$node_subscriber->safe_psql('postgres', 'DROP SUBSCRIPTION tap_sub');
+$node_publisher->safe_psql(
+	'postgres', qq{
+	CREATE TABLE domain_test (
+		id integer PRIMARY KEY, quantity integer, nullable integer,
+		plain integer, payload text);
+	ALTER TABLE domain_test ALTER payload SET STORAGE EXTERNAL;
+	CREATE PUBLICATION domain_pub FOR TABLE domain_test;
+});
+$node_subscriber->safe_psql(
+	'postgres', qq{
+	CREATE DOMAIN required_int AS integer NOT NULL
+		CONSTRAINT required_int_positive CHECK (VALUE > 0);
+	CREATE DOMAIN checked_int AS integer
+		CONSTRAINT checked_int_nonnull CHECK (VALUE IS NOT NULL)
+		CONSTRAINT checked_int_positive CHECK (VALUE > 0);
+	CREATE DOMAIN nullable_int AS integer CHECK (VALUE > 0);
+	CREATE DOMAIN required_text AS text NOT NULL;
+	CREATE TABLE domain_test (
+		id integer PRIMARY KEY, quantity required_int, nullable nullable_int,
+		plain integer, payload required_text,
+		local_only required_int DEFAULT 99);
+	ALTER TABLE domain_test ALTER payload SET STORAGE EXTERNAL;
+});
+
+my $domain_query = qq{
+	SELECT id, quantity, nullable IS NULL, plain IS NULL,
+		length(payload), local_only FROM domain_test ORDER BY id
+};
+
+for my $binary ('false', 'true')
+{
+	for my $domain ('required_int', 'checked_int')
+	{
+		for my $operation ('insert', 'update', 'update_key', 'check')
+		{
+			my $testname = "binary=$binary, $domain, $operation";
+
+			# Start each case with a fresh subscription, so a failed transaction
+			# does not prevent subsequent cases from making progress.
+			$node_publisher->safe_psql(
+				'postgres', qq{
+				TRUNCATE domain_test;
+				INSERT INTO domain_test VALUES
+					(1, 10, NULL, NULL, repeat('abcdefghijklmnopqrstuvwxyz', 1000));
+			});
+			$node_subscriber->safe_psql(
+				'postgres', qq{
+				TRUNCATE domain_test;
+				ALTER TABLE domain_test ALTER quantity TYPE $domain
+					USING quantity::integer;
+			});
+			$node_subscriber->safe_psql(
+				'postgres', qq{
+				CREATE SUBSCRIPTION domain_sub CONNECTION '$publisher_connstr'
+					PUBLICATION domain_pub
+					WITH (binary = $binary, disable_on_error = true)
+			});
+			$node_subscriber->wait_for_subscription_sync($node_publisher,
+				'domain_sub');
+			is($node_subscriber->safe_psql('postgres', $domain_query),
+				'1|10|t|t|26000|99', "$testname: initial copy");
+
+			if ($operation eq 'insert')
+			{
+				# NULL remains valid for ordinary columns and nullable domains.
+				# The subscriber-only domain column must receive its default.
+				$node_publisher->safe_psql(
+					'postgres', qq{
+					INSERT INTO domain_test VALUES
+						(2, 10, NULL, NULL, repeat('abcdefghijklmnopqrstuvwxyz', 1000));
+				});
+				$node_publisher->wait_for_catchup('domain_sub');
+				is($node_subscriber->safe_psql('postgres', $domain_query),
+					"1|10|t|t|26000|99\n2|10|t|t|26000|99",
+					"$testname: NULLs and subscriber-only default on insert");
+
+				# A key update or delete sends NULL placeholders for non-key
+				# columns in the old key tuple.  They must not be checked against
+				# the domains.  An unchanged TOAST value is not a NULL either.
+				$node_publisher->safe_psql(
+					'postgres', qq{
+					UPDATE domain_test SET id = 11, nullable = 1, plain = 1 WHERE id = 1;
+					DELETE FROM domain_test WHERE id = 2;
+				});
+				$node_publisher->wait_for_catchup('domain_sub');
+				is($node_subscriber->safe_psql('postgres', $domain_query),
+					'11|10|f|f|26000|99',
+					"$testname: key update, delete and unchanged TOAST");
+
+				$node_publisher->safe_psql(
+					'postgres', qq{
+					UPDATE domain_test SET nullable = NULL, plain = NULL WHERE id = 11;
+					UPDATE domain_test SET id = 1 WHERE id = 11;
+				});
+				$node_publisher->wait_for_catchup('domain_sub');
+				is($node_subscriber->safe_psql('postgres', $domain_query),
+					'1|10|t|t|26000|99',
+					"$testname: nullable columns and unchanged TOAST on update");
+			}
+
+			my %changes = (
+				insert => "INSERT INTO domain_test VALUES (2, NULL, NULL, NULL, 'payload')",
+				update => 'UPDATE domain_test SET quantity = NULL WHERE id = 1',
+				update_key => 'UPDATE domain_test SET id = 2, quantity = NULL WHERE id = 1',
+				check => 'UPDATE domain_test SET quantity = -1 WHERE id = 1');
+			my $error = $operation eq 'check'
+				? qq(value for domain public.$domain violates check constraint "${domain}_positive")
+				: $domain eq 'required_int'
+				? 'domain public.required_int does not allow null values'
+				: 'value for domain public.checked_int violates check constraint "checked_int_nonnull"';
+			my $message = $operation eq 'insert' ? 'INSERT' : 'UPDATE';
+			my $offset = -s $node_subscriber->logfile;
+
+			# The preceding valid update must roll back along with the invalid
+			# change.  Updating the key exercises replacement of the new tuple
+			# after looking up the row with the old key tuple.
+			$node_publisher->safe_psql(
+				'postgres', qq{
+				BEGIN;
+				UPDATE domain_test SET plain = 7 WHERE id = 1;
+				$changes{$operation};
+				COMMIT;
+			});
+			ok($node_subscriber->poll_query_until(
+					'postgres', qq{
+					SELECT NOT subenabled FROM pg_subscription
+						WHERE subname = 'domain_sub'
+				}),
+				"$testname: domain violation disables subscription");
+			my $log = slurp_file($node_subscriber->logfile, $offset);
+			like($log, qr/\Q$error\E/, "$testname: domain error");
+			like($log,
+				qr/CONTEXT:.*message type "$message".*relation "public.domain_test" column "quantity"/,
+				"$testname: error identifies the target column");
+			is($node_subscriber->safe_psql('postgres', $domain_query),
+				'1|10|t|t|26000|99', "$testname: transaction rolled back");
+			$node_subscriber->safe_psql('postgres',
+				'DROP SUBSCRIPTION domain_sub');
+		}
+	}
+}
+
 $node_subscriber->stop('fast');
 $node_publisher->stop('fast');
 
