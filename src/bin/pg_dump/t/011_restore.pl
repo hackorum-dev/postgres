@@ -277,6 +277,11 @@ $node->safe_psql(
 	ALTER DOMAIN d ADD CONSTRAINT k CHECK (VALUE > 0) NOT VALID;
 	CREATE DOMAIN "d x" AS int;
 	ALTER DOMAIN "d x" ADD CONSTRAINT k CHECK (VALUE > 0) NOT VALID;
+	-- likewise for a foreign table, whose drop is ALTER FOREIGN TABLE
+	CREATE FOREIGN DATA WRAPPER w;
+	CREATE SERVER s FOREIGN DATA WRAPPER w;
+	CREATE FOREIGN TABLE ft (a int) SERVER s;
+	ALTER FOREIGN TABLE ft ADD CONSTRAINT fk CHECK (a > 0) NOT VALID;
 });
 my $notvalid_dump = "$backupdir/notvalid-dump";
 $node->command_ok(
@@ -314,9 +319,9 @@ $node->command_ok(
 	'pg_restore --clean --if-exists of only NOT VALID constraints');
 is( $node->safe_psql(
 		'notvalid_dst',
-		"SELECT count(*) FROM pg_constraint WHERE NOT convalidated AND conname = 'k'"
+		"SELECT count(*) FROM pg_constraint WHERE NOT convalidated AND conname IN ('k', 'fk')"
 	),
-	'2',
+	'3',
 	'NOT VALID constraints restored');
 
 done_testing();

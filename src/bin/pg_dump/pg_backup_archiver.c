@@ -614,13 +614,20 @@ RestoreArchive(Archive *AHX)
 
 							/*
 							 * Need to inject IF EXISTS clause after ALTER
-							 * TABLE part in ALTER TABLE .. DROP statement
+							 * TABLE part in ALTER TABLE .. DROP statement,
+							 * and likewise for ALTER FOREIGN TABLE
 							 */
 							if (strncmp(dropStmt, "ALTER TABLE", 11) == 0)
 							{
 								appendPQExpBufferStr(ftStmt,
 													 "ALTER TABLE IF EXISTS");
 								dropStmt = dropStmt + 11;
+							}
+							else if (strncmp(dropStmt, "ALTER FOREIGN TABLE", 19) == 0)
+							{
+								appendPQExpBufferStr(ftStmt,
+													 "ALTER FOREIGN TABLE IF EXISTS");
+								dropStmt = dropStmt + 19;
 							}
 
 							/*
