@@ -36,6 +36,8 @@ extern PyObject *PLy_exc_spi_error;
 
 extern PGDLLEXPORT void PLy_elog_impl(int elevel, const char *fmt, ...) pg_attribute_printf(2, 3);
 
+extern void PLy_elog_impl_v(int elevel, const char *fmt, va_list ap) pg_attribute_printf(2, 0);
+
 extern PGDLLEXPORT void PLy_exception_set(PyObject *exc, const char *fmt, ...) pg_attribute_printf(2, 3);
 
 extern PGDLLEXPORT void PLy_exception_set_plural(PyObject *exc, const char *fmt_singular, const char *fmt_plural,

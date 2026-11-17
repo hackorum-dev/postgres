@@ -13,10 +13,16 @@ GETTEXT_FILES    = plpy_cursorobject.c \
                    plpy_typeio.c \
                    plpy_util.c
 GETTEXT_TRIGGERS = $(BACKEND_COMMON_GETTEXT_TRIGGERS) \
+                   PLyDict_SetItemNone:3 \
+                   PLyDict_SetItemString:4 \
+                   PLyList_SetItem:4 \
                    PLy_elog:2 \
                    PLy_exception_set:2 \
                    PLy_exception_set_plural:2,3
 GETTEXT_FLAGS    = $(BACKEND_COMMON_GETTEXT_FLAGS) \
+                   PLyDict_SetItemNone:3:c-format \
+                   PLyDict_SetItemString:4:c-format \
+                   PLyList_SetItem:4:c-format \
                    PLy_elog:2:c-format \
                    PLy_exception_set:2:c-format \
                    PLy_exception_set_plural:2:c-format \

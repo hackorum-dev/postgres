@@ -104,6 +104,9 @@ PLy_input_convert(PLyDatumToOb *arg, Datum val)
 
 	MemoryContextSwitchTo(oldcontext);
 
+	if (result == NULL)
+		PLy_elog(ERROR, "could not convert value to a Python object");
+
 	return result;
 }
 
@@ -148,6 +151,9 @@ PLy_input_from_tuple(PLyDatumToOb *arg, HeapTuple tuple, TupleDesc desc, bool in
 	dict = PLyDict_FromTuple(arg, tuple, desc, include_generated);
 
 	MemoryContextSwitchTo(oldcontext);
+
+	if (dict == NULL)
+		PLy_elog(ERROR, "could not convert row to a Python dictionary");
 
 	return dict;
 }
@@ -714,63 +720,79 @@ PLyList_FromArray_recurse(PLyDatumToOb *elm, int *dims, int ndim, int dim,
 	if (!list)
 		return NULL;
 
-	if (dim < ndim - 1)
+	/*
+	 * Filling the list can now throw, and nothing else refers to it yet, so
+	 * release it here rather than leaking it.
+	 */
+	PG_TRY();
 	{
-		/* Outer dimension. Recurse for each inner slice. */
-		for (i = 0; i < dims[dim]; i++)
+		if (dim < ndim - 1)
 		{
-			PyObject   *sublist;
+			/* Outer dimension. Recurse for each inner slice. */
+			for (i = 0; i < dims[dim]; i++)
+			{
+				PyObject   *sublist;
 
-			sublist = PLyList_FromArray_recurse(elm, dims, ndim, dim + 1,
-												dataptr_p, bitmap_p, bitmask_p);
-			PyList_SetItem(list, i, sublist);
+				sublist = PLyList_FromArray_recurse(elm, dims, ndim, dim + 1,
+													dataptr_p, bitmap_p, bitmask_p);
+				PLyList_SetItem(list, i, sublist,
+								"could not convert array dimension to a Python list");
+			}
 		}
-	}
-	else
-	{
-		/*
-		 * Innermost dimension. Fill the list with the values from the array
-		 * for this slice.
-		 */
-		char	   *dataptr = *dataptr_p;
-		uint8	   *bitmap = *bitmap_p;
-		int			bitmask = *bitmask_p;
-		uint8		typalignby = typalign_to_alignby(elm->typalign);
-
-		for (i = 0; i < dims[dim]; i++)
+		else
 		{
-			/* checking for NULL */
-			if (bitmap && (*bitmap & bitmask) == 0)
-			{
-				Py_INCREF(Py_None);
-				PyList_SetItem(list, i, Py_None);
-			}
-			else
-			{
-				Datum		itemvalue;
+			/*
+			 * Innermost dimension. Fill the list with the values from the
+			 * array for this slice.
+			 */
+			char	   *dataptr = *dataptr_p;
+			uint8	   *bitmap = *bitmap_p;
+			int			bitmask = *bitmask_p;
+			uint8		typalignby = typalign_to_alignby(elm->typalign);
 
-				itemvalue = fetch_att(dataptr, elm->typbyval, elm->typlen);
-				PyList_SetItem(list, i, elm->func(elm, itemvalue));
-				dataptr = att_addlength_pointer(dataptr, elm->typlen, dataptr);
-				dataptr = (char *) att_nominal_alignby(dataptr, typalignby);
-			}
-
-			/* advance bitmap pointer if any */
-			if (bitmap)
+			for (i = 0; i < dims[dim]; i++)
 			{
-				bitmask <<= 1;
-				if (bitmask == 0x100 /* (1<<8) */ )
+				/* checking for NULL */
+				if (bitmap && (*bitmap & bitmask) == 0)
 				{
-					bitmap++;
-					bitmask = 1;
+					Py_INCREF(Py_None);
+					PLyList_SetItem(list, i, Py_None,
+									"could not add array element to a Python list");
+				}
+				else
+				{
+					Datum		itemvalue;
+
+					itemvalue = fetch_att(dataptr, elm->typbyval, elm->typlen);
+					PLyList_SetItem(list, i, elm->func(elm, itemvalue),
+									"could not convert array element to a Python object");
+					dataptr = att_addlength_pointer(dataptr, elm->typlen, dataptr);
+					dataptr = (char *) att_nominal_alignby(dataptr, typalignby);
+				}
+
+				/* advance bitmap pointer if any */
+				if (bitmap)
+				{
+					bitmask <<= 1;
+					if (bitmask == 0x100 /* (1<<8) */ )
+					{
+						bitmap++;
+						bitmask = 1;
+					}
 				}
 			}
-		}
 
-		*dataptr_p = dataptr;
-		*bitmap_p = bitmap;
-		*bitmask_p = bitmask;
+			*dataptr_p = dataptr;
+			*bitmap_p = bitmap;
+			*bitmask_p = bitmask;
+		}
 	}
+	PG_CATCH();
+	{
+		Py_DECREF(list);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
 
 	return list;
 }
@@ -835,7 +857,6 @@ PLyDict_FromTuple(PLyDatumToOb *arg, HeapTuple tuple, TupleDesc desc, bool inclu
 			char	   *key;
 			Datum		vattr;
 			bool		is_null;
-			PyObject   *value;
 
 			if (attr->attisdropped)
 				continue;
@@ -854,13 +875,13 @@ PLyDict_FromTuple(PLyDatumToOb *arg, HeapTuple tuple, TupleDesc desc, bool inclu
 			vattr = heap_getattr(tuple, (i + 1), desc, &is_null);
 
 			if (is_null)
-				PyDict_SetItemString(dict, key, Py_None);
+				PLyDict_SetItemNone(dict, key,
+									"could not add column \"%s\" to Python dictionary",
+									key);
 			else
-			{
-				value = att->func(att, vattr);
-				PyDict_SetItemString(dict, key, value);
-				Py_DECREF(value);
-			}
+				PLyDict_SetItemString(dict, key, att->func(att, vattr),
+									  "could not convert column \"%s\" to a Python object",
+									  key);
 		}
 	}
 	PG_CATCH();
@@ -1039,20 +1060,27 @@ PLyObject_AsString(PyObject *plrv)
 		/* use repr() for floats, str() is lossy */
 		PyObject   *s = PyObject_Repr(plrv);
 
+		if (s == NULL)
+			PLy_elog(ERROR, "could not create string representation of Python object");
 		plrv_bo = PLyUnicode_Bytes(s);
-		Py_XDECREF(s);
+		Py_DECREF(s);
 	}
 	else
 	{
 		PyObject   *s = PyObject_Str(plrv);
 
+		if (s == NULL)
+			PLy_elog(ERROR, "could not create string representation of Python object");
 		plrv_bo = PLyUnicode_Bytes(s);
-		Py_XDECREF(s);
+		Py_DECREF(s);
 	}
 	if (!plrv_bo)
 		PLy_elog(ERROR, "could not create string representation of Python object");
 
-	plrv_sc = pstrdup(PyBytes_AsString(plrv_bo));
+	plrv_sc = PyBytes_AsString(plrv_bo);
+	if (plrv_sc == NULL)
+		PLy_elog(ERROR, "could not create string representation of Python object");
+	plrv_sc = pstrdup(plrv_sc);
 	plen = PyBytes_Size(plrv_bo);
 	slen = strlen(plrv_sc);
 
@@ -1381,11 +1409,21 @@ PLyMapping_ToComposite(PLyObToDatum *arg, TupleDesc desc, PyObject *mapping)
 		{
 			value = PyMapping_GetItemString(mapping, key);
 			if (!value)
+			{
+				/*
+				 * A missing key sets KeyError. Another exception, such as
+				 * MemoryError, is a real failure.
+				 */
+				if (!PyErr_ExceptionMatches(PyExc_KeyError))
+					PLy_elog(ERROR, "could not get value for key \"%s\" from mapping",
+							 key);
+				PyErr_Clear();
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_COLUMN),
 						 errmsg("key \"%s\" not found in mapping", key),
 						 errhint("To return null in a column, "
 								 "add the value None to the mapping with the key named after the column.")));
+			}
 
 			values[i] = att->func(att, value, &nulls[i], false);
 
@@ -1536,6 +1574,15 @@ PLyGenericObject_ToComposite(PLyObToDatum *arg, TupleDesc desc, PyObject *object
 				 * interpret "123" as the composite type. See also similar
 				 * heuristic in PLyObject_ToScalar().
 				 */
+
+				/*
+				 * A missing attribute sets AttributeError. Another exception,
+				 * such as MemoryError, is a real failure.
+				 */
+				if (!PyErr_ExceptionMatches(PyExc_AttributeError))
+					PLy_elog(ERROR, "could not get attribute \"%s\" of Python object",
+							 key);
+				PyErr_Clear();
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_COLUMN),
 						 errmsg("attribute \"%s\" does not exist in Python object", key),
