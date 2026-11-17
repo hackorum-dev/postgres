@@ -265,5 +265,58 @@ foreach my $c (@dumpall_cases)
 		"restore from pg_dumpall --clean ($c->{name})");
 }
 
+# A NOT VALID domain constraint is dumped separately, and its drop command
+# is ALTER DOMAIN ... DROP CONSTRAINT, which can't be made conditional on the
+# domain existing.  Check that --clean --if-exists works into an empty
+# database, and still drops the constraint when it is restored alone.
+$node->safe_psql('postgres', 'CREATE DATABASE notvalid_src');
+$node->safe_psql('postgres', 'CREATE DATABASE notvalid_dst');
+$node->safe_psql(
+	'notvalid_src', q{
+	CREATE DOMAIN d AS int;
+	ALTER DOMAIN d ADD CONSTRAINT k CHECK (VALUE > 0) NOT VALID;
+	CREATE DOMAIN "d x" AS int;
+	ALTER DOMAIN "d x" ADD CONSTRAINT k CHECK (VALUE > 0) NOT VALID;
+});
+my $notvalid_dump = "$backupdir/notvalid-dump";
+$node->command_ok(
+	[
+		'pg_dump',
+		'--format' => 'custom',
+		'--no-sync',
+		'--file' => $notvalid_dump,
+		$node->connstr('notvalid_src'),
+	],
+	'dump NOT VALID constraints');
+$node->command_ok(
+	[
+		'pg_restore', '--clean', '--if-exists', '--exit-on-error',
+		'--dbname' => $node->connstr('notvalid_dst'),
+		$notvalid_dump,
+	],
+	'pg_restore --clean --if-exists of NOT VALID constraints into empty database'
+);
+
+my ($toc, $toc_err);
+run_log [ 'pg_restore', '--list', $notvalid_dump ], '>' => \$toc,
+  '2>' => \$toc_err;
+my $toc_file = "$backupdir/notvalid-toc";
+open(my $fh, '>', $toc_file) or die "could not open $toc_file: $!";
+print $fh grep { /CHECK CONSTRAINT/ } split(/^/, $toc);
+close($fh);
+$node->command_ok(
+	[
+		'pg_restore', '--clean', '--if-exists', '--exit-on-error',
+		'--use-list' => $toc_file,
+		'--dbname' => $node->connstr('notvalid_dst'),
+		$notvalid_dump,
+	],
+	'pg_restore --clean --if-exists of only NOT VALID constraints');
+is( $node->safe_psql(
+		'notvalid_dst',
+		"SELECT count(*) FROM pg_constraint WHERE NOT convalidated AND conname = 'k'"
+	),
+	'2',
+	'NOT VALID constraints restored');
 
 done_testing();

@@ -2355,6 +2355,19 @@ my %tests = (
 		},
 	},
 
+	'ALTER DOMAIN dump_test.d_notvalid DROP CONSTRAINT' => {
+		create_order => 30,
+		create_sql => 'CREATE DOMAIN dump_test.d_notvalid AS int;
+					   ALTER DOMAIN dump_test.d_notvalid
+						 ADD CONSTRAINT d_notvalid_check CHECK (VALUE > 0) NOT VALID;',
+		regexp => qr/^
+			\QALTER DOMAIN dump_test.d_notvalid DROP CONSTRAINT\E
+			/xm,
+
+		# with --if-exists, the domain's own drop takes care of this
+		like => { clean => 1, },
+	},
+
 	'COMMENT ON CONSTRAINT ON DOMAIN (1)' => {
 		regexp => qr/^
 		\QCOMMENT ON CONSTRAINT nn ON DOMAIN dump_test.us_postal_code IS 'not null';\E

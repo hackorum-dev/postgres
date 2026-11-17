@@ -65,6 +65,7 @@ static void _doSetSessionAuth(ArchiveHandle *AH, const char *user);
 static void _reconnectToDB(ArchiveHandle *AH, const char *dbname);
 static void _becomeUser(ArchiveHandle *AH, const char *user);
 static void _becomeOwner(ArchiveHandle *AH, TocEntry *te);
+static bool droppedWithDomain(ArchiveHandle *AH, TocEntry *te);
 static void _selectOutputSchema(ArchiveHandle *AH, const char *schemaName);
 static void _selectTablespace(ArchiveHandle *AH, const char *tablespace);
 static void _selectTableAccessMethod(ArchiveHandle *AH, const char *tableam);
@@ -582,6 +583,15 @@ RestoreArchive(Archive *AHX)
 						 * as-is.
 						 */
 						ahprintf(AH, "%s", te->dropStmt);
+					}
+					else if (droppedWithDomain(AH, te))
+					{
+						/*
+						 * ALTER DOMAIN has no IF EXISTS option, so we can't
+						 * make this command safe if the domain is missing.
+						 * But the domain is being dropped too, which will
+						 * take the constraint with it, so just skip this.
+						 */
 					}
 					else
 					{
@@ -2042,6 +2052,50 @@ getTocEntryByDumpId(ArchiveHandle *AH, DumpId id)
 		return AH->tocsByDumpId[id];
 
 	return NULL;
+}
+
+/*
+ * Is te a separately-dumped domain constraint whose domain is also
+ * going to be dropped during this restore?
+ *
+ * We can't rely on te's dependencies, since pg_dump doesn't fill those in
+ * for plain-text output.  Instead, match the domain name in the two drop
+ * commands, "ALTER DOMAIN name DROP CONSTRAINT ..." and "DROP DOMAIN name;".
+ */
+static bool
+droppedWithDomain(ArchiveHandle *AH, TocEntry *te)
+{
+	const char *rest;
+
+	if (strcmp(te->desc, "CHECK CONSTRAINT") != 0 &&
+		strcmp(te->desc, "CONSTRAINT") != 0)
+		return false;
+	if (strncmp(te->dropStmt, "ALTER DOMAIN ", 13) != 0)
+		return false;
+	rest = te->dropStmt + 13;
+
+	for (TocEntry *dte = AH->toc->next; dte != AH->toc; dte = dte->next)
+	{
+		const char *domname;
+		size_t		len;
+
+		if (strcmp(dte->desc, "DOMAIN") != 0 ||
+			(dte->reqs & REQ_SCHEMA) == 0 ||
+			dte->dropStmt == NULL ||
+			strncmp(dte->dropStmt, "DROP DOMAIN ", 12) != 0)
+			continue;
+		/* the name is whatever is between "DROP DOMAIN " and ";\n" */
+		domname = dte->dropStmt + 12;
+		len = strlen(domname);
+		if (len < 2 || strcmp(domname + len - 2, ";\n") != 0)
+			continue;
+		len -= 2;
+		if (strncmp(rest, domname, len) == 0 &&
+			strncmp(rest + len, " DROP CONSTRAINT ", 17) == 0)
+			return true;
+	}
+
+	return false;
 }
 
 int
