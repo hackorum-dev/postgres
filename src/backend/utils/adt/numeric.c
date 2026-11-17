@@ -340,7 +340,6 @@ typedef struct
  */
 typedef struct
 {
-	void	   *buf;			/* buffer for short varlenas */
 	int64		input_count;	/* number of non-null values seen */
 	bool		estimating;		/* true if estimating cardinality */
 
@@ -857,7 +856,8 @@ invalid_syntax:
 Datum
 numeric_out(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	NumericVar	x;
 	char	   *str;
 
@@ -1204,7 +1204,8 @@ numeric_recv(PG_FUNCTION_ARGS)
 Datum
 numeric_send(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf numbuf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &numbuf);
 	NumericVar	x;
 	StringInfoData buf;
 	int			i;
@@ -1442,7 +1443,8 @@ numerictypmodout(PG_FUNCTION_ARGS)
 Datum
 numeric_abs(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	Numeric		res;
 
 	/*
@@ -1469,7 +1471,8 @@ numeric_abs(PG_FUNCTION_ARGS)
 Datum
 numeric_uminus(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	Numeric		res;
 
 	/*
@@ -1559,7 +1562,8 @@ numeric_sign_internal(Numeric num)
 Datum
 numeric_sign(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 
 	/*
 	 * Handle NaN (infinities can be handled normally)
@@ -1592,7 +1596,8 @@ numeric_sign(PG_FUNCTION_ARGS)
 Datum
 numeric_round(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	int32		scale = PG_GETARG_INT32(1);
 	Numeric		res;
 	NumericVar	arg;
@@ -1646,7 +1651,8 @@ numeric_round(PG_FUNCTION_ARGS)
 Datum
 numeric_trunc(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	int32		scale = PG_GETARG_INT32(1);
 	Numeric		res;
 	NumericVar	arg;
@@ -1696,7 +1702,8 @@ numeric_trunc(PG_FUNCTION_ARGS)
 Datum
 numeric_ceil(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	Numeric		res;
 	NumericVar	result;
 
@@ -1724,7 +1731,8 @@ numeric_ceil(PG_FUNCTION_ARGS)
 Datum
 numeric_floor(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	Numeric		res;
 	NumericVar	result;
 
@@ -2016,9 +2024,12 @@ generate_series_numeric_support(PG_FUNCTION_ARGS)
 Datum
 width_bucket_numeric(PG_FUNCTION_ARGS)
 {
-	Numeric		operand = PG_GETARG_NUMERIC(0);
-	Numeric		bound1 = PG_GETARG_NUMERIC(1);
-	Numeric		bound2 = PG_GETARG_NUMERIC(2);
+	NumericLocalBuf buf1;
+	NumericLocalBuf buf2;
+	NumericLocalBuf buf3;
+	Numeric		operand = PG_GETARG_NUMERIC_LOCAL(0, &buf1);
+	Numeric		bound1 = PG_GETARG_NUMERIC_LOCAL(1, &buf2);
+	Numeric		bound2 = PG_GETARG_NUMERIC_LOCAL(2, &buf3);
 	int32		count = PG_GETARG_INT32(3);
 	NumericVar	count_var;
 	NumericVar	result_var;
@@ -2185,12 +2196,6 @@ numeric_sortsupport(PG_FUNCTION_ARGS)
 
 		nss = palloc_object(NumericSortSupport);
 
-		/*
-		 * palloc a buffer for handling unaligned packed values in addition to
-		 * the support struct
-		 */
-		nss->buf = palloc(VARATT_SHORT_MAX + VARHDRSZ + 1);
-
 		nss->input_count = 0;
 		nss->estimating = true;
 		initHyperLogLog(&nss->abbr_card, 10);
@@ -2216,30 +2221,12 @@ static Datum
 numeric_abbrev_convert(Datum original_datum, SortSupport ssup)
 {
 	NumericSortSupport *nss = ssup->ssup_extra;
-	void	   *original_varatt = PG_DETOAST_DATUM_PACKED(original_datum);
-	Numeric		value;
+	NumericLocalBuf buf;
+	bool		needfree;
+	Numeric		value = numeric_unpack_local(original_datum, &buf, &needfree);
 	Datum		result;
 
 	nss->input_count += 1;
-
-	/*
-	 * This is to handle packed datums without needing a palloc/pfree cycle;
-	 * we keep and reuse a buffer large enough to handle any short datum.
-	 */
-	if (VARATT_IS_SHORT(original_varatt))
-	{
-		void	   *buf = nss->buf;
-		Size		sz = VARSIZE_SHORT(original_varatt) - VARHDRSZ_SHORT;
-
-		Assert(sz <= VARATT_SHORT_MAX - VARHDRSZ_SHORT);
-
-		SET_VARSIZE(buf, VARHDRSZ + sz);
-		memcpy(VARDATA(buf), VARDATA_SHORT(original_varatt), sz);
-
-		value = (Numeric) buf;
-	}
-	else
-		value = (Numeric) original_varatt;
 
 	if (NUMERIC_IS_SPECIAL(value))
 	{
@@ -2259,9 +2246,9 @@ numeric_abbrev_convert(Datum original_datum, SortSupport ssup)
 		result = numeric_abbrev_convert_var(&var, nss);
 	}
 
-	/* should happen only for external/compressed toasts */
-	if (original_varatt != DatumGetPointer(original_datum))
-		pfree(original_varatt);
+	/* the sort's memory context is not reset per call */
+	if (unlikely(needfree))
+		pfree(value);
 
 	return result;
 }
@@ -2596,9 +2583,18 @@ cmp_numerics(Numeric num1, Numeric num2)
 Datum
 in_range_numeric_numeric(PG_FUNCTION_ARGS)
 {
-	Numeric		val = PG_GETARG_NUMERIC(0);
-	Numeric		base = PG_GETARG_NUMERIC(1);
-	Numeric		offset = PG_GETARG_NUMERIC(2);
+	NumericLocalBuf buf1;
+	NumericLocalBuf buf2;
+	NumericLocalBuf buf3;
+	bool		free1;
+	bool		free2;
+	bool		free3;
+	Numeric		val = numeric_unpack_local(PG_GETARG_DATUM(0), &buf1,
+										   &free1);
+	Numeric		base = numeric_unpack_local(PG_GETARG_DATUM(1), &buf2,
+											&free2);
+	Numeric		offset = numeric_unpack_local(PG_GETARG_DATUM(2), &buf3,
+											  &free3);
 	bool		sub = PG_GETARG_BOOL(3);
 	bool		less = PG_GETARG_BOOL(4);
 	bool		result;
@@ -2721,9 +2717,12 @@ in_range_numeric_numeric(PG_FUNCTION_ARGS)
 		free_var(&sum);
 	}
 
-	PG_FREE_IF_COPY(val, 0);
-	PG_FREE_IF_COPY(base, 1);
-	PG_FREE_IF_COPY(offset, 2);
+	if (unlikely(free1))
+		pfree(val);
+	if (unlikely(free2))
+		pfree(base);
+	if (unlikely(free3))
+		pfree(offset);
 
 	PG_RETURN_BOOL(result);
 }
@@ -3272,8 +3271,10 @@ division_by_zero:
 Datum
 numeric_div_trunc(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	NumericLocalBuf buf1;
+	NumericLocalBuf buf2;
+	Numeric		num1 = PG_GETARG_NUMERIC_LOCAL(0, &buf1);
+	Numeric		num2 = PG_GETARG_NUMERIC_LOCAL(1, &buf2);
 	NumericVar	arg1;
 	NumericVar	arg2;
 	NumericVar	result;
@@ -3361,8 +3362,10 @@ numeric_div_trunc(PG_FUNCTION_ARGS)
 Datum
 numeric_mod(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	NumericLocalBuf buf1;
+	NumericLocalBuf buf2;
+	Numeric		num1 = PG_GETARG_NUMERIC_LOCAL(0, &buf1);
+	Numeric		num2 = PG_GETARG_NUMERIC_LOCAL(1, &buf2);
 	Numeric		res;
 
 	res = numeric_mod_safe(num1, num2, NULL);
@@ -4132,7 +4135,8 @@ numeric_power(PG_FUNCTION_ARGS)
 Datum
 numeric_scale(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 
 	if (NUMERIC_IS_SPECIAL(num))
 		PG_RETURN_NULL();
@@ -4197,7 +4201,8 @@ get_min_scale(NumericVar *var)
 Datum
 numeric_min_scale(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	NumericVar	arg;
 	int			min_scale;
 
@@ -4217,7 +4222,8 @@ numeric_min_scale(PG_FUNCTION_ARGS)
 Datum
 numeric_trim_scale(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	Numeric		res;
 	NumericVar	result;
 
@@ -4427,7 +4433,8 @@ numeric_int4_safe(Numeric num, Node *escontext)
 Datum
 numeric_int4(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	int32		result;
 
 	result = numeric_int4_safe(num, fcinfo->context);
@@ -4503,7 +4510,8 @@ numeric_int8_safe(Numeric num, Node *escontext)
 Datum
 numeric_int8(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	int64		result;
 
 	result = numeric_int8_safe(num, fcinfo->context);
@@ -4527,7 +4535,8 @@ int2_numeric(PG_FUNCTION_ARGS)
 Datum
 numeric_int2(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	NumericVar	x;
 	int64		val;
 	int16		result;
@@ -4603,7 +4612,8 @@ float8_numeric(PG_FUNCTION_ARGS)
 Datum
 numeric_float8(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	char	   *tmp;
 	Datum		result;
 
@@ -4640,7 +4650,8 @@ numeric_float8(PG_FUNCTION_ARGS)
 Datum
 numeric_float8_no_overflow(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	double		val;
 
 	if (NUMERIC_IS_SPECIAL(num))
@@ -4702,7 +4713,8 @@ float4_numeric(PG_FUNCTION_ARGS)
 Datum
 numeric_float4(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	NumericLocalBuf buf;
+	Numeric		num = PG_GETARG_NUMERIC_LOCAL(0, &buf);
 	char	   *tmp;
 	Datum		result;
 
