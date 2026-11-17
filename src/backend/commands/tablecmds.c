@@ -8847,10 +8847,28 @@ ATExecCookedColumnDefault(Relation rel, AttrNumber attnum,
 	CheckUsageOnTypesInSingleRelExpr(newDefault, RelationGetRelid(rel), GetUserId());
 
 	/*
-	 * Remove any old default for the column.  We use RESTRICT here for
-	 * safety, but at present we do not expect anything to depend on the
-	 * default.  (In ordinary cases, there could not be a default in place
-	 * anyway, but it's possible when combining LIKE with inheritance.)
+	 * Remove any old default for the column.  In ordinary cases, there could
+	 * not be a default in place anyway, but it's possible when combining LIKE
+	 * with inheritance.  The old default can even be an inherited generation
+	 * expression, which the column depends on internally.  As in
+	 * ATExecSetExpression, drop that dependency first.
+	 */
+	if (TupleDescAttr(RelationGetDescr(rel), attnum - 1)->attgenerated)
+	{
+		Oid			attrdefoid;
+
+		attrdefoid = GetAttrDefaultOid(RelationGetRelid(rel), attnum);
+		if (OidIsValid(attrdefoid))
+		{
+			(void) deleteDependencyRecordsFor(AttrDefaultRelationId,
+											  attrdefoid, false);
+			CommandCounterIncrement();
+		}
+	}
+
+	/*
+	 * We use RESTRICT here for safety, but at present we do not expect
+	 * anything to depend on the default.
 	 */
 	RemoveAttrDefault(RelationGetRelid(rel), attnum, DROP_RESTRICT, false,
 					  true);
