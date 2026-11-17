@@ -95,6 +95,23 @@ CREATE TABLE test_like_5c (LIKE test_like_4 INCLUDING ALL)
   INHERITS (test_like_5, test_like_5x);
 \d test_like_5c
 
+-- LIKE with INHERITS follows the same rules as columns written out
+CREATE TABLE test_like_7p (a int,
+  b int GENERATED ALWAYS AS (a * 2) STORED);
+CREATE TABLE test_like_7s (a int,
+  b int GENERATED ALWAYS AS (a * 3) STORED);
+CREATE TABLE test_like_7c (LIKE test_like_7s INCLUDING GENERATED)
+  INHERITS (test_like_7p);
+INSERT INTO test_like_7c (a) VALUES (1);
+SELECT * FROM test_like_7c;
+CREATE TABLE test_like_7d (a int, b int DEFAULT 42,
+  c int GENERATED ALWAYS AS (b * 2) STORED);
+CREATE TABLE test_like_7e (LIKE test_like_7d INCLUDING DEFAULTS)
+  INHERITS (test_like_7p);  -- error
+CREATE TABLE test_like_7e (LIKE test_like_7d INCLUDING GENERATED)
+  INHERITS (test_like_7p);  -- error
+DROP TABLE test_like_7p, test_like_7s, test_like_7c, test_like_7d;
+
 -- Test updating of column numbers in statistics expressions (bug #18468)
 CREATE TABLE test_like_6 (a int, c text, b text);
 CREATE STATISTICS ext_stat ON (a || b) FROM test_like_6;
