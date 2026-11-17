@@ -243,6 +243,7 @@ pgsa_read_from_disk(void)
 	FILE	   *file;
 	char	   *filebuf;
 	size_t		nread;
+	char	   *nul;
 	char	   *p;
 	unsigned	lineno;
 	pgsa_saved_stash_table_hash *saved_stashes;
@@ -324,6 +325,31 @@ pgsa_read_from_disk(void)
 	FreeFile(file);
 	filebuf[nread] = '\0';
 
+	/*
+	 * Everything below parses the buffer as NUL-terminated text, so an
+	 * embedded NUL byte would silently look like end-of-file and cause us to
+	 * accept only the prefix of the file as if it were the whole snapshot. The
+	 * next write would then replace the original file with that prefix. Reject
+	 * such a file outright, before looking at any of its contents.
+	 */
+	nul = memchr(filebuf, '\0', nread);
+	if (nul != NULL)
+	{
+		size_t		i;
+		size_t		offset = nul - filebuf;
+		unsigned	nul_lineno = 1;
+
+		for (i = 0; i < offset; i++)
+		{
+			if (filebuf[i] == '\n')
+				nul_lineno++;
+		}
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("syntax error in file \"%s\" line %u: unexpected NUL byte at offset %zu",
+						PGSA_DUMP_FILE, nul_lineno, offset)));
+	}
+
 	/* Initial memory allocations. */
 	saved_stashes = pgsa_saved_stash_table_create(tmpcxt, 64, NULL);
 	entries = palloc_array(pgsa_saved_entry, max_entries);
@@ -337,7 +363,7 @@ pgsa_read_from_disk(void)
 	 * buffer; we only need additional memory to grow the 'entries' array and
 	 * the 'saved_stashes' hash table.
 	 */
-	for (p = filebuf, lineno = 1; *p != '\0'; lineno++)
+	for (p = filebuf, lineno = 1; p < filebuf + nread; lineno++)
 	{
 		char	   *cursor = p;
 		char	   *eol;
