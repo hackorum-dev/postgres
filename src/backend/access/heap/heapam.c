@@ -3991,6 +3991,8 @@ l2:
 
 		LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
 
+		INJECTION_POINT("heap_update-unlocked", NULL);
+
 		/*
 		 * Let the toaster do its thing, if needed.
 		 *

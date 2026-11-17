@@ -1,0 +1,144 @@
+Parsed test spec with 4 sessions
+
+starting permutation: s1toast s2begin s2keyshare wake s1keyupdate s2commit s1check
+step s1toast: UPDATE t SET val = bigstring() WHERE id = 1; <waiting ...>
+step s2begin: BEGIN;
+step s2keyshare: SELECT id FROM t WHERE id = 1 FOR KEY SHARE;
+id
+--
+ 1
+(1 row)
+
+step wake: 
+	SELECT FROM injection_points_detach('heap_update-unlocked');
+	SELECT FROM injection_points_wakeup('heap_update-unlocked');
+
+step s1toast: <... completed>
+step s1keyupdate: UPDATE t SET id = id + 1; <waiting ...>
+step s2commit: COMMIT;
+step s1keyupdate: <... completed>
+step s1check: SELECT id, length(val) FROM t;
+id|length
+--+------
+ 2|  6400
+(1 row)
+
+
+starting permutation: s1newpage s2begin s2keysharef wake s1keyupdatef s2commit
+step s1newpage: UPDATE f SET other = other + 1 WHERE id = 1; <waiting ...>
+step s2begin: BEGIN;
+step s2keysharef: SELECT id FROM f WHERE id = 1 FOR KEY SHARE;
+id
+--
+ 1
+(1 row)
+
+step wake: 
+	SELECT FROM injection_points_detach('heap_update-unlocked');
+	SELECT FROM injection_points_wakeup('heap_update-unlocked');
+
+step s1newpage: <... completed>
+step s1keyupdatef: UPDATE f SET id = -id WHERE id = 1; <waiting ...>
+step s2commit: COMMIT;
+step s1keyupdatef: <... completed>
+
+starting permutation: s1toast s2begin s2insertchild wake s1delete s2commit s1orphans
+step s1toast: UPDATE t SET val = bigstring() WHERE id = 1; <waiting ...>
+step s2begin: BEGIN;
+step s2insertchild: INSERT INTO c VALUES (1);
+step wake: 
+	SELECT FROM injection_points_detach('heap_update-unlocked');
+	SELECT FROM injection_points_wakeup('heap_update-unlocked');
+
+step s1toast: <... completed>
+step s1delete: DELETE FROM t WHERE id = 1; <waiting ...>
+step s2commit: COMMIT;
+step s1delete: <... completed>
+ERROR:  update or delete on table "t" violates foreign key constraint "c_pid_fkey" on table "c"
+step s1orphans: SELECT count(*) AS orphans FROM c WHERE pid NOT IN (SELECT id FROM t);
+orphans
+-------
+      0
+(1 row)
+
+
+starting permutation: s1begin s1toast s2begin s2keyshare wake s1rollback s1keyupdate s2commit s1check
+step s1begin: BEGIN;
+step s1toast: UPDATE t SET val = bigstring() WHERE id = 1; <waiting ...>
+step s2begin: BEGIN;
+step s2keyshare: SELECT id FROM t WHERE id = 1 FOR KEY SHARE;
+id
+--
+ 1
+(1 row)
+
+step wake: 
+	SELECT FROM injection_points_detach('heap_update-unlocked');
+	SELECT FROM injection_points_wakeup('heap_update-unlocked');
+
+step s1toast: <... completed>
+step s1rollback: ROLLBACK;
+step s1keyupdate: UPDATE t SET id = id + 1; <waiting ...>
+step s2commit: COMMIT;
+step s1keyupdate: <... completed>
+step s1check: SELECT id, length(val) FROM t;
+id|length
+--+------
+ 2|     7
+(1 row)
+
+
+starting permutation: s1toast s2begin s2keyshare s3begin s3keyshare wake s1keyupdate s2commit s3commit s1check
+step s1toast: UPDATE t SET val = bigstring() WHERE id = 1; <waiting ...>
+step s2begin: BEGIN;
+step s2keyshare: SELECT id FROM t WHERE id = 1 FOR KEY SHARE;
+id
+--
+ 1
+(1 row)
+
+step s3begin: BEGIN;
+step s3keyshare: SELECT id FROM t WHERE id = 1 FOR KEY SHARE;
+id
+--
+ 1
+(1 row)
+
+step wake: 
+	SELECT FROM injection_points_detach('heap_update-unlocked');
+	SELECT FROM injection_points_wakeup('heap_update-unlocked');
+
+step s1toast: <... completed>
+step s1keyupdate: UPDATE t SET id = id + 1; <waiting ...>
+step s2commit: COMMIT;
+step s3commit: COMMIT;
+step s1keyupdate: <... completed>
+step s1check: SELECT id, length(val) FROM t;
+id|length
+--+------
+ 2|  6400
+(1 row)
+
+
+starting permutation: s1toast s2begin s2keyshare s2commit wake s1keyupdate s1check
+step s1toast: UPDATE t SET val = bigstring() WHERE id = 1; <waiting ...>
+step s2begin: BEGIN;
+step s2keyshare: SELECT id FROM t WHERE id = 1 FOR KEY SHARE;
+id
+--
+ 1
+(1 row)
+
+step s2commit: COMMIT;
+step wake: 
+	SELECT FROM injection_points_detach('heap_update-unlocked');
+	SELECT FROM injection_points_wakeup('heap_update-unlocked');
+
+step s1toast: <... completed>
+step s1keyupdate: UPDATE t SET id = id + 1;
+step s1check: SELECT id, length(val) FROM t;
+id|length
+--+------
+ 2|  6400
+(1 row)
+
