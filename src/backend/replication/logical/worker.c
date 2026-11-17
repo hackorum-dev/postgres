@@ -5721,6 +5721,8 @@ set_stream_options(WalRcvStreamOptions *options,
 	}
 
 	options->proto.logical.twophase = false;
+	options->proto.logical.slot_failover = false;
+	options->proto.logical.slot_failover_set = false;
 	options->proto.logical.origin = pstrdup(MySubscription->origin);
 }
 
@@ -5740,6 +5742,36 @@ cleanup_subxact_info(void)
 }
 
 /*
+ * Handle an error encountered while starting or running apply.
+ *
+ * This is only for use in error handler code.
+ */
+static void
+handle_apply_error(void)
+{
+	/*
+	 * Reset the origin state to prevent the advancement of origin progress if
+	 * we fail to apply. Otherwise, this will result in transaction loss as
+	 * that transaction won't be sent again by the server.
+	 */
+	replorigin_xact_clear(true);
+
+	if (MySubscription->disableonerr)
+		DisableSubscriptionAndExit();
+	else
+	{
+		/*
+		 * Report the worker failed while applying changes. Abort the current
+		 * transaction so that the stats message is sent in an idle state.
+		 */
+		AbortOutOfAnyTransaction();
+		pgstat_report_subscription_error(MySubscription->oid);
+
+		PG_RE_THROW();
+	}
+}
+
+/*
  * Common function to run the apply loop with error handling. Disable the
  * subscription, if necessary.
  *
@@ -5755,28 +5787,7 @@ start_apply(XLogRecPtr origin_startpos)
 	}
 	PG_CATCH();
 	{
-		/*
-		 * Reset the origin state to prevent the advancement of origin
-		 * progress if we fail to apply. Otherwise, this will result in
-		 * transaction loss as that transaction won't be sent again by the
-		 * server.
-		 */
-		replorigin_xact_clear(true);
-
-		if (MySubscription->disableonerr)
-			DisableSubscriptionAndExit();
-		else
-		{
-			/*
-			 * Report the worker failed while applying changes. Abort the
-			 * current transaction so that the stats message is sent in an
-			 * idle state.
-			 */
-			AbortOutOfAnyTransaction();
-			pgstat_report_subscription_error(MySubscription->oid);
-
-			PG_RE_THROW();
-		}
+		handle_apply_error();
 	}
 	PG_END_TRY();
 }
@@ -5797,6 +5808,7 @@ run_apply_worker(void)
 	TimeLineID	startpointTLI;
 	char	   *err;
 	bool		must_use_password;
+	bool		enable_twophase;
 
 	slotname = MySubscription->slotname;
 
@@ -5861,6 +5873,13 @@ run_apply_worker(void)
 
 	set_stream_options(&options, slotname, &origin_startpos);
 
+	enable_twophase =
+		MySubscription->twophasestate == LOGICALREP_TWOPHASE_STATE_PENDING &&
+		AllTablesyncsReady();
+
+	options.proto.logical.slot_failover = MySubscription->failover;
+	options.proto.logical.slot_failover_set = true;
+
 	/*
 	 * Even when the two_phase mode is requested by the user, it remains as
 	 * the tri-state PENDING until all tablesyncs have reached READY state.
@@ -5870,13 +5889,24 @@ run_apply_worker(void)
 	 * PENDING, which allows ALTER SUBSCRIPTION ... REFRESH PUBLICATION to
 	 * work.
 	 */
-	if (MySubscription->twophasestate == LOGICALREP_TWOPHASE_STATE_PENDING &&
-		AllTablesyncsReady())
+	if (enable_twophase)
 	{
 		/* Start streaming with two_phase enabled */
 		options.proto.logical.twophase = true;
-		walrcv_startstreaming(LogRepWorkerWalRcvConn, &options);
+	}
 
+	PG_TRY();
+	{
+		walrcv_startstreaming(LogRepWorkerWalRcvConn, &options);
+	}
+	PG_CATCH();
+	{
+		handle_apply_error();
+	}
+	PG_END_TRY();
+
+	if (enable_twophase)
+	{
 		StartTransactionCommand();
 
 		/*
@@ -5889,10 +5919,6 @@ run_apply_worker(void)
 		MySubscription->twophasestate = LOGICALREP_TWOPHASE_STATE_ENABLED;
 		PopActiveSnapshot();
 		CommitTransactionCommand();
-	}
-	else
-	{
-		walrcv_startstreaming(LogRepWorkerWalRcvConn, &options);
 	}
 
 	ereport(DEBUG1,

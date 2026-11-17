@@ -31,6 +31,7 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "pqexpbuffer.h"
+#include "replication/logicalproto.h"
 #include "replication/slotsync.h"
 #include "replication/walreceiver.h"
 #include "storage/latch.h"
@@ -656,6 +657,13 @@ libpqrcv_startstreaming(WalReceiverConn *conn,
 		if (options->proto.logical.twophase &&
 			PQserverVersion(conn->streamConn) >= 150000)
 			appendStringInfoString(&cmd, ", two_phase 'on'");
+
+		if (options->proto.logical.slot_failover_set &&
+			PQserverVersion(conn->streamConn) >=
+			LOGICALREP_SLOT_PROPERTY_CHECK_SERVER_VERSION_NUM)
+			appendStringInfo(&cmd, ", slot_failover '%s'",
+							 options->proto.logical.slot_failover ?
+							 "true" : "false");
 
 		if (options->proto.logical.origin &&
 			PQserverVersion(conn->streamConn) >= 160000)

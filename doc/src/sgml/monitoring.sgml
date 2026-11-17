@@ -2592,10 +2592,10 @@ description | Waiting for a newly initialized WAL file to reach durable storage
        <structfield>apply_error_count</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of times an error occurred while applying changes. Note that any
-       conflict resulting in an apply error will be counted in both
-       <literal>apply_error_count</literal> and the corresponding conflict
-       count (e.g., <literal>confl_*</literal>).
+       Number of errors reported by the apply worker while starting replication
+       or applying changes. Note that any conflict resulting in an apply error
+       will be counted in both <literal>apply_error_count</literal> and the
+       corresponding conflict count (e.g., <literal>confl_*</literal>).
       </para></entry>
      </row>
 
