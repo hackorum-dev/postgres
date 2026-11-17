@@ -1142,7 +1142,8 @@ contain_nonstrict_functions_walker(Node *node, void *context)
 		{
 			case AND_EXPR:
 			case OR_EXPR:
-				/* AND, OR are inherently non-strict */
+			case IMPLIES_EXPR:
+				/* AND, OR, IMPLIES are inherently non-strict */
 				return true;
 			default:
 				break;
@@ -1949,6 +1950,20 @@ find_nonnullable_vars_walker(Node *node, bool top_level)
 				/* NOT will return null if its arg is null */
 				result = find_nonnullable_vars_walker((Node *) expr->args,
 													  false);
+				break;
+			case IMPLIES_EXPR:
+
+				/*
+				 * "a IMPLIES b" means "NOT a OR b", so we handle the
+				 * arguments just like the NOT and OR cases would.  Note that
+				 * we can get here before the planner has replaced IMPLIES
+				 * (see query_outputs_are_not_nullable()).
+				 */
+				result = find_nonnullable_vars_walker(linitial(expr->args),
+													  false);
+				result = mbms_int_members(result,
+										  find_nonnullable_vars_walker(lsecond(expr->args),
+																	   top_level));
 				break;
 			default:
 				elog(ERROR, "unrecognized boolop: %d", (int) expr->boolop);
@@ -3392,6 +3407,22 @@ eval_const_expressions_mutator(Node *node,
 							 * away the NOT.
 							 */
 							return negate_clause(arg);
+						}
+					case IMPLIES_EXPR:
+						{
+							Expr	   *newexpr;
+
+							/*
+							 * Replace "a IMPLIES b" with "NOT a OR b" and
+							 * simplify that, so that nothing downstream needs
+							 * to know about IMPLIES.
+							 */
+							Assert(list_length(expr->args) == 2);
+							newexpr = make_notclause(linitial(expr->args));
+							newexpr = make_orclause(list_make2(newexpr,
+															   lsecond(expr->args)));
+							return eval_const_expressions_mutator((Node *) newexpr,
+																  context);
 						}
 					default:
 						elog(ERROR, "unrecognized boolop: %d",
