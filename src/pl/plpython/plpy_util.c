@@ -117,3 +117,84 @@ PLyUnicode_FromString(const char *s)
 {
 	return PLyUnicode_FromStringAndSize(s, strlen(s));
 }
+
+/*
+ * Common part of PLyDict_SetItemString() and PLyDict_SetItemNone().
+ */
+static void
+PLyDict_SetItem_v(PyObject *dict, const char *key, PyObject *value,
+				  const char *fmt, va_list ap)
+{
+	if (value != NULL)
+	{
+		int			rc = PyDict_SetItemString(dict, key, value);
+
+		/* PyDict_SetItemString does not steal the reference */
+		Py_DECREF(value);
+
+		if (rc == 0)
+			return;
+	}
+
+	PLy_elog_impl_v(ERROR, fmt, ap);
+	pg_unreachable();
+}
+
+/*
+ * Insert value into dict under key, consuming the caller's reference.
+ *
+ * value is a new reference owned by the caller, or NULL with a Python
+ * exception set. Py_None is not special here: the caller must own a
+ * reference to it, or use PLyDict_SetItemNone(). A failed conversion and a
+ * failed insert are both reported under fmt.
+ */
+void
+PLyDict_SetItemString(PyObject *dict, const char *key, PyObject *value,
+					  const char *fmt, ...)
+{
+	va_list		ap;
+
+	va_start(ap, fmt);
+	PLyDict_SetItem_v(dict, key, value, fmt, ap);
+	va_end(ap);
+}
+
+/*
+ * Insert the borrowed Py_None singleton into dict under key.
+ */
+void
+PLyDict_SetItemNone(PyObject *dict, const char *key, const char *fmt, ...)
+{
+	va_list		ap;
+
+	Py_INCREF(Py_None);
+
+	va_start(ap, fmt);
+	PLyDict_SetItem_v(dict, key, Py_None, fmt, ap);
+	va_end(ap);
+}
+
+/*
+ * Store value at index i of list, consuming the caller's reference.
+ *
+ * value is a new reference owned by the caller, or NULL with a Python
+ * exception set. Py_None is not special here: the caller must own a
+ * reference to it. listobject.h says PyList_SetItem decrements the new
+ * reference even when the item is not inserted, so a failed store must not
+ * release it again. A failed conversion and a failed store are both
+ * reported under fmt.
+ */
+void
+PLyList_SetItem(PyObject *list, Py_ssize_t i, PyObject *value,
+				const char *fmt, ...)
+{
+	va_list		ap;
+
+	if (value != NULL && PyList_SetItem(list, i, value) == 0)
+		return;
+
+	va_start(ap, fmt);
+	PLy_elog_impl_v(ERROR, fmt, ap);
+	va_end(ap);
+	pg_unreachable();
+}

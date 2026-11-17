@@ -43,6 +43,20 @@ static bool set_string_attr(PyObject *obj, char *attrname, char *str);
 void
 PLy_elog_impl(int elevel, const char *fmt, ...)
 {
+	va_list		ap;
+
+	va_start(ap, fmt);
+	PLy_elog_impl_v(elevel, fmt, ap);
+	va_end(ap);
+}
+
+/*
+ * va_list version of PLy_elog_impl(), for callers that pass a message
+ * through from their own variadic argument list.
+ */
+void
+PLy_elog_impl_v(int elevel, const char *fmt, va_list ap)
+{
 	int			save_errno = errno;
 	char	   *volatile xmsg = NULL;
 	char	   *volatile tbmsg = NULL;
@@ -97,13 +111,13 @@ PLy_elog_impl(int elevel, const char *fmt, ...)
 		{
 			for (;;)
 			{
-				va_list		ap;
+				va_list		ap2;
 				int			needed;
 
 				errno = save_errno;
-				va_start(ap, fmt);
-				needed = appendStringInfoVA(&emsg, dgettext(TEXTDOMAIN, fmt), ap);
-				va_end(ap);
+				va_copy(ap2, ap);
+				needed = appendStringInfoVA(&emsg, dgettext(TEXTDOMAIN, fmt), ap2);
+				va_end(ap2);
 				if (needed == 0)
 					break;
 				enlargeStringInfo(&emsg, needed);

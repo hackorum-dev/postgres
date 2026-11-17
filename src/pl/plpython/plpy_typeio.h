@@ -147,6 +147,10 @@ struct PLyObToDatum
 };
 
 
+/*
+ * PLy_input_convert and PLy_input_from_tuple throw an error rather than
+ * returning NULL when the Python object cannot be built.
+ */
 extern PGDLLEXPORT PyObject *PLy_input_convert(PLyDatumToOb *arg, Datum val);
 extern PGDLLEXPORT Datum PLy_output_convert(PLyObToDatum *arg, PyObject *val,
 											bool *isnull);

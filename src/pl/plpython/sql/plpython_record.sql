@@ -178,3 +178,25 @@ CREATE FUNCTION test_type_record_error4() RETURNS type_record AS $$
 $$ LANGUAGE plpython3u;
 
 SELECT * FROM test_type_record_error4();
+
+-- a mapping that fails for a reason other than a missing key
+CREATE FUNCTION test_type_record_error5() RETURNS type_record AS $$
+    class broken_mapping(dict):
+        def __getitem__(self, key):
+            raise TypeError('broken mapping')
+    return broken_mapping(first='first', second=1)
+$$ LANGUAGE plpython3u;
+
+SELECT * FROM test_type_record_error5();
+
+-- an object whose attribute lookup fails for a reason other than a
+-- missing attribute
+CREATE FUNCTION test_type_record_error6() RETURNS type_record AS $$
+    class broken_object:
+        first = 'first'
+        def __getattr__(self, name):
+            raise ValueError('broken attribute')
+    return broken_object()
+$$ LANGUAGE plpython3u;
+
+SELECT * FROM test_type_record_error6();
