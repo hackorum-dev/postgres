@@ -816,7 +816,7 @@ init_execution_state(SQLFunctionCachePtr fcache)
 		 * statement.  By this point, we should have thrown an error if there
 		 * is not one.
 		 */
-		resulttlist = get_sql_fn_result_tlist(plansource->query_list);
+		resulttlist = get_sql_fn_result_tlist(fcache->cplan->query_list);
 
 		/*
 		 * If the result is composite, *and* we are returning the whole tuple

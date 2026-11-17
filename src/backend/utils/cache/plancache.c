@@ -1123,6 +1123,8 @@ BuildCachedPlan(CachedPlanSource *plansource, List *qlist,
 		MemoryContextSwitchTo(plan_context);
 
 		plist = copyObject(plist);
+
+		qlist = copyObject(qlist);
 	}
 	else
 		plan_context = CurrentMemoryContext;
@@ -1166,6 +1168,7 @@ BuildCachedPlan(CachedPlanSource *plansource, List *qlist,
 	plan->is_oneshot = plansource->is_oneshot;
 	plan->is_saved = false;
 	plan->is_valid = true;
+	plan->query_list = qlist;
 
 	/* assign generation number to new plan */
 	plan->generation = ++(plansource->generation);
