@@ -3306,6 +3306,9 @@ window_gettupleslot(WindowObject winobj, int64 pos, TupleTableSlot *slot)
 
 	tuplestore_select_read_pointer(winstate->buffer, winobj->readptr);
 
+	/* seekpos is only valid for a pointer not at EOF; see WinSetMarkPosition */
+	Assert(!tuplestore_ateof(winstate->buffer));
+
 	/*
 	 * Advance or rewind until we are within one tuple of the one we want.
 	 */
@@ -3790,13 +3793,26 @@ WinSetMarkPosition(WindowObject winobj, int64 markpos)
 							  true);
 		winobj->markpos = markpos;
 	}
+
+	/*
+	 * Bring the read pointer up to the mark, but don't skip it past the rows
+	 * stored so far: a pointer at EOF follows the rows written while it is
+	 * active, which seekpos would not reflect.  Stopped on the last stored
+	 * row, it stays put.  The mark pointer is never active while rows are
+	 * written, so if it reaches EOF it is just held one row back.
+	 */
 	tuplestore_select_read_pointer(winstate->buffer, winobj->readptr);
 	if (markpos > winobj->seekpos)
 	{
-		tuplestore_skiptuples(winstate->buffer,
-							  markpos - winobj->seekpos,
-							  true);
-		winobj->seekpos = markpos;
+		int64		target = Min(markpos, winstate->spooled_rows - 1);
+
+		if (target > winobj->seekpos)
+		{
+			tuplestore_skiptuples(winstate->buffer,
+								  target - winobj->seekpos,
+								  true);
+			winobj->seekpos = target;
+		}
 	}
 }
 
