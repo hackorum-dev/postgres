@@ -909,6 +909,7 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc, HeapTuple *r
 			if (TRIGGER_FIRED_BY_INSERT(tdata->tg_event))
 			{
 				pltevent = PLyUnicode_FromString("INSERT");
+				PLyTD_SetItem(pltdata, "event", pltevent);
 
 				PLyTD_SetItemNone(pltdata, "old");
 				pytnew = PLy_input_from_tuple(&proc->result_in,
@@ -921,6 +922,7 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc, HeapTuple *r
 			else if (TRIGGER_FIRED_BY_DELETE(tdata->tg_event))
 			{
 				pltevent = PLyUnicode_FromString("DELETE");
+				PLyTD_SetItem(pltdata, "event", pltevent);
 
 				PLyTD_SetItemNone(pltdata, "new");
 				pytold = PLy_input_from_tuple(&proc->result_in,
@@ -933,6 +935,7 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc, HeapTuple *r
 			else if (TRIGGER_FIRED_BY_UPDATE(tdata->tg_event))
 			{
 				pltevent = PLyUnicode_FromString("UPDATE");
+				PLyTD_SetItem(pltdata, "event", pltevent);
 
 				pytnew = PLy_input_from_tuple(&proc->result_in,
 											  tdata->tg_newtuple,
@@ -947,12 +950,7 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc, HeapTuple *r
 				*rv = tdata->tg_newtuple;
 			}
 			else
-			{
 				elog(ERROR, "unrecognized OP tg_event: %u", tdata->tg_event);
-				pltevent = NULL;	/* keep compiler quiet */
-			}
-
-			PLyTD_SetItem(pltdata, "event", pltevent);
 		}
 		else if (TRIGGER_FIRED_FOR_STATEMENT(tdata->tg_event))
 		{

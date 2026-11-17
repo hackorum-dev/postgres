@@ -104,7 +104,7 @@ PLy_result_new(void)
 	ob->nrows = PyLong_FromLong(-1);
 	ob->rows = PyList_New(0);
 	ob->tupdesc = NULL;
-	if (!ob->rows)
+	if (!ob->nrows || !ob->rows)
 	{
 		Py_DECREF(ob);
 		return NULL;
@@ -155,8 +155,14 @@ PLy_result_colnames(PyObject *self, PyObject *unused)
 	for (i = 0; i < ob->tupdesc->natts; i++)
 	{
 		Form_pg_attribute attr = TupleDescAttr(ob->tupdesc, i);
+		PyObject   *name = PLyUnicode_FromString(NameStr(attr->attname));
 
-		PyList_SetItem(list, i, PLyUnicode_FromString(NameStr(attr->attname)));
+		/* PyList_SetItem consumes name even when the store fails */
+		if (name == NULL || PyList_SetItem(list, i, name) < 0)
+		{
+			Py_DECREF(list);
+			return NULL;
+		}
 	}
 
 	return list;
@@ -181,8 +187,14 @@ PLy_result_coltypes(PyObject *self, PyObject *unused)
 	for (i = 0; i < ob->tupdesc->natts; i++)
 	{
 		Form_pg_attribute attr = TupleDescAttr(ob->tupdesc, i);
+		PyObject   *typid = PyLong_FromLong(attr->atttypid);
 
-		PyList_SetItem(list, i, PyLong_FromLong(attr->atttypid));
+		/* PyList_SetItem consumes typid even when the store fails */
+		if (typid == NULL || PyList_SetItem(list, i, typid) < 0)
+		{
+			Py_DECREF(list);
+			return NULL;
+		}
 	}
 
 	return list;
@@ -207,8 +219,14 @@ PLy_result_coltypmods(PyObject *self, PyObject *unused)
 	for (i = 0; i < ob->tupdesc->natts; i++)
 	{
 		Form_pg_attribute attr = TupleDescAttr(ob->tupdesc, i);
+		PyObject   *typmod = PyLong_FromLong(attr->atttypmod);
 
-		PyList_SetItem(list, i, PyLong_FromLong(attr->atttypmod));
+		/* PyList_SetItem consumes typmod even when the store fails */
+		if (typmod == NULL || PyList_SetItem(list, i, typmod) < 0)
+		{
+			Py_DECREF(list);
+			return NULL;
+		}
 	}
 
 	return list;

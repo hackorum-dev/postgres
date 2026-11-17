@@ -355,13 +355,16 @@ PLy_procedure_compile(PLyProcedure *proc, const char *src)
 	PyObject   *code0;
 
 	proc->globals = PyDict_Copy(PLy_interp_globals);
+	if (proc->globals == NULL)
+		PLy_elog(ERROR, NULL);
 
 	/*
 	 * SD is private preserved data between calls. GD is global data shared by
 	 * all functions.  The caller supplies SD.
 	 */
 	Assert(proc->statics != NULL);
-	PyDict_SetItemString(proc->globals, "SD", proc->statics);
+	if (PyDict_SetItemString(proc->globals, "SD", proc->statics) < 0)
+		PLy_elog(ERROR, NULL);
 
 	/*
 	 * insert the function code into the interpreter
