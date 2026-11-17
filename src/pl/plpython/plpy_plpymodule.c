@@ -227,8 +227,8 @@ PLy_generate_spi_exceptions(PyObject *mod, PyObject *base)
 		if (sqlstate == NULL)
 			PLy_elog(ERROR, "could not generate SPI exceptions");
 
-		PyDict_SetItemString(dict, "sqlstate", sqlstate);
-		Py_DECREF(sqlstate);
+		PLyDict_SetItemString(dict, "sqlstate", sqlstate,
+							  "could not generate SPI exceptions");
 
 		exc = PLy_create_exception(exception_map[i].name, base, dict,
 								   exception_map[i].classname, mod);

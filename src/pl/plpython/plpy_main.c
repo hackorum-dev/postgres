@@ -83,7 +83,8 @@ _PG_init(void)
 	GD = PyDict_New();
 	if (GD == NULL)
 		PLy_elog(ERROR, NULL);
-	PyDict_SetItemString(main_dict, "GD", GD);
+	if (PyDict_SetItemString(main_dict, "GD", GD) < 0)
+		PLy_elog(ERROR, NULL);
 
 	/*
 	 * Import plpy.

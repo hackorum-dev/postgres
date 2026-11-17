@@ -359,19 +359,29 @@ PLy_spi_execute_fetch_result(SPITupleTable *tuptable, uint64 rows, int status)
 	}
 	Py_DECREF(result->status);
 	result->status = PyLong_FromLong(status);
+	if (result->status == NULL)
+	{
+		Py_DECREF(result);
+		SPI_freetuptable(tuptable);
+		return NULL;
+	}
 
-	if (status > 0 && tuptable == NULL)
+	if (status > 0)
 	{
 		Py_DECREF(result->nrows);
 		result->nrows = PyLong_FromUnsignedLongLong(rows);
+		if (result->nrows == NULL)
+		{
+			Py_DECREF(result);
+			SPI_freetuptable(tuptable);
+			return NULL;
+		}
 	}
-	else if (status > 0 && tuptable != NULL)
+
+	if (status > 0 && tuptable != NULL)
 	{
 		PLyDatumToOb ininfo;
 		MemoryContext cxt;
-
-		Py_DECREF(result->nrows);
-		result->nrows = PyLong_FromUnsignedLongLong(rows);
 
 		cxt = AllocSetContextCreate(CurrentMemoryContext,
 									"PL/Python temp context",
@@ -414,7 +424,8 @@ PLy_spi_execute_fetch_result(SPITupleTable *tuptable, uint64 rows, int status)
 															   tuptable->tupdesc,
 															   true);
 
-						PyList_SetItem(result->rows, i, row);
+						PLyList_SetItem(result->rows, i, row,
+										"could not store a row in the query result");
 					}
 				}
 			}

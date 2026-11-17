@@ -151,7 +151,12 @@ PLy_cursor_query(const char *query)
 	}
 	PG_CATCH();
 	{
+		/*
+		 * Release the cursor after the abort, so that its deallocator does
+		 * not try to close a portal that the abort has already dropped.
+		 */
 		PLy_spi_subtransaction_abort(oldcontext, oldowner);
+		Py_DECREF(cursor);
 		return NULL;
 	}
 	PG_END_TRY();
@@ -444,9 +449,13 @@ PLy_cursor_fetch(PyObject *self, PyObject *args)
 
 		Py_DECREF(ret->status);
 		ret->status = PyLong_FromLong(SPI_OK_FETCH);
+		if (ret->status == NULL)
+			PLy_elog(ERROR, "could not create the fetch status");
 
 		Py_DECREF(ret->nrows);
 		ret->nrows = PyLong_FromUnsignedLongLong(SPI_processed);
+		if (ret->nrows == NULL)
+			PLy_elog(ERROR, "could not create the fetched row count");
 
 		if (SPI_processed != 0)
 		{
@@ -464,12 +473,7 @@ PLy_cursor_fetch(PyObject *self, PyObject *args)
 
 			Py_DECREF(ret->rows);
 			ret->rows = PyList_New(SPI_processed);
-			if (!ret->rows)
-			{
-				Py_DECREF(ret);
-				ret = NULL;
-			}
-			else
+			if (ret->rows)
 			{
 				PLy_input_setup_tuple(&cursor->result, SPI_tuptable->tupdesc,
 									  exec_ctx->curr_proc);
@@ -481,7 +485,8 @@ PLy_cursor_fetch(PyObject *self, PyObject *args)
 														   SPI_tuptable->tupdesc,
 														   true);
 
-					PyList_SetItem(ret->rows, i, row);
+					PLyList_SetItem(ret->rows, i, row,
+									"could not store a row in the fetch result");
 				}
 			}
 		}
@@ -492,10 +497,18 @@ PLy_cursor_fetch(PyObject *self, PyObject *args)
 	}
 	PG_CATCH();
 	{
+		Py_DECREF(ret);
 		PLy_spi_subtransaction_abort(oldcontext, oldowner);
 		return NULL;
 	}
 	PG_END_TRY();
+
+	/* in case PyList_New() failed above */
+	if (!ret->rows)
+	{
+		Py_DECREF(ret);
+		return NULL;
+	}
 
 	return (PyObject *) ret;
 }

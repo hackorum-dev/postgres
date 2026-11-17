@@ -13,7 +13,8 @@
 /*
  * Convert a Python unicode object to a Python string/bytes object in
  * PostgreSQL server encoding.  Reference ownership is passed to the
- * caller.
+ * caller.  Failure is reported with PLy_elog(ERROR), so the result is
+ * never NULL.
  */
 PyObject *
 PLyUnicode_Bytes(PyObject *unicode)
@@ -69,6 +70,10 @@ PLyUnicode_Bytes(PyObject *unicode)
 		pfree(encoded);
 
 	Py_DECREF(bytes);
+
+	if (rv == NULL)
+		PLy_elog(ERROR, "could not create bytes representation of Python object");
+
 	return rv;
 }
 
@@ -81,9 +86,17 @@ char *
 PLyUnicode_AsString(PyObject *unicode)
 {
 	PyObject   *o = PLyUnicode_Bytes(unicode);
-	char	   *rv = pstrdup(PyBytes_AsString(o));
+	char	   *s = PyBytes_AsString(o);
+	char	   *rv;
 
-	Py_XDECREF(o);
+	if (s == NULL)
+	{
+		Py_DECREF(o);
+		PLy_elog(ERROR, "could not extract bytes from encoded string");
+	}
+
+	rv = pstrdup(s);
+	Py_DECREF(o);
 	return rv;
 }
 
