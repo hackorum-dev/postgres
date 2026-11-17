@@ -3307,6 +3307,13 @@ window_gettupleslot(WindowObject winobj, int64 pos, TupleTableSlot *slot)
 	tuplestore_select_read_pointer(winstate->buffer, winobj->readptr);
 
 	/*
+	 * A read pointer left at EOF follows the write position while rows are
+	 * spooled, so seekpos may be stale.  Resync it.
+	 */
+	if (tuplestore_ateof(winstate->buffer))
+		winobj->seekpos = winstate->spooled_rows;
+
+	/*
 	 * Advance or rewind until we are within one tuple of the one we want.
 	 */
 	if (winobj->seekpos < pos - 1)
