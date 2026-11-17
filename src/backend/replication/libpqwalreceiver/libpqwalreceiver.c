@@ -658,6 +658,13 @@ libpqrcv_startstreaming(WalReceiverConn *conn,
 			PQserverVersion(conn->streamConn) >= 150000)
 			appendStringInfoString(&cmd, ", two_phase 'on'");
 
+		if (options->proto.logical.slot_twophase_set &&
+			PQserverVersion(conn->streamConn) >=
+			LOGICALREP_SLOT_PROPERTY_CHECK_SERVER_VERSION_NUM)
+			appendStringInfo(&cmd, ", slot_two_phase '%s'",
+							 options->proto.logical.slot_twophase ?
+							 "true" : "false");
+
 		if (options->proto.logical.slot_failover_set &&
 			PQserverVersion(conn->streamConn) >=
 			LOGICALREP_SLOT_PROPERTY_CHECK_SERVER_VERSION_NUM)

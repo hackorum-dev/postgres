@@ -5721,6 +5721,8 @@ set_stream_options(WalRcvStreamOptions *options,
 	}
 
 	options->proto.logical.twophase = false;
+	options->proto.logical.slot_twophase = false;
+	options->proto.logical.slot_twophase_set = false;
 	options->proto.logical.slot_failover = false;
 	options->proto.logical.slot_failover_set = false;
 	options->proto.logical.origin = pstrdup(MySubscription->origin);
@@ -5876,6 +5878,18 @@ run_apply_worker(void)
 	enable_twophase =
 		MySubscription->twophasestate == LOGICALREP_TWOPHASE_STATE_PENDING &&
 		AllTablesyncsReady();
+
+	/*
+	 * A pending subscription that is ready can enable two-phase decoding as
+	 * part of START_REPLICATION. Otherwise, require the slot to match the
+	 * subscription state before decoding starts.
+	 */
+	if (!enable_twophase)
+	{
+		options.proto.logical.slot_twophase =
+			MySubscription->twophasestate == LOGICALREP_TWOPHASE_STATE_ENABLED;
+		options.proto.logical.slot_twophase_set = true;
+	}
 
 	options.proto.logical.slot_failover = MySubscription->failover;
 	options.proto.logical.slot_failover_set = true;

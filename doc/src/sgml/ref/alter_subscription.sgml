@@ -310,13 +310,16 @@ ALTER SUBSCRIPTION <replaceable class="parameter">name</replaceable> RENAME TO <
      <para>
       When altering the
       <link linkend="sql-createsubscription-params-with-slot-name"><literal>slot_name</literal></link>,
-      the <literal>failover</literal> and <literal>two_phase</literal> property
-      values of the named slot may differ from the counterpart
+      the named slot's <literal>failover</literal> property may differ from the
+      counterpart
       <link linkend="sql-createsubscription-params-with-failover"><literal>failover</literal></link>
-      and <link linkend="sql-createsubscription-params-with-two-phase"><literal>two_phase</literal></link>
-      parameters specified in the subscription. When creating the slot, ensure
-      the slot properties <literal>failover</literal> and <literal>two_phase</literal>
-      match their counterpart parameters of the subscription.
+      parameter, and its <literal>two_phase</literal> property may differ from
+      the state required by the subscription's
+      <link linkend="sql-createsubscription-params-with-two-phase"><literal>two_phase</literal></link>
+      parameter. When creating the slot, ensure the
+      <literal>failover</literal> property matches the corresponding parameter
+      and the <literal>two_phase</literal> property matches the required
+      subscription state.
       Otherwise, the slot on the publisher may behave differently from what these
       subscription options say: for example, the slot on the publisher could either be
       synced to the standbys even when the subscription's
@@ -328,11 +331,26 @@ ALTER SUBSCRIPTION <replaceable class="parameter">name</replaceable> RENAME TO <
      </para>
 
      <para>
+      While the subscription's internal two-phase state is
+      <quote>pending</quote> and not all tables are synchronized and ready, the
+      required slot <literal>two_phase</literal> property is
+      <literal>false</literal>, even if the subscription's
+      <literal>two_phase</literal> parameter is <literal>true</literal>. This
+      also applies to a subscription with no tables, which remains in the
+      <quote>pending</quote> state. Once all tables are ready,
+      <command>START_REPLICATION</command> can enable the slot property, after
+      which the apply worker updates the subscription state.
+     </para>
+
+     <para>
       When the publisher is running
       <productname>PostgreSQL</productname> 20 or later, the apply worker
       reports an error when starting replication if the named slot's
       <literal>failover</literal> property does not match the subscription
       parameter.
+      With such a publisher, the apply worker also reports an error when
+      starting replication if the named slot's <literal>two_phase</literal>
+      property does not match the state required by the subscription.
      </para>
 
      <para>
