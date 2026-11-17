@@ -186,6 +186,8 @@ typedef struct
 			char	   *streaming_str;	/* Streaming of large transactions */
 			bool		twophase;	/* Streaming of two-phase transactions at
 									 * prepare time */
+			bool		slot_failover;	/* Expected slot failover state */
+			bool		slot_failover_set;	/* Check slot failover state */
 			char	   *origin; /* Only publish data originating from the
 								 * specified origin */
 		}			logical;

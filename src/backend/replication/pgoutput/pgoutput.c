@@ -296,6 +296,7 @@ parse_output_parameters(List *options, PGOutputData *data)
 	bool		messages_option_given = false;
 	bool		streaming_given = false;
 	bool		two_phase_option_given = false;
+	bool		slot_failover_option_given = false;
 	bool		origin_option_given = false;
 
 	/* Initialize optional parameters to defaults */
@@ -303,6 +304,8 @@ parse_output_parameters(List *options, PGOutputData *data)
 	data->streaming = LOGICALREP_STREAM_OFF;
 	data->messages = false;
 	data->two_phase = false;
+	data->slot_failover = false;
+	data->slot_failover_set = false;
 	data->publish_no_origin = false;
 
 	foreach(lc, options)
@@ -395,6 +398,17 @@ parse_output_parameters(List *options, PGOutputData *data)
 			two_phase_option_given = true;
 
 			data->two_phase = defGetBoolean(defel);
+		}
+		else if (strcmp(defel->defname, "slot_failover") == 0)
+		{
+			if (slot_failover_option_given)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			slot_failover_option_given = true;
+
+			data->slot_failover = defGetBoolean(defel);
+			data->slot_failover_set = true;
 		}
 		else if (strcmp(defel->defname, "origin") == 0)
 		{
@@ -549,6 +563,18 @@ pgoutput_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 					 errmsg("two-phase commit requested, but not supported by output plugin")));
 		else
 			ctx->twophase_opt_given = true;
+
+		if (data->slot_failover_set &&
+			data->slot_failover != MyReplicationSlot->data.failover)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("replication slot \"%s\" has failover %s",
+							NameStr(MyReplicationSlot->data.name),
+							MyReplicationSlot->data.failover ?
+							"enabled" : "disabled"),
+					 errdetail("The expected failover setting is %s.",
+							   data->slot_failover ?
+							   "enabled" : "disabled")));
 
 		/* Init publication state. */
 		data->publications = NIL;

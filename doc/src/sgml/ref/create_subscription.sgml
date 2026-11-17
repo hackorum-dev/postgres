@@ -213,6 +213,14 @@ CREATE SUBSCRIPTION <replaceable class="parameter">subscription_name</replaceabl
           option is disabled or could be disabled for sync even when the
           subscription's <literal>failover</literal> option is enabled.
          </para>
+
+         <para>
+          When the publisher is running
+          <productname>PostgreSQL</productname> 20 or later, the apply worker
+          reports an error when starting replication if the named slot's
+          <literal>failover</literal> property does not match the subscription
+          parameter.
+         </para>
         </listitem>
        </varlistentry>
       </variablelist>

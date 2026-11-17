@@ -33,6 +33,8 @@ typedef struct PGOutputData
 	char		streaming;
 	bool		messages;
 	bool		two_phase;
+	bool		slot_failover;
+	bool		slot_failover_set;
 	bool		publish_no_origin;
 } PGOutputData;
 

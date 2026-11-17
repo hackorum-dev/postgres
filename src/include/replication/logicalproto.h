@@ -36,6 +36,9 @@
  * LOGICALREP_PROTO_STREAM_PARALLEL_VERSION_NUM is the minimum protocol version
  * where we support applying large streaming transactions in parallel.
  * Introduced in PG16.
+ *
+ * LOGICALREP_SLOT_PROPERTY_CHECK_SERVER_VERSION_NUM is the minimum server
+ * version that can check slot properties during START_REPLICATION.
  */
 #define LOGICALREP_PROTO_MIN_VERSION_NUM 1
 #define LOGICALREP_PROTO_VERSION_NUM 1
@@ -43,6 +46,7 @@
 #define LOGICALREP_PROTO_TWOPHASE_VERSION_NUM 3
 #define LOGICALREP_PROTO_STREAM_PARALLEL_VERSION_NUM 4
 #define LOGICALREP_PROTO_MAX_VERSION_NUM LOGICALREP_PROTO_STREAM_PARALLEL_VERSION_NUM
+#define LOGICALREP_SLOT_PROPERTY_CHECK_SERVER_VERSION_NUM 200000
 
 /*
  * Logical message types

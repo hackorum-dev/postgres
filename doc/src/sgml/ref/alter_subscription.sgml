@@ -328,6 +328,14 @@ ALTER SUBSCRIPTION <replaceable class="parameter">name</replaceable> RENAME TO <
      </para>
 
      <para>
+      When the publisher is running
+      <productname>PostgreSQL</productname> 20 or later, the apply worker
+      reports an error when starting replication if the named slot's
+      <literal>failover</literal> property does not match the subscription
+      parameter.
+     </para>
+
+     <para>
       The <link linkend="sql-createsubscription-params-with-failover"><literal>failover</literal></link>,
       <link linkend="sql-createsubscription-params-with-two-phase"><literal>two_phase</literal></link>, and
       <link linkend="sql-createsubscription-params-with-retain-dead-tuples"><literal>retain_dead_tuples</literal></link>
