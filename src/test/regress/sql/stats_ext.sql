@@ -1891,10 +1891,10 @@ CREATE TABLE sb_2 AS
 ANALYZE sb_1, sb_2;
 
 -- During hash join estimation, the number of distinct values on each column
--- is calculated. The optimizer selects the smallest number of distinct values
--- and the largest hash bucket size. The optimizer decides that the hash
--- bucket size is quite big because there are possibly many correlations.
-EXPLAIN (COSTS OFF) -- Choose merge join
+-- is calculated.  Without extended statistics covering the columns, the
+-- bucket size now comes from the joint ndistinct of the hash key columns,
+-- bounded by the input row count, so the bucket is no longer overpriced.
+EXPLAIN (COSTS OFF) -- Choose hash join
 SELECT * FROM sb_1 a, sb_2 b WHERE a.x = b.x AND a.y = b.y AND a.z = b.z;
 
 -- The ndistinct extended statistics on (x, y, z) provides more reliable value
