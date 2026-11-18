@@ -233,6 +233,18 @@ IsLogicalDecodingEnabled(void)
 {
 	bool		enabled;
 
+	/*
+	 * The postmaster calls this through ValidateSlotSyncParams() to decide
+	 * whether to start the slot sync worker. It has no PGPROC, so it must not
+	 * wait for an LWLock: LWLockQueueSelf() would PANIC if, for example, the
+	 * startup process held the lock while replaying a logical decoding status
+	 * change. Read the flag without the lock there. Taking the lock would not
+	 * make the answer any fresher by the time the worker starts, and the
+	 * worker checks the status again under the lock when it starts.
+	 */
+	if (MyProc == NULL)
+		return LogicalDecodingCtl->logical_decoding_enabled;
+
 	LWLockAcquire(LogicalDecodingControlLock, LW_SHARED);
 	enabled = LogicalDecodingCtl->logical_decoding_enabled;
 	LWLockRelease(LogicalDecodingControlLock);
