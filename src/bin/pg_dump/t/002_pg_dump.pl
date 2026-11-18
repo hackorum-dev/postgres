@@ -3435,25 +3435,6 @@ my %tests = (
 		},
 	},
 
-	# In binary-upgrade mode, the subscription OID is preserved and the
-	# conflict log table is dumped, to be reused by the CREATE SUBSCRIPTION
-	# above.
-	'binary upgrade: pg_subscription OID of sub3' => {
-		regexp => qr/^
-			\Q-- For binary upgrade, must preserve pg_subscription.oid\E\n
-			\QSELECT pg_catalog.binary_upgrade_set_next_pg_subscription_oid(\E'\d+'\Q::pg_catalog.oid);\E\n+
-			\QCREATE SUBSCRIPTION sub3 \E
-			/xm,
-		like => { binary_upgrade => 1, },
-	},
-
-	'binary upgrade: conflict log table of sub3' => {
-		regexp => qr/^
-			\QCREATE TABLE pg_conflict.pg_conflict_log_\E\d+\Q (\E
-			/xm,
-		like => { binary_upgrade => 1, },
-	},
-
 	'CREATE SUBSCRIPTION sub4' => {
 		create_order => 50,
 		create_sql => 'CREATE SUBSCRIPTION sub4
@@ -3467,6 +3448,38 @@ my %tests = (
 			no_subscriptions => 1,
 			no_subscriptions_restore => 1,
 		},
+	},
+
+	# Conflict log tables are dumped only in binary-upgrade mode.
+	'binary upgrade: conflict log tables' => {
+		regexp => qr/^
+			\QCREATE TABLE pg_conflict.pg_conflict_log_\E\d+\Q (\E
+			/xm,
+		like => { binary_upgrade => 1, },
+	},
+
+	# In binary-upgrade mode, the subscription OID is preserved, and the
+	# conflict log table named after it is dumped, so that CREATE
+	# SUBSCRIPTION can reuse it.  The OID is not known here, so check that
+	# the table name and the preserved OID have the same number.
+	'binary upgrade: conflict log table of sub3' => {
+		regexp => qr/^
+			\QCREATE TABLE pg_conflict.pg_conflict_log_\E(\d+)\Q (\E
+			.*?
+			^\QSELECT pg_catalog.binary_upgrade_set_next_pg_subscription_oid('\E\1\Q'::pg_catalog.oid);\E\n+
+			\QCREATE SUBSCRIPTION sub3 \E
+			/xms,
+		like => { binary_upgrade => 1, },
+	},
+
+	'binary upgrade: conflict log table of sub4' => {
+		regexp => qr/^
+			\QCREATE TABLE pg_conflict.pg_conflict_log_\E(\d+)\Q (\E
+			.*?
+			^\QSELECT pg_catalog.binary_upgrade_set_next_pg_subscription_oid('\E\1\Q'::pg_catalog.oid);\E\n+
+			\QCREATE SUBSCRIPTION sub4 \E
+			/xms,
+		like => { binary_upgrade => 1, },
 	},
 
 	# Regardless of whether the table or schema is excluded, publications must

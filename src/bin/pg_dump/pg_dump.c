@@ -2080,14 +2080,15 @@ selectDumpableTable(TableInfo *tbinfo, Archive *fout)
 		 * CREATE SUBSCRIPTION can reuse it.  Otherwise the table is created
 		 * again when the subscription is restored.  Also dump the privileges
 		 * that were granted on the table, for example to let non-superusers
-		 * delete conflicts.
+		 * delete conflicts, and its comments and security labels.
 		 *
 		 * The pg_conflict schema itself is created by initdb and is not
 		 * dumped, so the tables in it are selected here, regardless of the
 		 * schema and table switches.
 		 */
 		if (dopt->binary_upgrade)
-			tbinfo->dobj.dump = DUMP_COMPONENT_DEFINITION | DUMP_COMPONENT_ACL;
+			tbinfo->dobj.dump = DUMP_COMPONENT_DEFINITION | DUMP_COMPONENT_ACL |
+				DUMP_COMPONENT_COMMENT | DUMP_COMPONENT_SECLABEL;
 		else
 			tbinfo->dobj.dump = DUMP_COMPONENT_NONE;
 
