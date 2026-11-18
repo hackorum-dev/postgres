@@ -661,6 +661,25 @@ CREATE INDEX path_gist_idx ON test USING GIST (path);
 <programlisting>
 CREATE INDEX path_gist_idx ON test USING GIST (path gist_ltree_ops(siglen=100));
 </programlisting>
+    <para>
+     When such an index is used to match an <type>lquery</type> pattern,
+     the part of the index that is scanned can be narrowed in two ways.  If
+     the pattern begins with one or more plain labels (labels without
+     modifiers, alternatives, quantifiers or <literal>!</literal>), the
+     search is limited to the part of the index holding paths that start
+     with those labels.  In addition, labels that a matching path must
+     contain can be checked against the bitmap signature, which excludes
+     parts of the index where those labels do not occur.  Since the
+     signature records only which labels occur somewhere in a path, and
+     not where, nothing else about the pattern restricts the search: star
+     symbols and their quantifiers, such as <literal>*{1,2}</literal>, and
+     the position of labels beyond the leading plain ones are checked only
+     when individual index entries are examined.  Thus
+     <literal>Top.Science.*{1,2}</literal> scans the same index entries as
+     <literal>Top.Science.*</literal> does, and a pattern that does not
+     begin with a plain label, such as <literal>*.Science.*</literal>, can
+     be narrowed only by the signature.
+    </para>
    </listitem>
    <listitem>
     <para>
