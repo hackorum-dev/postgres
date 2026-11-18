@@ -2482,6 +2482,12 @@ CONTEXT:  processing remote data for replication origin "pg_16395" during "INSER
   </para>
 
   <para>
+   In particular, the recheck triggers for deferrable primary key, unique, and
+   exclusion constraints do not fire by default. This can allow inconsistent
+   data to be committed on the subscriber.
+  </para>
+
+  <para>
    The logical replication apply process currently only fires row triggers,
    not statement triggers.  The initial table synchronization, however, is
    implemented like a <command>COPY</command> command and thus fires both row
