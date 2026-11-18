@@ -10827,9 +10827,10 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
        </para>
 
        <para>
-        Since foreign keys are implemented as triggers, setting this parameter
-        to <literal>replica</literal> also disables all foreign key checks,
-        which can leave data in an inconsistent state if improperly used.
+        Since foreign key checks and rechecks for deferrable unique,
+        primary key, and exclusion constraint are implemented as triggers,
+        setting this parameter to <literal>replica</literal> also disable these
+        checks.
        </para>
       </listitem>
      </varlistentry>
