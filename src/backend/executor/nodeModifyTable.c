@@ -3312,6 +3312,7 @@ ExecMergeMatched(ModifyTableContext *context, ResultRelInfo *resultRelInfo,
 	List	   *actionStates;
 	TupleTableSlot *newslot = NULL;
 	TupleTableSlot *rslot = NULL;
+	TupleTableSlot *actionPlanSlot = context->planSlot;
 	EState	   *estate = context->estate;
 	ExprContext *econtext = mtstate->ps.ps_ExprContext;
 	bool		isNull;
@@ -3336,7 +3337,7 @@ ExecMergeMatched(ModifyTableContext *context, ResultRelInfo *resultRelInfo,
 	 * or NOT MATCHED BY SOURCE tuple and UPDATE/DELETE actions.
 	 */
 	econtext->ecxt_scantuple = resultRelInfo->ri_oldTupleSlot;
-	econtext->ecxt_innertuple = context->planSlot;
+	econtext->ecxt_innertuple = actionPlanSlot;
 	econtext->ecxt_outertuple = NULL;
 
 	/*
@@ -3718,6 +3719,14 @@ lmerge_matched:
 								/* Switch lists, if necessary */
 								if (!*matched)
 								{
+									/*
+									 * Use the EPQ tuple for NOT MATCHED BY SOURCE
+									 * expressions, since its source columns have
+									 * been nulled.  Keep context->planSlot unchanged
+									 * for any subsequent NOT MATCHED BY TARGET action.
+									 */
+									actionPlanSlot = epqslot;
+									econtext->ecxt_innertuple = actionPlanSlot;
 									actionStates = mergeActions[MERGE_WHEN_NOT_MATCHED_BY_SOURCE];
 
 									/*
@@ -3819,7 +3828,7 @@ lmerge_matched:
 												 false,
 												 resultRelInfo->ri_oldTupleSlot,
 												 newslot,
-												 context->planSlot);
+												 actionPlanSlot);
 					break;
 
 				case CMD_DELETE:
@@ -3828,7 +3837,7 @@ lmerge_matched:
 												 true,
 												 resultRelInfo->ri_oldTupleSlot,
 												 NULL,
-												 context->planSlot);
+												 actionPlanSlot);
 					break;
 
 				case CMD_NOTHING:
