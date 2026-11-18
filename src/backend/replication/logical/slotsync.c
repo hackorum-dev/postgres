@@ -1272,10 +1272,21 @@ CheckAndGetDbnameFromConninfo(void)
 bool
 ValidateSlotSyncParams(int elevel)
 {
+	bool		logical_decoding_enabled;
+
 	/*
 	 * Logical slot sync/creation requires logical decoding to be enabled.
+	 *
+	 * The postmaster cannot acquire locks, so read the flag without the lock.
+	 * The answer can go stale right after the read anyway, and the slot sync
+	 * worker confirms it again at startup.
 	 */
-	if (!IsLogicalDecodingEnabled())
+	if (IsUnderPostmaster)
+		logical_decoding_enabled = IsLogicalDecodingEnabled();
+	else
+		logical_decoding_enabled = IsLogicalDecodingEnabledNoLock();
+
+	if (!logical_decoding_enabled)
 	{
 		ereport(elevel,
 				errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -1708,6 +1719,12 @@ ReplSlotSyncWorkerMain(const void *startup_data, size_t startup_data_len)
 
 	/* We can now handle ereport(ERROR) */
 	PG_exception_stack = &local_sigjmp_buf;
+
+	/*
+	 * The postmaster checked the logical decoding status without the lock
+	 * (see IsLogicalDecodingEnabledNoLock()), so confirm it is still enabled.
+	 */
+	ValidateSlotSyncParams(ERROR);
 
 	/* Setup signal handling */
 	pqsignal(SIGHUP, SignalHandlerForConfigReload);

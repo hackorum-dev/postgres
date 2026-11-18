@@ -79,7 +79,9 @@
 /*
  * Struct for controlling the logical decoding status.
  *
- * This struct is protected by LogicalDecodingControlLock.
+ * This struct is protected by LogicalDecodingControlLock.  The postmaster,
+ * which cannot acquire locks, reads logical_decoding_enabled without it; see
+ * IsLogicalDecodingEnabledNoLock().
  */
 typedef struct LogicalDecodingCtlData
 {
@@ -236,6 +238,19 @@ IsLogicalDecodingEnabled(void)
 	LWLockRelease(LogicalDecodingControlLock);
 
 	return enabled;
+}
+
+/*
+ * Like IsLogicalDecodingEnabled(), but read the flag without taking
+ * LogicalDecodingControlLock.
+ *
+ * This is for the postmaster, which has no PGPROC and so must not wait for
+ * an LWLock.  The result may be stale; callers must tolerate that.
+ */
+bool
+IsLogicalDecodingEnabledNoLock(void)
+{
+	return LogicalDecodingCtl->logical_decoding_enabled;
 }
 
 /*
