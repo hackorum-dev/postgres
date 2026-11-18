@@ -469,6 +469,25 @@ CREATE SUBSCRIPTION <replaceable class="parameter">subscription_name</replaceabl
           replication from the publisher. The default is
           <literal>false</literal>.
          </para>
+         <note>
+          <para>
+           If the error persists, the subscription is disabled again as soon
+           as it is re-enabled.  For example, if initial table synchronization
+           fails because the table was dropped on the publisher or removed
+           from the publication,
+           <link linkend="sql-altersubscription-params-refresh-publication"><command>ALTER SUBSCRIPTION ... REFRESH PUBLICATION</command></link>
+           is needed to remove it from the subscription.  However, this
+           command is not allowed while the subscription is disabled.  To
+           resolve this, either fix the cause on the publisher before
+           re-enabling the subscription, or temporarily set
+           <literal>disable_on_error</literal> to <literal>false</literal>,
+           re-enable the subscription using
+           <link linkend="sql-altersubscription-params-enable"><command>ALTER SUBSCRIPTION ... ENABLE</command></link>,
+           run <command>ALTER SUBSCRIPTION ... REFRESH PUBLICATION</command>,
+           and then set <literal>disable_on_error</literal> back to
+           <literal>true</literal>.
+          </para>
+         </note>
         </listitem>
        </varlistentry>
 
