@@ -391,6 +391,48 @@ set       toc,title
 </xsl:template>
 
 
+<!--
+  Add an id link to the column definition of each row in a table of catalog/view
+  columns. The id is on the <row>. As with varlistentry, tables that don't have
+  ids on any row are left alone, but once one row has an id, all the rows must
+  have one.
+  -->
+
+<!-- overrides html/block.xsl -->
+<xsl:template match="entry[@role='catalog_table_entry']/para[@role='column_definition']">
+  <xsl:variable name="row" select="ancestor::row[1]"/>
+  <xsl:choose>
+    <xsl:when test="$row/parent::tbody and $row/../row/@id and not($row/@id)">
+      <xsl:message terminate="yes">
+        <xsl:text>ERROR: id attribute missing on column row for </xsl:text>
+        <xsl:value-of select="normalize-space(.)"/>
+        <xsl:text> in table </xsl:text>
+        <xsl:value-of select="normalize-space(ancestor::table[1]/title)"/>
+      </xsl:message>
+    </xsl:when>
+    <xsl:when test="$row/parent::tbody and $row/@id">
+      <xsl:call-template name="paragraph">
+        <xsl:with-param name="class">
+          <xsl:if test="@role and $para.propagates.style != 0">
+            <xsl:value-of select="@role"/>
+          </xsl:if>
+        </xsl:with-param>
+        <xsl:with-param name="content">
+          <xsl:call-template name="anchor"/>
+          <xsl:apply-templates/>
+          <xsl:call-template name="pg.id.link">
+            <xsl:with-param name="object" select="$row"/>
+          </xsl:call-template>
+        </xsl:with-param>
+      </xsl:call-template>
+    </xsl:when>
+    <xsl:otherwise>
+      <xsl:apply-imports/>
+    </xsl:otherwise>
+  </xsl:choose>
+</xsl:template>
+
+
 <!-- Create a link pointing to an id within the document -->
 <xsl:template name="pg.id.link">
   <xsl:param name="object" select="."/>

@@ -180,3 +180,8 @@ a.id_link {
 *:hover > a.id_link {
 	visibility: visible;
 }
+
+/* highlight the linked-to rows */
+tr:target {
+	background-color: #fff8c5;
+}

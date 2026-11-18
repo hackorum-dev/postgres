@@ -64,7 +64,7 @@
     </thead>
 
     <tbody>
-     <row>
+     <row id="pg-stat-statements-view.userid" xreflabel="pg_stat_statements.userid">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>userid</structfield> <type>oid</type>
        (references <link linkend="catalog-pg-authid"><structname>pg_authid</structname></link>.<structfield>oid</structfield>)
@@ -74,7 +74,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.dbid" xreflabel="pg_stat_statements.dbid">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>dbid</structfield> <type>oid</type>
        (references <link linkend="catalog-pg-database"><structname>pg_database</structname></link>.<structfield>oid</structfield>)
@@ -84,7 +84,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.toplevel" xreflabel="pg_stat_statements.toplevel">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>toplevel</structfield> <type>bool</type>
       </para>
@@ -95,7 +95,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.queryid" xreflabel="pg_stat_statements.queryid">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>queryid</structfield> <type>bigint</type>
       </para>
@@ -104,7 +104,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.query" xreflabel="pg_stat_statements.query">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>query</structfield> <type>text</type>
       </para>
@@ -113,7 +113,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.plans" xreflabel="pg_stat_statements.plans">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>plans</structfield> <type>bigint</type>
       </para>
@@ -124,7 +124,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.total_plan_time" xreflabel="pg_stat_statements.total_plan_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>total_plan_time</structfield> <type>double precision</type>
       </para>
@@ -135,7 +135,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.min_plan_time" xreflabel="pg_stat_statements.min_plan_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>min_plan_time</structfield> <type>double precision</type>
       </para>
@@ -149,7 +149,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.max_plan_time" xreflabel="pg_stat_statements.max_plan_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>max_plan_time</structfield> <type>double precision</type>
       </para>
@@ -163,7 +163,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.mean_plan_time" xreflabel="pg_stat_statements.mean_plan_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>mean_plan_time</structfield> <type>double precision</type>
       </para>
@@ -174,7 +174,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.stddev_plan_time" xreflabel="pg_stat_statements.stddev_plan_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>stddev_plan_time</structfield> <type>double precision</type>
       </para>
@@ -186,7 +186,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.calls" xreflabel="pg_stat_statements.calls">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>calls</structfield> <type>bigint</type>
       </para>
@@ -195,7 +195,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.total_exec_time" xreflabel="pg_stat_statements.total_exec_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>total_exec_time</structfield> <type>double precision</type>
       </para>
@@ -204,7 +204,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.min_exec_time" xreflabel="pg_stat_statements.min_exec_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>min_exec_time</structfield> <type>double precision</type>
       </para>
@@ -217,7 +217,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.max_exec_time" xreflabel="pg_stat_statements.max_exec_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>max_exec_time</structfield> <type>double precision</type>
       </para>
@@ -230,7 +230,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.mean_exec_time" xreflabel="pg_stat_statements.mean_exec_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>mean_exec_time</structfield> <type>double precision</type>
       </para>
@@ -239,7 +239,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.stddev_exec_time" xreflabel="pg_stat_statements.stddev_exec_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>stddev_exec_time</structfield> <type>double precision</type>
       </para>
@@ -248,7 +248,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.rows" xreflabel="pg_stat_statements.rows">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>rows</structfield> <type>bigint</type>
       </para>
@@ -257,7 +257,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.shared_blks_hit" xreflabel="pg_stat_statements.shared_blks_hit">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>shared_blks_hit</structfield> <type>bigint</type>
       </para>
@@ -266,7 +266,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.shared_blks_read" xreflabel="pg_stat_statements.shared_blks_read">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>shared_blks_read</structfield> <type>bigint</type>
       </para>
@@ -275,7 +275,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.shared_blks_dirtied" xreflabel="pg_stat_statements.shared_blks_dirtied">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>shared_blks_dirtied</structfield> <type>bigint</type>
       </para>
@@ -284,7 +284,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.shared_blks_written" xreflabel="pg_stat_statements.shared_blks_written">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>shared_blks_written</structfield> <type>bigint</type>
       </para>
@@ -293,7 +293,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.local_blks_hit" xreflabel="pg_stat_statements.local_blks_hit">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>local_blks_hit</structfield> <type>bigint</type>
       </para>
@@ -302,7 +302,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.local_blks_read" xreflabel="pg_stat_statements.local_blks_read">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>local_blks_read</structfield> <type>bigint</type>
       </para>
@@ -311,7 +311,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.local_blks_dirtied" xreflabel="pg_stat_statements.local_blks_dirtied">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>local_blks_dirtied</structfield> <type>bigint</type>
       </para>
@@ -320,7 +320,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.local_blks_written" xreflabel="pg_stat_statements.local_blks_written">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>local_blks_written</structfield> <type>bigint</type>
       </para>
@@ -329,7 +329,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.temp_blks_read" xreflabel="pg_stat_statements.temp_blks_read">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>temp_blks_read</structfield> <type>bigint</type>
       </para>
@@ -338,7 +338,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.temp_blks_written" xreflabel="pg_stat_statements.temp_blks_written">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>temp_blks_written</structfield> <type>bigint</type>
       </para>
@@ -347,7 +347,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.shared_blk_read_time" xreflabel="pg_stat_statements.shared_blk_read_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>shared_blk_read_time</structfield> <type>double precision</type>
       </para>
@@ -357,7 +357,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.shared_blk_write_time" xreflabel="pg_stat_statements.shared_blk_write_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>shared_blk_write_time</structfield> <type>double precision</type>
       </para>
@@ -367,7 +367,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.local_blk_read_time" xreflabel="pg_stat_statements.local_blk_read_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>local_blk_read_time</structfield> <type>double precision</type>
       </para>
@@ -377,7 +377,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.local_blk_write_time" xreflabel="pg_stat_statements.local_blk_write_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>local_blk_write_time</structfield> <type>double precision</type>
       </para>
@@ -387,7 +387,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.temp_blk_read_time" xreflabel="pg_stat_statements.temp_blk_read_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>temp_blk_read_time</structfield> <type>double precision</type>
       </para>
@@ -398,7 +398,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.temp_blk_write_time" xreflabel="pg_stat_statements.temp_blk_write_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>temp_blk_write_time</structfield> <type>double precision</type>
       </para>
@@ -409,7 +409,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.wal_records" xreflabel="pg_stat_statements.wal_records">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>wal_records</structfield> <type>bigint</type>
       </para>
@@ -418,7 +418,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.wal_fpi" xreflabel="pg_stat_statements.wal_fpi">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>wal_fpi</structfield> <type>bigint</type>
       </para>
@@ -427,7 +427,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.wal_bytes" xreflabel="pg_stat_statements.wal_bytes">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>wal_bytes</structfield> <type>numeric</type>
       </para>
@@ -436,7 +436,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.wal_buffers_full" xreflabel="pg_stat_statements.wal_buffers_full">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>wal_buffers_full</structfield> <type>bigint</type>
       </para>
@@ -445,7 +445,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.jit_functions" xreflabel="pg_stat_statements.jit_functions">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>jit_functions</structfield> <type>bigint</type>
       </para>
@@ -454,7 +454,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.jit_generation_time" xreflabel="pg_stat_statements.jit_generation_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>jit_generation_time</structfield> <type>double precision</type>
       </para>
@@ -463,7 +463,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.jit_inlining_count" xreflabel="pg_stat_statements.jit_inlining_count">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>jit_inlining_count</structfield> <type>bigint</type>
       </para>
@@ -472,7 +472,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.jit_inlining_time" xreflabel="pg_stat_statements.jit_inlining_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>jit_inlining_time</structfield> <type>double precision</type>
       </para>
@@ -481,7 +481,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.jit_optimization_count" xreflabel="pg_stat_statements.jit_optimization_count">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>jit_optimization_count</structfield> <type>bigint</type>
       </para>
@@ -490,7 +490,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.jit_optimization_time" xreflabel="pg_stat_statements.jit_optimization_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>jit_optimization_time</structfield> <type>double precision</type>
       </para>
@@ -499,7 +499,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.jit_emission_count" xreflabel="pg_stat_statements.jit_emission_count">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>jit_emission_count</structfield> <type>bigint</type>
       </para>
@@ -508,7 +508,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.jit_emission_time" xreflabel="pg_stat_statements.jit_emission_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>jit_emission_time</structfield> <type>double precision</type>
       </para>
@@ -517,7 +517,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.jit_deform_count" xreflabel="pg_stat_statements.jit_deform_count">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>jit_deform_count</structfield> <type>bigint</type>
       </para>
@@ -526,7 +526,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.jit_deform_time" xreflabel="pg_stat_statements.jit_deform_time">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>jit_deform_time</structfield> <type>double precision</type>
       </para>
@@ -536,7 +536,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.parallel_workers_to_launch" xreflabel="pg_stat_statements.parallel_workers_to_launch">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>parallel_workers_to_launch</structfield> <type>bigint</type>
       </para>
@@ -545,7 +545,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.parallel_workers_launched" xreflabel="pg_stat_statements.parallel_workers_launched">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>parallel_workers_launched</structfield> <type>bigint</type>
       </para>
@@ -554,7 +554,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.generic_plan_calls" xreflabel="pg_stat_statements.generic_plan_calls">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>generic_plan_calls</structfield> <type>bigint</type>
       </para>
@@ -563,7 +563,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.custom_plan_calls" xreflabel="pg_stat_statements.custom_plan_calls">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>custom_plan_calls</structfield> <type>bigint</type>
       </para>
@@ -572,7 +572,7 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.stats_since" xreflabel="pg_stat_statements.stats_since">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>stats_since</structfield> <type>timestamp with time zone</type>
       </para>
@@ -581,16 +581,18 @@
       </para></entry>
      </row>
 
-     <row>
+     <row id="pg-stat-statements-view.minmax_stats_since" xreflabel="pg_stat_statements.minmax_stats_since">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>minmax_stats_since</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
        Time at which min/max statistics gathering started for this
-       statement (fields <structfield>min_plan_time</structfield>,
-       <structfield>max_plan_time</structfield>,
-       <structfield>min_exec_time</structfield> and
-       <structfield>max_exec_time</structfield>)
+       statement (fields
+       <link linkend="pg-stat-statements-view.min_plan_time"><structfield>min_plan_time</structfield></link>,
+       <link linkend="pg-stat-statements-view.max_plan_time"><structfield>max_plan_time</structfield></link>,
+       <link linkend="pg-stat-statements-view.min_exec_time"><structfield>min_exec_time</structfield></link>
+       and
+       <link linkend="pg-stat-statements-view.max_exec_time"><structfield>max_exec_time</structfield></link>)
       </para></entry>
      </row>
     </tbody>
@@ -600,7 +602,8 @@
   <para>
    For security reasons, only superusers and roles with privileges of the
    <literal>pg_read_all_stats</literal> role are allowed to see the SQL text and
-   <structfield>queryid</structfield> of queries executed by other users.
+   <link linkend="pg-stat-statements-view.queryid"><structfield>queryid</structfield></link>
+   of queries executed by other users.
    Other users can see the statistics, however, if the view has been installed
    in their database.
   </para>
@@ -682,7 +685,10 @@ calls | 2
   <para>
    Consumers of <structname>pg_stat_statements</structname> may wish to use
    <structfield>queryid</structfield> (perhaps in combination with
-   <structfield>dbid</structfield> and <structfield>userid</structfield>) as a more stable
+   <link linkend="pg-stat-statements-view.dbid"><structfield>dbid</structfield></link>
+   and
+   <link linkend="pg-stat-statements-view.userid"><structfield>userid</structfield></link>)
+   as a more stable
    and reliable identifier for each entry than its query text.
    However, it is important to understand that there are only limited
    guarantees around the stability of the <structfield>queryid</structfield> hash
@@ -742,14 +748,19 @@ calls | 2
    recovery method if that happens, <filename>pg_stat_statements</filename> may
    choose to discard the query texts, whereupon all existing entries in
    the <structname>pg_stat_statements</structname> view will show
-   null <structfield>query</structfield> fields, though the statistics associated with
+   null
+   <link linkend="pg-stat-statements-view.query"><structfield>query</structfield></link>
+   fields, though the statistics associated with
    each <structfield>queryid</structfield> are preserved.  If this happens, consider
    reducing <varname>pg_stat_statements.max</varname> to prevent
    recurrences.
   </para>
 
   <para>
-   <structfield>plans</structfield> and <structfield>calls</structfield> aren't
+   <link linkend="pg-stat-statements-view.plans"><structfield>plans</structfield></link>
+   and
+   <link linkend="pg-stat-statements-view.calls"><structfield>calls</structfield></link>
+   aren't
    always expected to match because planning and execution statistics are
    updated at their respective end phase, and only for successful operations.
    For example, if a statement is successfully planned but fails during
@@ -789,7 +800,7 @@ calls | 2
     </thead>
 
     <tbody>
-     <row>
+     <row id="pg-stat-statements-info-view.dealloc" xreflabel="pg_stat_statements_info.dealloc">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>dealloc</structfield> <type>bigint</type>
       </para>
@@ -800,7 +811,7 @@ calls | 2
        <varname>pg_stat_statements.max</varname> were observed
       </para></entry>
      </row>
-     <row>
+     <row id="pg-stat-statements-info-view.stats_reset" xreflabel="pg_stat_statements_info.stats_reset">
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>stats_reset</structfield> <type>timestamp with time zone</type>
       </para>
@@ -832,8 +843,12 @@ calls | 2
      <para>
       <function>pg_stat_statements_reset</function> discards statistics
       gathered so far by <filename>pg_stat_statements</filename> corresponding
-      to the specified <structfield>userid</structfield>, <structfield>dbid</structfield>
-      and <structfield>queryid</structfield>.  If any of the parameters are not
+      to the specified
+      <link linkend="pg-stat-statements-view.userid"><structfield>userid</structfield></link>,
+      <link linkend="pg-stat-statements-view.dbid"><structfield>dbid</structfield></link>
+      and
+      <link linkend="pg-stat-statements-view.queryid"><structfield>queryid</structfield></link>.
+      If any of the parameters are not
       specified, the default value <literal>0</literal>(invalid) is used for
       each of them and the statistics that match with other parameters will be
       reset.  If no parameter is specified or all the specified parameters are
@@ -843,14 +858,19 @@ calls | 2
       <structname>pg_stat_statements_info</structname> view.
       When <structfield>minmax_only</structfield> is <literal>true</literal> only the
       values of minimum and maximum planning and execution time will be reset (i.e.
-      <structfield>min_plan_time</structfield>, <structfield>max_plan_time</structfield>,
-      <structfield>min_exec_time</structfield> and <structfield>max_exec_time</structfield>
+      <link linkend="pg-stat-statements-view.min_plan_time"><structfield>min_plan_time</structfield></link>,
+      <link linkend="pg-stat-statements-view.max_plan_time"><structfield>max_plan_time</structfield></link>,
+      <link linkend="pg-stat-statements-view.min_exec_time"><structfield>min_exec_time</structfield></link>
+      and
+      <link linkend="pg-stat-statements-view.max_exec_time"><structfield>max_exec_time</structfield></link>
       fields). The default value for <structfield>minmax_only</structfield> parameter is
       <literal>false</literal>. Time of last min/max reset performed is shown in
-      <structfield>minmax_stats_since</structfield> field of the
+      <link linkend="pg-stat-statements-view.minmax_stats_since"><structfield>minmax_stats_since</structfield></link>
+      field of the
       <structname>pg_stat_statements</structname> view.
       This function returns the time of a reset. This time is saved to
-      <structfield>stats_reset</structfield> field of
+      <link linkend="pg-stat-statements-info-view.stats_reset"><structfield>stats_reset</structfield></link>
+      field of
       <structname>pg_stat_statements_info</structname> view or to
       <structfield>minmax_stats_since</structfield> field of the
       <structname>pg_stat_statements</structname> view if the corresponding reset was
@@ -878,7 +898,9 @@ calls | 2
       the <function>pg_stat_statements</function> function directly, and by
       specifying <literal>showtext := false</literal> have query text be
       omitted (that is, the <literal>OUT</literal> argument that corresponds
-      to the view's <structfield>query</structfield> column will return nulls).  This
+      to the view's
+      <link linkend="pg-stat-statements-view.query"><structfield>query</structfield></link>
+      column will return nulls). This
       feature is intended to support external tools that might wish to avoid
       the overhead of repeatedly retrieving query texts of indeterminate
       length.  Such tools can instead cache the first query text observed
