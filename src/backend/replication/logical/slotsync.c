@@ -1679,6 +1679,15 @@ ReplSlotSyncWorkerMain(const void *startup_data, size_t startup_data_len)
 	Assert(SlotSyncCtx != NULL);
 
 	/*
+	 * The postmaster reads the logical decoding status without the lock
+	 * before starting us, so it may have acted on a stale value.  Check again
+	 * now that we can take the lock, and exit if slot synchronization cannot
+	 * proceed.  The postmaster will start us again later.
+	 */
+	if (!ValidateSlotSyncParams(LOG))
+		proc_exit(0);
+
+	/*
 	 * If an exception is encountered, processing resumes here.
 	 *
 	 * We just need to clean up, report the error, and go away.
