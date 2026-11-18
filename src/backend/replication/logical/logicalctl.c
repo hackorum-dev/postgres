@@ -417,6 +417,9 @@ EnableLogicalDecoding(XLogRecPtr lsn)
 
 	LWLockAcquire(LogicalDecodingControlLock, LW_EXCLUSIVE);
 
+	/* Test-only: lets a test pause while the lock is held exclusively. */
+	INJECTION_POINT("logical-decoding-enable-locked", NULL);
+
 	/*
 	 * Remember where logical decoding was enabled. This has to happen before
 	 * the early return below, because replay can reach here with the status
