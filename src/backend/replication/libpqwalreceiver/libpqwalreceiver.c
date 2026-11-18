@@ -52,6 +52,8 @@ struct WalReceiverConn
 	bool		logical;
 	/* Buffer for currently read records */
 	char	   *recvBuf;
+	/* set when CommandComplete already ended the COPY */
+	bool		copyEnded;
 };
 
 /* Prototypes for interface functions */
@@ -618,6 +620,9 @@ libpqrcv_startstreaming(WalReceiverConn *conn,
 	Assert(options->logical == conn->logical);
 	Assert(options->slotname || !options->logical);
 
+	/* may be left set by a prior non streaming COPY */
+	conn->copyEnded = false;
+
 	initStringInfo(&cmd);
 
 	/* Build the command. */
@@ -708,6 +713,21 @@ static void
 libpqrcv_endstreaming(WalReceiverConn *conn, TimeLineID *next_tli)
 {
 	PGresult   *res;
+
+	/*
+	 * If CommandComplete already ended the COPY (COPY 0 on clean shutdown),
+	 * PQputCopyEnd() would fail with "no COPY in progress".  PQstatus() may
+	 * still be CONNECTION_OK in that case, so copyEnded is the signal we use.
+	 * Do not treat CONNECTION_BAD the same way: an unexpected disconnect
+	 * should still ERROR from PQputCopyEnd() rather than look like a clean
+	 * end of streaming.
+	 */
+	if (conn->copyEnded)
+	{
+		conn->copyEnded = false;
+		*next_tli = 0;
+		return;
+	}
 
 	/*
 	 * Send copy-end message.  As in libpqsrv_exec, this could theoretically
@@ -887,6 +907,7 @@ libpqrcv_receive(WalReceiverConn *conn, char **buffer,
 		if (PQresultStatus(res) == PGRES_COMMAND_OK)
 		{
 			PQclear(res);
+			conn->copyEnded = true;
 
 			/* Verify that there are no more results. */
 			res = libpqsrv_get_result(conn->streamConn,
