@@ -99,7 +99,7 @@ static Selectivity prefix_selectivity(PlannerInfo *root,
 									  Oid collation,
 									  Const *prefixcon);
 static Selectivity like_selectivity(const char *patt, int pattlen,
-									bool case_insensitive);
+									bool is_bytea);
 static Selectivity regex_selectivity(const char *patt, int pattlen,
 									 bool case_insensitive,
 									 int fixed_prefix_len);
@@ -1052,7 +1052,8 @@ like_fixed_prefix(Const *patt_const, Const **prefix_const,
 		*prefix_const = string_to_bytea_const(match, match_pos);
 
 	if (rest_selec != NULL)
-		*rest_selec = like_selectivity(&patt[pos], pattlen - pos, false);
+		*rest_selec = like_selectivity(&patt[pos], pattlen - pos,
+									   typeid == BYTEAOID);
 
 	pfree(patt);
 	pfree(match);
@@ -1157,7 +1158,7 @@ like_fixed_prefix_ci(Const *patt_const, Oid collation, Const **prefix_const,
 		rest = palloc(pg_database_encoding_max_length() * wrestlen + 1);
 		rest_mblen = pg_wchar2mb_with_len(&wpatt[wpos], rest, wrestlen);
 
-		*rest_selec = like_selectivity(rest, rest_mblen, true);
+		*rest_selec = like_selectivity(rest, rest_mblen, false);
 		pfree(rest);
 	}
 
@@ -1228,7 +1229,7 @@ regex_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 
 			*rest_selec = regex_selectivity(patt, strlen(patt),
 											case_insensitive,
-											strlen(prefix));
+											pg_mbstrlen(prefix));
 			pfree(patt);
 		}
 	}
@@ -1397,7 +1398,7 @@ prefix_selectivity(PlannerInfo *root, VariableStatData *vardata,
 #define PARTIAL_WILDCARD_SEL 2.0
 
 static Selectivity
-like_selectivity(const char *patt, int pattlen, bool case_insensitive)
+like_selectivity(const char *patt, int pattlen, bool is_bytea)
 {
 	Selectivity sel = 1.0;
 	int			pos;
@@ -1423,9 +1424,15 @@ like_selectivity(const char *patt, int pattlen, bool case_insensitive)
 			if (pos >= pattlen)
 				break;
 			sel *= FIXED_CHAR_SEL;
+			if (!is_bytea)
+				pos += pg_mblen_range(patt + pos, patt + pattlen) - 1;
 		}
 		else
+		{
 			sel *= FIXED_CHAR_SEL;
+			if (!is_bytea)
+				pos += pg_mblen_range(patt + pos, patt + pattlen) - 1;
+		}
 	}
 	/* Could get sel > 1 if multiple wildcards */
 	if (sel > 1.0)
@@ -1515,11 +1522,13 @@ regex_selectivity_sub(const char *patt, int pattlen, bool case_insensitive)
 				break;
 			if (paren_depth == 0)
 				sel *= FIXED_CHAR_SEL;
+			pos += pg_mblen_range(patt + pos, patt + pattlen) - 1;
 		}
 		else
 		{
 			if (paren_depth == 0)
 				sel *= FIXED_CHAR_SEL;
+			pos += pg_mblen_range(patt + pos, patt + pattlen) - 1;
 		}
 	}
 	/* Could get sel > 1 if multiple wildcards */

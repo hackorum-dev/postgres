@@ -29,6 +29,17 @@ DROP COLLATION regress_builtin_c;
 -- a '_' matches a multibyte character
 SELECT 'café' ILIKE 'caf_' COLLATE "C";
 
+-- pattern selectivity counts characters, not encoded bytes
+EXPLAIN
+SELECT * FROM generate_series(1, 2000) g(i) WHERE i::text LIKE '%é'
+UNION ALL
+SELECT * FROM generate_series(1, 2000) g(i) WHERE i::text ILIKE '%é'
+UNION ALL
+SELECT * FROM generate_series(1, 2000) g(i) WHERE i::text ~ 'é$'
+UNION ALL
+SELECT * FROM generate_series(1, 2000) g(i)
+  WHERE convert_to(i::text, 'UTF8') LIKE decode('25c3a9', 'hex');
+
 --
 -- Test PG_C_UTF8
 --

@@ -41,6 +41,29 @@ SELECT 'café' ILIKE 'caf_' COLLATE "C";
  t
 (1 row)
 
+-- pattern selectivity counts characters, not encoded bytes
+EXPLAIN
+SELECT * FROM generate_series(1, 2000) g(i) WHERE i::text LIKE '%é'
+UNION ALL
+SELECT * FROM generate_series(1, 2000) g(i) WHERE i::text ILIKE '%é'
+UNION ALL
+SELECT * FROM generate_series(1, 2000) g(i) WHERE i::text ~ 'é$'
+UNION ALL
+SELECT * FROM generate_series(1, 2000) g(i)
+  WHERE convert_to(i::text, 'UTF8') LIKE decode('25c3a9', 'hex');
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
+ Append  (cost=0.00..151.41 rows=1280 width=4)
+   ->  Function Scan on generate_series g  (cost=0.00..35.00 rows=400 width=4)
+         Filter: ((i)::text ~~ '%é'::text)
+   ->  Function Scan on generate_series g_1  (cost=0.00..35.00 rows=400 width=4)
+         Filter: ((i)::text ~~* '%é'::text)
+   ->  Function Scan on generate_series g_2  (cost=0.00..35.00 rows=400 width=4)
+         Filter: ((i)::text ~ 'é$'::text)
+   ->  Function Scan on generate_series g_3  (cost=0.00..40.00 rows=80 width=4)
+         Filter: (convert_to((i)::text, 'UTF8'::name) ~~ '\x25c3a9'::bytea)
+(9 rows)
+
 --
 -- Test PG_C_UTF8
 --
