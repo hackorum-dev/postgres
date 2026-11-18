@@ -2629,18 +2629,19 @@ ExecHashSkewTableInsert(HashJoinTable hashtable,
 						uint32 hashvalue,
 						int bucketNumber)
 {
-	bool		shouldFree;
-	MinimalTuple tuple = ExecFetchSlotMinimalTuple(slot, &shouldFree);
+	MinimalTuple tuple;
 	HashJoinTuple hashTuple;
 	int			hashTupleSize;
+	MemoryContext oldcxt;
 
 	/* Create the HashJoinTuple */
+	oldcxt = MemoryContextSwitchTo(hashtable->batchCxt);
+	tuple = ExecCopySlotMinimalTupleExtra(slot, HJTUPLE_OVERHEAD);
+	MemoryContextSwitchTo(oldcxt);
 	hashTupleSize = HJTUPLE_OVERHEAD + tuple->t_len;
-	hashTuple = (HashJoinTuple) MemoryContextAlloc(hashtable->batchCxt,
-												   hashTupleSize);
+	hashTuple = (HashJoinTuple) ((char *) tuple - HJTUPLE_OVERHEAD);
 	hashTuple->hashvalue = hashvalue;
-	memcpy(HJTUPLE_MINTUPLE(hashTuple), tuple, tuple->t_len);
-	HeapTupleHeaderClearMatch(HJTUPLE_MINTUPLE(hashTuple));
+	HeapTupleHeaderClearMatch(tuple);
 
 	/* Push it onto the front of the skew bucket's list */
 	hashTuple->next.unshared = hashtable->skewBucket[bucketNumber]->tuples;
@@ -2659,9 +2660,6 @@ ExecHashSkewTableInsert(HashJoinTable hashtable,
 	/* Check we are not over the total spaceAllowed, either */
 	if (hashtable->spaceUsed > hashtable->spaceAllowed)
 		ExecHashIncreaseNumBatches(hashtable);
-
-	if (shouldFree)
-		heap_free_minimal_tuple(tuple);
 }
 
 /*
