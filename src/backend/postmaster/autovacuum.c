@@ -360,6 +360,8 @@ avl_dbase  *avl_dbase_array;
 static WorkerInfo MyWorkerInfo = NULL;
 
 static Oid	do_start_worker(void);
+static void wait_for_emergency_worker(void);
+static void cancel_starting_worker(void);
 static void ProcessAutoVacLauncherInterrupts(void);
 pg_noreturn static void AutoVacLauncherShutdown(void);
 static void launcher_determine_sleep(bool canlaunch, bool recursing,
@@ -585,12 +587,12 @@ AutoVacLauncherMain(const void *startup_data, size_t startup_data_len)
 
 	/*
 	 * In emergency mode, just start a worker (unless shutdown was requested)
-	 * and go away.
+	 * and go away once it is running.
 	 */
 	if (!AutoVacuumingActive())
 	{
-		if (!ShutdownRequestPending)
-			do_start_worker();
+		if (!ShutdownRequestPending && OidIsValid(do_start_worker()))
+			wait_for_emergency_worker();
 		proc_exit(0);			/* done */
 	}
 
@@ -713,19 +715,7 @@ AutoVacLauncherMain(const void *startup_data, size_t startup_data_len)
 				 * recheck the launch time).
 				 */
 				if (AutoVacuumShmem->av_startingWorker != NULL)
-				{
-					worker = AutoVacuumShmem->av_startingWorker;
-					worker->wi_dboid = InvalidOid;
-					worker->wi_tableoid = InvalidOid;
-					worker->wi_sharedrel = false;
-					worker->wi_proc = NULL;
-					worker->wi_launchtime = 0;
-					dclist_push_head(&AutoVacuumShmem->av_freeWorkers,
-									 &worker->wi_links);
-					AutoVacuumShmem->av_startingWorker = NULL;
-					ereport(WARNING,
-							errmsg("autovacuum worker took too long to start; canceled"));
-				}
+					cancel_starting_worker();
 			}
 			else
 				can_launch = false;
@@ -1379,6 +1369,95 @@ launch_worker(TimestampTz now)
 		if (!found)
 			rebuild_database_list(dbid);
 	}
+}
+
+/*
+ * wait_for_emergency_worker
+ *
+ * In emergency mode, wait for the worker that do_start_worker requested to
+ * take its WorkerInfo out of av_startingWorker, retrying the request if the
+ * postmaster reports that it could not start the worker.  This does what the
+ * main loop does for a normal launcher.  Without it, a failed start would
+ * leave the WorkerInfo in av_startingWorker, where nothing reclaims it while
+ * autovacuum is off: each later emergency launcher would find no free worker
+ * slot, and no database would be vacuumed to prevent wraparound until a
+ * restart.
+ */
+static void
+wait_for_emergency_worker(void)
+{
+	int			waittime = Min(autovacuum_naptime, 60) * 1000;
+
+	for (;;)
+	{
+		WorkerInfo	worker;
+
+		LWLockAcquire(AutovacuumLock, LW_EXCLUSIVE);
+		worker = AutoVacuumShmem->av_startingWorker;
+		if (worker == NULL)
+		{
+			/* the worker is running */
+			LWLockRelease(AutovacuumLock);
+			return;
+		}
+		if (TimestampDifferenceExceeds(worker->wi_launchtime,
+									   GetCurrentTimestamp(), waittime))
+		{
+			cancel_starting_worker();
+			LWLockRelease(AutovacuumLock);
+			return;
+		}
+		LWLockRelease(AutovacuumLock);
+
+		if (AutoVacuumShmem->av_signal[AutoVacForkFailed])
+		{
+			/* as in the main loop, sleep for a little while and ask again */
+			AutoVacuumShmem->av_signal[AutoVacForkFailed] = false;
+			pg_usleep(1000000L);	/* 1s */
+			SendPostmasterSignal(PMSIGNAL_START_AUTOVAC_WORKER);
+			continue;
+		}
+
+		/*
+		 * The worker signals us once it has started, and the postmaster
+		 * signals us if it could not start it.
+		 */
+		(void) WaitLatch(MyLatch,
+						 WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
+						 1000L,
+						 WAIT_EVENT_AUTOVACUUM_MAIN);
+		ResetLatch(MyLatch);
+
+		if (ShutdownRequestPending)
+			return;
+		if (ProcSignalBarrierPending)
+			ProcessProcSignalBarrier();
+		if (LogMemoryContextPending)
+			ProcessLogMemoryContextInterrupt();
+		ProcessCatchupInterrupt();
+	}
+}
+
+/*
+ * cancel_starting_worker
+ *
+ * Give the WorkerInfo of a worker that never started back to the free list.
+ * The caller must hold AutovacuumLock exclusively.
+ */
+static void
+cancel_starting_worker(void)
+{
+	WorkerInfo	worker = AutoVacuumShmem->av_startingWorker;
+
+	worker->wi_dboid = InvalidOid;
+	worker->wi_tableoid = InvalidOid;
+	worker->wi_sharedrel = false;
+	worker->wi_proc = NULL;
+	worker->wi_launchtime = 0;
+	dclist_push_head(&AutoVacuumShmem->av_freeWorkers, &worker->wi_links);
+	AutoVacuumShmem->av_startingWorker = NULL;
+	ereport(WARNING,
+			errmsg("autovacuum worker took too long to start; canceled"));
 }
 
 /*
