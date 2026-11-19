@@ -1,0 +1,5 @@
+# test_tableam_logical extension
+comment = 'test_tableam_logical - table access methods with and without logical decoding support'
+default_version = '1.0'
+module_pathname = '$libdir/test_tableam_logical'
+relocatable = true

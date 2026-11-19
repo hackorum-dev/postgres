@@ -53,6 +53,7 @@ SUBDIRS = \
 		  test_shmem \
 		  test_shm_mq \
 		  test_slru \
+		  test_tableam_logical \
 		  test_tidstore \
 		  test_wait_lsn \
 		  unsafe_tests \

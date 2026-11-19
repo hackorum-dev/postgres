@@ -878,6 +878,22 @@ typedef struct TableAmRoutine
 										   SampleScanState *scanstate,
 										   TupleTableSlot *slot);
 
+	/* ------------------------------------------------------------------------
+	 * Logical decoding related functions.
+	 * ------------------------------------------------------------------------
+	 */
+
+	/*
+	 * See table_relation_supports_logical_decoding().
+	 *
+	 * Optional; if NULL, the AM is taken not to support logical decoding.
+	 * Return true only if every change to the relation's rows can be decoded:
+	 * its resource manager needs an rm_decode callback.  REPACK
+	 * (CONCURRENTLY) checks this, as it would otherwise lose the changes made
+	 * while it runs.
+	 */
+	bool		(*relation_supports_logical_decoding) (Relation rel);
+
 } TableAmRoutine;
 
 
@@ -2038,6 +2054,17 @@ table_relation_estimate_size(Relation rel, int32 *attr_widths,
 {
 	rel->rd_tableam->relation_estimate_size(rel, attr_widths, pages, tuples,
 											allvisfrac);
+}
+
+/*
+ * table_relation_supports_logical_decoding - can the relation's changes be
+ * logically decoded?  An AM without the callback can't.
+ */
+static inline bool
+table_relation_supports_logical_decoding(Relation rel)
+{
+	return rel->rd_tableam->relation_supports_logical_decoding != NULL &&
+		rel->rd_tableam->relation_supports_logical_decoding(rel);
 }
 
 
