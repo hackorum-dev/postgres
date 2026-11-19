@@ -27,8 +27,12 @@ tests += {
     ],
   },
   'tap': {
+    'env': {
+      'enable_injection_points': get_option('injection_points') ? 'yes' : 'no',
+    },
     'tests': [
       't/001_auto_explain.pl',
+      't/002_param_unpin.pl',
     ],
   },
 }

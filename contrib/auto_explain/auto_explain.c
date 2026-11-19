@@ -25,6 +25,7 @@
 #include "nodes/value.h"
 #include "parser/scansup.h"
 #include "utils/guc.h"
+#include "utils/injection_point.h"
 #include "utils/varlena.h"
 
 PG_MODULE_MAGIC_EXT(
@@ -453,6 +454,16 @@ explain_ExecutorEnd(QueryDesc *queryDesc)
 
 			ExplainBeginOutput(es);
 			ExplainQueryText(es, queryDesc);
+
+			/*
+			 * A test can stop here, after the caller has dropped its buffer
+			 * pins and before the parameter values are read. A lazy SQL
+			 * function reaches this point from that caller's ExecutorEnd.
+			 */
+			if (queryDesc->params != NULL &&
+				queryDesc->params->numParams > 0)
+				INJECTION_POINT("auto-explain-before-params", NULL);
+
 			ExplainQueryParameters(es, queryDesc->params, auto_explain_log_parameter_max_length);
 			ExplainPrintPlan(es, queryDesc);
 			if (es->analyze && auto_explain_log_triggers)
