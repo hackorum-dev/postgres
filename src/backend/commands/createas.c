@@ -453,6 +453,19 @@ CreateIntoRelDestReceiver(IntoClause *intoClause)
 }
 
 /*
+ * GetIntoRelAddress -- address of the relation created by the receiver
+ *
+ * Returns InvalidObjectAddress if intorel_startup has not run.
+ */
+ObjectAddress
+GetIntoRelAddress(DestReceiver *self)
+{
+	Assert(self->mydest == DestIntoRel);
+
+	return ((DR_intorel *) self)->reladdr;
+}
+
+/*
  * intorel_startup --- executor startup
  */
 static void

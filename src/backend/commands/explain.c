@@ -15,9 +15,11 @@
 
 #include "access/relscan.h"
 #include "access/xact.h"
+#include "catalog/pg_class.h"
 #include "catalog/pg_type.h"
 #include "commands/createas.h"
 #include "commands/defrem.h"
+#include "commands/event_trigger.h"
 #include "commands/explain.h"
 #include "commands/explain_dr.h"
 #include "commands/explain_format.h"
@@ -383,6 +385,66 @@ standard_ExplainOneQuery(Query *query, int cursorOptions,
 }
 
 /*
+ * ExplainCreateTableAs -
+ *	  print out the execution plan for CREATE TABLE AS
+ *
+ * Returns the address of the relation created by EXPLAIN ANALYZE, or
+ * InvalidObjectAddress if none was created.
+ */
+static ObjectAddress
+ExplainCreateTableAs(CreateTableAsStmt *ctas, ExplainState *es,
+					 ParseState *pstate, ParamListInfo params)
+{
+	Query	   *ctas_query;
+	List	   *rewritten;
+	JumbleState *jstate = NULL;
+	ObjectAddress address = InvalidObjectAddress;
+
+	/*
+	 * Check if the relation exists or not.  This is done at this stage to
+	 * avoid query planning or execution.
+	 */
+	if (CreateTableAsRelExists(ctas))
+	{
+		if (ctas->objtype == OBJECT_TABLE)
+			ExplainDummyGroup("CREATE TABLE AS", NULL, es);
+		else if (ctas->objtype == OBJECT_MATVIEW)
+			ExplainDummyGroup("CREATE MATERIALIZED VIEW", NULL, es);
+		else
+			elog(ERROR, "unexpected object type: %d",
+				 (int) ctas->objtype);
+		return address;
+	}
+
+	/*
+	 * We have to rewrite the contained SELECT and then pass it back to
+	 * ExplainOneQuery.  Copy to be safe in the EXPLAIN EXECUTE case.
+	 */
+	ctas_query = castNode(Query, copyObject(ctas->query));
+	if (IsQueryIdEnabled())
+		jstate = JumbleQuery(ctas_query);
+	if (post_parse_analyze_hook)
+		(*post_parse_analyze_hook) (pstate, ctas_query, jstate);
+	rewritten = QueryRewrite(ctas_query);
+	Assert(list_length(rewritten) == 1);
+
+	es->into_relid = InvalidOid;
+	ExplainOneQuery(linitial_node(Query, rewritten),
+					CURSOR_OPT_PARALLEL_OK, ctas->into, es,
+					pstate, params);
+
+	/*
+	 * Consume the result, so that an enclosing CREATE TABLE AS (possible via
+	 * EXECUTE of a prepared SELECT INTO) does not take it for its own.
+	 */
+	if (OidIsValid(es->into_relid))
+		ObjectAddressSet(address, RelationRelationId, es->into_relid);
+	es->into_relid = InvalidOid;
+
+	return address;
+}
+
+/*
  * ExplainOneUtility -
  *	  print out the execution plan for one utility statement
  *	  (In general, utility statements don't have plans, but there are some
@@ -403,41 +465,39 @@ ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es,
 
 	if (IsA(utilityStmt, CreateTableAsStmt))
 	{
-		/*
-		 * We have to rewrite the contained SELECT and then pass it back to
-		 * ExplainOneQuery.  Copy to be safe in the EXPLAIN EXECUTE case.
-		 */
 		CreateTableAsStmt *ctas = (CreateTableAsStmt *) utilityStmt;
-		Query	   *ctas_query;
-		List	   *rewritten;
-		JumbleState *jstate = NULL;
 
 		/*
-		 * Check if the relation exists or not.  This is done at this stage to
-		 * avoid query planning or execution.
+		 * EXPLAIN ANALYZE really creates the relation, so fire event triggers
+		 * as ProcessUtilitySlow does for a plain CREATE TABLE AS.
 		 */
-		if (CreateTableAsRelExists(ctas))
+		if (es->analyze)
 		{
-			if (ctas->objtype == OBJECT_TABLE)
-				ExplainDummyGroup("CREATE TABLE AS", NULL, es);
-			else if (ctas->objtype == OBJECT_MATVIEW)
-				ExplainDummyGroup("CREATE MATERIALIZED VIEW", NULL, es);
-			else
-				elog(ERROR, "unexpected object type: %d",
-					 (int) ctas->objtype);
-			return;
-		}
+			bool		needCleanup;
+			ObjectAddress address;
 
-		ctas_query = castNode(Query, copyObject(ctas->query));
-		if (IsQueryIdEnabled())
-			jstate = JumbleQuery(ctas_query);
-		if (post_parse_analyze_hook)
-			(*post_parse_analyze_hook) (pstate, ctas_query, jstate);
-		rewritten = QueryRewrite(ctas_query);
-		Assert(list_length(rewritten) == 1);
-		ExplainOneQuery(linitial_node(Query, rewritten),
-						CURSOR_OPT_PARALLEL_OK, ctas->into, es,
-						pstate, params);
+			needCleanup = EventTriggerBeginCompleteQuery();
+
+			PG_TRY();
+			{
+				EventTriggerDDLCommandStart(utilityStmt);
+
+				address = ExplainCreateTableAs(ctas, es, pstate, params);
+
+				EventTriggerCollectSimpleCommand(address, InvalidObjectAddress,
+												 utilityStmt);
+				EventTriggerSQLDrop(utilityStmt);
+				EventTriggerDDLCommandEnd(utilityStmt);
+			}
+			PG_FINALLY();
+			{
+				if (needCleanup)
+					EventTriggerEndCompleteQuery();
+			}
+			PG_END_TRY();
+		}
+		else
+			(void) ExplainCreateTableAs(ctas, es, pstate, params);
 	}
 	else if (IsA(utilityStmt, DeclareCursorStmt))
 	{
@@ -598,6 +658,10 @@ ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
 	/* grab serialization metrics before we destroy the DestReceiver */
 	if (es->serialize != EXPLAIN_SERIALIZE_NONE)
 		serializeMetrics = GetSerializationMetrics(dest);
+
+	/* remember the relation we created, for event triggers */
+	if (into)
+		es->into_relid = GetIntoRelAddress(dest).objectId;
 
 	/* call the DestReceiver's destroy method even during explain */
 	dest->rDestroy(dest);
