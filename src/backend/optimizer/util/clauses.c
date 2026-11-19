@@ -1056,6 +1056,23 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
  *****************************************************************************/
 
 /*
+ * contain_var_or_param_walker
+ *	  Does the expression contain any Var, PlaceHolderVar, or Param, that is,
+ *	  anything whose value could turn out to be NULL at run time?
+ */
+static bool
+contain_var_or_param_walker(Node *node, void *context)
+{
+	if (node == NULL)
+		return false;
+	if (IsA(node, Var) ||
+		IsA(node, PlaceHolderVar) ||
+		IsA(node, Param))
+		return true;
+	return expression_tree_walker(node, contain_var_or_param_walker, context);
+}
+
+/*
  * contain_nonstrict_functions
  *	  Recursively search for nonstrict functions within a clause.
  *
@@ -1197,6 +1214,46 @@ contain_nonstrict_functions_walker(Node *node, void *context)
 		return true;
 	else if (IsA(node, JsonConstructorExpr))
 		return true;
+	else if (IsA(node, JsonExpr))
+	{
+		JsonExpr   *jsexpr = (JsonExpr *) node;
+
+		/*
+		 * A NULL context item or path specification makes JSON_EXISTS,
+		 * JSON_QUERY, and JSON_VALUE return NULL without consulting the ON
+		 * EMPTY / ON ERROR behaviors, so the construct is strict in those two
+		 * inputs, which are checked by falling through.
+		 *
+		 * There is one exception: if the RETURNING type is a domain, the NULL
+		 * can still be checked against the domain's constraints.  If the
+		 * domain rejects it, the result is either an error or whatever the ON
+		 * ERROR behavior supplies, neither of which is a NULL result.  We
+		 * can't know here whether the domain will reject NULLs when the
+		 * expression is evaluated, so treat any domain as non-strict.
+		 */
+		if (get_typtype(jsexpr->returning->typid) == TYPTYPE_DOMAIN)
+			return true;
+
+		/*
+		 * A NULL PASSING argument doesn't force a NULL result; it merely
+		 * becomes a jsonpath variable containing a JSON null.  So the
+		 * construct is not strict in any variable used there.
+		 */
+		if (contain_var_or_param_walker((Node *) jsexpr->passing_values, NULL))
+			return true;
+	}
+	else if (IsA(node, JsonBehavior))
+	{
+		/*
+		 * The expression of an ON EMPTY / ON ERROR behavior is evaluated only
+		 * if that behavior applies, so a NULL in one of its inputs doesn't
+		 * force the enclosing JsonExpr's result to be NULL.  Hence it is not
+		 * strict in any variable used there.  If there is none, the
+		 * expression has no inputs that could be NULL, and there's nothing
+		 * more to check.
+		 */
+		return contain_var_or_param_walker(((JsonBehavior *) node)->expr, NULL);
+	}
 	else
 	{
 		/* Check other function-containing nodes */
