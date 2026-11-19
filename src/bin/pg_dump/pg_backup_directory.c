@@ -399,7 +399,6 @@ _LoadLOs(ArchiveHandle *AH, TocEntry *te)
 {
 	Oid			oid;
 	lclContext *ctx = (lclContext *) AH->formatData;
-	lclTocEntry *tctx = (lclTocEntry *) te->formatData;
 	CompressFileHandle *CFH;
 	char		tocfname[MAXPGPATH];
 	char		line[MAXPGPATH];
@@ -412,11 +411,20 @@ _LoadLOs(ArchiveHandle *AH, TocEntry *te)
 	 * was always "blobs.toc" before v16, the value of tctx->filename did not
 	 * match that before commit 548e50976 fixed it.  For simplicity we assume
 	 * it must be "blobs.toc" in all archives before v16.
+	 *
+	 * Likewise, the tar format puts the wrong filename into tctx->filename,
+	 * which matters when reading an extracted tar archive.  For simplicity we
+	 * assume it must be "blobs_<dumpId>.toc" in all newer archives.
 	 */
 	if (AH->version < K_VERS_1_16)
 		setFilePath(AH, tocfname, "blobs.toc");
 	else
-		setFilePath(AH, tocfname, tctx->filename);
+	{
+		char		fname[MAXPGPATH];
+
+		snprintf(fname, MAXPGPATH, "blobs_%d.toc", te->dumpId);
+		setFilePath(AH, tocfname, fname);
+	}
 
 	CFH = ctx->LOsTocFH = InitDiscoverCompressFileHandle(tocfname, PG_BINARY_R);
 
