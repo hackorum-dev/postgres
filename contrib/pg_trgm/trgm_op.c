@@ -919,7 +919,7 @@ calc_word_similarity(char *str1, int slen1, char *str2, int slen2,
 			found[j] = true;
 		}
 	}
-	if (found[j])
+	if (len > 0 && found[j])
 		ulen1++;
 
 	/* Run iterative procedure to find maximum similarity with word */
