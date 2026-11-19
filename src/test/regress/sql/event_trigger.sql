@@ -399,8 +399,22 @@ DROP FUNCTION event_trigger_dummy_trigger();
 -- both CREATE OPERATOR FAMILY and CREATE OPERATOR CLASS
 CREATE OPERATOR CLASS evttrigopclass FOR TYPE int USING btree AS STORAGE int;
 
+-- EXPLAIN ANALYZE creates the relation, so it fires event triggers
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
+  CREATE TABLE evttrig_explain_ctas AS SELECT 1 AS a;
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
+  SELECT 1 AS a INTO evttrig_explain_into;
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
+  CREATE MATERIALIZED VIEW evttrig_explain_mv AS SELECT 1 AS a;
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
+  CREATE TABLE IF NOT EXISTS evttrig_explain_ctas AS SELECT 1 AS a;
+-- plain EXPLAIN creates nothing
+EXPLAIN (COSTS OFF) CREATE TABLE evttrig_explain_none AS SELECT 1 AS a;
+
 DROP EVENT TRIGGER regress_event_trigger_report_dropped;
 DROP EVENT TRIGGER regress_event_trigger_report_end;
+DROP TABLE evttrig_explain_ctas, evttrig_explain_into;
+DROP MATERIALIZED VIEW evttrig_explain_mv;
 
 -- only allowed from within an event trigger function, should fail
 select pg_event_trigger_table_rewrite_oid();

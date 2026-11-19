@@ -59,6 +59,8 @@ typedef struct ExplainState
 	bool		generic;		/* generate a generic plan */
 	ExplainSerializeOption serialize;	/* serialize the query's output? */
 	ExplainFormat format;		/* output format */
+	/* relation created by EXPLAIN ANALYZE CREATE TABLE AS, if any */
+	Oid			into_relid;
 	/* state for output formatting --- not reset for each new plan tree */
 	int			indent;			/* current indentation level */
 	List	   *grouping_stack; /* format-specific grouping state */

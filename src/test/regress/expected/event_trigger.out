@@ -566,8 +566,49 @@ NOTICE:  DROP: orig=t normal=f istemp=f type=function identity=public.event_trig
 CREATE OPERATOR CLASS evttrigopclass FOR TYPE int USING btree AS STORAGE int;
 NOTICE:  END: command_tag=CREATE OPERATOR FAMILY type=operator family identity=public.evttrigopclass USING btree
 NOTICE:  END: command_tag=CREATE OPERATOR CLASS type=operator class identity=public.evttrigopclass USING btree
+-- EXPLAIN ANALYZE creates the relation, so it fires event triggers
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
+  CREATE TABLE evttrig_explain_ctas AS SELECT 1 AS a;
+NOTICE:  END: command_tag=CREATE TABLE AS type=table identity=public.evttrig_explain_ctas
+            QUERY PLAN             
+-----------------------------------
+ Result (actual rows=1.00 loops=1)
+(1 row)
+
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
+  SELECT 1 AS a INTO evttrig_explain_into;
+NOTICE:  END: command_tag=SELECT INTO type=table identity=public.evttrig_explain_into
+            QUERY PLAN             
+-----------------------------------
+ Result (actual rows=1.00 loops=1)
+(1 row)
+
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
+  CREATE MATERIALIZED VIEW evttrig_explain_mv AS SELECT 1 AS a;
+NOTICE:  END: command_tag=CREATE MATERIALIZED VIEW type=materialized view identity=public.evttrig_explain_mv
+            QUERY PLAN             
+-----------------------------------
+ Result (actual rows=1.00 loops=1)
+(1 row)
+
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
+  CREATE TABLE IF NOT EXISTS evttrig_explain_ctas AS SELECT 1 AS a;
+NOTICE:  relation "evttrig_explain_ctas" already exists, skipping
+ QUERY PLAN 
+------------
+(0 rows)
+
+-- plain EXPLAIN creates nothing
+EXPLAIN (COSTS OFF) CREATE TABLE evttrig_explain_none AS SELECT 1 AS a;
+ QUERY PLAN 
+------------
+ Result
+(1 row)
+
 DROP EVENT TRIGGER regress_event_trigger_report_dropped;
 DROP EVENT TRIGGER regress_event_trigger_report_end;
+DROP TABLE evttrig_explain_ctas, evttrig_explain_into;
+DROP MATERIALIZED VIEW evttrig_explain_mv;
 -- only allowed from within an event trigger function, should fail
 select pg_event_trigger_table_rewrite_oid();
 ERROR:  pg_event_trigger_table_rewrite_oid() can only be called in a table_rewrite event trigger function

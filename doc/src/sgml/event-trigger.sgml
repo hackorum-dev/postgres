@@ -83,7 +83,11 @@
      </itemizedlist>
      <literal>ddl_command_start</literal> also occurs just before the
      execution of a <literal>SELECT INTO</literal> command, since this is
-     equivalent to <literal>CREATE TABLE AS</literal>.
+     equivalent to <literal>CREATE TABLE AS</literal>.  The same applies to
+     <literal>EXPLAIN ANALYZE</literal> of <literal>CREATE TABLE AS</literal>,
+     <literal>SELECT INTO</literal> and
+     <literal>CREATE MATERIALIZED VIEW</literal>, which create the relation
+     too.
    </para>
 
    <para>
