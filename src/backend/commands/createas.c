@@ -62,7 +62,6 @@ typedef struct
 
 /* utility functions for CTAS definition creation */
 static ObjectAddress create_ctas_internal(List *attrList, IntoClause *into);
-static ObjectAddress create_ctas_nodata(List *tlist, IntoClause *into);
 
 /* DestReceiver routines for collecting data */
 static void intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo);
@@ -151,7 +150,7 @@ create_ctas_internal(List *attrList, IntoClause *into)
  * Create CTAS or materialized view when WITH NO DATA is used, starting from
  * the targetlist of the SELECT or view definition.
  */
-static ObjectAddress
+ObjectAddress
 create_ctas_nodata(List *tlist, IntoClause *into)
 {
 	List	   *attrList;
@@ -523,9 +522,12 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 				 errmsg("too many column names were specified")));
 
 	/*
-	 * Actually create the target table
+	 * Actually create the target table, unless our caller already did
 	 */
-	intoRelationAddr = create_ctas_internal(attrList, into);
+	if (OidIsValid(into->relid))
+		ObjectAddressSet(intoRelationAddr, RelationRelationId, into->relid);
+	else
+		intoRelationAddr = create_ctas_internal(attrList, into);
 
 	/*
 	 * Finally we can open the target table

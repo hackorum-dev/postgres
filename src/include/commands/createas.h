@@ -25,6 +25,8 @@ extern ObjectAddress ExecCreateTableAs(ParseState *pstate, CreateTableAsStmt *st
 									   ParamListInfo params, QueryEnvironment *queryEnv,
 									   QueryCompletion *qc);
 
+extern ObjectAddress create_ctas_nodata(List *tlist, IntoClause *into);
+
 extern int	GetIntoRelEFlags(IntoClause *intoClause);
 
 extern DestReceiver *CreateIntoRelDestReceiver(IntoClause *intoClause);

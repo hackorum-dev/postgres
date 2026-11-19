@@ -699,3 +699,23 @@ NOTICE:  relation "matview_ine_tab" already exists, skipping
 (0 rows)
 
 DROP MATERIALIZED VIEW matview_ine_tab;
+-- the view is in use while EXPLAIN ANALYZE fills it, as with plain CREATE
+CREATE FUNCTION mvtest_mkidx() RETURNS int LANGUAGE plpgsql AS
+  $$ BEGIN CREATE INDEX ON public.mvtest_inuse (a); RETURN 1; END $$;
+CREATE FUNCTION mvtest_mkidx_imm() RETURNS int LANGUAGE plpgsql IMMUTABLE AS
+  $$ BEGIN RETURN public.mvtest_mkidx(); END $$;
+CREATE MATERIALIZED VIEW mvtest_inuse AS
+  SELECT 1 AS a, mvtest_mkidx_imm() AS b; -- error
+ERROR:  cannot CREATE INDEX "mvtest_inuse" because it is being used by active queries in this session
+CONTEXT:  SQL statement "CREATE INDEX ON public.mvtest_inuse (a)"
+PL/pgSQL function mvtest_mkidx() line 1 at SQL statement
+PL/pgSQL function mvtest_mkidx_imm() line 1 at RETURN
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
+  CREATE MATERIALIZED VIEW mvtest_inuse AS
+    SELECT 1 AS a, mvtest_mkidx_imm() AS b; -- error
+ERROR:  cannot CREATE INDEX "mvtest_inuse" because it is being used by active queries in this session
+CONTEXT:  SQL statement "CREATE INDEX ON public.mvtest_inuse (a)"
+PL/pgSQL function mvtest_mkidx() line 1 at SQL statement
+PL/pgSQL function mvtest_mkidx_imm() line 1 at RETURN
+DROP FUNCTION mvtest_mkidx_imm();
+DROP FUNCTION mvtest_mkidx();
