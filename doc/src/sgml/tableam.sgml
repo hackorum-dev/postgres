@@ -139,6 +139,31 @@ my_tableam_handler(PG_FUNCTION_ARGS)
  </para>
 
  <para>
+  An access method can tell the server which optional features it supports
+  by providing the <structfield>relation_supports_features</structfield>
+  callback.  It is passed a mask of the <literal>TABLEAM_SUPPORTS_</literal>
+  flags the caller is asking about, and returns the ones the relation
+  supports; an access method without the callback supports none of them.
+  Flags that the access method does not know are simply not returned, so
+  adding a flag to the server does not affect existing access methods.
+  Currently there is one:
+  <literal>TABLEAM_SUPPORTS_LOGICAL_DECODING</literal>.  Changes to a table can be
+  <link linkend="logicaldecoding">logically decoded</link> only if the access
+  method's resource manager provides an <function>rm_decode</function>
+  callback that turns its WAL records into row changes, and an access method
+  that does so should return this flag.  That callback must also call
+  <function>change_useless_for_repack</function> (declared in
+  <filename>replication/decode.h</filename>) for each change it decodes, and
+  skip the change if it returns true, as the one for
+  <literal>heap</literal> does: while <command>REPACK (CONCURRENTLY)</command>
+  runs, its decoding expects only changes to the table being rebuilt and its
+  TOAST table.  Commands that need to see every
+  change made to a table while they work, such as
+  <link linkend="sql-repack"><command>REPACK (CONCURRENTLY)</command></link>,
+  refuse to run on a table of an access method that doesn't.
+ </para>
+
+ <para>
   To implement transactional support in a manner that allows different table
   access methods be accessed within a single transaction, it likely is
   necessary to closely integrate with the machinery in
