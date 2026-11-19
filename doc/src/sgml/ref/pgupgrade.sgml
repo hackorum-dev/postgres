@@ -604,6 +604,16 @@ pg_upgrade.exe
      <command>pg_upgrade</command> requires write permission in the current directory.
     </para>
 
+    <note>
+      <para>
+        In order for <application>pg_upgrade</application> to safely be able
+        to start and stop the clusters they must reside in a shared process
+        namespace.  If either cluster is isolated in a container it must share
+        process namespace with <application>pg_upgrade</application> to avoid
+        the risk of data corruption.
+      </para>
+    </note>
+
     <para>
      Obviously, no one should be accessing the clusters during the
      upgrade.  <application>pg_upgrade</application> defaults to running servers
