@@ -119,6 +119,7 @@ typedef struct SQLFunctionHashEntry
 
 	SQLFunctionParseInfoPtr pinfo;	/* data for parser callback hooks */
 	int16	   *argtyplen;		/* lengths of the input argument types */
+	bool	   *argtypbyval;	/* pass-by-value flags for argtyplen */
 
 	Oid			rettype;		/* actual return type */
 	int16		typlen;			/* length of the return type */
@@ -1129,13 +1130,18 @@ sql_compile_callback(FunctionCallInfo fcinfo,
 	MemoryContextSwitchTo(oldcontext);
 
 	/*
-	 * Now that we have the resolved argument types, collect their typlens for
-	 * use in postquel_sub_params.
+	 * Now that we have the resolved argument types, collect their physical
+	 * properties. postquel_sub_params uses the lengths. Lazy execution also
+	 * copies pass-by-ref values out of the caller's buffer.
 	 */
 	func->argtyplen = (int16 *)
 		MemoryContextAlloc(hcontext, func->pinfo->nargs * sizeof(int16));
+	func->argtypbyval = (bool *)
+		MemoryContextAlloc(hcontext, func->pinfo->nargs * sizeof(bool));
 	for (int i = 0; i < func->pinfo->nargs; i++)
-		func->argtyplen[i] = get_typlen(func->pinfo->argtypes[i]);
+		get_typlenbyval(func->pinfo->argtypes[i],
+						&func->argtyplen[i],
+						&func->argtypbyval[i]);
 
 	/*
 	 * And of course we need the function body text.
@@ -1340,6 +1346,30 @@ postquel_start(execution_state *es, SQLFunctionCachePtr fcache)
 
 	/* Switch into the selected subcontext (might be a no-op) */
 	MemoryContextSwitchTo(fcache->subcontext);
+
+	/*
+	 * A lazy SRF can be shut down from the caller's ExecutorEnd, after that
+	 * plan has dropped its buffer pins. Pass-by-ref arguments still point
+	 * into those pages. Copy them into subcontext while fmgr_sql is still
+	 * running and the pins are held. postquel_end calls ExecutorEnd, which
+	 * reads the copies, and only then deletes subcontext.
+	 */
+	if (es->lazyEval && fcache->ownSubcontext && fcache->paramLI != NULL)
+	{
+		ParamListInfo paramLI = fcache->paramLI;
+		int16	   *argtyplen = fcache->func->argtyplen;
+		bool	   *argtypbyval = fcache->func->argtypbyval;
+
+		for (int i = 0; i < paramLI->numParams; i++)
+		{
+			ParamExternData *prm = &paramLI->params[i];
+
+			if (!prm->isnull)
+				prm->value = datumCopy(prm->value,
+									   argtypbyval[i],
+									   argtyplen[i]);
+		}
+	}
 
 	/*
 	 * If this query produces the function result, collect its output using

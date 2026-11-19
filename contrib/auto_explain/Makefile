@@ -6,7 +6,9 @@ OBJS = \
 	auto_explain.o
 PGFILEDESC = "auto_explain - logging facility for execution plans"
 
-EXTRA_INSTALL = contrib/pg_overexplain
+EXTRA_INSTALL = contrib/pg_overexplain \
+				contrib/pg_buffercache \
+				src/test/modules/injection_points
 REGRESS = alter_reset extension_options
 
 TAP_TESTS = 1
