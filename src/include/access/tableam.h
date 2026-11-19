@@ -878,7 +878,37 @@ typedef struct TableAmRoutine
 										   SampleScanState *scanstate,
 										   TupleTableSlot *slot);
 
+	/* ------------------------------------------------------------------------
+	 * Optional capabilities.
+	 * ------------------------------------------------------------------------
+	 */
+
+	/*
+	 * See table_relation_supports_features().
+	 *
+	 * Optional; if NULL, the AM is taken to support none of the features.
+	 * 'features' is a mask of the TABLEAM_SUPPORTS_* flags the caller is
+	 * asking about.  Return the subset of them that the relation supports,
+	 * and do not spend time on the bits that were not asked for, as some may
+	 * be expensive to determine.  A flag the AM has never heard of, because
+	 * it is newer than the AM, is simply not returned, which reads as
+	 * unsupported.
+	 */
+	uint32		(*relation_supports_features) (Relation rel, uint32 features);
+
 } TableAmRoutine;
+
+
+/*
+ * Features a table AM can say it supports, through its
+ * relation_supports_features callback.  Values are never reused.
+ *
+ * TABLEAM_SUPPORTS_LOGICAL_DECODING: every change to the relation's rows can
+ * be logically decoded, which needs the AM's resource manager to have an
+ * rm_decode callback.  REPACK (CONCURRENTLY) checks this, as it would
+ * otherwise lose the changes made while it runs.
+ */
+#define TABLEAM_SUPPORTS_LOGICAL_DECODING	(1U << 0)
 
 
 /* ----------------------------------------------------------------------------
@@ -2038,6 +2068,31 @@ table_relation_estimate_size(Relation rel, int32 *attr_widths,
 {
 	rel->rd_tableam->relation_estimate_size(rel, attr_widths, pages, tuples,
 											allvisfrac);
+}
+
+/*
+ * table_relation_supports_features - which of the TABLEAM_SUPPORTS_* flags in
+ * 'features' does the relation's table AM support?  An AM without the
+ * callback supports none.  Only bits that were asked about are returned,
+ * whatever the AM says.
+ */
+static inline uint32
+table_relation_supports_features(Relation rel, uint32 features)
+{
+	if (rel->rd_tableam->relation_supports_features == NULL)
+		return 0;
+	return rel->rd_tableam->relation_supports_features(rel, features) &
+		features;
+}
+
+/*
+ * table_relation_supports_feature - the same for a single flag.
+ */
+static inline bool
+table_relation_supports_feature(Relation rel, uint32 feature)
+{
+	Assert(feature != 0 && (feature & (feature - 1)) == 0);
+	return table_relation_supports_features(rel, feature) != 0;
 }
 
 

@@ -417,7 +417,9 @@ REPACK [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] USING
 
      <listitem>
       <para>
-       The table's access method is not <literal>heap</literal>.
+       The table's access method does not support logical decoding of its
+       changes (see <xref linkend="tableam"/>).  The
+       <literal>heap</literal> access method does.
       </para>
      </listitem>
 
