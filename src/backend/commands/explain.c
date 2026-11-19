@@ -14,6 +14,7 @@
 #include "postgres.h"
 
 #include "access/relscan.h"
+#include "access/table.h"
 #include "access/xact.h"
 #include "catalog/pg_type.h"
 #include "commands/createas.h"
@@ -27,6 +28,7 @@
 #include "jit/jit.h"
 #include "libpq/pqformat.h"
 #include "libpq/protocol.h"
+#include "miscadmin.h"
 #include "nodes/extensible.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
@@ -411,6 +413,12 @@ ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es,
 		Query	   *ctas_query;
 		List	   *rewritten;
 		JumbleState *jstate = NULL;
+		IntoClause *ctas_into = ctas->into;
+		bool		is_matview = (ctas->objtype == OBJECT_MATVIEW);
+		Oid			save_userid = InvalidOid;
+		int			save_sec_context = 0;
+		int			save_nestlevel = 0;
+		Relation	matviewRel = NULL;
 
 		/*
 		 * Check if the relation exists or not.  This is done at this stage to
@@ -435,9 +443,53 @@ ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es,
 			(*post_parse_analyze_hook) (pstate, ctas_query, jstate);
 		rewritten = QueryRewrite(ctas_query);
 		Assert(list_length(rewritten) == 1);
+
+		/*
+		 * CREATE MATERIALIZED VIEW creates the view and then fills it through
+		 * the REFRESH code, which runs the query as a security-restricted
+		 * operation with a restricted search_path.  Do the same here, so that
+		 * EXPLAIN ANALYZE cannot create a view that would fail to refresh.
+		 * The current user owns the new view, so unlike REFRESH we don't need
+		 * to switch userid.
+		 */
+		if (is_matview)
+		{
+			if (es->analyze)
+			{
+				ObjectAddress address;
+
+				ctas_into = copyObject(ctas_into);
+				address = create_ctas_nodata(castNode(Query, ctas->query)->targetList,
+											 ctas_into);
+				ctas_into->relid = address.objectId;
+
+				/*
+				 * Keep the view open until it is filled, as REFRESH does, so
+				 * that CheckTableNotInUse() rejects DDL on it from functions
+				 * run by the planner or executor.
+				 */
+				matviewRel = table_open(address.objectId, NoLock);
+			}
+
+			GetUserIdAndSecContext(&save_userid, &save_sec_context);
+			SetUserIdAndSecContext(save_userid,
+								   save_sec_context | SECURITY_RESTRICTED_OPERATION);
+			save_nestlevel = NewGUCNestLevel();
+			RestrictSearchPath();
+		}
+
 		ExplainOneQuery(linitial_node(Query, rewritten),
-						CURSOR_OPT_PARALLEL_OK, ctas->into, es,
+						CURSOR_OPT_PARALLEL_OK, ctas_into, es,
 						pstate, params);
+
+		if (is_matview)
+		{
+			AtEOXact_GUC(false, save_nestlevel);
+			SetUserIdAndSecContext(save_userid, save_sec_context);
+		}
+
+		if (matviewRel)
+			table_close(matviewRel, NoLock);
 	}
 	else if (IsA(utilityStmt, DeclareCursorStmt))
 	{

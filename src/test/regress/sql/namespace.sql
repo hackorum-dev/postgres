@@ -85,6 +85,12 @@ $$;
 CREATE TABLE test_maint(i INT);
 INSERT INTO test_maint VALUES (1), (2);
 CREATE MATERIALIZED VIEW test_maint_mv AS SELECT fn(i) FROM test_maint;
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
+  CREATE MATERIALIZED VIEW test_maint_mv2 AS SELECT fn(i) FROM test_maint;
+SELECT relnamespace::regnamespace FROM pg_class WHERE relname = 'test_maint_mv2';
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
+  CREATE MATERIALIZED VIEW pg_temp.test_maint_mv3 AS SELECT fn(i) FROM test_maint;
+DROP MATERIALIZED VIEW pg_temp.test_maint_mv3;
 
 -- the following commands should see search_path as pg_catalog, pg_temp
 

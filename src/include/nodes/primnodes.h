@@ -170,6 +170,8 @@ typedef struct IntoClause
 	/* materialized view's SELECT query */
 	struct Query *viewQuery pg_node_attr(query_jumble_ignore);
 	bool		skipData;		/* true for WITH NO DATA */
+	/* already created relation to fill, or InvalidOid to create one */
+	Oid			relid pg_node_attr(query_jumble_ignore);
 } IntoClause;
 
 

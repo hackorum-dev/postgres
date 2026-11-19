@@ -318,3 +318,16 @@ EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
   CREATE MATERIALIZED VIEW IF NOT EXISTS matview_ine_tab AS
     SELECT 1 / 0 WITH NO DATA; -- ok
 DROP MATERIALIZED VIEW matview_ine_tab;
+
+-- the view is in use while EXPLAIN ANALYZE fills it, as with plain CREATE
+CREATE FUNCTION mvtest_mkidx() RETURNS int LANGUAGE plpgsql AS
+  $$ BEGIN CREATE INDEX ON public.mvtest_inuse (a); RETURN 1; END $$;
+CREATE FUNCTION mvtest_mkidx_imm() RETURNS int LANGUAGE plpgsql IMMUTABLE AS
+  $$ BEGIN RETURN public.mvtest_mkidx(); END $$;
+CREATE MATERIALIZED VIEW mvtest_inuse AS
+  SELECT 1 AS a, mvtest_mkidx_imm() AS b; -- error
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
+  CREATE MATERIALIZED VIEW mvtest_inuse AS
+    SELECT 1 AS a, mvtest_mkidx_imm() AS b; -- error
+DROP FUNCTION mvtest_mkidx_imm();
+DROP FUNCTION mvtest_mkidx();

@@ -131,6 +131,31 @@ INSERT INTO test_maint VALUES (1), (2);
 CREATE MATERIALIZED VIEW test_maint_mv AS SELECT fn(i) FROM test_maint;
 NOTICE:  current search_path: pg_catalog, pg_temp
 NOTICE:  current search_path: pg_catalog, pg_temp
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
+  CREATE MATERIALIZED VIEW test_maint_mv2 AS SELECT fn(i) FROM test_maint;
+NOTICE:  current search_path: pg_catalog, pg_temp
+NOTICE:  current search_path: pg_catalog, pg_temp
+                    QUERY PLAN                     
+---------------------------------------------------
+ Seq Scan on test_maint (actual rows=2.00 loops=1)
+(1 row)
+
+SELECT relnamespace::regnamespace FROM pg_class WHERE relname = 'test_maint_mv2';
+      relnamespace      
+------------------------
+ test_maint_search_path
+(1 row)
+
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)
+  CREATE MATERIALIZED VIEW pg_temp.test_maint_mv3 AS SELECT fn(i) FROM test_maint;
+NOTICE:  current search_path: pg_catalog, pg_temp
+NOTICE:  current search_path: pg_catalog, pg_temp
+                    QUERY PLAN                     
+---------------------------------------------------
+ Seq Scan on test_maint (actual rows=2.00 loops=1)
+(1 row)
+
+DROP MATERIALIZED VIEW pg_temp.test_maint_mv3;
 -- the following commands should see search_path as pg_catalog, pg_temp
 CREATE INDEX test_maint_idx ON test_maint_search_path.test_maint (fn(i));
 NOTICE:  current search_path: pg_catalog, pg_temp
@@ -154,7 +179,8 @@ NOTICE:  current search_path: pg_catalog, pg_temp
 NOTICE:  current search_path: pg_catalog, pg_temp
 RESET search_path;
 DROP SCHEMA test_maint_search_path CASCADE;
-NOTICE:  drop cascades to 3 other objects
+NOTICE:  drop cascades to 4 other objects
 DETAIL:  drop cascades to function test_maint_search_path.fn(integer)
 drop cascades to table test_maint_search_path.test_maint
 drop cascades to materialized view test_maint_search_path.test_maint_mv
+drop cascades to materialized view test_maint_search_path.test_maint_mv2
