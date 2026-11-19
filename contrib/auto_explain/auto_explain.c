@@ -437,7 +437,14 @@ explain_ExecutorEnd(QueryDesc *queryDesc)
 		{
 			ExplainState *es = NewExplainState();
 
-			es->analyze = (queryDesc->instrument_options && auto_explain_log_analyze);
+			/*
+			 * EXPLAIN (BUFFERS) sets instrument_options without executing
+			 * the plan.  Actuals are valid only when EXEC_FLAG_EXPLAIN_ONLY
+			 * is not set.
+			 */
+			es->analyze = (queryDesc->instrument_options &&
+						   auto_explain_log_analyze &&
+						   (queryDesc->estate->es_top_eflags & EXEC_FLAG_EXPLAIN_ONLY) == 0);
 			es->verbose = auto_explain_log_verbose;
 			es->buffers = (es->analyze && auto_explain_log_buffers);
 			es->io = (es->analyze && auto_explain_log_io);
