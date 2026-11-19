@@ -98,11 +98,12 @@ static Selectivity prefix_selectivity(PlannerInfo *root,
 									  Oid eqopr, Oid ltopr, Oid geopr,
 									  Oid collation,
 									  Const *prefixcon);
+static int	pattern_prefix_weight(const char *prefix, int len);
 static Selectivity like_selectivity(const char *patt, int pattlen,
-									bool case_insensitive);
+									bool case_insensitive, bool is_bytea);
 static Selectivity regex_selectivity(const char *patt, int pattlen,
 									 bool case_insensitive,
-									 int fixed_prefix_len);
+									 int fixed_prefix_weight);
 static Const *make_greater_string(const Const *str_const, FmgrInfo *ltproc,
 								  Oid collation);
 static Datum string_to_datum(const char *str, Oid datatype);
@@ -1052,7 +1053,8 @@ like_fixed_prefix(Const *patt_const, Const **prefix_const,
 		*prefix_const = string_to_bytea_const(match, match_pos);
 
 	if (rest_selec != NULL)
-		*rest_selec = like_selectivity(&patt[pos], pattlen - pos, false);
+		*rest_selec = like_selectivity(&patt[pos], pattlen - pos,
+									   false, typeid == BYTEAOID);
 
 	pfree(patt);
 	pfree(match);
@@ -1157,7 +1159,7 @@ like_fixed_prefix_ci(Const *patt_const, Oid collation, Const **prefix_const,
 		rest = palloc(pg_database_encoding_max_length() * wrestlen + 1);
 		rest_mblen = pg_wchar2mb_with_len(&wpatt[wpos], rest, wrestlen);
 
-		*rest_selec = like_selectivity(rest, rest_mblen, true);
+		*rest_selec = like_selectivity(rest, rest_mblen, true, false);
 		pfree(rest);
 	}
 
@@ -1228,7 +1230,8 @@ regex_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 
 			*rest_selec = regex_selectivity(patt, strlen(patt),
 											case_insensitive,
-											strlen(prefix));
+											pattern_prefix_weight(prefix,
+																  strlen(prefix)));
 			pfree(patt);
 		}
 	}
@@ -1395,9 +1398,36 @@ prefix_selectivity(PlannerInfo *root, VariableStatData *vardata,
 #define ANY_CHAR_SEL	0.9		/* not 1, since it won't match end-of-string */
 #define FULL_WILDCARD_SEL 5.0
 #define PARTIAL_WILDCARD_SEL 2.0
+#define WIDE_CHAR_WEIGHT 3		/* weight of a double-width char */
+
+/* Weight of a fixed character: how many times FIXED_CHAR_SEL is applied */
+static inline int
+pattern_char_weight(const char *patt)
+{
+	return (pg_dsplen(patt) == 2) ? WIDE_CHAR_WEIGHT : 1;
+}
+
+/* Total weight of a fixed prefix, for regex_selectivity() to discount */
+static int
+pattern_prefix_weight(const char *prefix, int len)
+{
+	int			weight = 0;
+	int			pos = 0;
+
+	while (pos < len)
+	{
+		int			charlen = pg_mblen_range(prefix + pos, prefix + len);
+
+		weight += pattern_char_weight(prefix + pos);
+		pos += charlen;
+	}
+
+	return weight;
+}
 
 static Selectivity
-like_selectivity(const char *patt, int pattlen, bool case_insensitive)
+like_selectivity(const char *patt, int pattlen, bool case_insensitive,
+				 bool is_bytea)
 {
 	Selectivity sel = 1.0;
 	int			pos;
@@ -1411,21 +1441,35 @@ like_selectivity(const char *patt, int pattlen, bool case_insensitive)
 
 	for (; pos < pattlen; pos++)
 	{
+		int			charlen;
+
+		/* Step by whole characters, except in bytea */
+		charlen = is_bytea ? 1 : pg_mblen_range(patt + pos, patt + pattlen);
+
 		/* % and _ are wildcard characters in LIKE */
 		if (patt[pos] == '%')
 			sel *= FULL_WILDCARD_SEL;
 		else if (patt[pos] == '_')
 			sel *= ANY_CHAR_SEL;
-		else if (patt[pos] == '\\')
-		{
-			/* Backslash quotes the next character */
-			pos++;
-			if (pos >= pattlen)
-				break;
-			sel *= FIXED_CHAR_SEL;
-		}
 		else
-			sel *= FIXED_CHAR_SEL;
+		{
+			int			weight;
+
+			/* Backslash quotes the next character */
+			if (patt[pos] == '\\')
+			{
+				pos += charlen;
+				if (pos >= pattlen)
+					break;
+				charlen = is_bytea ? 1 :
+					pg_mblen_range(patt + pos, patt + pattlen);
+			}
+
+			weight = is_bytea ? 1 : pattern_char_weight(patt + pos);
+			sel *= pow(FIXED_CHAR_SEL, weight);
+		}
+
+		pos += charlen - 1;
 	}
 	/* Could get sel > 1 if multiple wildcards */
 	if (sel > 1.0)
@@ -1446,6 +1490,11 @@ regex_selectivity_sub(const char *patt, int pattlen, bool case_insensitive)
 
 	for (pos = 0; pos < pattlen; pos++)
 	{
+		int			charlen;
+
+		/* Step by whole characters */
+		charlen = pg_mblen_range(patt + pos, patt + pattlen);
+
 		if (patt[pos] == '(')
 		{
 			if (paren_depth == 0)
@@ -1507,20 +1556,22 @@ regex_selectivity_sub(const char *patt, int pattlen, bool case_insensitive)
 			if (paren_depth == 0)
 				sel *= PARTIAL_WILDCARD_SEL;
 		}
-		else if (patt[pos] == '\\')
-		{
-			/* backslash quotes the next character */
-			pos++;
-			if (pos >= pattlen)
-				break;
-			if (paren_depth == 0)
-				sel *= FIXED_CHAR_SEL;
-		}
 		else
 		{
+			/* backslash quotes the next character */
+			if (patt[pos] == '\\')
+			{
+				pos += charlen;
+				if (pos >= pattlen)
+					break;
+				charlen = pg_mblen_range(patt + pos, patt + pattlen);
+			}
+
 			if (paren_depth == 0)
-				sel *= FIXED_CHAR_SEL;
+				sel *= pow(FIXED_CHAR_SEL, pattern_char_weight(patt + pos));
 		}
+
+		pos += charlen - 1;
 	}
 	/* Could get sel > 1 if multiple wildcards */
 	if (sel > 1.0)
@@ -1530,7 +1581,7 @@ regex_selectivity_sub(const char *patt, int pattlen, bool case_insensitive)
 
 static Selectivity
 regex_selectivity(const char *patt, int pattlen, bool case_insensitive,
-				  int fixed_prefix_len)
+				  int fixed_prefix_weight)
 {
 	Selectivity sel;
 
@@ -1553,9 +1604,9 @@ regex_selectivity(const char *patt, int pattlen, bool case_insensitive,
 	 * careful here since a very long prefix could result in pow's result
 	 * underflowing to zero (in which case "sel" probably has as well).
 	 */
-	if (fixed_prefix_len > 0)
+	if (fixed_prefix_weight > 0)
 	{
-		double		prefixsel = pow(FIXED_CHAR_SEL, fixed_prefix_len);
+		double		prefixsel = pow(FIXED_CHAR_SEL, fixed_prefix_weight);
 
 		if (prefixsel > 0.0)
 			sel /= prefixsel;
