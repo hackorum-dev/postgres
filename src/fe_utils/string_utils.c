@@ -487,6 +487,7 @@ appendStringLiteralDQ(PQExpBuffer buf, const char *str, const char *dqprefix)
 	static const char suffixes[] = "_XXXXXXX";
 	int			nextchar = 0;
 	PQExpBuffer delimBuf = createPQExpBuffer();
+	const char *searchPtr = str;
 
 	/* start with $ + dqprefix if not NULL */
 	appendPQExpBufferChar(delimBuf, '$');
@@ -498,7 +499,7 @@ appendStringLiteralDQ(PQExpBuffer buf, const char *str, const char *dqprefix)
 	 * present in the string being quoted. We don't check with the trailing $
 	 * because a string ending in $foo must not be quoted with $foo$.
 	 */
-	while (strstr(str, delimBuf->data) != NULL)
+	while ((searchPtr = strstr(searchPtr, delimBuf->data)) != NULL)
 	{
 		appendPQExpBufferChar(delimBuf, suffixes[nextchar++]);
 		nextchar %= sizeof(suffixes) - 1;
