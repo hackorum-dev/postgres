@@ -106,7 +106,8 @@ PostgreSQL documentation
      <varlistentry>
       <term><option>-c</option></term>
       <term><option>--check</option></term>
-      <listitem><para>check clusters only, don't change any data</para></listitem>
+      <listitem><para>check compatibility of clusters only, but don't perform
+      the upgrade</para></listitem>
      </varlistentry>
 
      <varlistentry>
@@ -603,6 +604,18 @@ pg_upgrade.exe
      <option>--check</option> to enable mode-specific checks.
      <command>pg_upgrade</command> requires write permission in the current directory.
     </para>
+
+    <note>
+      <para>
+        Note that, when tbe <option>--check</option> is used,
+        <application>pg_upgrade</application> will start and stop the old
+        cluster, unless it is already running.  It is, therefore, not a strictly
+        read-only operation, and must only be performed in a context where the
+        old server is accessible, and from which starting and stopping it is safe.
+        If the old cluster is already running it will however not be stopped as
+        part of <option>--check</option>.
+      </para>
+    </note>
 
     <para>
      Obviously, no one should be accessing the clusters during the
