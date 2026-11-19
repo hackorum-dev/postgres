@@ -2658,6 +2658,14 @@ BitmapHeapScanNextBlock(TableScanDesc scan,
  * ------------------------------------------------------------------------
  */
 
+/* Heap's resource managers support logical decoding. */
+static uint32
+heapam_relation_supports_features(Relation rel, uint32 features)
+{
+	return features & TABLEAM_SUPPORTS_LOGICAL_DECODING;
+}
+
+
 static const TableAmRoutine heapam_methods = {
 	.type = T_TableAmRoutine,
 
@@ -2713,7 +2721,9 @@ static const TableAmRoutine heapam_methods = {
 
 	.scan_bitmap_next_tuple = heapam_scan_bitmap_next_tuple,
 	.scan_sample_next_block = heapam_scan_sample_next_block,
-	.scan_sample_next_tuple = heapam_scan_sample_next_tuple
+	.scan_sample_next_tuple = heapam_scan_sample_next_tuple,
+
+	.relation_supports_features = heapam_relation_supports_features
 };
 
 
