@@ -823,7 +823,8 @@ index_create(Relation heapRelation,
 	 * The same applies to varchar_pattern_ops and bpchar_pattern_ops.  If we
 	 * find more cases, we might decide to create a real mechanism for marking
 	 * opclasses as incompatible with nondeterminism; but for now, this small
-	 * hack suffices.
+	 * hack suffices.  opfamily_conflicts_with_collation() holds the list,
+	 * which parse analysis also consults for ORDER BY ... USING.
 	 *
 	 * Another solution is to use a special operator, not texteq, as the
 	 * equality opclass member; but that is undesirable because it would
@@ -836,10 +837,8 @@ index_create(Relation heapRelation,
 
 		if (collation)
 		{
-			if ((opclass == TEXT_BTREE_PATTERN_OPS_OID ||
-				 opclass == VARCHAR_BTREE_PATTERN_OPS_OID ||
-				 opclass == BPCHAR_BTREE_PATTERN_OPS_OID) &&
-				!get_collation_isdeterministic(collation))
+			if (opfamily_conflicts_with_collation(get_opclass_family(opclass),
+												  collation))
 			{
 				HeapTuple	classtup;
 

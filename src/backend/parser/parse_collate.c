@@ -44,6 +44,7 @@
 #include "catalog/pg_collation.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/optimizer.h"
 #include "parser/parse_collate.h"
 #include "utils/lsyscache.h"
 
@@ -87,6 +88,8 @@ static void assign_ordered_set_collations(Aggref *aggref,
 										  assign_collations_context *loccontext);
 static void assign_hypothetical_collations(Aggref *aggref,
 										   assign_collations_context *loccontext);
+static void check_sort_collations(ParseState *pstate, List *sortlist,
+								  List *targetlist);
 
 
 /*
@@ -100,6 +103,8 @@ static void assign_hypothetical_collations(Aggref *aggref,
 void
 assign_query_collations(ParseState *pstate, Query *query)
 {
+	ListCell   *lc;
+
 	/*
 	 * We just use query_tree_walker() to visit all the contained expressions.
 	 * We can skip the rangetable and CTE subqueries, though, since RTEs and
@@ -111,6 +116,20 @@ assign_query_collations(ParseState *pstate, Query *query)
 							 pstate,
 							 QTW_IGNORE_RANGE_TABLE |
 							 QTW_IGNORE_CTE_SUBQUERIES);
+
+	/*
+	 * Now that the sort keys have collations, check that their ordering
+	 * operators can be used with them.  We need not look at GROUP BY,
+	 * DISTINCT or PARTITION BY items, since those can only have borrowed a
+	 * non-default ordering operator from the associated ORDER BY list.
+	 */
+	check_sort_collations(pstate, query->sortClause, query->targetList);
+	foreach(lc, query->windowClause)
+	{
+		WindowClause *wc = lfirst_node(WindowClause, lc);
+
+		check_sort_collations(pstate, wc->orderClause, query->targetList);
+	}
 }
 
 /*
@@ -618,6 +637,11 @@ assign_collations_walker(Node *node, assign_collations_context *context)
 
 							assign_expr_collations(context->pstate,
 												   (Node *) aggref->aggfilter);
+
+							/* Now we can check the ORDER BY operators */
+							check_sort_collations(context->pstate,
+												  aggref->aggorder,
+												  aggref->args);
 						}
 						break;
 					case T_WindowFunc:
@@ -1055,4 +1079,45 @@ assign_hypothetical_collations(Aggref *aggref,
 		s_cell = lnext(aggref->args, s_cell);
 	}
 	Assert(h_cell == NULL && s_cell == NULL);
+}
+
+/*
+ * check_sort_collations
+ *		Complain if any ordering operator in the sort list can't be used with
+ *		the collation of its sort key.
+ *
+ * sortlist is a list of SortGroupClauses that reference targetlist.  This
+ * can't be done when the SortGroupClauses are made, because the sort keys
+ * don't have their collations yet.
+ */
+static void
+check_sort_collations(ParseState *pstate, List *sortlist, List *targetlist)
+{
+	ListCell   *lc;
+
+	foreach(lc, sortlist)
+	{
+		SortGroupClause *sortcl = lfirst_node(SortGroupClause, lc);
+		TargetEntry *tle = get_sortgroupclause_tle(sortcl, targetlist);
+		Oid			collation = exprCollation((Node *) tle->expr);
+		Oid			opfamily;
+		Oid			opcintype;
+		CompareType cmptype;
+
+		/* Only nondeterministic collations can be a problem */
+		if (!OidIsValid(collation) ||
+			get_collation_isdeterministic(collation))
+			continue;
+
+		if (get_ordering_op_properties(sortcl->sortop,
+									   &opfamily, &opcintype, &cmptype) &&
+			opfamily_conflicts_with_collation(opfamily, collation))
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("nondeterministic collations are not supported for ordering operator %s",
+							get_opname(sortcl->sortop)),
+					 errhint("You can sort in byte order by applying COLLATE \"C\" to the expression."),
+					 parser_errposition(pstate,
+										exprLocation((Node *) tle->expr))));
+	}
 }

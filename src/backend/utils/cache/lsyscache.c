@@ -1290,6 +1290,28 @@ get_collation_isdeterministic(Oid colloid)
 	return result;
 }
 
+/*
+ * opfamily_conflicts_with_collation
+ *		Is this btree opfamily's ordering inconsistent with its equality
+ *		operator under the given collation?
+ *
+ * The pattern_ops opfamilies sort bitwise, but their equality member is the
+ * datatype's regular equality operator, which follows the collation.  Under
+ * a nondeterministic collation, values that are equal per that operator can
+ * sort apart, so the opfamily must not be used with such a collation.
+ *
+ * The list lives here so that CREATE INDEX and ORDER BY ... USING reject the
+ * same opfamilies.
+ */
+bool
+opfamily_conflicts_with_collation(Oid opfamily, Oid collation)
+{
+	if (opfamily != TEXT_PATTERN_BTREE_FAM_OID &&
+		opfamily != BPCHAR_PATTERN_BTREE_FAM_OID)
+		return false;
+	return OidIsValid(collation) && !get_collation_isdeterministic(collation);
+}
+
 /*				---------- CONSTRAINT CACHE ----------					 */
 
 /*
