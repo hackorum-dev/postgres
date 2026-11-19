@@ -621,6 +621,9 @@ CheckpointerMain(const void *startup_data, size_t startup_data_len)
 		pgstat_report_checkpointer();
 		pgstat_report_wal(true);
 
+		pqsignal(SIGHUP, PG_SIG_IGN);
+		ConfigReloadPending = false;
+
 		/*
 		 * Tell postmaster that we're done.
 		 */
