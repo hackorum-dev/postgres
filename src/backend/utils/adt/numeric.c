@@ -4790,9 +4790,12 @@ makeNumericAggState(FunctionCallInfo fcinfo, bool calcSumX2)
 	NumericAggState *state;
 	MemoryContext agg_context;
 	MemoryContext old_context;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &agg_context))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	isaggctx = AggCheckCallContext(fcinfo, &agg_context);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	old_context = MemoryContextSwitchTo(agg_context);
 
@@ -5014,9 +5017,12 @@ numeric_combine(PG_FUNCTION_ARGS)
 	NumericAggState *state2;
 	MemoryContext agg_context;
 	MemoryContext old_context;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &agg_context))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	isaggctx = AggCheckCallContext(fcinfo, &agg_context);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	state1 = PG_ARGISNULL(0) ? NULL : (NumericAggState *) PG_GETARG_POINTER(0);
 	state2 = PG_ARGISNULL(1) ? NULL : (NumericAggState *) PG_GETARG_POINTER(1);
@@ -5114,9 +5120,12 @@ numeric_avg_combine(PG_FUNCTION_ARGS)
 	NumericAggState *state2;
 	MemoryContext agg_context;
 	MemoryContext old_context;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &agg_context))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	isaggctx = AggCheckCallContext(fcinfo, &agg_context);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	state1 = PG_ARGISNULL(0) ? NULL : (NumericAggState *) PG_GETARG_POINTER(0);
 	state2 = PG_ARGISNULL(1) ? NULL : (NumericAggState *) PG_GETARG_POINTER(1);
@@ -5195,9 +5204,8 @@ numeric_avg_serialize(PG_FUNCTION_ARGS)
 	bytea	   *result;
 	NumericVar	tmp_var;
 
-	/* Ensure we disallow calling when not in aggregate context */
-	if (!AggCheckCallContext(fcinfo, NULL))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	/* cannot be called directly because of internal-type argument */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	state = (NumericAggState *) PG_GETARG_POINTER(0);
 
@@ -5247,8 +5255,8 @@ numeric_avg_deserialize(PG_FUNCTION_ARGS)
 	StringInfoData buf;
 	NumericVar	tmp_var;
 
-	if (!AggCheckCallContext(fcinfo, NULL))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	/* cannot be called directly because of internal-type argument */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	sstate = PG_GETARG_BYTEA_PP(0);
 
@@ -5305,9 +5313,8 @@ numeric_serialize(PG_FUNCTION_ARGS)
 	bytea	   *result;
 	NumericVar	tmp_var;
 
-	/* Ensure we disallow calling when not in aggregate context */
-	if (!AggCheckCallContext(fcinfo, NULL))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	/* cannot be called directly because of internal-type argument */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	state = (NumericAggState *) PG_GETARG_POINTER(0);
 
@@ -5361,8 +5368,8 @@ numeric_deserialize(PG_FUNCTION_ARGS)
 	StringInfoData buf;
 	NumericVar	tmp_var;
 
-	if (!AggCheckCallContext(fcinfo, NULL))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	/* cannot be called directly because of internal-type argument */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	sstate = PG_GETARG_BYTEA_PP(0);
 
@@ -5470,9 +5477,12 @@ makeInt128AggState(FunctionCallInfo fcinfo, bool calcSumX2)
 	Int128AggState *state;
 	MemoryContext agg_context;
 	MemoryContext old_context;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &agg_context))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	isaggctx = AggCheckCallContext(fcinfo, &agg_context);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	old_context = MemoryContextSwitchTo(agg_context);
 
@@ -5586,9 +5596,12 @@ numeric_poly_combine(PG_FUNCTION_ARGS)
 	Int128AggState *state2;
 	MemoryContext agg_context;
 	MemoryContext old_context;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &agg_context))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	isaggctx = AggCheckCallContext(fcinfo, &agg_context);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	state1 = PG_ARGISNULL(0) ? NULL : (Int128AggState *) PG_GETARG_POINTER(0);
 	state2 = PG_ARGISNULL(1) ? NULL : (Int128AggState *) PG_GETARG_POINTER(1);
@@ -5662,9 +5675,8 @@ numeric_poly_serialize(PG_FUNCTION_ARGS)
 	StringInfoData buf;
 	bytea	   *result;
 
-	/* Ensure we disallow calling when not in aggregate context */
-	if (!AggCheckCallContext(fcinfo, NULL))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	/* cannot be called directly because of internal-type argument */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	state = (Int128AggState *) PG_GETARG_POINTER(0);
 
@@ -5696,8 +5708,8 @@ numeric_poly_deserialize(PG_FUNCTION_ARGS)
 	Int128AggState *result;
 	StringInfoData buf;
 
-	if (!AggCheckCallContext(fcinfo, NULL))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	/* cannot be called directly because of internal-type argument */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	sstate = PG_GETARG_BYTEA_PP(0);
 
@@ -5755,9 +5767,12 @@ int8_avg_combine(PG_FUNCTION_ARGS)
 	Int128AggState *state2;
 	MemoryContext agg_context;
 	MemoryContext old_context;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &agg_context))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	isaggctx = AggCheckCallContext(fcinfo, &agg_context);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	state1 = PG_ARGISNULL(0) ? NULL : (Int128AggState *) PG_GETARG_POINTER(0);
 	state2 = PG_ARGISNULL(1) ? NULL : (Int128AggState *) PG_GETARG_POINTER(1);
@@ -5807,9 +5822,8 @@ int8_avg_serialize(PG_FUNCTION_ARGS)
 	StringInfoData buf;
 	bytea	   *result;
 
-	/* Ensure we disallow calling when not in aggregate context */
-	if (!AggCheckCallContext(fcinfo, NULL))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	/* cannot be called directly because of internal-type argument */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	state = (Int128AggState *) PG_GETARG_POINTER(0);
 
@@ -5838,8 +5852,8 @@ int8_avg_deserialize(PG_FUNCTION_ARGS)
 	Int128AggState *result;
 	StringInfoData buf;
 
-	if (!AggCheckCallContext(fcinfo, NULL))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	/* cannot be called directly because of internal-type argument */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	sstate = PG_GETARG_BYTEA_PP(0);
 
@@ -6464,15 +6478,11 @@ int2_avg_accum(PG_FUNCTION_ARGS)
 	Int8TransTypeData *transdata;
 	int64		newsum;
 
-	/*
-	 * If we're invoked as an aggregate, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we need to make
-	 * a copy of it before scribbling on it.
-	 */
-	if (AggCheckCallContext(fcinfo, NULL))
-		transarray = PG_GETARG_ARRAYTYPE_P(0);
-	else
-		transarray = PG_GETARG_ARRAYTYPE_P_COPY(0);
+
+	/* cannot be called directly because of prointernal == true */
+	Assert(AggCheckCallContext(fcinfo, NULL));
+
+	transarray = PG_GETARG_ARRAYTYPE_P(0);
 
 	if (ARR_HASNULL(transarray) ||
 		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
@@ -6499,15 +6509,10 @@ int4_avg_accum(PG_FUNCTION_ARGS)
 	Int8TransTypeData *transdata;
 	int64		newsum;
 
-	/*
-	 * If we're invoked as an aggregate, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we need to make
-	 * a copy of it before scribbling on it.
-	 */
-	if (AggCheckCallContext(fcinfo, NULL))
-		transarray = PG_GETARG_ARRAYTYPE_P(0);
-	else
-		transarray = PG_GETARG_ARRAYTYPE_P_COPY(0);
+	/* cannot be called directly because of prointernal == true */
+	Assert(AggCheckCallContext(fcinfo, NULL));
+
+	transarray = PG_GETARG_ARRAYTYPE_P(0);
 
 	if (ARR_HASNULL(transarray) ||
 		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
@@ -6535,8 +6540,8 @@ int4_avg_combine(PG_FUNCTION_ARGS)
 	Int8TransTypeData *state2;
 	int64		newsum;
 
-	if (!AggCheckCallContext(fcinfo, NULL))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	/* cannot be called directly because of prointernal == true */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	transarray1 = PG_GETARG_ARRAYTYPE_P(0);
 	transarray2 = PG_GETARG_ARRAYTYPE_P(1);
@@ -6570,15 +6575,10 @@ int2_avg_accum_inv(PG_FUNCTION_ARGS)
 	int16		newval = PG_GETARG_INT16(1);
 	Int8TransTypeData *transdata;
 
-	/*
-	 * If we're invoked as an aggregate, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we need to make
-	 * a copy of it before scribbling on it.
-	 */
-	if (AggCheckCallContext(fcinfo, NULL))
-		transarray = PG_GETARG_ARRAYTYPE_P(0);
-	else
-		transarray = PG_GETARG_ARRAYTYPE_P_COPY(0);
+	/* cannot be called directly because of prointernal == true */
+	Assert(AggCheckCallContext(fcinfo, NULL));
+
+	transarray = PG_GETARG_ARRAYTYPE_P(0);
 
 	if (ARR_HASNULL(transarray) ||
 		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
@@ -6598,15 +6598,10 @@ int4_avg_accum_inv(PG_FUNCTION_ARGS)
 	int32		newval = PG_GETARG_INT32(1);
 	Int8TransTypeData *transdata;
 
-	/*
-	 * If we're invoked as an aggregate, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we need to make
-	 * a copy of it before scribbling on it.
-	 */
-	if (AggCheckCallContext(fcinfo, NULL))
-		transarray = PG_GETARG_ARRAYTYPE_P(0);
-	else
-		transarray = PG_GETARG_ARRAYTYPE_P_COPY(0);
+	/* cannot be called directly because of prointernal == true */
+	Assert(AggCheckCallContext(fcinfo, NULL));
+
+	transarray = PG_GETARG_ARRAYTYPE_P(0);
 
 	if (ARR_HASNULL(transarray) ||
 		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
@@ -6627,6 +6622,7 @@ int8_avg(PG_FUNCTION_ARGS)
 	Datum		countd,
 				sumd;
 
+	/* XXX consider changing this ERROR to an Assert as this is prointernal */
 	if (ARR_HASNULL(transarray) ||
 		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
 		elog(ERROR, "expected 2-element int8 array");
@@ -6652,6 +6648,7 @@ int2int4_sum(PG_FUNCTION_ARGS)
 	ArrayType  *transarray = PG_GETARG_ARRAYTYPE_P(0);
 	Int8TransTypeData *transdata;
 
+	/* XXX consider changing this ERROR to an Assert as this is prointernal */
 	if (ARR_HASNULL(transarray) ||
 		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
 		elog(ERROR, "expected 2-element int8 array");

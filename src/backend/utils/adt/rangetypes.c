@@ -1392,14 +1392,13 @@ range_minus_multi_internal(TypeCacheEntry *typcache, RangeType *r1,
 Datum
 range_intersect_agg_transfn(PG_FUNCTION_ARGS)
 {
-	MemoryContext aggContext;
 	Oid			rngtypoid;
 	TypeCacheEntry *typcache;
 	RangeType  *result;
 	RangeType  *current;
 
-	if (!AggCheckCallContext(fcinfo, &aggContext))
-		elog(ERROR, "range_intersect_agg_transfn called in non-aggregate context");
+	/* cannot be called directly because of prointernal == true */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	rngtypoid = get_fn_expr_argtype(fcinfo->flinfo, 1);
 	if (!type_is_range(rngtypoid))

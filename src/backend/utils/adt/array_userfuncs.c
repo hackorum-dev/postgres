@@ -565,6 +565,7 @@ array_agg_transfn(PG_FUNCTION_ARGS)
 	MemoryContext aggcontext;
 	ArrayBuildState *state;
 	Datum		elem;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
 	if (arg1_typeid == InvalidOid)
 		ereport(ERROR,
@@ -577,11 +578,10 @@ array_agg_transfn(PG_FUNCTION_ARGS)
 	 * while resolving the input/result types of this polymorphic aggregate.
 	 */
 
-	if (!AggCheckCallContext(fcinfo, &aggcontext))
-	{
-		/* cannot be called directly because of internal-type argument */
-		elog(ERROR, "array_agg_transfn called in non-aggregate context");
-	}
+	isaggctx = AggCheckCallContext(fcinfo, &aggcontext);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	if (PG_ARGISNULL(0))
 		state = initArrayResult(arg1_typeid, aggcontext, false);
@@ -611,9 +611,12 @@ array_agg_combine(PG_FUNCTION_ARGS)
 	ArrayBuildState *state2;
 	MemoryContext agg_context;
 	MemoryContext old_context;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &agg_context))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	isaggctx = AggCheckCallContext(fcinfo, &agg_context);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	state1 = PG_ARGISNULL(0) ? NULL : (ArrayBuildState *) PG_GETARG_POINTER(0);
 	state2 = PG_ARGISNULL(1) ? NULL : (ArrayBuildState *) PG_GETARG_POINTER(1);
@@ -798,8 +801,8 @@ array_agg_deserialize(PG_FUNCTION_ARGS)
 	int64		nelems;
 	const char *temp;
 
-	if (!AggCheckCallContext(fcinfo, NULL))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	/* cannot be called directly because of internal-type argument */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	sstate = PG_GETARG_BYTEA_PP(0);
 
@@ -940,6 +943,7 @@ array_agg_array_transfn(PG_FUNCTION_ARGS)
 	Oid			arg1_typeid = get_fn_expr_argtype(fcinfo->flinfo, 1);
 	MemoryContext aggcontext;
 	ArrayBuildStateArr *state;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
 	if (arg1_typeid == InvalidOid)
 		ereport(ERROR,
@@ -952,11 +956,10 @@ array_agg_array_transfn(PG_FUNCTION_ARGS)
 	 * resolving the input/result types of this polymorphic aggregate.
 	 */
 
-	if (!AggCheckCallContext(fcinfo, &aggcontext))
-	{
-		/* cannot be called directly because of internal-type argument */
-		elog(ERROR, "array_agg_array_transfn called in non-aggregate context");
-	}
+	isaggctx = AggCheckCallContext(fcinfo, &aggcontext);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 
 	if (PG_ARGISNULL(0))
@@ -985,9 +988,12 @@ array_agg_array_combine(PG_FUNCTION_ARGS)
 	ArrayBuildStateArr *state2;
 	MemoryContext agg_context;
 	MemoryContext old_context;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &agg_context))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	isaggctx = AggCheckCallContext(fcinfo, &agg_context);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	state1 = PG_ARGISNULL(0) ? NULL : (ArrayBuildStateArr *) PG_GETARG_POINTER(0);
 	state2 = PG_ARGISNULL(1) ? NULL : (ArrayBuildStateArr *) PG_GETARG_POINTER(1);

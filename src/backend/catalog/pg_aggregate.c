@@ -889,6 +889,7 @@ lookup_agg_function(List *fnName,
 {
 	Oid			fnOid;
 	bool		retset;
+	bool		prointernal;
 	int			nvargs;
 	Oid			vatype;
 	Oid		   *true_oid_array;
@@ -907,7 +908,7 @@ lookup_agg_function(List *fnName,
 	fdresult = func_get_detail(fnName, NIL, NIL,
 							   nargs, input_types, false, false, false,
 							   &fgc_flags,
-							   &fnOid, rettype, &retset,
+							   &fnOid, rettype, &retset, &prointernal,
 							   &nvargs, &vatype,
 							   &true_oid_array, NULL);
 

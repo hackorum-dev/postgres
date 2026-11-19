@@ -3009,6 +3009,9 @@ float8_combine(PG_FUNCTION_ARGS)
 				Sx,
 				Sxx;
 
+	/* cannot be called directly because of prointernal == true */
+	Assert(AggCheckCallContext(fcinfo, NULL));
+
 	transvalues1 = check_float8_array(transarray1, "float8_combine", 3);
 	transvalues2 = check_float8_array(transarray2, "float8_combine", 3);
 
@@ -3055,32 +3058,12 @@ float8_combine(PG_FUNCTION_ARGS)
 			float_overflow_error();
 	}
 
-	/*
-	 * If we're invoked as an aggregate, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we construct a
-	 * new array with the updated transition data and return it.
-	 */
-	if (AggCheckCallContext(fcinfo, NULL))
-	{
-		transvalues1[0] = N;
-		transvalues1[1] = Sx;
-		transvalues1[2] = Sxx;
 
-		PG_RETURN_ARRAYTYPE_P(transarray1);
-	}
-	else
-	{
-		Datum		transdatums[3];
-		ArrayType  *result;
+	transvalues1[0] = N;
+	transvalues1[1] = Sx;
+	transvalues1[2] = Sxx;
 
-		transdatums[0] = Float8GetDatumFast(N);
-		transdatums[1] = Float8GetDatumFast(Sx);
-		transdatums[2] = Float8GetDatumFast(Sxx);
-
-		result = construct_array_builtin(transdatums, 3, FLOAT8OID);
-
-		PG_RETURN_ARRAYTYPE_P(result);
-	}
+	PG_RETURN_ARRAYTYPE_P(transarray1);
 }
 
 Datum
@@ -3093,6 +3076,9 @@ float8_accum(PG_FUNCTION_ARGS)
 				Sx,
 				Sxx,
 				tmp;
+
+	/* cannot be called directly because of prointernal == true */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	transvalues = check_float8_array(transarray, "float8_accum", 3);
 	N = transvalues[0];
@@ -3136,32 +3122,12 @@ float8_accum(PG_FUNCTION_ARGS)
 			Sxx = get_float8_nan();
 	}
 
-	/*
-	 * If we're invoked as an aggregate, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we construct a
-	 * new array with the updated transition data and return it.
-	 */
-	if (AggCheckCallContext(fcinfo, NULL))
-	{
-		transvalues[0] = N;
-		transvalues[1] = Sx;
-		transvalues[2] = Sxx;
 
-		PG_RETURN_ARRAYTYPE_P(transarray);
-	}
-	else
-	{
-		Datum		transdatums[3];
-		ArrayType  *result;
+	transvalues[0] = N;
+	transvalues[1] = Sx;
+	transvalues[2] = Sxx;
 
-		transdatums[0] = Float8GetDatumFast(N);
-		transdatums[1] = Float8GetDatumFast(Sx);
-		transdatums[2] = Float8GetDatumFast(Sxx);
-
-		result = construct_array_builtin(transdatums, 3, FLOAT8OID);
-
-		PG_RETURN_ARRAYTYPE_P(result);
-	}
+	PG_RETURN_ARRAYTYPE_P(transarray);
 }
 
 Datum
@@ -3176,6 +3142,9 @@ float4_accum(PG_FUNCTION_ARGS)
 				Sx,
 				Sxx,
 				tmp;
+
+	/* cannot be called directly because of prointernal == true */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	transvalues = check_float8_array(transarray, "float4_accum", 3);
 	N = transvalues[0];
@@ -3219,32 +3188,12 @@ float4_accum(PG_FUNCTION_ARGS)
 			Sxx = get_float8_nan();
 	}
 
-	/*
-	 * If we're invoked as an aggregate, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we construct a
-	 * new array with the updated transition data and return it.
-	 */
-	if (AggCheckCallContext(fcinfo, NULL))
-	{
-		transvalues[0] = N;
-		transvalues[1] = Sx;
-		transvalues[2] = Sxx;
 
-		PG_RETURN_ARRAYTYPE_P(transarray);
-	}
-	else
-	{
-		Datum		transdatums[3];
-		ArrayType  *result;
+	transvalues[0] = N;
+	transvalues[1] = Sx;
+	transvalues[2] = Sxx;
 
-		transdatums[0] = Float8GetDatumFast(N);
-		transdatums[1] = Float8GetDatumFast(Sx);
-		transdatums[2] = Float8GetDatumFast(Sxx);
-
-		result = construct_array_builtin(transdatums, 3, FLOAT8OID);
-
-		PG_RETURN_ARRAYTYPE_P(result);
-	}
+	PG_RETURN_ARRAYTYPE_P(transarray);
 }
 
 Datum
@@ -3407,6 +3356,9 @@ float8_regr_accum(PG_FUNCTION_ARGS)
 				tmpY,
 				scale;
 
+	/* cannot be called directly because of prointernal == true */
+	Assert(AggCheckCallContext(fcinfo, NULL));
+
 	transvalues = check_float8_array(transarray, "float8_regr_accum", 8);
 	N = transvalues[0];
 	Sx = transvalues[1];
@@ -3507,42 +3459,17 @@ float8_regr_accum(PG_FUNCTION_ARGS)
 		commonY = newvalY;
 	}
 
-	/*
-	 * If we're invoked as an aggregate, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we construct a
-	 * new array with the updated transition data and return it.
-	 */
-	if (AggCheckCallContext(fcinfo, NULL))
-	{
-		transvalues[0] = N;
-		transvalues[1] = Sx;
-		transvalues[2] = Sxx;
-		transvalues[3] = Sy;
-		transvalues[4] = Syy;
-		transvalues[5] = Sxy;
-		transvalues[6] = commonX;
-		transvalues[7] = commonY;
 
-		PG_RETURN_ARRAYTYPE_P(transarray);
-	}
-	else
-	{
-		Datum		transdatums[8];
-		ArrayType  *result;
+	transvalues[0] = N;
+	transvalues[1] = Sx;
+	transvalues[2] = Sxx;
+	transvalues[3] = Sy;
+	transvalues[4] = Syy;
+	transvalues[5] = Sxy;
+	transvalues[6] = commonX;
+	transvalues[7] = commonY;
 
-		transdatums[0] = Float8GetDatumFast(N);
-		transdatums[1] = Float8GetDatumFast(Sx);
-		transdatums[2] = Float8GetDatumFast(Sxx);
-		transdatums[3] = Float8GetDatumFast(Sy);
-		transdatums[4] = Float8GetDatumFast(Syy);
-		transdatums[5] = Float8GetDatumFast(Sxy);
-		transdatums[6] = Float8GetDatumFast(commonX);
-		transdatums[7] = Float8GetDatumFast(commonY);
-
-		result = construct_array_builtin(transdatums, 8, FLOAT8OID);
-
-		PG_RETURN_ARRAYTYPE_P(result);
-	}
+	PG_RETURN_ARRAYTYPE_P(transarray);
 }
 
 /*
@@ -3586,6 +3513,9 @@ float8_regr_combine(PG_FUNCTION_ARGS)
 				Sxy,
 				Cx,
 				Cy;
+
+	/* cannot be called directly because of prointernal == true */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	transvalues1 = check_float8_array(transarray1, "float8_regr_combine", 8);
 	transvalues2 = check_float8_array(transarray2, "float8_regr_combine", 8);
@@ -3719,42 +3649,17 @@ float8_regr_combine(PG_FUNCTION_ARGS)
 		}
 	}
 
-	/*
-	 * If we're invoked as an aggregate, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we construct a
-	 * new array with the updated transition data and return it.
-	 */
-	if (AggCheckCallContext(fcinfo, NULL))
-	{
-		transvalues1[0] = N;
-		transvalues1[1] = Sx;
-		transvalues1[2] = Sxx;
-		transvalues1[3] = Sy;
-		transvalues1[4] = Syy;
-		transvalues1[5] = Sxy;
-		transvalues1[6] = Cx;
-		transvalues1[7] = Cy;
 
-		PG_RETURN_ARRAYTYPE_P(transarray1);
-	}
-	else
-	{
-		Datum		transdatums[8];
-		ArrayType  *result;
+	transvalues1[0] = N;
+	transvalues1[1] = Sx;
+	transvalues1[2] = Sxx;
+	transvalues1[3] = Sy;
+	transvalues1[4] = Syy;
+	transvalues1[5] = Sxy;
+	transvalues1[6] = Cx;
+	transvalues1[7] = Cy;
 
-		transdatums[0] = Float8GetDatumFast(N);
-		transdatums[1] = Float8GetDatumFast(Sx);
-		transdatums[2] = Float8GetDatumFast(Sxx);
-		transdatums[3] = Float8GetDatumFast(Sy);
-		transdatums[4] = Float8GetDatumFast(Syy);
-		transdatums[5] = Float8GetDatumFast(Sxy);
-		transdatums[6] = Float8GetDatumFast(Cx);
-		transdatums[7] = Float8GetDatumFast(Cy);
-
-		result = construct_array_builtin(transdatums, 8, FLOAT8OID);
-
-		PG_RETURN_ARRAYTYPE_P(result);
-	}
+	PG_RETURN_ARRAYTYPE_P(transarray1);
 }
 
 

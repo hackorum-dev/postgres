@@ -13555,6 +13555,7 @@ generate_function_name(Oid funcid, int nargs, List *argnames, Oid *argtypes,
 	Oid			p_funcid;
 	Oid			p_rettype;
 	bool		p_retset;
+	bool		p_internal;
 	int			p_nvargs;
 	Oid			p_vatype;
 	Oid		   *p_true_typeids;
@@ -13612,7 +13613,7 @@ generate_function_name(Oid funcid, int nargs, List *argnames, Oid *argtypes,
 								   !use_variadic, true, false,
 								   &fgc_flags,
 								   &p_funcid, &p_rettype,
-								   &p_retset, &p_nvargs, &p_vatype,
+								   &p_retset, &p_internal, &p_nvargs, &p_vatype,
 								   &p_true_typeids, NULL);
 	else
 	{

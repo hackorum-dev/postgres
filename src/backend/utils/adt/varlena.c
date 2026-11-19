@@ -4305,12 +4305,12 @@ makeStringAggState(FunctionCallInfo fcinfo)
 	StringInfo	state;
 	MemoryContext aggcontext;
 	MemoryContext oldcontext;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &aggcontext))
-	{
-		/* cannot be called directly because of internal-type argument */
-		elog(ERROR, "string_agg_transfn called in non-aggregate context");
-	}
+	isaggctx = AggCheckCallContext(fcinfo, &aggcontext);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	/*
 	 * Create state in aggregate context.  It'll stay there across subsequent
@@ -4384,9 +4384,12 @@ string_agg_combine(PG_FUNCTION_ARGS)
 	StringInfo	state1;
 	StringInfo	state2;
 	MemoryContext agg_context;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &agg_context))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	isaggctx = AggCheckCallContext(fcinfo, &agg_context);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	state1 = PG_ARGISNULL(0) ? NULL : (StringInfo) PG_GETARG_POINTER(0);
 	state2 = PG_ARGISNULL(1) ? NULL : (StringInfo) PG_GETARG_POINTER(1);

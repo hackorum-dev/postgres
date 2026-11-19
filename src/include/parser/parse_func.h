@@ -42,7 +42,8 @@ extern FuncDetailCode func_get_detail(List *funcname,
 									  bool include_out_arguments,
 									  int *fgc_flags,
 									  Oid *funcid, Oid *rettype,
-									  bool *retset, int *nvargs, Oid *vatype,
+									  bool *retset, bool *internal,
+									  int *nvargs, Oid *vatype,
 									  Oid **true_typeids, List **argdefaults);
 
 extern int	func_match_argtypes(int nargs,
