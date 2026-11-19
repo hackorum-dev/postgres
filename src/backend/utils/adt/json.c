@@ -793,12 +793,12 @@ json_agg_transfn_worker(FunctionCallInfo fcinfo, bool absent_on_null)
 				oldcontext;
 	JsonAggState *state;
 	Datum		val;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &aggcontext))
-	{
-		/* cannot be called directly because of internal-type argument */
-		elog(ERROR, "json_agg_transfn called in non-aggregate context");
-	}
+	isaggctx = AggCheckCallContext(fcinfo, &aggcontext);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	if (PG_ARGISNULL(0))
 	{
@@ -1020,12 +1020,12 @@ json_object_agg_transfn_worker(FunctionCallInfo fcinfo,
 	Datum		arg;
 	bool		skip;
 	int			key_offset;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &aggcontext))
-	{
-		/* cannot be called directly because of internal-type argument */
-		elog(ERROR, "json_object_agg_transfn called in non-aggregate context");
-	}
+	isaggctx = AggCheckCallContext(fcinfo, &aggcontext);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	if (PG_ARGISNULL(0))
 	{

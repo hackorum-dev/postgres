@@ -1519,12 +1519,12 @@ jsonb_agg_transfn_worker(FunctionCallInfo fcinfo, bool absent_on_null)
 	JsonbAggState *state;
 	Datum		val;
 	JsonbInState *result;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &aggcontext))
-	{
-		/* cannot be called directly because of internal-type argument */
-		elog(ERROR, "jsonb_agg_transfn called in non-aggregate context");
-	}
+	isaggctx = AggCheckCallContext(fcinfo, &aggcontext);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	/* set up the accumulator on the first go round */
 
@@ -1628,12 +1628,12 @@ jsonb_object_agg_transfn_worker(FunctionCallInfo fcinfo,
 	Datum		val;
 	JsonbInState *result;
 	bool		skip;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &aggcontext))
-	{
-		/* cannot be called directly because of internal-type argument */
-		elog(ERROR, "jsonb_object_agg_transfn called in non-aggregate context");
-	}
+	isaggctx = AggCheckCallContext(fcinfo, &aggcontext);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	/* set up the accumulator on the first go round */
 

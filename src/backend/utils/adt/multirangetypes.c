@@ -1425,9 +1425,12 @@ range_agg_transfn(PG_FUNCTION_ARGS)
 	MemoryContext aggContext;
 	Oid			rngtypoid;
 	ArrayBuildState *state;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &aggContext))
-		elog(ERROR, "range_agg_transfn called in non-aggregate context");
+	isaggctx = AggCheckCallContext(fcinfo, &aggContext);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	rngtypoid = get_fn_expr_argtype(fcinfo->flinfo, 1);
 	if (!type_is_range(rngtypoid))
@@ -1454,7 +1457,6 @@ range_agg_transfn(PG_FUNCTION_ARGS)
 Datum
 range_agg_finalfn(PG_FUNCTION_ARGS)
 {
-	MemoryContext aggContext;
 	Oid			mltrngtypoid;
 	TypeCacheEntry *typcache;
 	ArrayBuildState *state;
@@ -1462,8 +1464,8 @@ range_agg_finalfn(PG_FUNCTION_ARGS)
 	RangeType **ranges;
 	int			i;
 
-	if (!AggCheckCallContext(fcinfo, &aggContext))
-		elog(ERROR, "range_agg_finalfn called in non-aggregate context");
+	/* cannot be called directly because of internal-type argument */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	state = PG_ARGISNULL(0) ? NULL : (ArrayBuildState *) PG_GETARG_POINTER(0);
 	if (state == NULL)
@@ -1499,9 +1501,12 @@ multirange_agg_transfn(PG_FUNCTION_ARGS)
 	TypeCacheEntry *typcache;
 	TypeCacheEntry *rngtypcache;
 	ArrayBuildState *state;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &aggContext))
-		elog(ERROR, "multirange_agg_transfn called in non-aggregate context");
+	isaggctx = AggCheckCallContext(fcinfo, &aggContext);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	mltrngtypoid = get_fn_expr_argtype(fcinfo->flinfo, 1);
 	if (!type_is_multirange(mltrngtypoid))
@@ -1547,7 +1552,6 @@ multirange_agg_transfn(PG_FUNCTION_ARGS)
 Datum
 multirange_intersect_agg_transfn(PG_FUNCTION_ARGS)
 {
-	MemoryContext aggContext;
 	Oid			mltrngtypoid;
 	TypeCacheEntry *typcache;
 	MultirangeType *result;
@@ -1557,8 +1561,8 @@ multirange_intersect_agg_transfn(PG_FUNCTION_ARGS)
 	RangeType **ranges1;
 	RangeType **ranges2;
 
-	if (!AggCheckCallContext(fcinfo, &aggContext))
-		elog(ERROR, "multirange_intersect_agg_transfn called in non-aggregate context");
+	/* cannot be called directly because of prointernal == true */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	mltrngtypoid = get_fn_expr_argtype(fcinfo->flinfo, 1);
 	if (!type_is_multirange(mltrngtypoid))

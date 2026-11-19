@@ -409,12 +409,12 @@ bytea_string_agg_transfn(PG_FUNCTION_ARGS)
 		{
 			MemoryContext aggcontext;
 			MemoryContext oldcontext;
+			bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-			if (!AggCheckCallContext(fcinfo, &aggcontext))
-			{
-				/* cannot be called directly because of internal-type argument */
-				elog(ERROR, "bytea_string_agg_transfn called in non-aggregate context");
-			}
+			isaggctx = AggCheckCallContext(fcinfo, &aggcontext);
+
+			/* cannot be called directly because of internal-type argument */
+			Assert(isaggctx);
 
 			/*
 			 * Create state in aggregate context.  It'll stay there across

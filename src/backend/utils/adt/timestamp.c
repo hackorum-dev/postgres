@@ -3994,9 +3994,12 @@ makeIntervalAggState(FunctionCallInfo fcinfo)
 	IntervalAggState *state;
 	MemoryContext agg_context;
 	MemoryContext old_context;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &agg_context))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	isaggctx = AggCheckCallContext(fcinfo, &agg_context);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	old_context = MemoryContextSwitchTo(agg_context);
 
@@ -4145,9 +4148,8 @@ interval_avg_serialize(PG_FUNCTION_ARGS)
 	StringInfoData buf;
 	bytea	   *result;
 
-	/* Ensure we disallow calling when not in aggregate context */
-	if (!AggCheckCallContext(fcinfo, NULL))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	/* cannot be called directly because of internal-type argument */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	state = (IntervalAggState *) PG_GETARG_POINTER(0);
 
@@ -4183,8 +4185,8 @@ interval_avg_deserialize(PG_FUNCTION_ARGS)
 	IntervalAggState *result;
 	StringInfoData buf;
 
-	if (!AggCheckCallContext(fcinfo, NULL))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	/* cannot be called directly because of internal-type argument */
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	sstate = PG_GETARG_BYTEA_PP(0);
 

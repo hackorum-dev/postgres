@@ -325,9 +325,12 @@ makeBoolAggState(FunctionCallInfo fcinfo)
 {
 	BoolAggState *state;
 	MemoryContext agg_context;
+	bool		isaggctx PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!AggCheckCallContext(fcinfo, &agg_context))
-		elog(ERROR, "aggregate function called in non-aggregate context");
+	isaggctx = AggCheckCallContext(fcinfo, &agg_context);
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(isaggctx);
 
 	state = (BoolAggState *) MemoryContextAlloc(agg_context,
 												sizeof(BoolAggState));

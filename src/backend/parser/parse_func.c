@@ -115,6 +115,7 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 	List	   *argdefaults;
 	Node	   *retval;
 	bool		retset;
+	bool		prointernal;
 	int			nvargs;
 	Oid			vatype;
 	FuncDetailCode fdresult;
@@ -271,7 +272,7 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 							   actual_arg_types,
 							   !func_variadic, true, proc_call,
 							   &fgc_flags,
-							   &funcid, &rettype, &retset,
+							   &funcid, &rettype, &retset, &prointernal,
 							   &nvargs, &vatype,
 							   &declared_arg_types, &argdefaults);
 
@@ -280,6 +281,16 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 	/*
 	 * Check for various wrong-kind-of-routine cases.
 	 */
+
+	/* Reject functions that are only meant to be called internally */
+	if (fdresult == FUNCDETAIL_NORMAL && prointernal)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("function %s cannot be called directly",
+						func_signature_string(funcname, nargs, argnames,
+											  actual_arg_types)),
+				 errdetail("This function is for internal use only."),
+				 parser_errposition(pstate, location)));
 
 	/* If this is a CALL, reject things that aren't procedures */
 	if (proc_call &&
@@ -1586,6 +1597,7 @@ func_get_detail(List *funcname,
 				Oid *funcid,	/* return value */
 				Oid *rettype,	/* return value */
 				bool *retset,	/* return value */
+				bool *internal, /* return value */
 				int *nvargs,	/* return value */
 				Oid *vatype,	/* return value */
 				Oid **true_typeids, /* return value */
@@ -1598,6 +1610,7 @@ func_get_detail(List *funcname,
 	*funcid = InvalidOid;
 	*rettype = InvalidOid;
 	*retset = false;
+	*internal = false;
 	*nvargs = 0;
 	*vatype = InvalidOid;
 	*true_typeids = NULL;
@@ -1713,6 +1726,7 @@ func_get_detail(List *funcname,
 					*funcid = InvalidOid;
 					*rettype = targetType;
 					*retset = false;
+					*internal = false;
 					*nvargs = 0;
 					*vatype = InvalidOid;
 					*true_typeids = argtypes;
@@ -1815,6 +1829,7 @@ func_get_detail(List *funcname,
 		pform = (Form_pg_proc) GETSTRUCT(ftup);
 		*rettype = pform->prorettype;
 		*retset = pform->proretset;
+		*internal = pform->prointernal;
 		*vatype = pform->provariadic;
 		/* fetch default args if caller wants 'em */
 		if (argdefaults && best_candidate->ndargs > 0)

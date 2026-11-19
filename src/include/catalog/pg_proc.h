@@ -78,6 +78,14 @@ CATALOG(pg_proc,1255,ProcedureRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(81,Proce
 	/* see PROPARALLEL_ categories below */
 	char		proparallel BKI_DEFAULT(s);
 
+	/*
+	 * true means the function cannot be called directly via SQL.  This is not
+	 * expected to be watertight.  It's intended to stop users from shooting
+	 * themselves in the foot by using things like aggregate transfns directly
+	 * in ways they're not designed for.
+	 */
+	bool		prointernal BKI_DEFAULT(f);
+
 	/* number of arguments */
 	/* Note: need not be given in pg_proc.dat; genbki.pl will compute it */
 	int16		pronargs;

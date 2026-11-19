@@ -28,6 +28,7 @@
 #include "libpq/protocol.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
+#include "parser/parse_func.h"
 #include "tcop/fastpath.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -149,6 +150,16 @@ fetch_fp_info(Oid func_id, struct fp_info *fip)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot call function \"%s\" via fastpath interface",
 						NameStr(pp->proname))));
+
+	/* reject functions that are only meant to be called internally */
+	if (pp->prointernal)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("function %s cannot be called directly",
+						func_signature_string(list_make1(makeString(NameStr(pp->proname))),
+											  pp->pronargs, NIL,
+											  pp->proargtypes.values)),
+				 errdetail("This function is for internal use only.")));
 
 	/* watch out for catalog entries with more than FUNC_MAX_ARGS args */
 	if (pp->pronargs > FUNC_MAX_ARGS)
