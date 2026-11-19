@@ -139,6 +139,18 @@ my_tableam_handler(PG_FUNCTION_ARGS)
  </para>
 
  <para>
+  Changes to a table can be <link linkend="logicaldecoding">logically
+  decoded</link> only if the access method's resource manager provides an
+  <function>rm_decode</function> callback that turns its WAL records into row
+  changes.  An access method that does so can say so by providing the
+  <structfield>relation_supports_logical_decoding</structfield> callback.
+  Commands that need to see every change made to a table while they work,
+  such as <link linkend="sql-repack"><command>REPACK
+  (CONCURRENTLY)</command></link>, refuse to run on a table of an access
+  method that doesn't provide it.
+ </para>
+
+ <para>
   To implement transactional support in a manner that allows different table
   access methods be accessed within a single transaction, it likely is
   necessary to closely integrate with the machinery in
