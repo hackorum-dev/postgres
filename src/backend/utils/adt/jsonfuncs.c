@@ -17,6 +17,8 @@
 #include <limits.h>
 
 #include "access/htup_details.h"
+#include "catalog/objectaccess.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "common/int.h"
 #include "common/jsonapi.h"
@@ -28,6 +30,7 @@
 #include "miscadmin.h"
 #include "nodes/miscnodes.h"
 #include "parser/parse_coerce.h"
+#include "utils/acl.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -5987,6 +5990,33 @@ json_get_first_token(text *json, bool throw_error)
 		json_errsave_error(result, &lex, NULL);
 
 	return JSON_TOKEN_INVALID;	/* invalid json */
+}
+
+/*
+ * Invoke a type-to-JSON cast for a non-null input.  The cast itself may
+ * return SQL NULL, which the caller serializes as a JSON null.
+ */
+Datum
+json_invoke_cast(Oid castfunc, Datum val, bool *isnull)
+{
+	LOCAL_FCINFO(fcinfo, 1);
+	FmgrInfo	flinfo;
+	AclResult	aclresult;
+	Datum		result;
+
+	aclresult = object_aclcheck(ProcedureRelationId, castfunc,
+								GetUserId(), ACL_EXECUTE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, OBJECT_FUNCTION, get_func_name(castfunc));
+	InvokeFunctionExecuteHook(castfunc);
+
+	fmgr_info(castfunc, &flinfo);
+	InitFunctionCallInfoData(*fcinfo, &flinfo, 1, InvalidOid, NULL, NULL);
+	fcinfo->args[0].value = val;
+	fcinfo->args[0].isnull = false;
+	result = FunctionCallInvoke(fcinfo);
+	*isnull = fcinfo->isnull;
+	return result;
 }
 
 /*
