@@ -49,6 +49,7 @@
 #include "storage/bufmgr.h"
 #include "tcop/tcopprot.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/partcache.h"
 #include "utils/rel.h"
@@ -2286,6 +2287,45 @@ join_selectivity(PlannerInfo *root,
 												 PointerGetDatum(args),
 												 Int16GetDatum(jointype),
 												 PointerGetDatum(sjinfo)));
+
+	if (result < 0.0 || result > 1.0)
+		elog(ERROR, "invalid join selectivity: %f", result);
+
+	return (Selectivity) result;
+}
+
+/*
+ * nullsafe_join_selectivity
+ *
+ * Estimate IS [NOT] DISTINCT FROM.  operatorid is the equality operator for
+ * IS NOT DISTINCT FROM and its negator for IS DISTINCT FROM.  Only the built-in
+ * equality and inequality estimators accept the additional NULL-safe flag;
+ * other estimators retain the ordinary join_selectivity calling convention
+ * and their existing estimates, without promising NULL-safe semantics.
+ */
+Selectivity
+nullsafe_join_selectivity(PlannerInfo *root,
+						  Oid operatorid,
+						  List *args,
+						  Oid inputcollid,
+						  JoinType jointype,
+						  SpecialJoinInfo *sjinfo)
+{
+	RegProcedure oprjoin = get_oprjoin(operatorid);
+	float8		result;
+
+	if (oprjoin != F_EQJOINSEL && oprjoin != F_NEQJOINSEL)
+		return join_selectivity(root, operatorid, args, inputcollid,
+								jointype, sjinfo);
+
+	result = DatumGetFloat8(OidFunctionCall6Coll(oprjoin,
+												 inputcollid,
+												 PointerGetDatum(root),
+												 ObjectIdGetDatum(operatorid),
+												 PointerGetDatum(args),
+												 Int16GetDatum(jointype),
+												 PointerGetDatum(sjinfo),
+												 BoolGetDatum(true)));
 
 	if (result < 0.0 || result > 1.0)
 		elog(ERROR, "invalid join selectivity: %f", result);

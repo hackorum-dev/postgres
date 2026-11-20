@@ -210,6 +210,7 @@ static void eqjoinsel_find_matches(FmgrInfo *eqproc, Oid collation,
 								   AttStatsSlot *sslot1, AttStatsSlot *sslot2,
 								   int nvalues1, int nvalues2,
 								   bool *hasmatch1, bool *hasmatch2,
+								   int *matchindex1, int *matchindex2,
 								   int *p_nmatches, double *p_matchprodfreq);
 static uint32 hash_mcv(MCVHashTable_hash *tab, Datum key);
 static bool mcvs_equal(MCVHashTable_hash *tab, Datum key0, Datum key1);
@@ -2381,6 +2382,16 @@ rowcomparesel(PlannerInfo *root,
 
 /*
  *		eqjoinsel		- Join selectivity of "="
+ *
+ * An optional sixth boolean argument, null_safe_compare, enables
+ * IS NOT DISTINCT FROM semantics.
+ * The helper estimators retain ordinary "=" semantics; NULL handling is done
+ * here.  Add the NULL/NULL pair frequency to the inner-join estimate.  For
+ * SEMI/ANTI joins, also estimate the fraction of outer rows that are NULL and
+ * have at least one inner NULL partner.
+ *
+ * neqjoinsel complements this NULL-safe inner-join estimate for IS DISTINCT
+ * FROM inner and outer joins.
  */
 Datum
 eqjoinsel(PG_FUNCTION_ARGS)
@@ -2418,6 +2429,7 @@ eqjoinsel(PG_FUNCTION_ARGS)
 	bool		get_mcv_stats;
 	bool		join_is_reversed;
 	RelOptInfo *inner_rel;
+	bool		null_safe_compare = PG_NARGS() >= 6 && PG_GETARG_BOOL(5);
 
 	get_join_variables(root, args, sjinfo,
 					   &vardata1, &vardata2, &join_is_reversed);
@@ -2495,7 +2507,13 @@ eqjoinsel(PG_FUNCTION_ARGS)
 								  have_mcvs1, have_mcvs2,
 								  hasmatch1, hasmatch2,
 								  &nmatches);
-
+	/* NULL/NULL pairs contribute independently of the non-NULL estimate. */
+	if (null_safe_compare &&
+		stats1 && stats1->stanullfrac > 0.0 &&
+		stats2 && stats2->stanullfrac > 0.0)
+	{
+		selec_inner += stats1->stanullfrac * stats2->stanullfrac;
+	}
 	switch (sjinfo->jointype)
 	{
 		case JOIN_INNER:
@@ -2540,6 +2558,37 @@ eqjoinsel(PG_FUNCTION_ARGS)
 									   hasmatch2, hasmatch1,
 									   &nmatches,
 									   inner_rel);
+
+			if (null_safe_compare)
+			{
+				VariableStatData *inner_vardata = join_is_reversed ? &vardata1 : &vardata2;
+				Form_pg_statistic outer_stats = join_is_reversed ? stats2 : stats1;
+				Form_pg_statistic inner_stats = join_is_reversed ? stats1 : stats2;
+				double		outer_nullfrac = outer_stats ? outer_stats->stanullfrac : 0.0;
+				double		inner_nullfrac = inner_stats ? inner_stats->stanullfrac : 0.0;
+				double		inner_rows = inner_rel->rows;
+
+				if (inner_vardata->rel)
+					inner_rows = Min(inner_rows, inner_vardata->rel->rows);
+
+				if (IS_DUMMY_REL(inner_rel) ||
+					(inner_vardata->rel && IS_DUMMY_REL(inner_vardata->rel)))
+					selec = 0.0;
+				else
+				{
+					/* All-NULL inner data cannot match non-NULL outer rows. */
+					if (inner_nullfrac >= 1.0)
+						selec = 0.0;
+
+					/*
+					 * SEMI/ANTI need the fraction of outer NULLs with at
+					 * least one inner NULL, rather than the NULL/NULL pair
+					 * frequency. Scale down if fewer than one inner NULL is
+					 * expected.
+					 */
+					selec += outer_nullfrac * Min(inner_nullfrac * inner_rows, 1.0);
+				}
+			}
 
 			/*
 			 * We should never estimate the output of a semijoin to be more
@@ -2636,6 +2685,7 @@ eqjoinsel_inner(FmgrInfo *eqproc, Oid collation,
 							   sslot1, sslot2,
 							   sslot1->nvalues, sslot2->nvalues,
 							   hasmatch1, hasmatch2,
+							   NULL, NULL,
 							   p_nmatches, &matchprodfreq);
 		nmatches = *p_nmatches;
 		CLAMP_PROBABILITY(matchprodfreq);
@@ -2845,6 +2895,7 @@ eqjoinsel_semi(FmgrInfo *eqproc, Oid collation,
 								   sslot1, sslot2,
 								   sslot1->nvalues, clamped_nvalues2,
 								   hasmatch1, hasmatch2,
+								   NULL, NULL,
 								   p_nmatches, &matchprodfreq);
 		}
 		nmatches = *p_nmatches;
@@ -2911,7 +2962,9 @@ eqjoinsel_semi(FmgrInfo *eqproc, Oid collation,
 }
 
 /*
- * Identify matching MCVs for eqjoinsel_inner or eqjoinsel_semi.
+ * Identify equal non-NULL MCVs for the equality and DISTINCT join estimators.
+ * NULL and residual values are handled by the callers; the slots and their
+ * frequencies are not modified here.
  *
  * Inputs:
  *	eqproc: FmgrInfo for equality function to use (might be reversed)
@@ -2925,6 +2978,9 @@ eqjoinsel_semi(FmgrInfo *eqproc, Oid collation,
  * Outputs:
  *	hasmatch1[], hasmatch2[]: pre-zeroed arrays of lengths nvalues1, nvalues2;
  *		entries are set to true if that MCV has a match on the other side
+ *	matchindex1[], matchindex2[]: optional arrays of the same lengths;
+ *		initialized here to -1, then set to the opposite list's zero-based
+ *		index for each match: matchindex1[i] = j and matchindex2[j] = i
  *	*p_nmatches: receives number of MCV pairs that match
  *	*p_matchprodfreq: receives sum(sslot1->numbers[i] * sslot2->numbers[j])
  *		for matching MCVs
@@ -2944,11 +3000,19 @@ eqjoinsel_find_matches(FmgrInfo *eqproc, Oid collation,
 					   AttStatsSlot *sslot1, AttStatsSlot *sslot2,
 					   int nvalues1, int nvalues2,
 					   bool *hasmatch1, bool *hasmatch2,
+					   int *matchindex1, int *matchindex2,
 					   int *p_nmatches, double *p_matchprodfreq)
 {
 	LOCAL_FCINFO(fcinfo, 2);
 	double		matchprodfreq = 0.0;
 	int			nmatches = 0;
+
+	if (matchindex1)
+		for (int i = 0; i < nvalues1; i++)
+			matchindex1[i] = -1;
+	if (matchindex2)
+		for (int j = 0; j < nvalues2; j++)
+			matchindex2[j] = -1;
 
 	/*
 	 * Save a few cycles by setting up the fcinfo struct just once.  Using
@@ -2971,11 +3035,13 @@ eqjoinsel_find_matches(FmgrInfo *eqproc, Oid collation,
 		AttStatsSlot *statsHash;
 		bool	   *hasMatchProbe;
 		bool	   *hasMatchHash;
+		int		   *matchindexProbe;
+		int		   *matchindexHash;
 		int			nvaluesProbe;
 		int			nvaluesHash;
 
 		/* Make sure we build the hash table on the smaller array. */
-		if (sslot1->nvalues >= sslot2->nvalues)
+		if (nvalues1 >= nvalues2)
 		{
 			statsProbe = sslot1;
 			statsHash = sslot2;
@@ -2983,6 +3049,8 @@ eqjoinsel_find_matches(FmgrInfo *eqproc, Oid collation,
 			hasMatchHash = hasmatch2;
 			nvaluesProbe = nvalues1;
 			nvaluesHash = nvalues2;
+			matchindexProbe = matchindex1;
+			matchindexHash = matchindex2;
 		}
 		else
 		{
@@ -2994,6 +3062,8 @@ eqjoinsel_find_matches(FmgrInfo *eqproc, Oid collation,
 			hasMatchHash = hasmatch1;
 			nvaluesProbe = nvalues2;
 			nvaluesHash = nvalues1;
+			matchindexProbe = matchindex2;
+			matchindexHash = matchindex1;
 		}
 
 		/*
@@ -3063,6 +3133,10 @@ eqjoinsel_find_matches(FmgrInfo *eqproc, Oid collation,
 			if (entry != NULL && !hasMatchHash[entry->index])
 			{
 				hasMatchHash[entry->index] = hasMatchProbe[i] = true;
+				if (matchindexHash)
+					matchindexHash[entry->index] = i;
+				if (matchindexProbe)
+					matchindexProbe[i] = entry->index;
 				nmatches++;
 				matchprodfreq += statsHash->numbers[entry->index] * statsProbe->numbers[i];
 			}
@@ -3104,6 +3178,10 @@ eqjoinsel_find_matches(FmgrInfo *eqproc, Oid collation,
 				if (!fcinfo->isnull && DatumGetBool(fresult))
 				{
 					hasmatch1[i] = hasmatch2[j] = true;
+					if (matchindex1)
+						matchindex1[i] = j;
+					if (matchindex2)
+						matchindex2[j] = i;
 					matchprodfreq += sslot1->numbers[i] * sslot2->numbers[j];
 					nmatches++;
 					break;
@@ -3178,7 +3256,332 @@ mcvs_equal(MCVHashTable_hash *tab, Datum key0, Datum key1)
 }
 
 /*
+ * distinctjoinsel_semi_internal --- estimate inequality existence.
+ *
+ * Input 1 is the outer side and input 2 is the inner side.  eqproc and the hash
+ * functions retain the original operator's argument order; op_is_reversed has
+ * the same meaning as in eqjoinsel_find_matches.
+ *
+ * Equality match indices identify the inner MCV that cannot satisfy the
+ * inequality for a given outer MCV.  Any other inner MCV is a partner.
+ * IS DISTINCT FROM also treats NULL as a comparable value; ordinary "<>"
+ * never matches NULL.  The slots and their frequencies are unchanged.
+ *
+ * ANTI joins use this same matching fraction; costsize.c takes its complement.
+ */
+static double
+distinctjoinsel_semi_internal(FmgrInfo *eqproc, Oid collation,
+							  Oid hashLeft, Oid hashRight,
+							  bool op_is_reversed,
+							  VariableStatData *vardata2,
+							  double nd1, double nd2,
+							  bool isdefault1, bool isdefault2,
+							  AttStatsSlot *sslot1, AttStatsSlot *sslot2,
+							  Form_pg_statistic stats1, Form_pg_statistic stats2,
+							  bool have_mcvs1, bool have_mcvs2,
+							  RelOptInfo *inner_rel,
+							  bool null_safe_compare)
+{
+	double		nullfrac1 = stats1 ? stats1->stanullfrac : 0.0;
+	double		nullfrac2 = stats2 ? stats2->stanullfrac : 0.0;
+	bool		null_partner = null_safe_compare && nullfrac2 > 0.0;
+	double		rhs_rows = inner_rel->rows;
+	int			nvalues1 = have_mcvs1 ? sslot1->nvalues : 0;
+	int			nvalues2 = have_mcvs2 ? sslot2->nvalues : 0;
+	int			clamped_nvalues2;
+	bool	   *hasmatch1 = NULL;
+	bool	   *hasmatch2 = NULL;
+	int		   *matchindex1 = NULL;
+	int		   *matchindex2 = NULL;
+	int			nmatches = 0;
+	double		matchprodfreq = 0.0;
+	double		sumfreq1 = 0.0;
+	double		sumfreq2 = 0.0;
+	double		otherfreq1;
+	double		otherfreq2;
+	double		othernd2;
+	double		uncertainfrac;
+	double		selec = 0.0;
+
+	if (IS_DUMMY_REL(inner_rel))
+		return 0.0;
+	if (vardata2->rel)
+	{
+		/* Subquery rels may have tuples = 0 even when they produce rows. */
+		if (IS_DUMMY_REL(vardata2->rel) ||
+			(vardata2->rel->rtekind == RTE_RELATION &&
+			 vardata2->rel->tuples == 0.0))
+			return 0.0;
+		rhs_rows = Min(rhs_rows, vardata2->rel->rows);
+	}
+	if (rhs_rows <= 0.0)
+		return 0.0;
+
+	/*
+	 * These counts exclude NULL.  get_variable_numdistinct() always returns a
+	 * positive count, so override it for known all-NULL data.
+	 */
+	if (nullfrac1 >= 1.0)
+		nd1 = 0.0;
+	if (nullfrac2 >= 1.0)
+		nd2 = 0.0;
+
+	for (int i = 0; i < nvalues1; i++)
+		sumfreq1 += sslot1->numbers[i];
+	for (int j = 0; j < nvalues2; j++)
+		sumfreq2 += sslot2->numbers[j];
+	otherfreq1 = 1.0 - nullfrac1 - sumfreq1;
+	otherfreq2 = 1.0 - nullfrac2 - sumfreq2;
+	CLAMP_PROBABILITY(otherfreq1);
+	CLAMP_PROBABILITY(otherfreq2);
+
+	if (have_mcvs1 && have_mcvs2)
+	{
+		hasmatch1 = palloc0_array(bool, nvalues1);
+		hasmatch2 = palloc0_array(bool, nvalues2);
+		matchindex1 = palloc_array(int, nvalues1);
+		matchindex2 = palloc_array(int, nvalues2);
+		eqjoinsel_find_matches(eqproc, collation,
+							   hashLeft, hashRight, op_is_reversed,
+							   sslot1, sslot2, nvalues1, nvalues2,
+							   hasmatch1, hasmatch2, matchindex1, matchindex2,
+							   &nmatches, &matchprodfreq);
+	}
+
+	/*
+	 * Treat at most one estimated inner row as a singleton, for which pair
+	 * selectivity is also the existence probability.  Use the base
+	 * distribution without assuming which value survives filtering.  Estimate
+	 * non-NULL equality as eqjoinsel_inner does.  Ordinary "<>" subtracts
+	 * equality from the non-NULL pair frequency; IS DISTINCT FROM subtracts
+	 * equality and the NULL/NULL frequency from one.
+	 */
+	if (rhs_rows <= 1.0)
+	{
+		double		unmatchfreq1 = sumfreq1;
+		double		unmatchfreq2 = sumfreq2;
+		double		totalsel1 = matchprodfreq;
+		double		totalsel2 = matchprodfreq;
+
+		if (hasmatch1)
+			for (int i = 0; i < nvalues1; i++)
+				if (hasmatch1[i])
+					unmatchfreq1 -= sslot1->numbers[i];
+		if (hasmatch2)
+			for (int j = 0; j < nvalues2; j++)
+				if (hasmatch2[j])
+					unmatchfreq2 -= sslot2->numbers[j];
+		CLAMP_PROBABILITY(unmatchfreq1);
+		CLAMP_PROBABILITY(unmatchfreq2);
+		if (nd2 > nvalues2)
+			totalsel1 += unmatchfreq1 * otherfreq2 / (nd2 - nvalues2);
+		if (nd2 > nmatches)
+			totalsel1 += otherfreq1 * (otherfreq2 + unmatchfreq2) /
+				(nd2 - nmatches);
+		if (nd1 > nvalues1)
+			totalsel2 += unmatchfreq2 * otherfreq1 / (nd1 - nvalues1);
+		if (nd1 > nmatches)
+			totalsel2 += otherfreq2 * (otherfreq1 + unmatchfreq1) /
+				(nd1 - nmatches);
+		if (null_safe_compare)
+			selec = 1.0 - nullfrac1 * nullfrac2;
+		else
+			selec = (1.0 - nullfrac1) * (1.0 - nullfrac2);
+		selec -= Min(totalsel1, totalsel2);
+	}
+	else
+	{
+		/*
+		 * As in eqjoinsel_semi, retain the most frequent inner MCVs if the
+		 * estimated input cannot contain all distinct values.  NULL consumes
+		 * a separate category.  Match indices refer to the unchanged slots,
+		 * so checking the prefix needs no second round of comparisons. This
+		 * clamps value counts but does not adjust the base distribution for
+		 * inner restrictions.
+		 */
+		if (nd2 > Max(rhs_rows - (nullfrac2 > 0.0), 0.0))
+		{
+			nd2 = Max(rhs_rows - (nullfrac2 > 0.0), 0.0);
+			isdefault2 = false;
+		}
+		clamped_nvalues2 = Min(nvalues2, nd2);
+		othernd2 = Max(nd2 - clamped_nvalues2, 0.0);
+
+		/*
+		 * A sole unidentified value uses the complement of equality's
+		 * heuristic.
+		 */
+		uncertainfrac = (!isdefault1 && !isdefault2) ?
+			1.0 - 1.0 / Max(Max(nd1, nd2), 1.0) : 1.0 - DEFAULT_EQ_SEL;
+
+		/* One distinct partner admits the full outer MCV frequency. */
+		for (int i = 0; i < nvalues1; i++)
+		{
+			int			j = matchindex1 ? matchindex1[i] : -1;
+			bool		equal_mcv = j >= 0 && j < clamped_nvalues2;
+			double		matchfrac = 0.0;
+
+			/* Exclude the equal MCV; NULL is a partner only for DISTINCT. */
+			if (null_partner || clamped_nvalues2 > (equal_mcv ? 1 : 0))
+				matchfrac = 1.0;
+			else if (othernd2 > 0.0 && otherfreq2 > 0.0)
+			{
+				if (nd2 > 1.0)
+					matchfrac = 1.0;
+				else
+					matchfrac = uncertainfrac;
+			}
+			selec += sslot1->numbers[i] * matchfrac;
+		}
+
+		/* Only DISTINCT lets outer NULL match a non-NULL inner value. */
+		if (null_safe_compare && nd2 > 0.0)
+			selec += nullfrac1;
+
+		/* A NULL partner or two non-NULL values match every outer residual. */
+		if (null_partner || nd2 > 1.0)
+			selec += otherfreq1;
+		else if (clamped_nvalues2 == 1)
+		{
+			/*
+			 * If the sole inner value is an outer MCV, every outer residual
+			 * value differs from it.  Otherwise estimate its outer frequency
+			 * uniformly over the residual distinct values, capped at the
+			 * least frequent outer MCV when one is available.
+			 */
+			double		equalfreq = 0.0;
+
+			if (!matchindex2 || matchindex2[0] < 0)
+			{
+				equalfreq = otherfreq1 / Max(nd1 - nvalues1, 1.0);
+				if (nvalues1 > 0)
+					equalfreq = Min(equalfreq, sslot1->numbers[nvalues1 - 1]);
+			}
+			selec += otherfreq1 - equalfreq;
+		}
+		else if (othernd2 > 0.0 && otherfreq2 > 0.0)
+			selec += otherfreq1 * uncertainfrac;
+	}
+
+	if (hasmatch1)
+		pfree(hasmatch1);
+	if (hasmatch2)
+		pfree(hasmatch2);
+	if (matchindex1)
+		pfree(matchindex1);
+	if (matchindex2)
+		pfree(matchindex2);
+	CLAMP_PROBABILITY(selec);
+	return selec;
+}
+
+/*
+ * distinctjoinsel_semi --- gather statistics for inequality SEMI/ANTI joins.
+ *
+ * eqoperator is the equality negator of the original inequality operator.
+ * Use it for MCV comparisons, security checks and hash support, then pass the
+ * statistics in outer/inner order to distinctjoinsel_semi_internal.
+ * null_safe_compare selects IS DISTINCT FROM semantics; false selects "<>".
+ */
+static Datum
+distinctjoinsel_semi(PlannerInfo *root,
+					 Oid eqoperator, List *args,
+					 SpecialJoinInfo *sjinfo, Oid collation,
+					 bool null_safe_compare)
+{
+	double		selec;
+	VariableStatData vardata1;
+	VariableStatData vardata2;
+	double		nd1;
+	double		nd2;
+	bool		isdefault1;
+	bool		isdefault2;
+	Oid			opfuncoid = get_opcode(eqoperator);
+	FmgrInfo	eqproc;
+	Oid			hashLeft = InvalidOid;
+	Oid			hashRight = InvalidOid;
+	AttStatsSlot sslot1;
+	AttStatsSlot sslot2;
+	Form_pg_statistic stats1 = NULL;
+	Form_pg_statistic stats2 = NULL;
+	bool		have_mcvs1 = false;
+	bool		have_mcvs2 = false;
+	bool		join_is_reversed;
+	RelOptInfo *inner_rel;
+
+	get_join_variables(root, args, sjinfo,
+					   &vardata1, &vardata2, &join_is_reversed);
+	nd1 = get_variable_numdistinct(&vardata1, &isdefault1);
+	nd2 = get_variable_numdistinct(&vardata2, &isdefault2);
+	memset(&sslot1, 0, sizeof(sslot1));
+	memset(&sslot2, 0, sizeof(sslot2));
+	memset(&eqproc, 0, sizeof(eqproc));
+
+	if (HeapTupleIsValid(vardata1.statsTuple))
+	{
+		stats1 = (Form_pg_statistic) GETSTRUCT(vardata1.statsTuple);
+		if (statistic_proc_security_check(&vardata1, opfuncoid))
+			have_mcvs1 = get_attstatsslot(&sslot1, vardata1.statsTuple,
+										  STATISTIC_KIND_MCV, InvalidOid,
+										  ATTSTATSSLOT_VALUES | ATTSTATSSLOT_NUMBERS);
+	}
+	if (HeapTupleIsValid(vardata2.statsTuple))
+	{
+		stats2 = (Form_pg_statistic) GETSTRUCT(vardata2.statsTuple);
+		if (statistic_proc_security_check(&vardata2, opfuncoid))
+			have_mcvs2 = get_attstatsslot(&sslot2, vardata2.statsTuple,
+										  STATISTIC_KIND_MCV, InvalidOid,
+										  ATTSTATSSLOT_VALUES | ATTSTATSSLOT_NUMBERS);
+	}
+	if (have_mcvs1 && have_mcvs2)
+	{
+		fmgr_info(opfuncoid, &eqproc);
+		if (sslot1.nvalues + sslot2.nvalues >= EQJOINSEL_MCV_HASH_THRESHOLD)
+			(void) get_op_hash_functions_ext(eqoperator,
+											 exprType((Node *) linitial(args)),
+											 &hashLeft, &hashRight);
+	}
+
+	inner_rel = find_join_input_rel(root, sjinfo->min_righthand);
+	if (!join_is_reversed)
+		selec = distinctjoinsel_semi_internal(&eqproc, collation,
+											  hashLeft, hashRight, false,
+											  &vardata2, nd1, nd2,
+											  isdefault1, isdefault2,
+											  &sslot1, &sslot2, stats1, stats2,
+											  have_mcvs1, have_mcvs2, inner_rel,
+											  null_safe_compare);
+	else
+		selec = distinctjoinsel_semi_internal(&eqproc, collation,
+											  hashLeft, hashRight, true,
+											  &vardata1, nd2, nd1,
+											  isdefault2, isdefault1,
+											  &sslot2, &sslot1, stats2, stats1,
+											  have_mcvs2, have_mcvs1, inner_rel,
+											  null_safe_compare);
+
+	free_attstatsslot(&sslot1);
+	free_attstatsslot(&sslot2);
+	ReleaseVariableStats(vardata1);
+	ReleaseVariableStats(vardata2);
+	PG_RETURN_FLOAT8((float8) selec);
+}
+
+/*
  *		neqjoinsel		- Join selectivity of "!="
+ *
+ * An optional sixth boolean argument, null_safe_compare, enables
+ * IS DISTINCT FROM semantics.
+ *
+ * For inner and outer joins with an equality negator, let E be ordinary "="
+ * selectivity and n1/n2 the input NULL fractions.  Ordinary "<>" excludes all
+ * pairs containing NULL, so its selectivity is (1 - n1) * (1 - n2) - E.
+ * IS DISTINCT FROM complements eqjoinsel() with NULL matching enabled,
+ * giving 1 - E - n1 * n2.
+ *
+ * SEMI/ANTI joins use distinctjoinsel_semi() when an equality negator is
+ * available to estimate whether each outer row has any unequal inner partner.
+ * Both return the matching fraction; the caller complements it for ANTI rows.
  */
 Datum
 neqjoinsel(PG_FUNCTION_ARGS)
@@ -3190,30 +3593,26 @@ neqjoinsel(PG_FUNCTION_ARGS)
 	SpecialJoinInfo *sjinfo = (SpecialJoinInfo *) PG_GETARG_POINTER(4);
 	Oid			collation = PG_GET_COLLATION();
 	float8		result;
+	bool		null_safe_compare = PG_NARGS() >= 6 && PG_GETARG_BOOL(5);
 
 	if (jointype == JOIN_SEMI || jointype == JOIN_ANTI)
 	{
-		/*
-		 * For semi-joins, if there is more than one distinct value in the RHS
-		 * relation then every non-null LHS row must find a row to join since
-		 * it can only be equal to one of them.  We'll assume that there is
-		 * always more than one distinct RHS value for the sake of stability,
-		 * though in theory we could have special cases for empty RHS
-		 * (selectivity = 0) and single-distinct-value RHS (selectivity =
-		 * fraction of LHS that has the same value as the single RHS value).
-		 *
-		 * For anti-joins, if we use the same assumption that there is more
-		 * than one distinct key in the RHS relation, then every non-null LHS
-		 * row must be suppressed by the anti-join.
-		 *
-		 * So either way, the selectivity estimate should be 1 - nullfrac.
-		 */
+		Oid			eqoperator = get_negator(operator);
 		VariableStatData leftvar;
 		VariableStatData rightvar;
 		bool		reversed;
 		HeapTuple	statsTuple;
 		double		nullfrac;
 
+		if (OidIsValid(eqoperator))
+			return distinctjoinsel_semi(root, eqoperator, args,
+										sjinfo, collation, null_safe_compare);
+
+		/*
+		 * Without an equality negator, retain the heuristic that every
+		 * non-NULL outer row has a partner.  SEMI and ANTI both return the
+		 * matching fraction; the caller complements it for ANTI output rows.
+		 */
 		get_join_variables(root, args, sjinfo, &leftvar, &rightvar, &reversed);
 		statsTuple = reversed ? rightvar.statsTuple : leftvar.statsTuple;
 		if (HeapTupleIsValid(statsTuple))
@@ -3228,28 +3627,51 @@ neqjoinsel(PG_FUNCTION_ARGS)
 	else
 	{
 		/*
-		 * We want 1 - eqjoinsel() where the equality operator is the one
-		 * associated with this != operator, that is, its negator.
+		 * Reuse the equality estimate for this operator's negator.  For IS
+		 * DISTINCT FROM, include NULL/NULL equality before taking the
+		 * complement.  Ordinary "<>" must also exclude pairs containing NULL.
 		 */
 		Oid			eqop = get_negator(operator);
 
 		if (eqop)
 		{
 			result =
-				DatumGetFloat8(DirectFunctionCall5Coll(eqjoinsel,
+				DatumGetFloat8(DirectFunctionCall6Coll(eqjoinsel,
 													   collation,
 													   PointerGetDatum(root),
 													   ObjectIdGetDatum(eqop),
 													   PointerGetDatum(args),
 													   Int16GetDatum(jointype),
-													   PointerGetDatum(sjinfo)));
+													   PointerGetDatum(sjinfo),
+													   BoolGetDatum(null_safe_compare)));
 		}
 		else
 		{
 			/* Use default selectivity (should we raise an error instead?) */
 			result = DEFAULT_EQ_SEL;
 		}
-		result = 1.0 - result;
+		if (null_safe_compare)
+			result = 1.0 - result;
+		else
+		{
+			VariableStatData leftvar;
+			VariableStatData rightvar;
+			bool		reversed;
+			double		nullfrac1 = 0.0;
+			double		nullfrac2 = 0.0;
+
+			get_join_variables(root, args, sjinfo, &leftvar, &rightvar,
+							   &reversed);
+			if (HeapTupleIsValid(leftvar.statsTuple))
+				nullfrac1 = ((Form_pg_statistic) GETSTRUCT(leftvar.statsTuple))->stanullfrac;
+			if (HeapTupleIsValid(rightvar.statsTuple))
+				nullfrac2 = ((Form_pg_statistic) GETSTRUCT(rightvar.statsTuple))->stanullfrac;
+			ReleaseVariableStats(leftvar);
+			ReleaseVariableStats(rightvar);
+
+			result = (1.0 - nullfrac1) * (1.0 - nullfrac2) - result;
+			CLAMP_PROBABILITY(result);
+		}
 	}
 
 	PG_RETURN_FLOAT8(result);

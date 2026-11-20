@@ -156,4 +156,155 @@ CREATE TEMP TABLE char_table_1 AS
 ANALYZE char_table_1;
 EXPLAIN (COSTS OFF) SELECT * FROM char_table_1 WHERE c < 'Q';
 
+-- Test inequality and NULL-safe equality join estimates with NULLs and values
+-- outside the MCV lists.  SEMI/ANTI estimates measure existence of a partner.
+CREATE TEMP TABLE distinct_outer AS
+SELECT CASE WHEN g <= 20 THEN NULL WHEN g <= 80 THEN 1 ELSE 2 END AS a,
+       g AS tail, g % 40 AS many,
+       CASE WHEN g <= 20 THEN NULL ELSE g END AS nullable_tail
+FROM generate_series(1, 100) g;
+CREATE TEMP TABLE distinct_inner AS
+SELECT 1 AS one, NULL::integer AS nulls, g % 2 + 1 AS two,
+       (g % 40)::bigint AS many, g AS tail
+FROM generate_series(1, 100) g;
+ANALYZE distinct_outer;
+ANALYZE distinct_inner;
+
+-- Ordinary <> excludes pairs containing NULL from its equality complement.
+SELECT explain_mask_costs($$
+SELECT FROM distinct_outer x, distinct_outer y WHERE x.a <> y.a;$$,
+true, true, false, true);
+SELECT explain_mask_costs($$
+SELECT FROM distinct_outer x, distinct_inner y WHERE y.nulls <> x.a;$$,
+true, true, false, true);
+
+-- Count NULL/NULL pairs even when non-NULL values are outside the MCV lists.
+SELECT explain_mask_costs($$
+SELECT FROM distinct_outer x, distinct_outer y
+WHERE x.nullable_tail IS NOT DISTINCT FROM y.nullable_tail;$$,
+true, true, false, true);
+SELECT explain_mask_costs($$
+SELECT FROM distinct_outer x, distinct_outer y
+WHERE x.nullable_tail IS DISTINCT FROM y.nullable_tail;$$,
+true, true, false, true);
+
+-- NULL matches must not suppress non-MCV matches in a NULL-safe SEMI join.
+SELECT explain_mask_costs($$
+SELECT x.nullable_tail FROM distinct_outer x WHERE EXISTS
+  (SELECT FROM distinct_outer y
+   WHERE x.nullable_tail IS NOT DISTINCT FROM y.nullable_tail);$$,
+true, true, false, true);
+
+-- Outer NULLs have no NULL-safe equality partner in a non-NULL inner column.
+SELECT explain_mask_costs($$
+SELECT x.nullable_tail FROM distinct_outer x WHERE NOT EXISTS
+  (SELECT FROM distinct_inner y
+   WHERE x.nullable_tail IS NOT DISTINCT FROM y.tail);$$,
+true, true, false, true);
+
+-- All-NULL inner data matches only the outer NULLs, even without MCV lists.
+SELECT explain_mask_costs($$
+SELECT x.nullable_tail FROM distinct_outer x WHERE EXISTS
+  (SELECT FROM distinct_inner y
+   WHERE x.nullable_tail IS NOT DISTINCT FROM y.nulls);$$,
+true, true, false, true);
+
+-- A sole inner value gives SEMI unequal outer rows and ANTI equal outer rows.
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE EXISTS
+  (SELECT FROM distinct_inner y WHERE x.a IS DISTINCT FROM y.one);$$,
+true, true, false, true);
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE NOT EXISTS
+  (SELECT FROM distinct_inner y WHERE y.one IS DISTINCT FROM x.a);$$,
+true, true, false, true);
+
+-- With an all-NULL inner input, DISTINCT ANTI keeps only outer NULLs.
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE NOT EXISTS
+  (SELECT FROM distinct_inner y WHERE x.a IS DISTINCT FROM y.nulls);$$,
+true, true, false, true);
+
+-- Two different inner values provide a DISTINCT partner for every outer row.
+-- Zero output rows are estimated as one because of clamp_row_est().
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE NOT EXISTS
+  (SELECT FROM distinct_inner y WHERE x.a IS DISTINCT FROM y.two);$$,
+true, true, false, true);
+
+-- All outer values are outside the MCV list; one equals the sole inner value.
+SELECT explain_mask_costs($$
+SELECT x.tail FROM distinct_outer x WHERE EXISTS
+  (SELECT FROM distinct_inner y WHERE x.tail IS DISTINCT FROM y.one);$$,
+true, true, false, true);
+
+-- Cross-type MCV lists exercise reversed operands and hashing in assertion builds.
+SELECT explain_mask_costs($$
+SELECT x.many FROM distinct_outer x WHERE NOT EXISTS
+  (SELECT FROM distinct_inner y WHERE y.many IS DISTINCT FROM x.many);$$,
+true, true, false, true);
+
+-- Ordinary <> uses the same existence estimate but cannot match either NULL.
+-- A sole inner value matches only unequal non-NULL outer rows.
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE EXISTS
+  (SELECT FROM distinct_inner y WHERE x.a <> y.one);$$,
+true, true, false, true);
+
+-- An all-NULL inner input has no <> partners, so ANTI keeps all outer rows.
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE NOT EXISTS
+  (SELECT FROM distinct_inner y WHERE x.a <> y.nulls);$$,
+true, true, false, true);
+
+-- Two non-NULL inner values match every non-NULL outer row, leaving NULLs to ANTI.
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE NOT EXISTS
+  (SELECT FROM distinct_inner y WHERE x.a <> y.two);$$,
+true, true, false, true);
+
+-- With one inner row, use the non-NULL pair frequency minus equality.
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE EXISTS
+  (SELECT FROM (SELECT one FROM distinct_inner LIMIT 1) y WHERE x.a <> y.one);$$,
+true, true, false, true);
+
+-- Unrecognized estimators keep their five-argument API and legacy estimates.
+-- Both operators may use the same estimator, as some extensions do.
+CREATE SCHEMA distinct_est;
+CREATE OPERATOR distinct_est.= (
+  LEFTARG = integer, RIGHTARG = integer,
+  FUNCTION = pg_catalog.int4eq, NEGATOR = OPERATOR(distinct_est.<>),
+  JOIN = pg_catalog.contjoinsel);
+CREATE OPERATOR distinct_est.<> (
+  LEFTARG = integer, RIGHTARG = integer,
+  FUNCTION = pg_catalog.int4ne, NEGATOR = OPERATOR(distinct_est.=),
+  JOIN = pg_catalog.contjoinsel);
+SET search_path = distinct_est, public, pg_catalog;
+SELECT explain_mask_costs($$
+SELECT FROM distinct_outer x, distinct_inner y
+WHERE x.tail IS DISTINCT FROM y.tail;$$,
+false, true, false, true);
+SELECT explain_mask_costs($$
+SELECT FROM distinct_outer x, distinct_inner y
+WHERE x.tail IS NOT DISTINCT FROM y.tail;$$,
+false, true, false, true);
+
+-- An alias of eqjoinsel is still a separate, five-argument catalog procedure.
+CREATE FUNCTION distinct_est.join_est(internal, oid, internal, smallint, internal)
+  RETURNS double precision AS 'eqjoinsel' LANGUAGE internal STRICT;
+ALTER OPERATOR distinct_est.= (integer, integer)
+  SET (JOIN = distinct_est.join_est);
+SELECT explain_mask_costs($$
+SELECT FROM distinct_outer x, distinct_outer y
+WHERE x.a IS NOT DISTINCT FROM y.a;$$,
+false, true, false, true);
+RESET search_path;
+DROP OPERATOR distinct_est.= (integer, integer);
+DROP OPERATOR distinct_est.<> (integer, integer);
+DROP FUNCTION distinct_est.join_est(internal, oid, internal, smallint, internal);
+DROP SCHEMA distinct_est;
+
+DROP TABLE distinct_outer, distinct_inner;
+
 DROP FUNCTION explain_mask_costs(text, bool, bool, bool, bool);

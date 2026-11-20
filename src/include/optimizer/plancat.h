@@ -51,6 +51,12 @@ extern Selectivity join_selectivity(PlannerInfo *root,
 									Oid inputcollid,
 									JoinType jointype,
 									SpecialJoinInfo *sjinfo);
+extern Selectivity nullsafe_join_selectivity(PlannerInfo *root,
+											 Oid operatorid,
+											 List *args,
+											 Oid inputcollid,
+											 JoinType jointype,
+											 SpecialJoinInfo *sjinfo);
 
 extern Selectivity function_selectivity(PlannerInfo *root,
 										Oid funcid,
