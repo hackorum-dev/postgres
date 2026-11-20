@@ -224,4 +224,335 @@ EXPLAIN (COSTS OFF) SELECT * FROM char_table_1 WHERE c < 'Q';
    Filter: (c < 'Q'::"char")
 (2 rows)
 
+-- Test inequality and NULL-safe equality join estimates with NULLs and values
+-- outside the MCV lists.  SEMI/ANTI estimates measure existence of a partner.
+CREATE TEMP TABLE distinct_outer AS
+SELECT CASE WHEN g <= 20 THEN NULL WHEN g <= 80 THEN 1 ELSE 2 END AS a,
+       g AS tail, g % 40 AS many,
+       CASE WHEN g <= 20 THEN NULL ELSE g END AS nullable_tail
+FROM generate_series(1, 100) g;
+CREATE TEMP TABLE distinct_inner AS
+SELECT 1 AS one, NULL::integer AS nulls, g % 2 + 1 AS two,
+       (g % 40)::bigint AS many, g AS tail
+FROM generate_series(1, 100) g;
+ANALYZE distinct_outer;
+ANALYZE distinct_inner;
+-- Ordinary <> excludes pairs containing NULL from its equality complement.
+SELECT explain_mask_costs($$
+SELECT FROM distinct_outer x, distinct_outer y WHERE x.a <> y.a;$$,
+true, true, false, true);
+                                         explain_mask_costs                                          
+-----------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=N..N rows=2400 width=N) (actual rows=2400.00 loops=1)
+   Join Filter: (x.a <> y.a)
+   Rows Removed by Join Filter: 7600
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=100)
+         ->  Seq Scan on distinct_outer y  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+(6 rows)
+
+SELECT explain_mask_costs($$
+SELECT FROM distinct_outer x, distinct_inner y WHERE y.nulls <> x.a;$$,
+true, true, false, true);
+                                         explain_mask_costs                                          
+-----------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=N..N rows=1 width=N) (actual rows=0.00 loops=1)
+   Join Filter: (y.nulls <> x.a)
+   Rows Removed by Join Filter: 10000
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=100)
+         ->  Seq Scan on distinct_inner y  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+(6 rows)
+
+-- Count NULL/NULL pairs even when non-NULL values are outside the MCV lists.
+SELECT explain_mask_costs($$
+SELECT FROM distinct_outer x, distinct_outer y
+WHERE x.nullable_tail IS NOT DISTINCT FROM y.nullable_tail;$$,
+true, true, false, true);
+                                         explain_mask_costs                                          
+-----------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=N..N rows=480 width=N) (actual rows=480.00 loops=1)
+   Join Filter: (NOT (x.nullable_tail IS DISTINCT FROM y.nullable_tail))
+   Rows Removed by Join Filter: 9520
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=100)
+         ->  Seq Scan on distinct_outer y  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+(6 rows)
+
+SELECT explain_mask_costs($$
+SELECT FROM distinct_outer x, distinct_outer y
+WHERE x.nullable_tail IS DISTINCT FROM y.nullable_tail;$$,
+true, true, false, true);
+                                         explain_mask_costs                                          
+-----------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=N..N rows=9520 width=N) (actual rows=9520.00 loops=1)
+   Join Filter: (x.nullable_tail IS DISTINCT FROM y.nullable_tail)
+   Rows Removed by Join Filter: 480
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=100)
+         ->  Seq Scan on distinct_outer y  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+(6 rows)
+
+-- NULL matches must not suppress non-MCV matches in a NULL-safe SEMI join.
+SELECT explain_mask_costs($$
+SELECT x.nullable_tail FROM distinct_outer x WHERE EXISTS
+  (SELECT FROM distinct_outer y
+   WHERE x.nullable_tail IS NOT DISTINCT FROM y.nullable_tail);$$,
+true, true, false, true);
+                                         explain_mask_costs                                          
+-----------------------------------------------------------------------------------------------------
+ Nested Loop Semi Join  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   Join Filter: (NOT (x.nullable_tail IS DISTINCT FROM y.nullable_tail))
+   Rows Removed by Join Filter: 4760
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=48.60 loops=100)
+         ->  Seq Scan on distinct_outer y  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+(6 rows)
+
+-- Outer NULLs have no NULL-safe equality partner in a non-NULL inner column.
+SELECT explain_mask_costs($$
+SELECT x.nullable_tail FROM distinct_outer x WHERE NOT EXISTS
+  (SELECT FROM distinct_inner y
+   WHERE x.nullable_tail IS NOT DISTINCT FROM y.tail);$$,
+true, true, false, true);
+                                         explain_mask_costs                                          
+-----------------------------------------------------------------------------------------------------
+ Nested Loop Anti Join  (cost=N..N rows=20 width=N) (actual rows=20.00 loops=1)
+   Join Filter: (NOT (x.nullable_tail IS DISTINCT FROM y.tail))
+   Rows Removed by Join Filter: 6760
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=68.40 loops=100)
+         ->  Seq Scan on distinct_inner y  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+(6 rows)
+
+-- All-NULL inner data matches only the outer NULLs, even without MCV lists.
+SELECT explain_mask_costs($$
+SELECT x.nullable_tail FROM distinct_outer x WHERE EXISTS
+  (SELECT FROM distinct_inner y
+   WHERE x.nullable_tail IS NOT DISTINCT FROM y.nulls);$$,
+true, true, false, true);
+                                         explain_mask_costs                                          
+-----------------------------------------------------------------------------------------------------
+ Nested Loop Semi Join  (cost=N..N rows=20 width=N) (actual rows=20.00 loops=1)
+   Join Filter: (NOT (x.nullable_tail IS DISTINCT FROM y.nulls))
+   Rows Removed by Join Filter: 8000
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=80.20 loops=100)
+         ->  Seq Scan on distinct_inner y  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+(6 rows)
+
+-- A sole inner value gives SEMI unequal outer rows and ANTI equal outer rows.
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE EXISTS
+  (SELECT FROM distinct_inner y WHERE x.a IS DISTINCT FROM y.one);$$,
+true, true, false, true);
+                                         explain_mask_costs                                          
+-----------------------------------------------------------------------------------------------------
+ Nested Loop Semi Join  (cost=N..N rows=40 width=N) (actual rows=40.00 loops=1)
+   Join Filter: (x.a IS DISTINCT FROM y.one)
+   Rows Removed by Join Filter: 6000
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=60.40 loops=100)
+         ->  Seq Scan on distinct_inner y  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+(6 rows)
+
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE NOT EXISTS
+  (SELECT FROM distinct_inner y WHERE y.one IS DISTINCT FROM x.a);$$,
+true, true, false, true);
+                                         explain_mask_costs                                          
+-----------------------------------------------------------------------------------------------------
+ Nested Loop Anti Join  (cost=N..N rows=60 width=N) (actual rows=60.00 loops=1)
+   Join Filter: (y.one IS DISTINCT FROM x.a)
+   Rows Removed by Join Filter: 6000
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=60.40 loops=100)
+         ->  Seq Scan on distinct_inner y  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+(6 rows)
+
+-- With an all-NULL inner input, DISTINCT ANTI keeps only outer NULLs.
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE NOT EXISTS
+  (SELECT FROM distinct_inner y WHERE x.a IS DISTINCT FROM y.nulls);$$,
+true, true, false, true);
+                                         explain_mask_costs                                          
+-----------------------------------------------------------------------------------------------------
+ Nested Loop Anti Join  (cost=N..N rows=20 width=N) (actual rows=20.00 loops=1)
+   Join Filter: (x.a IS DISTINCT FROM y.nulls)
+   Rows Removed by Join Filter: 2000
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=20.80 loops=100)
+         ->  Seq Scan on distinct_inner y  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+(6 rows)
+
+-- Two different inner values provide a DISTINCT partner for every outer row.
+-- Zero output rows are estimated as one because of clamp_row_est().
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE NOT EXISTS
+  (SELECT FROM distinct_inner y WHERE x.a IS DISTINCT FROM y.two);$$,
+true, true, false, true);
+                                        explain_mask_costs                                         
+---------------------------------------------------------------------------------------------------
+ Nested Loop Anti Join  (cost=N..N rows=1 width=N) (actual rows=0.00 loops=1)
+   Join Filter: (x.a IS DISTINCT FROM y.two)
+   Rows Removed by Join Filter: 20
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=1.20 loops=100)
+         ->  Seq Scan on distinct_inner y  (cost=N..N rows=100 width=N) (actual rows=2.00 loops=1)
+(6 rows)
+
+-- All outer values are outside the MCV list; one equals the sole inner value.
+SELECT explain_mask_costs($$
+SELECT x.tail FROM distinct_outer x WHERE EXISTS
+  (SELECT FROM distinct_inner y WHERE x.tail IS DISTINCT FROM y.one);$$,
+true, true, false, true);
+                                         explain_mask_costs                                          
+-----------------------------------------------------------------------------------------------------
+ Nested Loop Semi Join  (cost=N..N rows=99 width=N) (actual rows=99.00 loops=1)
+   Join Filter: (x.tail IS DISTINCT FROM y.one)
+   Rows Removed by Join Filter: 100
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=1.99 loops=100)
+         ->  Seq Scan on distinct_inner y  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+(6 rows)
+
+-- Cross-type MCV lists exercise reversed operands and hashing in assertion builds.
+SELECT explain_mask_costs($$
+SELECT x.many FROM distinct_outer x WHERE NOT EXISTS
+  (SELECT FROM distinct_inner y WHERE y.many IS DISTINCT FROM x.many);$$,
+true, true, false, true);
+                                        explain_mask_costs                                         
+---------------------------------------------------------------------------------------------------
+ Nested Loop Anti Join  (cost=N..N rows=1 width=N) (actual rows=0.00 loops=1)
+   Join Filter: (y.many IS DISTINCT FROM x.many)
+   Rows Removed by Join Filter: 3
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=1.03 loops=100)
+         ->  Seq Scan on distinct_inner y  (cost=N..N rows=100 width=N) (actual rows=2.00 loops=1)
+(6 rows)
+
+-- Ordinary <> uses the same existence estimate but cannot match either NULL.
+-- A sole inner value matches only unequal non-NULL outer rows.
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE EXISTS
+  (SELECT FROM distinct_inner y WHERE x.a <> y.one);$$,
+true, true, false, true);
+                                         explain_mask_costs                                          
+-----------------------------------------------------------------------------------------------------
+ Nested Loop Semi Join  (cost=N..N rows=20 width=N) (actual rows=20.00 loops=1)
+   Join Filter: (x.a <> y.one)
+   Rows Removed by Join Filter: 8000
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=80.20 loops=100)
+         ->  Seq Scan on distinct_inner y  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+(6 rows)
+
+-- An all-NULL inner input has no <> partners, so ANTI keeps all outer rows.
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE NOT EXISTS
+  (SELECT FROM distinct_inner y WHERE x.a <> y.nulls);$$,
+true, true, false, true);
+                                         explain_mask_costs                                          
+-----------------------------------------------------------------------------------------------------
+ Nested Loop Anti Join  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   Join Filter: (x.a <> y.nulls)
+   Rows Removed by Join Filter: 10000
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=100)
+         ->  Seq Scan on distinct_inner y  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+(6 rows)
+
+-- Two non-NULL inner values match every non-NULL outer row, leaving NULLs to ANTI.
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE NOT EXISTS
+  (SELECT FROM distinct_inner y WHERE x.a <> y.two);$$,
+true, true, false, true);
+                                         explain_mask_costs                                          
+-----------------------------------------------------------------------------------------------------
+ Nested Loop Anti Join  (cost=N..N rows=20 width=N) (actual rows=20.00 loops=1)
+   Join Filter: (x.a <> y.two)
+   Rows Removed by Join Filter: 2020
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=100 width=N) (actual rows=21.00 loops=100)
+         ->  Seq Scan on distinct_inner y  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+(6 rows)
+
+-- With one inner row, use the non-NULL pair frequency minus equality.
+SELECT explain_mask_costs($$
+SELECT x.a FROM distinct_outer x WHERE EXISTS
+  (SELECT FROM (SELECT one FROM distinct_inner LIMIT 1) y WHERE x.a <> y.one);$$,
+true, true, false, true);
+                                          explain_mask_costs                                           
+-------------------------------------------------------------------------------------------------------
+ Nested Loop Semi Join  (cost=N..N rows=20 width=N) (actual rows=20.00 loops=1)
+   Join Filter: (x.a <> distinct_inner.one)
+   Rows Removed by Join Filter: 80
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N) (actual rows=100.00 loops=1)
+   ->  Materialize  (cost=N..N rows=1 width=N) (actual rows=1.00 loops=100)
+         ->  Limit  (cost=N..N rows=1 width=N) (actual rows=1.00 loops=1)
+               ->  Seq Scan on distinct_inner  (cost=N..N rows=100 width=N) (actual rows=1.00 loops=1)
+(7 rows)
+
+-- Unrecognized estimators keep their five-argument API and legacy estimates.
+-- Both operators may use the same estimator, as some extensions do.
+CREATE SCHEMA distinct_est;
+CREATE OPERATOR distinct_est.= (
+  LEFTARG = integer, RIGHTARG = integer,
+  FUNCTION = pg_catalog.int4eq, NEGATOR = OPERATOR(distinct_est.<>),
+  JOIN = pg_catalog.contjoinsel);
+CREATE OPERATOR distinct_est.<> (
+  LEFTARG = integer, RIGHTARG = integer,
+  FUNCTION = pg_catalog.int4ne, NEGATOR = OPERATOR(distinct_est.=),
+  JOIN = pg_catalog.contjoinsel);
+SET search_path = distinct_est, public, pg_catalog;
+SELECT explain_mask_costs($$
+SELECT FROM distinct_outer x, distinct_inner y
+WHERE x.tail IS DISTINCT FROM y.tail;$$,
+false, true, false, true);
+                           explain_mask_costs                           
+------------------------------------------------------------------------
+ Nested Loop  (cost=N..N rows=9990 width=N)
+   Join Filter: (x.tail IS DISTINCT FROM y.tail)
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N)
+   ->  Materialize  (cost=N..N rows=100 width=N)
+         ->  Seq Scan on distinct_inner y  (cost=N..N rows=100 width=N)
+(5 rows)
+
+SELECT explain_mask_costs($$
+SELECT FROM distinct_outer x, distinct_inner y
+WHERE x.tail IS NOT DISTINCT FROM y.tail;$$,
+false, true, false, true);
+                           explain_mask_costs                           
+------------------------------------------------------------------------
+ Nested Loop  (cost=N..N rows=10 width=N)
+   Join Filter: (NOT (x.tail IS DISTINCT FROM y.tail))
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N)
+   ->  Materialize  (cost=N..N rows=100 width=N)
+         ->  Seq Scan on distinct_inner y  (cost=N..N rows=100 width=N)
+(5 rows)
+
+-- An alias of eqjoinsel is still a separate, five-argument catalog procedure.
+CREATE FUNCTION distinct_est.join_est(internal, oid, internal, smallint, internal)
+  RETURNS double precision AS 'eqjoinsel' LANGUAGE internal STRICT;
+ALTER OPERATOR distinct_est.= (integer, integer)
+  SET (JOIN = distinct_est.join_est);
+SELECT explain_mask_costs($$
+SELECT FROM distinct_outer x, distinct_outer y
+WHERE x.a IS NOT DISTINCT FROM y.a;$$,
+false, true, false, true);
+                           explain_mask_costs                           
+------------------------------------------------------------------------
+ Nested Loop  (cost=N..N rows=4000 width=N)
+   Join Filter: (NOT (x.a IS DISTINCT FROM y.a))
+   ->  Seq Scan on distinct_outer x  (cost=N..N rows=100 width=N)
+   ->  Materialize  (cost=N..N rows=100 width=N)
+         ->  Seq Scan on distinct_outer y  (cost=N..N rows=100 width=N)
+(5 rows)
+
+RESET search_path;
+DROP OPERATOR distinct_est.= (integer, integer);
+DROP OPERATOR distinct_est.<> (integer, integer);
+DROP FUNCTION distinct_est.join_est(internal, oid, internal, smallint, internal);
+DROP SCHEMA distinct_est;
+DROP TABLE distinct_outer, distinct_inner;
 DROP FUNCTION explain_mask_costs(text, bool, bool, bool, bool);

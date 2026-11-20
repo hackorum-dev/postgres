@@ -10728,15 +10728,15 @@ EXPLAIN (COSTS OFF)
 SELECT * FROM
 (SELECT n2.a FROM sj n1, sj n2 WHERE n1.a <> n2.a) q0, sl
 WHERE q0.a = 1;
-          QUERY PLAN           
--------------------------------
+             QUERY PLAN              
+-------------------------------------
  Nested Loop
-   Join Filter: (n1.a <> n2.a)
    ->  Nested Loop
-         ->  Seq Scan on sl
+         Join Filter: (n1.a <> n2.a)
          ->  Seq Scan on sj n2
                Filter: (a = 1)
-   ->  Seq Scan on sj n1
+         ->  Seq Scan on sj n1
+   ->  Seq Scan on sl
 (7 rows)
 
 -- Do not forget to replace relid in bare Var join clause (bug #19435)

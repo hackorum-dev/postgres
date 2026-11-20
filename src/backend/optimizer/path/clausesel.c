@@ -803,13 +803,31 @@ clause_selectivity_ext(PlannerInfo *root,
 	}
 	else if (is_notclause(clause))
 	{
-		/* inverse of the selectivity of the underlying clause */
-		s1 = 1.0 - clause_selectivity_ext(root,
-										  (Node *) get_notclausearg((Expr *) clause),
-										  varRelid,
-										  jointype,
-										  sjinfo,
-										  use_extended_stats);
+		Node	   *node = (Node *) get_notclausearg((Expr *) clause);
+
+		if (IsA(node, DistinctExpr) &&
+			treat_as_join_clause(root, node, rinfo, varRelid, sjinfo))
+		{
+			DistinctExpr *distinctexpr = (DistinctExpr *) node;
+
+			/* NOT DistinctExpr is IS NOT DISTINCT FROM; its operator is "=". */
+			s1 = nullsafe_join_selectivity(root,
+										   distinctexpr->opno,
+										   distinctexpr->args,
+										   distinctexpr->inputcollid,
+										   jointype,
+										   sjinfo);
+		}
+		else
+		{
+			/* inverse of the selectivity of the underlying clause */
+			s1 = 1.0 - clause_selectivity_ext(root,
+											  node,
+											  varRelid,
+											  jointype,
+											  sjinfo,
+											  use_extended_stats);
+		}
 	}
 	else if (is_andclause(clause))
 	{
@@ -838,15 +856,36 @@ clause_selectivity_ext(PlannerInfo *root,
 	{
 		OpExpr	   *opclause = (OpExpr *) clause;
 		Oid			opno = opclause->opno;
+		Oid			opno_negator = IsA(clause, DistinctExpr) ?
+			get_negator(opno) : InvalidOid;
+		bool		negate = IsA(clause, DistinctExpr);
 
 		if (treat_as_join_clause(root, clause, rinfo, varRelid, sjinfo))
 		{
 			/* Estimate selectivity for a join clause. */
-			s1 = join_selectivity(root, opno,
-								  opclause->args,
-								  opclause->inputcollid,
-								  jointype,
-								  sjinfo);
+			if (IsA(clause, DistinctExpr) && OidIsValid(opno_negator) &&
+				get_oprjoin(opno) == F_EQJOINSEL &&
+				get_oprjoin(opno_negator) == F_NEQJOINSEL)
+			{
+				/*
+				 * DistinctExpr stores "="; use its negator when both
+				 * estimators understand NULL-safe rules.  Otherwise preserve
+				 * the ordinary equality estimate and complement it below.
+				 */
+				s1 = nullsafe_join_selectivity(root,
+											   opno_negator,
+											   opclause->args,
+											   opclause->inputcollid,
+											   jointype,
+											   sjinfo);
+				negate = false;
+			}
+			else
+				s1 = join_selectivity(root, opno,
+									  opclause->args,
+									  opclause->inputcollid,
+									  jointype,
+									  sjinfo);
 		}
 		else
 		{
@@ -859,11 +898,12 @@ clause_selectivity_ext(PlannerInfo *root,
 
 		/*
 		 * DistinctExpr has the same representation as OpExpr, but the
-		 * contained operator is "=" not "<>", so we must negate the result.
-		 * This estimation method doesn't give the right behavior for nulls,
-		 * but it's better than doing nothing.
+		 * contained operator is "=", so negate estimates made through the
+		 * ordinary equality path.  The dedicated join path already uses the
+		 * negator and must not be complemented again.  Restrictions still use
+		 * the ordinary estimate, which does not handle NULLs fully.
 		 */
-		if (IsA(clause, DistinctExpr))
+		if (negate)
 			s1 = 1.0 - s1;
 	}
 	else if (is_funcclause(clause))
