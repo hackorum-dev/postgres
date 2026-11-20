@@ -21975,6 +21975,7 @@ AttachPartitionEnsureIndexes(List **wqueue, Relation rel, Relation attachrel)
 	List	   *attachRelIdxs;
 	Relation   *attachrelIdxRels;
 	IndexInfo **attachInfos;
+	Relation   *pinnedIdxRels;
 	ListCell   *cell;
 	MemoryContext cxt;
 	MemoryContext oldcxt;
@@ -21988,6 +21989,12 @@ AttachPartitionEnsureIndexes(List **wqueue, Relation rel, Relation attachrel)
 	attachRelIdxs = RelationGetIndexList(attachrel);
 	attachrelIdxRels = palloc_array(Relation, list_length(attachRelIdxs));
 	attachInfos = palloc_array(IndexInfo *, list_length(attachRelIdxs));
+
+	/* Keep every parent index opened until it is processed below */
+	pinnedIdxRels = palloc_array(Relation, list_length(idxes));
+	foreach_oid(pinIdx, idxes)
+		pinnedIdxRels[foreach_current_index(pinIdx)] =
+			try_index_open(pinIdx, AccessShareLock);
 
 	/* Build arrays of all existing indexes and their IndexInfos */
 	foreach_oid(cldIdxId, attachRelIdxs)
@@ -22032,12 +22039,22 @@ AttachPartitionEnsureIndexes(List **wqueue, Relation rel, Relation attachrel)
 	 */
 	foreach(cell, idxes)
 	{
+		int			idxPos = foreach_current_index(cell);
 		Oid			idx = lfirst_oid(cell);
-		Relation	idxRel = index_open(idx, AccessShareLock);
+		Relation	idxRel;
 		IndexInfo  *info;
 		AttrMap    *attmap;
 		bool		found = false;
 		Oid			constraintOid;
+
+		/* Release our pin now that this index is about to be processed */
+		if (pinnedIdxRels[idxPos])
+		{
+			index_close(pinnedIdxRels[idxPos], NoLock);
+			pinnedIdxRels[idxPos] = NULL;
+		}
+
+		idxRel = index_open(idx, AccessShareLock);
 
 		/*
 		 * Ignore indexes in the partitioned table other than partitioned
@@ -22142,6 +22159,9 @@ out:
 	/* Clean up. */
 	for (int i = 0; i < list_length(attachRelIdxs); i++)
 		index_close(attachrelIdxRels[i], AccessShareLock);
+	for (int i = 0; i < list_length(idxes); i++)
+		if (pinnedIdxRels[i])
+			index_close(pinnedIdxRels[i], NoLock);
 	MemoryContextSwitchTo(oldcxt);
 	MemoryContextDelete(cxt);
 }

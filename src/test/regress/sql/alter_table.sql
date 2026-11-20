@@ -3272,6 +3272,36 @@ insert into tab_part_attach values (1);
 drop table tab_part_attach;
 drop function func_part_attach();
 
+-- test case where a function called from a parent index's expression,
+-- evaluated while ATTACH PARTITION builds IndexInfos for the parent's
+-- indexes, drops a sibling parent index that hasn't been processed yet
+create sequence attach_part_drop_cnt;
+create table attach_part_drop_p (i int, j int) partition by range (i);
+create function attach_part_drop_f() returns void language plpgsql as
+  'begin end';
+create function attach_part_drop_im(int) returns int
+  language plpgsql immutable as
+  'begin perform public.attach_part_drop_f(); return $1; end';
+create index attach_part_drop_pidx1 on
+  attach_part_drop_p ((i + attach_part_drop_im(0)));
+create index attach_part_drop_pidx2 on
+  attach_part_drop_p ((j + attach_part_drop_im(0)));
+create table attach_part_drop_c (i int, j int);
+create index attach_part_drop_cidx1 on
+  attach_part_drop_c ((i + attach_part_drop_im(0)));
+create index attach_part_drop_cidx2 on
+  attach_part_drop_c ((j + attach_part_drop_im(0)));
+create or replace function attach_part_drop_f() returns void language plpgsql as
+  'begin if nextval(''public.attach_part_drop_cnt'') >= 2
+       and exists (select 1 from pg_class where relname = ''attach_part_drop_pidx2'')
+     then execute ''DROP INDEX public.attach_part_drop_pidx2''; end if; end';
+alter table attach_part_drop_p attach partition attach_part_drop_c
+  for values from (0) to (10); -- error
+drop table attach_part_drop_p, attach_part_drop_c;
+drop function attach_part_drop_im(int);
+drop function attach_part_drop_f();
+drop sequence attach_part_drop_cnt;
+
 -- test case where the partitioning operator is a SQL function whose
 -- evaluation results in the table's relcache being rebuilt partway through
 -- the execution of an ATTACH PARTITION command
