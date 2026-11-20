@@ -135,6 +135,95 @@ $result = $node_subscriber->safe_psql('postgres',
 is($result, qq(2|1|2),
 	'check column trigger applied even on update for other column');
 
+# Create all three initially deferred constraints on both nodes.
+for my $node ($node_publisher, $node_subscriber)
+{
+	$node->safe_psql(
+		'postgres', qq(
+CREATE TABLE tab_deferred (id int, val int, span int4range,
+    CONSTRAINT deferred_primary PRIMARY KEY (id) DEFERRABLE INITIALLY DEFERRED,
+    CONSTRAINT deferred_unique UNIQUE (val) DEFERRABLE INITIALLY DEFERRED,
+    CONSTRAINT deferred_exclusion EXCLUDE USING gist (span WITH &&) DEFERRABLE INITIALLY DEFERRED);
+));
+}
+
+# Stop apply after a constraint violation so the failed insert can be checked.
+$node_subscriber->safe_psql(
+	'postgres', qq(
+	ALTER SUBSCRIPTION tap_sub REFRESH PUBLICATION;
+	ALTER SUBSCRIPTION tap_sub SET (disable_on_error = true);
+));
+my $disabled_query =
+  "SELECT NOT subenabled FROM pg_subscription WHERE subname = 'tap_sub'";
+$node_subscriber->wait_for_subscription_sync($node_publisher, 'tap_sub');
+
+# Check the firing mode of each constraint's internal recheck trigger.
+$result = $node_subscriber->safe_psql(
+	'postgres',
+	"SELECT tgenabled FROM pg_trigger
+	 WHERE tgrelid = 'tab_deferred'::regclass
+	 AND tgfoid = 'unique_key_recheck'::regproc");
+is($result, qq(A\nA\nA),
+	'all three recheck triggers are always enabled on subscriber');
+
+# Insert the subscriber-only rows for all three conflicts at once.
+$node_subscriber->safe_psql(
+	'postgres',
+	"INSERT INTO tab_deferred VALUES
+	 (1, 99, '[90,91)'), (98, 20, '[91,92)'), (99, 98, '[3,4)')");
+
+# The incoming row duplicates the primary key of a subscriber-only row.
+my $log_offset = -s $node_subscriber->logfile;
+$node_publisher->safe_psql('postgres',
+	"INSERT INTO tab_deferred VALUES (1, 10, '[1,2)')");
+$node_subscriber->wait_for_log(
+	qr/duplicate key value violates unique constraint "deferred_primary"/,
+	$log_offset);
+$node_subscriber->poll_query_until('postgres', $disabled_query)
+  or die 'Timed out waiting for subscription to be disabled';
+$node_subscriber->safe_psql(
+	'postgres', qq(
+	DELETE FROM tab_deferred WHERE id = 1;
+	ALTER SUBSCRIPTION tap_sub ENABLE;
+));
+$node_publisher->wait_for_catchup('tap_sub');
+
+# The incoming row has a different primary key but duplicates the unique value.
+$node_publisher->safe_psql('postgres',
+	"INSERT INTO tab_deferred VALUES (2, 20, '[2,3)')");
+$node_subscriber->wait_for_log(
+	qr/duplicate key value violates unique constraint "deferred_unique"/,
+	$log_offset);
+$node_subscriber->poll_query_until('postgres', $disabled_query)
+  or die 'Timed out waiting for subscription to be disabled';
+$node_subscriber->safe_psql(
+	'postgres', qq(
+	DELETE FROM tab_deferred WHERE id = 98;
+	ALTER SUBSCRIPTION tap_sub ENABLE;
+));
+$node_publisher->wait_for_catchup('tap_sub');
+
+# Only the range overlaps with the subscriber-only row.
+$node_publisher->safe_psql('postgres',
+	"INSERT INTO tab_deferred VALUES (3, 30, '[3,4)')");
+$node_subscriber->wait_for_log(
+	qr/conflicting key value violates exclusion constraint "deferred_exclusion"/,
+	$log_offset);
+$node_subscriber->poll_query_until('postgres', $disabled_query)
+  or die 'Timed out waiting for subscription to be disabled';
+$node_subscriber->safe_psql(
+	'postgres', qq(
+	DELETE FROM tab_deferred WHERE id = 99;
+	ALTER SUBSCRIPTION tap_sub ENABLE;
+));
+$node_publisher->wait_for_catchup('tap_sub');
+
+# Cleanup
+$node_subscriber->safe_psql('postgres',
+	'DROP SUBSCRIPTION tap_sub; DROP TABLE tab_deferred');
+$node_publisher->safe_psql('postgres',
+	'DROP TABLE tab_deferred; DROP PUBLICATION tap_pub');
+
 $node_subscriber->stop('fast');
 $node_publisher->stop('fast');
 

@@ -2073,9 +2073,15 @@ index_constraint_create(Relation heapRelation,
 		trigger->initdeferred = initdeferred;
 		trigger->constrrel = NULL;
 
-		(void) CreateTrigger(trigger, NULL, RelationGetRelid(heapRelation),
-							 InvalidOid, conOid, indexRelationId, InvalidOid,
-							 InvalidOid, NULL, true, false);
+		/*
+		 * Create trigger with TRIGGER_FIRES_ALWAYS, so the recheck trigger is
+		 * fired in replica mode too, so logical replication cannot leave
+		 * constraint violations undetected.
+		 */
+		(void) CreateTriggerFiringOn(trigger, NULL, RelationGetRelid(heapRelation),
+									 InvalidOid, conOid, indexRelationId, InvalidOid,
+									 InvalidOid, NULL, true, false,
+									 TRIGGER_FIRES_ALWAYS);
 	}
 
 	/*
