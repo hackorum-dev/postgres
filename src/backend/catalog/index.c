@@ -71,6 +71,7 @@
 #include "storage/predicate.h"
 #include "storage/smgr.h"
 #include "utils/builtins.h"
+#include "utils/catcache.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
 #include "utils/inval.h"
@@ -1944,6 +1945,38 @@ index_constraint_create(Relation heapRelation,
 
 	/* constraint creation support doesn't work while bootstrapping */
 	Assert(!IsBootstrapProcessingMode());
+
+	/*
+	 * Reject DEFERRABLE INITIALLY IMMEDIATE constraints on replication
+	 * targets: apply worker does not preserve publisher statement boundaries,
+	 * so statement-end rechecks could reject valid transient conflicts.
+	 */
+	if (deferrable && !initdeferred)
+	{
+		List	   *relids = NIL;
+
+		if (heapRelation->rd_rel->relispartition)
+			relids = get_partition_ancestors(RelationGetRelid(heapRelation));
+		relids = lcons_oid(RelationGetRelid(heapRelation), relids);
+
+		foreach_oid(relid, relids)
+		{
+			CatCList   *subscriptions = SearchSysCacheList1(SUBSCRIPTIONRELMAP,
+															ObjectIdGetDatum(relid));
+			bool		issubscriber = subscriptions->n_members > 0;
+
+			ReleaseSysCacheList(subscriptions);
+
+			if (issubscriber)
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("cannot create constraint \"%s\" on logical replication target relation \"%s\"",
+								constraintName, RelationGetRelationName(heapRelation)),
+						 errdetail("Deferrable initially immediate unique, primary key, and exclusion constraints are not supported.")));
+		}
+
+		list_free(relids);
+	}
 
 	/* enforce system-table restriction */
 	if (!allow_system_table_mods &&

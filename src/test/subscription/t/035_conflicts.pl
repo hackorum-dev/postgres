@@ -595,7 +595,7 @@ $node_A->poll_query_until('postgres',
 # Then delete a local row that has the same key but a different value.
 $node_A->safe_psql(
 	'postgres', "
-	ALTER TABLE tab_defer ADD PRIMARY KEY (a) DEFERRABLE;
+	ALTER TABLE tab_defer ADD PRIMARY KEY (a) DEFERRABLE INITIALLY DEFERRED;
 	INSERT INTO tab_defer VALUES (1, 10);
 	DELETE FROM tab_defer WHERE a = 1;");
 

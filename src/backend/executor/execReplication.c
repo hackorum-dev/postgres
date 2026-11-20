@@ -19,12 +19,14 @@
 #include "access/genam.h"
 #include "access/gist.h"
 #include "access/relscan.h"
+#include "access/table.h"
 #include "access/tableam.h"
 #include "access/transam.h"
 #include "access/xact.h"
 #include "access/heapam.h"
 #include "catalog/catalog.h"
 #include "catalog/pg_am_d.h"
+#include "catalog/pg_inherits.h"
 #include "commands/trigger.h"
 #include "executor/executor.h"
 #include "executor/nodeModifyTable.h"
@@ -32,6 +34,7 @@
 #include "replication/logicalrelation.h"
 #include "storage/lmgr.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
@@ -1300,4 +1303,49 @@ CheckSubscriptionTargetRel(Oid relid, char remoterelkind,
 					   nspname, relname,
 					   remoterelkind == RELKIND_SEQUENCE ? "sequence" : "table",
 					   localrelkind == RELKIND_SEQUENCE ? "sequence" : "table"));
+
+	/*
+	 * Reject tables with DEFERRABLE INITIALLY IMMEDIATE constraints on the
+	 * relation.
+	 */
+	if (localrelkind != RELKIND_SEQUENCE)
+	{
+		List	   *relids;
+
+		if (localrelkind == RELKIND_PARTITIONED_TABLE)
+			relids = find_all_inheritors(relid, AccessShareLock, NULL);
+		else
+		{
+			LockRelationOid(relid, AccessShareLock);
+			relids = list_make1_oid(relid);
+		}
+
+		foreach_oid(targetrelid, relids)
+		{
+			Relation	rel = table_open(targetrelid, NoLock);
+			TriggerDesc *trigdesc = rel->trigdesc;
+
+			if (trigdesc != NULL)
+			{
+				for (int index = 0; index < trigdesc->numtriggers; index++)
+				{
+					Trigger    *trigger = &trigdesc->triggers[index];
+
+					if (trigger->tgisinternal &&
+						trigger->tgfoid == F_UNIQUE_KEY_RECHECK &&
+						trigger->tgdeferrable && !trigger->tginitdeferred)
+						ereport(ERROR,
+								(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+								 errmsg("cannot use relation \"%s.%s\" as logical replication target",
+										get_namespace_name(RelationGetNamespace(rel)),
+										RelationGetRelationName(rel)),
+								 errdetail("Deferrable initially immediate unique, primary key, and exclusion constraints are not supported.")));
+				}
+			}
+
+			table_close(rel, AccessShareLock);
+		}
+
+		list_free(relids);
+	}
 }
