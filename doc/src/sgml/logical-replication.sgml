@@ -2778,7 +2778,9 @@ CONTEXT:  processing remote data for replication origin "pg_16395" during "INSER
 
   <para>
    Constraints declared as <literal>DEFERRABLE</literal> use recheck triggers
-   that fired by default during logical replication.
+   that fire by default during logical replication.  Subscriber tables,
+   including their partitions, cannot have unique, primary key, or exclusion
+   constraints declared <literal>DEFERRABLE INITIALLY IMMEDIATE</literal>.
   </para>
 
   <para>

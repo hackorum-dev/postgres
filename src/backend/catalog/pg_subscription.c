@@ -19,6 +19,7 @@
 #include "access/htup_details.h"
 #include "access/tableam.h"
 #include "catalog/indexing.h"
+#include "catalog/partition.h"
 #include "catalog/pg_foreign_server.h"
 #include "catalog/pg_subscription.h"
 #include "catalog/pg_subscription_rel.h"
@@ -30,6 +31,7 @@
 #include "utils/acl.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
+#include "utils/catcache.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -775,4 +777,32 @@ UpdateDeadTupleRetentionStatus(Oid subid, bool active)
 	heap_freetuple(tup);
 
 	table_close(rel, NoLock);
+}
+
+/*
+ * Check if the given relation or any of its ancestor is subscribed.
+ */
+bool
+RelationOrAncestorIsSubscribed(Relation rel)
+{
+	List	   *relids = NIL;
+	bool		found = false;
+
+	if (rel->rd_rel->relispartition)
+		relids = get_partition_ancestors(RelationGetRelid(rel));
+	relids = lcons_oid(RelationGetRelid(rel), relids);
+
+	foreach_oid(relid, relids)
+	{
+		CatCList   *subscriptions = SearchSysCacheList1(SUBSCRIPTIONRELMAP,
+														ObjectIdGetDatum(relid));
+
+		found = subscriptions->n_members > 0;
+		ReleaseSysCacheList(subscriptions);
+		if (found)
+			break;
+	}
+
+	list_free(relids);
+	return found;
 }

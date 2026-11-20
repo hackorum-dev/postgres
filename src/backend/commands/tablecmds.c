@@ -35,6 +35,7 @@
 #include "catalog/namespace.h"
 #include "catalog/objectaccess.h"
 #include "catalog/partition.h"
+#include "catalog/pg_subscription_rel.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_attrdef.h"
 #include "catalog/pg_cast.h"
@@ -21842,6 +21843,17 @@ ATExecAttachPartition(List **wqueue, Relation rel, PartitionCmd *cmd,
 	 */
 	check_new_partition_bound(RelationGetRelationName(attachrel), rel,
 							  cmd->bound, pstate);
+
+	if (RelationOrAncestorIsSubscribed(rel))
+	{
+		foreach_oid(childoid, attachrel_children)
+		{
+			Relation	child = table_open(childoid, NoLock);
+
+			CheckSubscriptionTargetConstraints(child);
+			table_close(child, NoLock);
+		}
+	}
 
 	/* OK to create inheritance.  Rest of the checks performed there */
 	CreateInheritance(attachrel, rel, true);

@@ -209,11 +209,64 @@ $node_subscriber->safe_psql(
 ));
 $node_publisher->wait_for_catchup('tap_sub');
 
+# Adding an initially immediate constraint to a subscribed table must fail.
+my ($ret, $stdout, $stderr) = $node_subscriber->psql('postgres',
+	"ALTER TABLE tab_deferred ADD CONSTRAINT immediate_unique UNIQUE (val) DEFERRABLE INITIALLY IMMEDIATE"
+);
+like(
+	$stderr,
+	qr/cannot create constraint "immediate_unique" on logical replication target relation "tab_deferred"/,
+	'constraint DDL reports subscription target restriction');
+
 # Cleanup
 $node_subscriber->safe_psql('postgres',
 	'DROP SUBSCRIPTION tap_sub; DROP TABLE tab_deferred');
 $node_publisher->safe_psql('postgres',
 	'DROP TABLE tab_deferred; DROP PUBLICATION tap_pub');
+
+# Create one initially immediate constraint per table on both nodes.
+for my $node ($node_publisher, $node_subscriber)
+{
+	$node->safe_psql(
+		'postgres', qq(
+CREATE TABLE immediate_primary (val int PRIMARY KEY DEFERRABLE INITIALLY IMMEDIATE);
+CREATE TABLE immediate_unique (val int UNIQUE DEFERRABLE INITIALLY IMMEDIATE);
+CREATE TABLE immediate_exclusion (val int4range, EXCLUDE USING gist (val WITH &&) DEFERRABLE INITIALLY IMMEDIATE);
+));
+}
+
+# Publish only one table at a time, and reject each subscription attempt.
+$node_publisher->safe_psql('postgres',
+	'CREATE PUBLICATION tap_pub FOR TABLE immediate_primary');
+($ret, $stdout, $stderr) = $node_subscriber->psql('postgres',
+	"CREATE SUBSCRIPTION rejected_sub CONNECTION '$publisher_connstr' PUBLICATION tap_pub"
+);
+like(
+	$stderr,
+	qr/Deferrable initially immediate unique, primary key, and exclusion constraints are not supported/,
+	'primary key reports unsupported timing during subscription creation');
+
+$node_publisher->safe_psql('postgres',
+	'ALTER PUBLICATION tap_pub SET TABLE immediate_unique');
+($ret, $stdout, $stderr) = $node_subscriber->psql('postgres',
+	"CREATE SUBSCRIPTION rejected_sub CONNECTION '$publisher_connstr' PUBLICATION tap_pub"
+);
+like(
+	$stderr,
+	qr/Deferrable initially immediate unique, primary key, and exclusion constraints are not supported/,
+	'unique constraint reports unsupported timing during subscription creation'
+);
+
+$node_publisher->safe_psql('postgres',
+	'ALTER PUBLICATION tap_pub SET TABLE immediate_exclusion');
+($ret, $stdout, $stderr) = $node_subscriber->psql('postgres',
+	"CREATE SUBSCRIPTION rejected_sub CONNECTION '$publisher_connstr' PUBLICATION tap_pub"
+);
+like(
+	$stderr,
+	qr/Deferrable initially immediate unique, primary key, and exclusion constraints are not supported/,
+	'exclusion constraint reports unsupported timing during subscription creation'
+);
 
 $node_subscriber->stop('fast');
 $node_publisher->stop('fast');

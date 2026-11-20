@@ -22,6 +22,7 @@
 #include "catalog/genbki.h"
 #include "catalog/pg_subscription_rel_d.h"	/* IWYU pragma: export */
 #include "nodes/pg_list.h"
+#include "utils/relcache.h"
 
 /* ----------------
  *		pg_subscription_rel definition. cpp turns this into
@@ -117,6 +118,7 @@ extern char GetSubscriptionRelState(Oid subid, Oid relid, XLogRecPtr *sublsn);
 extern void RemoveSubscriptionRel(Oid subid, Oid relid);
 
 extern bool HasSubscriptionTables(Oid subid);
+extern bool RelationOrAncestorIsSubscribed(Relation rel);
 extern List *GetSubscriptionRelations(Oid subid, bool tables, bool sequences,
 									  bool not_ready);
 

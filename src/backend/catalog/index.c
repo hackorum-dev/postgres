@@ -41,6 +41,7 @@
 #include "catalog/index.h"
 #include "catalog/objectaccess.h"
 #include "catalog/partition.h"
+#include "catalog/pg_subscription_rel.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
@@ -1944,6 +1945,18 @@ index_constraint_create(Relation heapRelation,
 
 	/* constraint creation support doesn't work while bootstrapping */
 	Assert(!IsBootstrapProcessingMode());
+
+	/*
+	 * Reject DEFERRABLE INITIALLY IMMEDIATE constraints on replication
+	 * targets: apply worker does not preserve publisher statement boundaries,
+	 * so statement-end rechecks could reject valid transient conflicts.
+	 */
+	if (deferrable && !initdeferred && RelationOrAncestorIsSubscribed(heapRelation))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot create constraint \"%s\" on logical replication target relation \"%s\"",
+						constraintName, RelationGetRelationName(heapRelation)),
+				 errdetail("Deferrable initially immediate unique, primary key, and exclusion constraints are not supported.")));
 
 	/* enforce system-table restriction */
 	if (!allow_system_table_mods &&

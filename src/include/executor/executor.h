@@ -806,6 +806,7 @@ extern void ExecSimpleRelationDelete(ResultRelInfo *resultRelInfo,
 									 TupleTableSlot *searchslot);
 extern void CheckCmdReplicaIdentity(Relation rel, CmdType cmd);
 
+extern void CheckSubscriptionTargetConstraints(Relation rel);
 extern void CheckSubscriptionTargetRel(Oid relid, char remoterelkind,
 									   const char *nspname,
 									   const char *relname);
