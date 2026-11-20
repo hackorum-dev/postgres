@@ -83,6 +83,7 @@ typedef enum
 
 extern void json_categorize_type(Oid typoid, bool is_jsonb,
 								 JsonTypeCategory *tcategory, Oid *outfuncoid);
+extern Datum json_invoke_cast(Oid castfunc, Datum val, bool *isnull);
 extern Datum datum_to_json(Datum val, JsonTypeCategory tcategory,
 						   Oid outfuncoid);
 extern Datum datum_to_jsonb(Datum val, JsonTypeCategory tcategory,

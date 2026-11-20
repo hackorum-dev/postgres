@@ -13,13 +13,11 @@
 #include "postgres.h"
 
 #include "access/htup_details.h"
-#include "catalog/objectaccess.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "funcapi.h"
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/json.h"
@@ -639,7 +637,6 @@ datum_to_jsonb_internal(Datum val, bool is_null, JsonbInState *result,
 	bool		numeric_to_string;
 	JsonbValue	jb;
 	bool		scalar_jsonb = false;
-	AclResult	aclresult;
 
 	check_stack_depth();
 
@@ -774,13 +771,13 @@ datum_to_jsonb_internal(Datum val, bool is_null, JsonbInState *result,
 				break;
 			case JSONTYPE_CAST:
 				/* cast to JSON, and then process as JSON */
-				aclresult = object_aclcheck(ProcedureRelationId, outfuncoid,
-											GetUserId(), ACL_EXECUTE);
-				if (aclresult != ACLCHECK_OK)
-					aclcheck_error(aclresult, OBJECT_FUNCTION,
-								   get_func_name(outfuncoid));
-				InvokeFunctionExecuteHook(outfuncoid);
-				val = OidFunctionCall1(outfuncoid, val);
+				val = json_invoke_cast(outfuncoid, val, &is_null);
+				if (is_null)
+				{
+					/* Let the scalar insertion code below emit JSON null. */
+					jb.type = jbvNull;
+					break;
+				}
 				pg_fallthrough;
 			case JSONTYPE_JSON:
 				{
@@ -1145,6 +1142,18 @@ to_jsonb(PG_FUNCTION_ARGS)
 
 	json_categorize_type(val_type, true,
 						 &tcategory, &outfuncoid);
+
+	/* Preserve a top-level cast's SQL NULL result. */
+	if (tcategory == JSONTYPE_CAST)
+	{
+		bool		isnull;
+
+		val = json_invoke_cast(outfuncoid, val, &isnull);
+		if (isnull)
+			PG_RETURN_NULL();
+
+		PG_RETURN_DATUM(datum_to_jsonb(val, JSONTYPE_JSON, F_JSON_OUT));
+	}
 
 	PG_RETURN_DATUM(datum_to_jsonb(val, tcategory, outfuncoid));
 }
