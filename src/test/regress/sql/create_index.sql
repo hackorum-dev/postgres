@@ -1212,6 +1212,31 @@ DROP TABLE reindex_ddl_tab;
 DROP FUNCTION reindex_ddl_im(int);
 DROP FUNCTION reindex_ddl_f();
 
+-- Check that a function called from an index expression is not able to
+-- drop a sibling partition while CREATE INDEX ON a partitioned table is
+-- still building indexes for the other partitions.
+CREATE SEQUENCE cidx_part_drop_cnt;
+CREATE TABLE cidx_part_drop (i int) PARTITION BY RANGE (i);
+CREATE TABLE cidx_part_drop_1 PARTITION OF cidx_part_drop
+  FOR VALUES FROM (0) TO (10);
+CREATE TABLE cidx_part_drop_2 PARTITION OF cidx_part_drop
+  FOR VALUES FROM (10) TO (20);
+INSERT INTO cidx_part_drop VALUES (1), (11);
+CREATE FUNCTION cidx_part_drop_f() RETURNS void LANGUAGE plpgsql AS
+  'begin end';
+CREATE FUNCTION cidx_part_drop_im(int) RETURNS int
+  LANGUAGE plpgsql IMMUTABLE AS
+  'begin perform public.cidx_part_drop_f(); return $1; end';
+CREATE OR REPLACE FUNCTION cidx_part_drop_f() RETURNS void LANGUAGE plpgsql AS
+  'begin if nextval(''public.cidx_part_drop_cnt'') >= 2
+       and exists (select 1 from pg_class where relname = ''cidx_part_drop_2'')
+     then execute ''DROP TABLE public.cidx_part_drop_2''; end if; end';
+CREATE INDEX cidx_part_drop_idx ON
+  cidx_part_drop ((i + cidx_part_drop_im(0))); -- error
+DROP TABLE cidx_part_drop;
+DROP FUNCTION cidx_part_drop_im(int);
+DROP FUNCTION cidx_part_drop_f();
+DROP SEQUENCE cidx_part_drop_cnt;
 
 -- Partitions
 -- Create some partitioned tables
