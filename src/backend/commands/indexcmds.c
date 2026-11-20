@@ -1356,6 +1356,7 @@ DefineIndex(ParseState *pstate,
 		{
 			int			nparts = partdesc->nparts;
 			Oid		   *part_oids = palloc_array(Oid, nparts);
+			Relation   *pinnedPartRels;
 			bool		invalidate_parent = false;
 			Relation	parentIndex;
 			TupleDesc	parentDesc;
@@ -1394,6 +1395,12 @@ DefineIndex(ParseState *pstate,
 			/* Make a local copy of partdesc->oids[], just for safety */
 			memcpy(part_oids, partdesc->oids, sizeof(Oid) * nparts);
 
+			/* Keep every partition opened until it is processed below */
+			pinnedPartRels = palloc_array(Relation, nparts);
+			for (int i = 0; i < nparts; i++)
+				pinnedPartRels[i] = try_table_open(part_oids[i],
+												   AccessShareLock);
+
 			/*
 			 * We'll need an IndexInfo describing the parent index.  The one
 			 * built above is almost good enough, but not quite, because (for
@@ -1426,6 +1433,10 @@ DefineIndex(ParseState *pstate,
 				ListCell   *cell;
 				AttrMap    *attmap;
 				bool		found = false;
+
+				/* Release our pin now that this partition is about to be processed */
+				if (pinnedPartRels[i])
+					table_close(pinnedPartRels[i], NoLock);
 
 				childrel = table_open(childRelid, lockmode);
 
