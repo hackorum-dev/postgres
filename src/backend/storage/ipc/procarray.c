@@ -1078,7 +1078,41 @@ ProcArrayApplyRecoveryInfo(RunningTransactions running)
 	 * If our snapshot is already valid, nothing else to do...
 	 */
 	if (standbyState == STANDBY_SNAPSHOT_READY)
+	{
+		TransactionId lastCompletedXid = running->oldestRunningXid;
+
+		/*
+		 * ExpireOldKnownAssignedTransactionIds() above set latestCompletedXid to
+		 * oldestRunningXid - 1; keep latestObservedXid from lagging behind it.
+		 * Otherwise the next record with a real xid would make
+		 * RecordKnownAssignedTransactionIds() gap-fill KnownAssignedXids from the
+		 * old latestObservedXid + 1, marking long-completed xids as running, possibly
+		 * below the xmin of snapshots already taken.  That happens when the primary's
+		 * nextXid is ahead of its last WAL-logged xid, e.g. after the primary
+		 * crashed while transactions that had been assigned an xid but not yet
+		 * WAL-logged anything were open.
+		 *
+		 * Stop at oldestRunningXid - 1, not nextXid - 1: running xids may not be
+		 * WAL-logged yet and are not in KnownAssignedXids, so the gap-fill must still
+		 * add them when their first record arrives.
+		 */
+		TransactionIdRetreat(lastCompletedXid);
+		if (TransactionIdFollows(lastCompletedXid, latestObservedXid))
+		{
+			TransactionId next_expected_xid = latestObservedXid;
+
+			while (TransactionIdPrecedes(next_expected_xid, lastCompletedXid))
+			{
+				TransactionIdAdvance(next_expected_xid);
+				ExtendSUBTRANS(next_expected_xid);
+			}
+			latestObservedXid = lastCompletedXid;
+
+			/* nextXid must be beyond any observed xid. */
+			AdvanceNextFullTransactionIdPastXid(latestObservedXid);
+		}
 		return;
+	}
 
 	/*
 	 * If our initial RunningTransactionsData had an overflowed snapshot then
