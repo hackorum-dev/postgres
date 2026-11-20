@@ -221,6 +221,8 @@ rewriteSearchAndCycle(CommonTableExpr *cte)
 	RowExpr    *cycle_col_rowexpr = NULL;
 	RowExpr    *search_col_rowexpr = NULL;
 	List	   *ewcl;
+	List	   *junk_tles;
+	ListCell   *lc;
 	int			cte_rtindex = -1;
 
 	Assert(cte->search_clause || cte->cycle_clause);
@@ -414,8 +416,21 @@ rewriteSearchAndCycle(CommonTableExpr *cte)
 	IncrementVarSublevelsUp((Node *) newsubquery, 1, 1);
 
 	/*
-	 * Add extra columns to target list of subquery of right subquery
+	 * Add extra columns to target list of subquery of right subquery.
+	 *
+	 * The subquery's targetlist might contain resjunk entries, such as sort
+	 * or grouping columns that are not part of its output.  Those must stay
+	 * after all the non-resjunk entries, and the column names we assigned to
+	 * the wrapping subquery above assume that the added columns immediately
+	 * follow the original output columns.  So detach any resjunk entries
+	 * before adding the new columns, and re-attach them afterwards with new
+	 * resnos.
 	 */
+	junk_tles = list_copy_tail(newsubquery->targetList,
+							   list_length(cte->ctecolnames));
+	newsubquery->targetList = list_truncate(newsubquery->targetList,
+											list_length(cte->ctecolnames));
+
 	if (cte->search_clause)
 	{
 		Var		   *var;
@@ -451,6 +466,14 @@ rewriteSearchAndCycle(CommonTableExpr *cte)
 							  list_length(newsubquery->targetList) + 1,
 							  cte->cycle_clause->cycle_path_column,
 							  false);
+		newsubquery->targetList = lappend(newsubquery->targetList, tle);
+	}
+
+	/* Re-attach the resjunk entries, if any, after the new columns */
+	foreach(lc, junk_tles)
+	{
+		tle = lfirst_node(TargetEntry, lc);
+		tle->resno = list_length(newsubquery->targetList) + 1;
 		newsubquery->targetList = lappend(newsubquery->targetList, tle);
 	}
 
