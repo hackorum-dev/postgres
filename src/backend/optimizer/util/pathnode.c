@@ -863,7 +863,13 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 		{
 			parent_rel->partial_pathlist =
 				foreach_delete_current(parent_rel->partial_pathlist, p1);
-			pfree(old_path);
+			if (old_path->parent == parent_rel)
+			{
+				elog(LOG, "freeing dominated old path %p", old_path);
+				pfree(old_path);
+			}
+			else
+				elog(LOG, "conservatively keeping shared old path %p", old_path);
 		}
 		else
 		{
@@ -895,7 +901,13 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 	else
 	{
 		/* Reject and recycle the new path */
-		pfree(new_path);
+		if (new_path->parent == parent_rel)
+		{
+			elog(LOG, "freeing dominated new path %p", new_path);
+			pfree(new_path);
+		}
+		else
+			elog(LOG, "conservatively keeping shared new path %p", new_path);
 	}
 }
 
