@@ -3028,6 +3028,17 @@ my %tests = (
 		},
 	},
 
+	'ALTER FOREIGN TABLE IF EXISTS foreign_table DROP CONSTRAINT' => {
+		create_order => 89,
+		create_sql => 'ALTER FOREIGN TABLE dump_test.foreign_table
+						 ADD CONSTRAINT foreign_table_check CHECK (c1 > 0) NOT VALID;',
+		regexp => qr/^
+			\QALTER FOREIGN TABLE IF EXISTS dump_test.foreign_table \E
+			\QDROP CONSTRAINT IF EXISTS foreign_table_check;\E
+			/xm,
+		like => { clean_if_exists => 1, },
+	},
+
 	'CREATE USER MAPPING FOR regress_dump_test_role SERVER s1' => {
 		create_order => 86,
 		create_sql =>

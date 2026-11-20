@@ -265,5 +265,42 @@ foreach my $c (@dumpall_cases)
 		"restore from pg_dumpall --clean ($c->{name})");
 }
 
+# A "pg_dump --clean --if-exists" script must run without errors both in an
+# empty database and over an existing copy.  A NOT VALID constraint on a
+# foreign table is dumped separately and dropped with ALTER FOREIGN TABLE.
+$node->safe_psql('postgres', 'CREATE DATABASE clean_src');
+$node->safe_psql('postgres', 'CREATE DATABASE clean_dst');
+$node->safe_psql(
+	'clean_src', q{
+	CREATE FOREIGN DATA WRAPPER w;
+	CREATE SERVER s FOREIGN DATA WRAPPER w;
+	CREATE FOREIGN TABLE ft (a int) SERVER s;
+	ALTER FOREIGN TABLE ft ADD CONSTRAINT ft_check CHECK (a > 0) NOT VALID;
+});
+my $clean_dump = "$backupdir/clean-if-exists.sql";
+$node->command_ok(
+	[
+		'pg_dump', '--clean', '--if-exists', '--no-sync',
+		'--file' => $clean_dump,
+		$node->connstr('clean_src'),
+	],
+	'dump for: restore from pg_dump --clean --if-exists');
+foreach my $target ('empty', 'existing')
+{
+	$node->command_ok(
+		[
+			'psql', '--no-psqlrc',
+			'--set' => 'ON_ERROR_STOP=1',
+			'--file' => $clean_dump,
+			'--dbname' => $node->connstr('clean_dst'),
+		],
+		"restore from pg_dump --clean --if-exists into $target database");
+}
+is( $node->safe_psql(
+		'clean_dst',
+		"SELECT count(*) FROM pg_constraint WHERE NOT convalidated AND conname = 'ft_check'"
+	),
+	'1',
+	'NOT VALID constraints restored');
 
 done_testing();
