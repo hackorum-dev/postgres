@@ -1187,6 +1187,31 @@ SELECT c.relname, i.indisvalid FROM pg_index i
 DROP TABLE concur_reindex_ddl_tab;
 DROP FUNCTION concur_reindex_ddl_im(int);
 DROP FUNCTION concur_reindex_ddl_f();
+-- Same, but for plain (non-concurrent) REINDEX TABLE, which rebuilds the
+-- indexes of a relation one at a time without taking any extra protection
+-- against a function dropping one of them mid-loop.
+CREATE TABLE reindex_ddl_tab (i int);
+INSERT INTO reindex_ddl_tab VALUES (1);
+CREATE FUNCTION reindex_ddl_f() RETURNS void LANGUAGE plpgsql AS
+  'begin end';
+CREATE FUNCTION reindex_ddl_im(int) RETURNS int
+  LANGUAGE plpgsql IMMUTABLE AS
+  'begin perform public.reindex_ddl_f(); return $1; end';
+CREATE INDEX reindex_ddl_ind1 ON
+  reindex_ddl_tab ((i + reindex_ddl_im(0)));
+CREATE INDEX reindex_ddl_ind2 ON reindex_ddl_tab (i);
+CREATE OR REPLACE FUNCTION reindex_ddl_f() RETURNS void
+  LANGUAGE plpgsql AS
+  'begin DROP INDEX public.reindex_ddl_ind2; end';
+REINDEX TABLE reindex_ddl_tab; -- error
+SELECT c.relname, i.indisvalid FROM pg_index i
+  JOIN pg_class c ON c.oid = i.indexrelid
+  WHERE i.indrelid = 'reindex_ddl_tab'::regclass
+  ORDER BY c.relname COLLATE "C";
+DROP TABLE reindex_ddl_tab;
+DROP FUNCTION reindex_ddl_im(int);
+DROP FUNCTION reindex_ddl_f();
+
 
 -- Partitions
 -- Create some partitioned tables

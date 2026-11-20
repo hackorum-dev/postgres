@@ -4075,9 +4075,11 @@ reindex_relation(const ReindexStmt *stmt, Oid relid, int flags,
 	Relation	rel;
 	Oid			toast_relid;
 	List	   *indexIds;
+	List	   *pinnedRels = NIL;
 	char		persistence;
 	bool		result = false;
 	ListCell   *indexId;
+	ListCell   *pinCell;
 	int			i;
 
 	/*
@@ -4110,6 +4112,15 @@ reindex_relation(const ReindexStmt *stmt, Oid relid, int flags,
 	 * to get this with a sequential scan if ignoring system indexes.)
 	 */
 	indexIds = RelationGetIndexList(rel);
+
+	/* Keep every index opened until it is processed below */
+	foreach(indexId, indexIds)
+	{
+		Relation	indexRelation = try_index_open(lfirst_oid(indexId),
+												   AccessShareLock);
+
+		pinnedRels = lappend(pinnedRels, indexRelation);
+	}
 
 	if (flags & REINDEX_REL_SUPPRESS_INDEX_USE)
 	{
@@ -4165,10 +4176,15 @@ reindex_relation(const ReindexStmt *stmt, Oid relid, int flags,
 
 	/* Reindex all the indexes. */
 	i = 1;
-	foreach(indexId, indexIds)
+	forboth(indexId, indexIds, pinCell, pinnedRels)
 	{
 		Oid			indexOid = lfirst_oid(indexId);
 		Oid			indexNamespaceId = get_rel_namespace(indexOid);
+		Relation	pinnedRel = (Relation) lfirst(pinCell);
+
+		/* Release our pin now that this index is about to be processed */
+		if (pinnedRel)
+			index_close(pinnedRel, NoLock);
 
 		/*
 		 * Skip any invalid indexes on a TOAST table.  These can only be
@@ -4207,6 +4223,8 @@ reindex_relation(const ReindexStmt *stmt, Oid relid, int flags,
 									 i);
 		i++;
 	}
+
+	list_free(pinnedRels);
 
 	/*
 	 * Close rel, but continue to hold the lock.
