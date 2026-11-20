@@ -167,10 +167,24 @@ DROP FUNCTION json_object_inline_test(text);
 -- datum_to_jsonb_internal() didn't catch keys that are casts instead of a simple scalar
 CREATE TYPE mood AS ENUM ('happy', 'sad', 'neutral');
 CREATE FUNCTION mood_to_json(mood) RETURNS json AS $$
-  SELECT to_json($1::text);
+  SELECT CASE $1
+           WHEN 'neutral' THEN NULL::json
+           WHEN 'sad' THEN 'null'::json
+           ELSE to_json($1::text)
+         END;
 $$ LANGUAGE sql IMMUTABLE;
 CREATE CAST (mood AS json) WITH FUNCTION mood_to_json(mood) AS IMPLICIT;
 SELECT JSON_OBJECT('happy'::mood: '123'::jsonb);
+
+-- A cast can return SQL NULL for a non-null input.
+SELECT json_build_array('happy'::mood, 'neutral'::mood) AS j,
+       jsonb_build_array('happy'::mood, 'neutral'::mood) AS jb;
+
+-- Top-level conversions distinguish SQL NULL from JSON null.
+SELECT m, to_json(m) IS NULL AS j, to_jsonb(m) IS NULL AS jb
+FROM (VALUES ('neutral'::mood), ('sad')) AS v(m)
+ORDER BY m;
+
 DROP CAST (mood AS json);
 DROP FUNCTION mood_to_json;
 DROP TYPE mood;
