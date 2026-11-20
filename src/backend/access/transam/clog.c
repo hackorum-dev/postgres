@@ -772,7 +772,17 @@ CLOGShmemBuffers(void)
 {
 	/* auto-tune based on shared buffers */
 	if (transaction_buffers == 0)
-		return SimpleLruAutotuneBuffers(512, 1024);
+	{
+		int			autotune = SimpleLruAutotuneBuffers(512, 1024);
+
+		/*
+		 * Clamp to at least 8 banks (128 slots, 1MB).  A smaller pool
+		 * causes CLOG page re-reads under concurrency.  8 is chosen
+		 * empirically: 4 banks (64 slots) reaches peak throughput, 8
+		 * provides headroom and reduces re-reads ~7x vs 4.
+		 */
+		return Max(autotune, 8 * SLRU_BANK_SIZE);
+	}
 
 	return Min(Max(16, transaction_buffers), CLOG_MAX_ALLOWED_BUFFERS);
 }

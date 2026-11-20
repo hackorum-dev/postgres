@@ -136,16 +136,6 @@ typedef struct SlruWriteAllData *SlruWriteAll;
 
 
 /*
- * Bank size for the slot array.  Pages are assigned a bank according to their
- * page number, with each bank being this size.  We want a power of 2 so that
- * we can determine the bank number for a page with just bit shifting; we also
- * want to keep the bank size small so that LRU victim search is fast.  16
- * buffers per bank seems a good number.
- */
-#define SLRU_BANK_BITSHIFT		4
-#define SLRU_BANK_SIZE			(1 << SLRU_BANK_BITSHIFT)
-
-/*
  * Macro to get the bank number to which the slot belongs.
  */
 #define SlotGetBankNumber(slotno)	((slotno) >> SLRU_BANK_BITSHIFT)
