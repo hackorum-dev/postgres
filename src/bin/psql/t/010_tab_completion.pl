@@ -206,6 +206,16 @@ check_completion(
 
 clear_query();
 
+# The generic GRANT rule used to insert TO after WITH GRANT OPTION.
+check_completion("grant select on tab1 to r with grant option \t",
+	qr/with grant option granted by /i, "complete GRANTED BY after WITH GRANT OPTION");
+clear_query();
+
+check_completion("revoke select on tab1 from r granted \t",
+	qr/granted by /i, "complete BY after GRANTED in REVOKE");
+check_completion("pg_mon\t", qr/pg_monitor /, "complete the grantor role");
+clear_query();
+
 # check interpretation of referenced names
 check_completion(
 	"alter table tab1 drop constraint t\t",
