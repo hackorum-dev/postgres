@@ -103,7 +103,8 @@ ALTER DOMAIN <replaceable class="parameter">name</replaceable>
      <para>
       This form drops constraints on a domain.
       If <literal>IF EXISTS</literal> is specified and the constraint
-      does not exist, no error is thrown. In this case a notice is issued instead.
+      or the domain does not exist, no error is thrown. In this case a notice
+      is issued instead.
      </para>
     </listitem>
    </varlistentry>

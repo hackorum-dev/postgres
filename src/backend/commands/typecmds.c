@@ -2896,7 +2896,8 @@ AlterDomainNotNull(List *names, bool notNull)
  *
  * Implements the ALTER DOMAIN DROP CONSTRAINT statement
  *
- * Returns ObjectAddress of the modified domain.
+ * Returns ObjectAddress of the modified domain.  If missing_ok is true and
+ * the domain does not exist, InvalidObjectAddress is returned.
  */
 ObjectAddress
 AlterDomainDropConstraint(List *names, const char *constrName,
@@ -2915,7 +2916,19 @@ AlterDomainDropConstraint(List *names, const char *constrName,
 
 	/* Make a TypeName so we can use standard type lookup machinery */
 	typename = makeTypeNameFromNameList(names);
-	domainoid = typenameTypeId(NULL, typename);
+
+	/*
+	 * With IF EXISTS, a missing domain is not an error either.  pg_dump
+	 * --clean --if-exists relies on that.
+	 */
+	domainoid = LookupTypeNameOid(NULL, typename, missing_ok);
+	if (!OidIsValid(domainoid))
+	{
+		ereport(NOTICE,
+				(errmsg("type \"%s\" does not exist, skipping",
+						TypeNameToString(typename))));
+		return InvalidObjectAddress;
+	}
 
 	/* Look up the domain in the type table */
 	rel = table_open(TypeRelationId, RowExclusiveLock);

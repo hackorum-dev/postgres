@@ -76,6 +76,10 @@ DROP DOMAIN test_domain_exists;
 
 DROP DOMAIN IF EXISTS test_domain_exists;
 
+ALTER DOMAIN test_domain_exists DROP CONSTRAINT test_constraint_exists;
+ALTER DOMAIN test_domain_exists DROP CONSTRAINT IF EXISTS test_constraint_exists;
+ALTER DOMAIN no_such_schema.test_domain_exists DROP CONSTRAINT IF EXISTS test_constraint_exists;
+
 CREATE domain test_domain_exists as int not null check (value > 0);
 
 DROP DOMAIN IF EXISTS test_domain_exists;

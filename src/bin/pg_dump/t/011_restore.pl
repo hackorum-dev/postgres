@@ -268,6 +268,8 @@ foreach my $c (@dumpall_cases)
 # A "pg_dump --clean --if-exists" script must run without errors both in an
 # empty database and over an existing copy.  A NOT VALID constraint on a
 # foreign table is dumped separately and dropped with ALTER FOREIGN TABLE.
+# Likewise for a domain, with ALTER DOMAIN.  The domain's check calls a
+# function, so the constraint has to be dropped before the function is.
 $node->safe_psql('postgres', 'CREATE DATABASE clean_src');
 $node->safe_psql('postgres', 'CREATE DATABASE clean_dst');
 $node->safe_psql(
@@ -276,6 +278,10 @@ $node->safe_psql(
 	CREATE SERVER s FOREIGN DATA WRAPPER w;
 	CREATE FOREIGN TABLE ft (a int) SERVER s;
 	ALTER FOREIGN TABLE ft ADD CONSTRAINT ft_check CHECK (a > 0) NOT VALID;
+	CREATE FUNCTION is_pos(int) RETURNS bool
+		LANGUAGE sql IMMUTABLE AS 'SELECT $1 > 0';
+	CREATE DOMAIN d AS int;
+	ALTER DOMAIN d ADD CONSTRAINT d_check CHECK (is_pos(VALUE)) NOT VALID;
 });
 my $clean_dump = "$backupdir/clean-if-exists.sql";
 $node->command_ok(
@@ -298,9 +304,9 @@ foreach my $target ('empty', 'existing')
 }
 is( $node->safe_psql(
 		'clean_dst',
-		"SELECT count(*) FROM pg_constraint WHERE NOT convalidated AND conname = 'ft_check'"
+		"SELECT count(*) FROM pg_constraint WHERE NOT convalidated AND conname IN ('ft_check', 'd_check')"
 	),
-	'1',
+	'2',
 	'NOT VALID constraints restored');
 
 done_testing();
