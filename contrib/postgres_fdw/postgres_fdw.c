@@ -26,6 +26,7 @@
 #include "executor/instrument.h"
 #include "foreign/fdwapi.h"
 #include "funcapi.h"
+#include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
@@ -609,6 +610,8 @@ static RemoteAttributeMapping *build_remattrmap(Relation relation, List *va_cols
 												int *p_attrcnt, StringInfo column_list);
 static void free_remattrmap(RemoteAttributeMapping *map, int len);
 static bool attname_in_list(const char *attname, List *va_cols);
+static bool remattrmap_has_non_ascii_name(const RemoteAttributeMapping *remattrmap,
+										  int attrcnt);
 static int	remattrmap_cmp(const void *v1, const void *v2);
 static bool match_attrmap(PGresult *res,
 						  const char *local_schemaname,
@@ -5915,6 +5918,24 @@ fetch_remote_statistics(Relation relation,
 		/* Try to get attribute stats if needed. */
 		if (attrcnt > 0)
 		{
+			/* Non-ASCII names can collide across encodings; fall back */
+			if (remattrmap_has_non_ascii_name(remattrmap, attrcnt))
+			{
+				const char *remote_encoding = PQparameterStatus(conn, "server_encoding");
+				const char *local_encoding = GetDatabaseEncodingName();
+
+				if (remote_encoding == NULL || strcmp(remote_encoding, local_encoding) != 0)
+				{
+					ereport(WARNING,
+							errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("could not import statistics for foreign table \"%s.%s\" --- remote server encoding \"%s\" differs from local encoding \"%s\"",
+								   local_schemaname, local_relname,
+								   remote_encoding ? remote_encoding : "unknown",
+								   local_encoding));
+					goto fetch_cleanup;
+				}
+			}
+
 			/*
 			 * The fetch_attstats query sends COLLATE "C" to the remote
 			 * server; if it hasn't got it, fallback to sampling.
@@ -6191,6 +6212,24 @@ attname_in_list(const char *attname, List *va_cols)
 
 		if (strcmp(attname, col) == 0)
 			return true;
+	}
+	return false;
+}
+
+/*
+ * Does any remote_attname in the mapping have a non-ASCII byte?
+ */
+static bool
+remattrmap_has_non_ascii_name(const RemoteAttributeMapping *remattrmap, int attrcnt)
+{
+	for (int i = 0; i < attrcnt; i++)
+	{
+		for (const unsigned char *p = (const unsigned char *) remattrmap[i].remote_attname;
+			 *p; p++)
+		{
+			if (*p > 0x7F)
+				return true;
+		}
 	}
 	return false;
 }
