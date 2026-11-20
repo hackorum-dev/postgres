@@ -509,4 +509,38 @@ for my $scenario (@scenarios)
 	}
 }
 
+# A WAL file in a directory whose name only starts with "pg_wal" is not the
+# server's WAL and must not be read from an archive.
+SKIP:
+{
+	skip "tar command is not available", 1
+	  if !defined $tar || $tar eq '';
+
+	my $lookalike_dir = "$tmp_dir/lookalike";
+	mkdir $lookalike_dir;
+	mkdir "$lookalike_dir/pg_wal.old";
+	copy($node->data_dir . '/pg_wal/' . $start_walfile,
+		"$lookalike_dir/pg_wal.old/$start_walfile")
+	  || die "copy: $!";
+
+	my $cwd = getcwd;
+	chdir($lookalike_dir) || die "chdir: $!";
+	command_ok(
+		[
+			$tar, @tar_p_flags, '-cf', "$tmp_dir/lookalike.tar",
+			"pg_wal.old/$start_walfile"
+		]);
+	chdir($cwd) || die "chdir: $!";
+
+	command_fails_like(
+		[
+			'pg_waldump',
+			'--path' => "$tmp_dir/lookalike.tar",
+			'--start' => $start_lsn,
+			'--limit' => 1,
+		],
+		qr/error: could not find WAL/,
+		'WAL file outside pg_wal/ in archive is ignored');
+}
+
 done_testing();

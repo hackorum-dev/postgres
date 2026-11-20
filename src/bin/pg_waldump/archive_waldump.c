@@ -829,9 +829,14 @@ member_is_wal_file(astreamer_waldump *mystreamer, astreamer_member *member,
 	canonicalize_path(pathname);
 	pathlen = strlen(pathname);
 
-	/* Skip files in subdirectories other than pg_wal/ */
-	if (pathlen > XLOG_FNAME_LEN &&
-		strncmp(pathname, XLOGDIR, strlen(XLOGDIR)) != 0)
+	/*
+	 * Accept only a WAL file at the top level of the archive or directly in
+	 * pg_wal/.  Checking just the prefix would also accept a directory such
+	 * as pg_wal.old/ or pg_wal/archive/ that merely starts with "pg_wal".
+	 */
+	if (pathlen != XLOG_FNAME_LEN &&
+		(pathlen != strlen(XLOGDIR) + 1 + XLOG_FNAME_LEN ||
+		 strncmp(pathname, XLOGDIR "/", strlen(XLOGDIR) + 1) != 0))
 		return false;
 
 	/* WAL file may appear with a full path (e.g., pg_wal/<name>) */
