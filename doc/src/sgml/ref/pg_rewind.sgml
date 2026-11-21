@@ -125,6 +125,17 @@ PostgreSQL documentation
   </para>
 
   <para>
+   If the target server is a standby, its own setting of
+   <varname>wal_log_hints</varname> is what counts, not the setting of its
+   primary, and it must have been enabled the whole time.  A standby that
+   has run with <varname>wal_log_hints</varname> disabled, or was copied
+   from a server that has, is refused as a target unless data checksums are
+   enabled, even after <varname>wal_log_hints</varname> has been enabled.
+   Promoting the standby, or re-creating it from a server that has
+   <varname>wal_log_hints</varname> enabled, lifts that restriction.
+  </para>
+
+  <para>
    The data checksum states of the source and target server must be
    compatible.  <application>pg_rewind</application> refuses to run if an
    online checksum state transition was interrupted on either server, or

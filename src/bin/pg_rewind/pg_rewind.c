@@ -844,7 +844,15 @@ sanityChecks(void)
 	if (ControlFile_target.data_checksum_version != PG_DATA_CHECKSUM_VERSION &&
 		!ControlFile_target.wal_log_hints)
 	{
-		pg_fatal("target server needs to use either data checksums or \"wal_log_hints = on\"");
+		pg_log_error("target server needs to use either data checksums or \"wal_log_hints = on\"");
+
+		/*
+		 * A standby is also refused while its configuration has wal_log_hints
+		 * enabled, if it was off earlier; see StartupXLOG().
+		 */
+		if (ControlFile_target.state == DB_SHUTDOWNED_IN_RECOVERY)
+			pg_log_error_detail("A standby must have run with \"wal_log_hints = on\" ever since it was created or last promoted.");
+		exit(1);
 	}
 
 	/*

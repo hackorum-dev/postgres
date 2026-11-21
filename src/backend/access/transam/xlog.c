@@ -746,7 +746,7 @@ static void CleanupAfterArchiveRecovery(TimeLineID EndOfLogTLI,
 										XLogRecPtr EndOfLog,
 										TimeLineID newTLI);
 static void CheckRequiredParameterValues(void);
-static void XLogReportParameters(void);
+static void XLogReportParameters(bool force);
 static int	LocalSetXLogInsertAllowed(void);
 static void CreateEndOfRecoveryRecord(void);
 static XLogRecPtr CreateOverwriteContrecordRecord(XLogRecPtr aborted_lsn,
@@ -6412,6 +6412,21 @@ StartupXLOG(void)
 		SpinLockRelease(&XLogCtl->info_lck);
 
 		/*
+		 * In archive recovery, wal_log_hints in pg_control tells whether we
+		 * have run with it enabled all along, rather than what the primary
+		 * runs with: clear it if it is off now, and never set it here.  Hint
+		 * bits set by hot standby queries reach disk without WAL unless
+		 * wal_log_hints or data checksums are enabled here, whatever the
+		 * primary runs with, and they stay there when wal_log_hints is
+		 * enabled later.  pg_rewind relies on pg_control to tell whether that
+		 * could have happened.  xlog_redo() leaves the field alone for the
+		 * same reason, and the end of recovery sets it to the current value,
+		 * see XLogReportParameters().
+		 */
+		if (ArchiveRecoveryRequested && !wal_log_hints)
+			ControlFile->wal_log_hints = false;
+
+		/*
 		 * Update pg_control to show that we are recovering and to show the
 		 * selected checkpoint as the place we are starting from. We also mark
 		 * pg_control with any minimum recovery stop point obtained from a
@@ -6844,9 +6859,11 @@ StartupXLOG(void)
 
 	/*
 	 * If any of the critical GUCs have changed, log them before we allow
-	 * backends to write WAL.
+	 * backends to write WAL.  After archive recovery, wal_log_hints in
+	 * pg_control is not the value last replayed, so it cannot tell whether
+	 * that one changed; log them unconditionally then.
 	 */
-	XLogReportParameters();
+	XLogReportParameters(ArchiveRecoveryRequested);
 
 	/* If this is archive recovery, perform post-recovery cleanup actions. */
 	if (ArchiveRecoveryRequested)
@@ -9098,11 +9115,13 @@ XLogAssignLSN(void)
 /*
  * Check if any of the GUC parameters that are critical for hot standby
  * have changed, and update the value in pg_control file if necessary.
+ * If force is true, log them even if they appear unchanged.
  */
 static void
-XLogReportParameters(void)
+XLogReportParameters(bool force)
 {
-	if (wal_level != ControlFile->wal_level ||
+	if (force ||
+		wal_level != ControlFile->wal_level ||
 		wal_log_hints != ControlFile->wal_log_hints ||
 		MaxConnections != ControlFile->MaxConnections ||
 		max_worker_processes != ControlFile->max_worker_processes ||
@@ -9577,7 +9596,11 @@ xlog_redo(XLogReaderState *record)
 		ControlFile->max_prepared_xacts = xlrec.max_prepared_xacts;
 		ControlFile->max_locks_per_xact = xlrec.max_locks_per_xact;
 		ControlFile->wal_level = xlrec.wal_level;
-		ControlFile->wal_log_hints = xlrec.wal_log_hints;
+
+		/*
+		 * wal_log_hints is not copied, pg_control keeps track of our own
+		 * setting; see StartupXLOG().
+		 */
 
 		/*
 		 * Update minRecoveryPoint to ensure that if recovery is aborted, we
