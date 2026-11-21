@@ -181,6 +181,17 @@ SELECT *
 FROM dblink('SELECT * FROM foo') AS t(a int, b text, c text[])
 WHERE t.a > 7;
 ERROR:  connection not available
+-- COPY to/from the client is not supported.
+SELECT *
+FROM dblink(connection_parameters(), 'COPY foo TO STDOUT')
+	AS t(a int, b text, c text[]);
+ERROR:  could not obtain message string for remote error
+CONTEXT:  while executing query on unnamed dblink connection
+SELECT *
+FROM dblink(connection_parameters(), 'COPY foo FROM STDIN')
+	AS t(a int, b text, c text[]);
+ERROR:  could not obtain message string for remote error
+CONTEXT:  while executing query on unnamed dblink connection
 -- Some options are prohibited outright
 SELECT *
 FROM dblink(connection_parameters() || ' sslkeylogfile=./noexist/log', 'SELECT * FROM foo')
