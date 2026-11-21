@@ -2250,6 +2250,59 @@ description | Waiting for a newly initialized WAL file to reach durable storage
       </entry>
      </row>
 
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>recovery_end_state</structfield> <type>text</type>
+      </para>
+      <para>
+       The startup process's progress toward ending recovery.
+      </para>
+      <itemizedlist>
+       <listitem>
+        <para>
+         With <literal>replaying</literal>, the startup process is replaying,
+         waiting for, or paused before applying more WAL. A restart of a
+         standby at this stage starts it in standby mode again.
+        </para>
+       </listitem>
+       <listitem>
+        <para>
+         With <literal>ending</literal>, the startup process has finished
+         WAL replay and is preparing to end recovery. This includes a pause
+         at a recovery target. A restart at this stage follows the mode
+         requested by the existing signal files, if any.
+        </para>
+       </listitem>
+       <listitem>
+        <para>
+         With <literal>timeline switched</literal>, the startup process has
+         selected a new timeline and reached the step that durably removes
+         the recovery signal files. This state is reported just before
+         removing the files so that the shared state reflects the transition
+         by the time restarting can bring up a primary. A failover controller
+         should treat this state as a switch that may already have taken
+         effect. If the server stops during removal, its restart behavior
+         depends on which signal files remain. Once the removal is durable,
+         a restart brings up a primary unless archive recovery is requested
+         again.
+        </para>
+       </listitem>
+      </itemizedlist>
+      </entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>new_timeline</structfield> <type>integer</type>
+      </para>
+      <para>
+       Timeline selected for the end of archive recovery. This is NULL until
+       the startup process reports the selected timeline. Ordinary crash
+       recovery keeps the existing timeline.
+      </para>
+      </entry>
+     </row>
+
     </tbody>
    </tgroup>
   </table>

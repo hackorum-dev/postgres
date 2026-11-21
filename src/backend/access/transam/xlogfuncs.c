@@ -75,6 +75,32 @@ GetRecoveryPauseStateString(RecoveryPauseState pause_state)
 }
 
 /*
+ * Return a string constant representing the end-of-recovery state. This is
+ * used in a system view, and should *not* be translated.
+ */
+static const char *
+GetRecoveryEndStateString(RecoveryEndState end_state)
+{
+	const char *statestr = NULL;
+
+	switch (end_state)
+	{
+		case RECOVERY_END_NOT_STARTED:
+			statestr = "replaying";
+			break;
+		case RECOVERY_END_STARTED:
+			statestr = "ending";
+			break;
+		case RECOVERY_END_TIMELINE_SWITCHED:
+			statestr = "timeline switched";
+			break;
+	}
+
+	Assert(statestr != NULL);
+	return statestr;
+}
+
+/*
  * pg_backup_start: set up for taking an on-line backup dump
  *
  * Essentially what this does is to create the contents required for the
@@ -791,6 +817,8 @@ pg_stat_get_recovery(PG_FUNCTION_ARGS)
 	TimestampTz recovery_last_xact_time;
 	TimestampTz current_chunk_start_time;
 	RecoveryPauseState pause_state;
+	RecoveryEndState end_state;
+	TimeLineID	new_timeline;
 
 	if (!RecoveryInProgress())
 		PG_RETURN_NULL();
@@ -809,6 +837,8 @@ pg_stat_get_recovery(PG_FUNCTION_ARGS)
 	recovery_last_xact_time = XLogRecoveryCtl->recoveryLastXTime;
 	current_chunk_start_time = XLogRecoveryCtl->currentChunkStartTime;
 	pause_state = XLogRecoveryCtl->recoveryPauseState;
+	end_state = XLogRecoveryCtl->recoveryEndState;
+	new_timeline = XLogRecoveryCtl->recoveryEndNewTLI;
 	SpinLockRelease(&XLogRecoveryCtl->info_lck);
 
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
@@ -855,6 +885,12 @@ pg_stat_get_recovery(PG_FUNCTION_ARGS)
 		nulls[7] = true;
 
 	values[8] = CStringGetTextDatum(GetRecoveryPauseStateString(pause_state));
+	values[9] = CStringGetTextDatum(GetRecoveryEndStateString(end_state));
+
+	if (new_timeline != 0)
+		values[10] = Int32GetDatum(new_timeline);
+	else
+		nulls[10] = true;
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc, values, nulls)));
 }

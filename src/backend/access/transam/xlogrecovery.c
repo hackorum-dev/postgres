@@ -411,6 +411,7 @@ static void
 XLogRecoveryShmemInit(void *arg)
 {
 	memset(XLogRecoveryCtl, 0, sizeof(XLogRecoveryCtlData));
+	XLogRecoveryCtl->recoveryEndState = RECOVERY_END_NOT_STARTED;
 
 	SpinLockInit(&XLogRecoveryCtl->info_lck);
 	InitSharedLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
@@ -1830,6 +1831,7 @@ PerformWalRecovery(void)
 		/*
 		 * end of main redo apply loop
 		 */
+		SetRecoveryEndState(RECOVERY_END_STARTED, 0);
 
 		if (reachedRecoveryTarget)
 		{
@@ -1882,6 +1884,7 @@ PerformWalRecovery(void)
 	else
 	{
 		/* there are no WAL records following the checkpoint */
+		SetRecoveryEndState(RECOVERY_END_STARTED, 0);
 		ereport(LOG,
 				(errmsg("redo is not required")));
 	}
@@ -3081,6 +3084,18 @@ GetRecoveryPauseState(void)
 	SpinLockRelease(&XLogRecoveryCtl->info_lck);
 
 	return state;
+}
+
+/*
+ * Publish end-of-recovery progress from the startup process.
+ */
+void
+SetRecoveryEndState(RecoveryEndState state, TimeLineID newTLI)
+{
+	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	XLogRecoveryCtl->recoveryEndState = state;
+	XLogRecoveryCtl->recoveryEndNewTLI = newTLI;
+	SpinLockRelease(&XLogRecoveryCtl->info_lck);
 }
 
 /*

@@ -60,6 +60,14 @@ typedef enum RecoveryPauseState
 	RECOVERY_PAUSED,			/* recovery is paused */
 } RecoveryPauseState;
 
+/* Progress through the end of recovery. */
+typedef enum RecoveryEndState
+{
+	RECOVERY_END_NOT_STARTED,
+	RECOVERY_END_STARTED,
+	RECOVERY_END_TIMELINE_SWITCHED,
+} RecoveryEndState;
+
 /*
  * Shared-memory state for WAL recovery.
  */
@@ -125,6 +133,10 @@ typedef struct XLogRecoveryCtlData
 	/* Recovery pause state */
 	RecoveryPauseState recoveryPauseState;
 	ConditionVariable recoveryNotPausedCV;
+
+	/* End-of-recovery progress and the new timeline (zero until selected). */
+	RecoveryEndState recoveryEndState;
+	TimeLineID	recoveryEndNewTLI;
 
 	slock_t		info_lck;		/* locks shared variables shown above */
 } XLogRecoveryCtlData;
@@ -220,6 +232,7 @@ extern bool HotStandbyActiveInReplay(void);
 extern XLogRecPtr GetXLogReplayRecPtr(TimeLineID *replayTLI);
 extern RecoveryPauseState GetRecoveryPauseState(void);
 extern void SetRecoveryPause(bool recoveryPause);
+extern void SetRecoveryEndState(RecoveryEndState state, TimeLineID newTLI);
 extern void GetXLogReceiptTime(TimestampTz *rtime, bool *fromStream);
 extern TimestampTz GetLatestXTime(void);
 extern TimestampTz GetCurrentChunkReplayStartTime(void);

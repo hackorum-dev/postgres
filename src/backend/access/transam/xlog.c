@@ -6559,7 +6559,10 @@ StartupXLOG(void)
 		performedWalRecovery = true;
 	}
 	else
+	{
 		performedWalRecovery = false;
+		SetRecoveryEndState(RECOVERY_END_STARTED, 0);
+	}
 
 	/*
 	 * Finish WAL recovery.
@@ -6659,8 +6662,10 @@ StartupXLOG(void)
 	if (ArchiveRecoveryRequested)
 	{
 		newTLI = findNewestTimeLine(recoveryTargetTLI) + 1;
+		INJECTION_POINT("promotion-before-timeline-switch", NULL);
 		ereport(LOG,
 				(errmsg("selected new timeline ID: %u", newTLI)));
+		SetRecoveryEndState(RECOVERY_END_STARTED, newTLI);
 
 		/*
 		 * Make a writable copy of the last WAL segment.  (Note that we also
@@ -6672,7 +6677,10 @@ StartupXLOG(void)
 		/*
 		 * Remove the signal files out of the way, so that we don't
 		 * accidentally re-enter archive recovery mode in a subsequent crash.
+		 * Publish the transition first, so the shared state marks the
+		 * timeline switch before the restart behavior changes.
 		 */
+		SetRecoveryEndState(RECOVERY_END_TIMELINE_SWITCHED, newTLI);
 		if (endOfRecoveryInfo->standby_signal_file_found)
 			durable_unlink(STANDBY_SIGNAL_FILE, FATAL);
 

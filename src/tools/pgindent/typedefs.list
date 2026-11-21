@@ -2555,6 +2555,7 @@ RecordCacheEntry
 RecordCompareData
 RecordIOData
 RecoveryConflictReason
+RecoveryEndState
 RecoveryLockEntry
 RecoveryLockXidEntry
 RecoveryPauseState
