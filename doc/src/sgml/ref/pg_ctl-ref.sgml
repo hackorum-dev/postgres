@@ -230,7 +230,10 @@ PostgreSQL documentation
   <para>
    <option>promote</option> mode commands the standby server that is
    running in the specified data directory to end standby mode
-   and begin read-write operations.
+   and begin read-write operations.  A timeout while waiting for promotion
+   ends the <application>pg_ctl</application> wait, and the server can still
+   complete promotion in the background.  See
+   <xref linkend="warm-standby-failover"/> for details.
   </para>
 
   <para>

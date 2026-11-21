@@ -1572,6 +1572,18 @@ postgres=# WAIT FOR LSN '0/306EE20';
     you don't need to promote.
    </para>
 
+   <para>
+    A timeout while waiting for promotion only ends the caller's wait.  The
+    standby can still become a primary.  During promotion, the server selects
+    a new timeline and durably removes <filename>standby.signal</filename>.
+    After this removal, a restart will no longer bring the server back up as
+    a standby unless standby mode is configured again.  Until recovery
+    finishes, <function>pg_is_in_recovery()</function> still returns
+    <literal>true</literal>, and hot standby sessions still run read-only
+    transactions.  These observations alone do not establish that it is safe
+    to make another server writable.
+   </para>
+
    <note>
     <para>
      On a standby with <xref linkend="guc-wal-level"/> set to

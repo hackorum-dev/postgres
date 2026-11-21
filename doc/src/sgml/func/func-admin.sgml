@@ -811,14 +811,22 @@ postgres=# SELECT '0/0'::pg_lsn + pd.segment_number * ps.setting::int + :offset 
        <para>
         Promotes a standby server to primary status.
         With <parameter>wait</parameter> set to <literal>true</literal> (the
-        default), the function waits until promotion is completed
-        or <parameter>wait_seconds</parameter> seconds have passed, and
-        returns <literal>true</literal> if promotion is successful
-        and <literal>false</literal> otherwise.
+        default), the function waits for promotion to complete and returns
+        <literal>true</literal> if it observes completion within
+        <parameter>wait_seconds</parameter> seconds.  If the wait times out,
+        the function returns <literal>false</literal> and the promotion can
+        still complete in the background.
         If <parameter>wait</parameter> is set to <literal>false</literal>, the
         function returns <literal>true</literal> immediately after sending a
         <literal>SIGUSR1</literal> signal to the postmaster to trigger
         promotion.
+       </para>
+       <para>
+        Use <function>pg_is_in_recovery()</function> to check whether recovery
+        has ended, or the <link linkend="monitoring-pg-stat-recovery-view">
+        <structname>pg_stat_recovery</structname></link> view to check whether
+        the startup process has accepted the promotion request.  See
+        <xref linkend="warm-standby-failover"/> for details.
        </para>
        <para>
         This function is restricted to superusers by default, but other users
