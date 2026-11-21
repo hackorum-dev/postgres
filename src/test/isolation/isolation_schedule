@@ -1,3 +1,5 @@
+test: inline-alter-domain-validate
+test: inline-deadlock-hard
 test: read-only-anomaly
 test: read-only-anomaly-2
 test: read-only-anomaly-3
