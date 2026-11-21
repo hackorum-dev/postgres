@@ -4447,3 +4447,39 @@ ERROR:  insert or update on table "ri_fk_io" violates foreign key constraint "ri
 DETAIL:  Key (a)=(2) is not present in table "ri_pk".
 ROLLBACK TO SAVEPOINT s;
 ROLLBACK;
+-- An UPDATE of an FK column whose type reaches the PK type only through an
+-- implicit I/O cast must compare the old and new values through I/O, too.
+-- The FK row must not be inserted in the same transaction as the UPDATE,
+-- or the comparison is skipped.
+CREATE TYPE ri_ioint2;
+CREATE FUNCTION ri_ioint2_in(cstring) RETURNS ri_ioint2
+    AS 'int4in' LANGUAGE internal IMMUTABLE STRICT;
+NOTICE:  return type ri_ioint2 is only a shell
+CREATE FUNCTION ri_ioint2_out(ri_ioint2) RETURNS cstring
+    AS 'int4out' LANGUAGE internal IMMUTABLE STRICT;
+NOTICE:  argument type ri_ioint2 is only a shell
+LINE 1: CREATE FUNCTION ri_ioint2_out(ri_ioint2) RETURNS cstring
+                                      ^
+CREATE TYPE ri_ioint2 (INPUT = ri_ioint2_in, OUTPUT = ri_ioint2_out, LIKE = int4);
+CREATE CAST (ri_ioint2 AS int4) WITH INOUT AS IMPLICIT;
+CREATE TABLE ri_pk_io2 (id int4 PRIMARY KEY);
+CREATE TABLE ri_fk_io2 (a ri_ioint2 REFERENCES ri_pk_io2, b int);
+INSERT INTO ri_pk_io2 VALUES (1), (2);
+INSERT INTO ri_fk_io2 VALUES ('1', 10);
+UPDATE ri_fk_io2 SET a = a, b = 11;	-- succeeds
+UPDATE ri_fk_io2 SET a = '2';	-- succeeds
+UPDATE ri_fk_io2 SET a = '3';	-- fails
+ERROR:  insert or update on table "ri_fk_io2" violates foreign key constraint "ri_fk_io2_a_fkey"
+DETAIL:  Key (a)=(3) is not present in table "ri_pk_io2".
+SELECT a::text, b FROM ri_fk_io2;
+ a | b  
+---+----
+ 2 | 11
+(1 row)
+
+DROP TABLE ri_fk_io2, ri_pk_io2;
+DROP TYPE ri_ioint2 CASCADE;
+NOTICE:  drop cascades to 3 other objects
+DETAIL:  drop cascades to function ri_ioint2_in(cstring)
+drop cascades to function ri_ioint2_out(ri_ioint2)
+drop cascades to cast from ri_ioint2 to integer

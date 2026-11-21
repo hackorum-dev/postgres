@@ -213,6 +213,10 @@ typedef struct RI_CompareHashEntry
 	bool		valid;			/* successfully initialized? */
 	FmgrInfo	eq_opr_finfo;	/* call info for equality fn */
 	FmgrInfo	cast_func_finfo;	/* in case we must coerce input */
+	bool		cast_via_io;	/* coerce input through text I/O? */
+	FmgrInfo	io_out_finfo;	/* output function of the input type */
+	FmgrInfo	io_in_finfo;	/* input function of the operator's type */
+	Oid			io_typioparam;	/* typioparam for io_in_finfo */
 } RI_CompareHashEntry;
 
 /*
@@ -3991,7 +3995,16 @@ ri_CompareWithCast(Oid eq_opr, Oid typeid, Oid collid,
 	RI_CompareHashEntry *entry = ri_HashCompareOp(eq_opr, typeid);
 
 	/* Do we need to cast the values? */
-	if (OidIsValid(entry->cast_func_finfo.fn_oid))
+	if (entry->cast_via_io)
+	{
+		lhs = InputFunctionCall(&entry->io_in_finfo,
+								OutputFunctionCall(&entry->io_out_finfo, lhs),
+								entry->io_typioparam, -1);
+		rhs = InputFunctionCall(&entry->io_in_finfo,
+								OutputFunctionCall(&entry->io_out_finfo, rhs),
+								entry->io_typioparam, -1);
+	}
+	else if (OidIsValid(entry->cast_func_finfo.fn_oid))
 	{
 		Oid			castfunc = entry->cast_func_finfo.fn_oid;
 		AclResult	aclresult;
@@ -4090,11 +4103,12 @@ ri_HashCompareOp(Oid eq_opr, Oid typeid)
 		 * because cases involving nonidentical array types will be rejected
 		 * at constraint creation time.
 		 *
-		 * XXX perhaps also consider supporting CoerceViaIO?  No need at the
-		 * moment since that will never be generated for implicit coercions.
+		 * A cast created WITH INOUT AS IMPLICIT gives a CoerceViaIO path, so
+		 * support that too.
 		 */
 		op_input_types(eq_opr, &lefttype, &righttype);
 		Assert(lefttype == righttype);
+		entry->cast_via_io = false;
 		if (typeid == lefttype)
 			castfunc = InvalidOid;	/* simplest case */
 		else
@@ -4102,8 +4116,20 @@ ri_HashCompareOp(Oid eq_opr, Oid typeid)
 			pathtype = find_coercion_pathway(lefttype, typeid,
 											 COERCION_IMPLICIT,
 											 &castfunc);
-			if (pathtype != COERCION_PATH_FUNC &&
-				pathtype != COERCION_PATH_RELABELTYPE)
+			if (pathtype == COERCION_PATH_COERCEVIAIO)
+			{
+				Oid			outfunc,
+							infunc;
+				bool		isvarlena;
+
+				getTypeOutputInfo(typeid, &outfunc, &isvarlena);
+				getTypeInputInfo(lefttype, &infunc, &entry->io_typioparam);
+				fmgr_info_cxt(outfunc, &entry->io_out_finfo, TopMemoryContext);
+				fmgr_info_cxt(infunc, &entry->io_in_finfo, TopMemoryContext);
+				entry->cast_via_io = true;
+			}
+			else if (pathtype != COERCION_PATH_FUNC &&
+					 pathtype != COERCION_PATH_RELABELTYPE)
 			{
 				/*
 				 * The declared input type of the eq_opr might be a
