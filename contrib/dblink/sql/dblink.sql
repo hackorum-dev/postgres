@@ -133,6 +133,12 @@ SELECT *
 FROM dblink('SELECT * FROM foo') AS t(a int, b text, c text[])
 WHERE t.a > 7;
 
+-- COPY is not supported, and used to make dblink() loop forever
+SELECT *
+FROM dblink(connection_parameters(), 'COPY foo TO STDOUT') AS t(a int, b text, c text[]);
+SELECT *
+FROM dblink(connection_parameters(), 'COPY foo FROM STDIN') AS t(a int, b text, c text[]);
+
 -- Some options are prohibited outright
 SELECT *
 FROM dblink(connection_parameters() || ' sslkeylogfile=./noexist/log', 'SELECT * FROM foo')
