@@ -285,6 +285,21 @@ check_testspec(TestSpec *testspec)
 		}
 	}
 
+	/* Verify that all session names are unique. */
+	for (i = 0; i < testspec->nsessions; i++)
+	{
+		for (j = i + 1; j < testspec->nsessions; j++)
+		{
+			if (strcmp(testspec->sessions[i]->name,
+					   testspec->sessions[j]->name) == 0)
+			{
+				fprintf(stderr, "duplicate session name: %s\n",
+						testspec->sessions[i]->name);
+				exit(1);
+			}
+		}
+	}
+
 	/* Set the session index fields in steps. */
 	for (i = 0; i < testspec->nsessions; i++)
 	{
@@ -295,8 +310,9 @@ check_testspec(TestSpec *testspec)
 	}
 
 	/*
-	 * If we have manually-specified permutations, link PermutationSteps to
-	 * Steps, and fill in blocker links.
+	 * If we have manually-specified permutations, link named PermutationSteps
+	 * to Steps, assign inline Steps sessions and names, and fill in blocker
+	 * links.
 	 */
 	for (i = 0; i < testspec->npermutations; i++)
 	{
@@ -305,22 +321,72 @@ check_testspec(TestSpec *testspec)
 		for (j = 0; j < p->nsteps; j++)
 		{
 			PermutationStep *pstep = p->steps[j];
-			Step	  **this = (Step **) bsearch(pstep->name,
-												 allsteps,
-												 nallsteps,
-												 sizeof(Step *),
-												 step_bsearch_cmp);
 
-			if (this == NULL)
+			/* If it's a named PermutationStep, link it to a Step */
+			if (pstep->name)
 			{
-				fprintf(stderr, "undefined step \"%s\" specified in permutation\n",
-						pstep->name);
-				exit(1);
-			}
-			pstep->step = *this;
+				Step	  **this = (Step **) bsearch(pstep->name,
+													 allsteps,
+													 nallsteps,
+													 sizeof(Step *),
+													 step_bsearch_cmp);
 
-			/* Mark the step used, for check below */
-			pstep->step->used = true;
+				if (this == NULL)
+				{
+					fprintf(stderr, "undefined step \"%s\" specified in permutation\n",
+							pstep->name);
+					exit(1);
+				}
+				pstep->step = *this;
+
+				/* Mark the step used, for check below */
+				pstep->step->used = true;
+			}
+
+			/* Otherwise, it's an inline Step; assign it to a session */
+			else
+			{
+				for (k = 0; k < testspec->nsessions; k++)
+				{
+					if (strcmp(testspec->sessions[k]->name,
+							   pstep->step->sessionname) == 0)
+					{
+						pstep->step->session = k;
+						break;
+					}
+				}
+				if (pstep->step->session < 0)
+				{
+					fprintf(stderr, "undefined session \"%s\" specified by step in permutation\n",
+							pstep->step->sessionname);
+					exit(1);
+				}
+
+				/* Generate a name for the Step (unique within permutation) */
+				k = 1;
+				while (true)
+				{
+					char	   *name = psprintf("%s[%d]",
+												pstep->step->sessionname, k);
+					bool		unique = true;
+
+					for (int s = 0; s < p->nsteps; s++)
+					{
+						if (p->steps[s]->name &&
+							strcmp(p->steps[s]->name, name) == 0)
+						{
+							unique = false;
+							break;
+						}
+					}
+					if (unique)
+					{
+						pstep->name = pstep->step->name = name;
+						break;
+					}
+					k++;
+				}
+			}
 		}
 
 		/*

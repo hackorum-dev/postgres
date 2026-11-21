@@ -84,10 +84,11 @@ session <name>
 
   There are normally several "session" parts in a spec file. Each
   session is executed in its own connection. A session part consists
-  of three parts: setup, teardown and one or more "steps". The per-session
+  of three parts: setup, teardown and zero or more "steps". The per-session
   setup and teardown parts have the same syntax as the per-test setup and
   teardown described above, but they are executed in each session. The setup
   part might, for example, contain a "BEGIN" command to begin a transaction.
+  Session names must be unique within a spec file.
 
   Each step has the syntax
 
@@ -108,6 +109,31 @@ permutation <step name> ...
   available steps; it could for instance repeat some steps more than once,
   or leave others out.  Also, each step name can be annotated with some
   parenthesized markers, which are described below.
+
+permutation <session name> { <SQL> } ...
+
+  A permutation may also be written in a self-contained form, where each
+  step is given inline as the name of the session in which it runs, followed
+  by its SQL. For readability, this form is best split over multiple lines,
+  for example:
+
+  permutation
+    s1 { DELETE FROM target WHERE key = 1; }
+    s2 { INSERT INTO target VALUES (1, 'insert1'); }
+    s1 { COMMIT; }
+    s2 { COMMIT; }
+
+  Here the steps are executed in the order written: first the DELETE in
+  session s1, then the INSERT in session s2, and so on.  Inline steps are
+  assigned generated names of the form "<session name>[<n>]", where n is a
+  counter that starts at one for each session used in the permutation, so
+  that the names are unique within a permutation and can be identified in
+  the test output.  Also, each session name can be annotated with some
+  parenthesized markers, which are described below.
+
+  Note also that inline steps may be mixed with references to named steps
+  within the same permutation (making the permutation no longer
+  self-contained, but potentially reducing duplication of test code).
 
 Session and step names are SQL identifiers, either plain or double-quoted.
 A difference from standard SQL is that no case-folding occurs, so that
@@ -160,9 +186,13 @@ discouraged since the extra files are a nuisance for maintenance.
 Instead, it's usually possible to stabilize the test output by applying
 special markers to some of the step names listed in a permutation line.
 
-The general form of a permutation entry is
+The general form of a permutation entry is either
 
 	<step name> [ ( <marker> [ , <marker> ... ] ) ]
+
+or
+
+	<session name> [ ( <marker> [ , <marker> ... ] ) ] { <SQL> }
 
 where each marker defines a "blocking condition".  The step will not be
 reported as completed before all the blocking conditions are satisfied.

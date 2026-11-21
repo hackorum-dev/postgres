@@ -46,7 +46,7 @@ TestSpec		parseresult;			/* result of parsing is left here */
 %type <str>  opt_setup opt_teardown
 %type <str> setup
 %type <ptr_list> step_list session_list permutation_list opt_permutation_list
-%type <ptr_list> permutation_step_list blocker_list
+%type <ptr_list> permutation_step_list blocker_list opt_steps
 %type <session> session
 %type <step> step
 %type <permutation> permutation
@@ -121,7 +121,7 @@ session_list:
 		;
 
 session:
-			SESSION identifier opt_setup step_list opt_teardown
+			SESSION identifier opt_setup opt_steps opt_teardown
 			{
 				$$ = pg_malloc_object(Session);
 				$$->name = $2;
@@ -130,6 +130,15 @@ session:
 				$$->nsteps = $4.nelements;
 				$$->teardownsql = $5;
 			}
+		;
+
+opt_steps:
+			/* EMPTY */
+			{
+				$$.elements = NULL;
+				$$.nelements = 0;
+			}
+			| step_list
 		;
 
 step_list:
@@ -155,6 +164,7 @@ step:
 				$$ = pg_malloc_object(Step);
 				$$->name = $2;
 				$$->sql = $3;
+				$$->sessionname = NULL; /* not an inline step */
 				$$->session = -1; /* until filled */
 				$$->used = false;
 			}
@@ -230,6 +240,34 @@ permutation_step:
 				$$->blockers = (PermutationStepBlocker **) $3.elements;
 				$$->nblockers = $3.nelements;
 				$$->step = NULL;
+			}
+			| identifier sqlblock
+			{
+				$$ = pg_malloc_object(PermutationStep);
+				$$->name = NULL; /* until filled */
+				$$->blockers = NULL;
+				$$->nblockers = 0;
+				$$->step = pg_malloc_object(Step);
+
+				$$->step->name = NULL; /* until filled */
+				$$->step->sql = $2;
+				$$->step->sessionname = $1;
+				$$->step->session = -1; /* until filled */
+				$$->step->used = true;
+			}
+			| identifier '(' blocker_list ')' sqlblock
+			{
+				$$ = pg_malloc_object(PermutationStep);
+				$$->name = NULL; /* until filled */
+				$$->blockers = (PermutationStepBlocker **) $3.elements;
+				$$->nblockers = $3.nelements;
+				$$->step = pg_malloc_object(Step);
+
+				$$->step->name = NULL; /* until filled */
+				$$->step->sql = $5;
+				$$->step->sessionname = $1;
+				$$->step->session = -1; /* until filled */
+				$$->step->used = true;
 			}
 		;
 
