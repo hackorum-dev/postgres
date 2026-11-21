@@ -3163,7 +3163,7 @@ SELECT convert_from(pg_read_binary_file('file_in_utf8.txt'), 'UTF8');
         <indexterm>
          <primary>pg_enable_data_checksums</primary>
         </indexterm>
-        <function>pg_enable_data_checksums</function> ( <optional><parameter>cost_delay</parameter> <type>int</type> <optional>, <parameter>cost_limit</parameter> <type>int</type></optional></optional> )
+        <function>pg_enable_data_checksums</function> ( <optional><parameter>cost_delay</parameter> <type>int</type> <optional>, <parameter>cost_limit</parameter> <type>int</type> <optional>, <parameter>fast</parameter> <type>boolean</type></optional></optional></optional> )
         <returnvalue>void</returnvalue>
        </para>
        <para>
@@ -3185,6 +3185,15 @@ SELECT convert_from(pg_read_binary_file('file_in_utf8.txt'), 'UTF8');
        <para>
         This function is restricted to superusers.
        </para>
+       <para>
+        The <parameter>fast</parameter> parameter specifies whether the checkpoints
+        performed are fast or spread.
+        When set to <literal>true</literal> the checkpoints are fast, which may cause
+        a spike in I/O. When set to <literal>false</literal>, the checkpoints are
+        spread (throttled), which may increase the time needed to enable data checksums,
+        but it limits the impact on the system.
+        The default value is <literal>true</literal>.
+       </para>
        </entry>
       </row>
 
@@ -3193,7 +3202,7 @@ SELECT convert_from(pg_read_binary_file('file_in_utf8.txt'), 'UTF8');
         <indexterm>
          <primary>pg_disable_data_checksums</primary>
         </indexterm>
-        <function>pg_disable_data_checksums</function> ()
+        <function>pg_disable_data_checksums</function> ( <optional><parameter>fast</parameter> <type>boolean</type> <literal>DEFAULT</literal> <literal>true</literal></optional> )
         <returnvalue>void</returnvalue>
        </para>
        <para>
@@ -3205,6 +3214,15 @@ SELECT convert_from(pg_read_binary_file('file_in_utf8.txt'), 'UTF8');
        </para>
        <para>
         This function is restricted to superusers.
+       </para>
+       <para>
+        The <parameter>fast</parameter> parameter specifies whether the checkpoints
+        performed are fast or spread.
+        When set to <literal>true</literal> the checkpoints are fast, which may cause
+        a spike in I/O. When set to <literal>false</literal>, the checkpoints are
+        spread (throttled), which may increase the time needed to disable data checksums,
+        but it limits the impact on the system.
+        The default value is <literal>true</literal>.
        </para>
        </entry>
       </row>
