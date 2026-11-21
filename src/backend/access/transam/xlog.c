@@ -5937,20 +5937,66 @@ XLogInitNewTimeline(TimeLineID endTLI, XLogRecPtr endOfLog, TimeLineID newTLI)
 }
 
 /*
+ * Measure elapsed time separately from the periodic startup progress timer.
+ * Some operations, such as recovery_end_command, cannot report progress
+ * until they return.
+ */
+static instr_time
+StartEndOfRecoveryStep(bool in_recovery)
+{
+	instr_time	start;
+
+	if (in_recovery && log_startup_progress_interval > 0)
+		INSTR_TIME_SET_CURRENT(start);
+	else
+		INSTR_TIME_SET_ZERO(start);
+
+	return start;
+}
+
+static void
+LogEndOfRecoveryStep(instr_time start, const char *msg)
+{
+	instr_time	elapsed;
+	int64		elapsed_us;
+
+	if (INSTR_TIME_IS_ZERO(start) || log_startup_progress_interval <= 0)
+		return;
+
+	INSTR_TIME_SET_CURRENT(elapsed);
+	INSTR_TIME_SUBTRACT(elapsed, start);
+	elapsed_us = INSTR_TIME_GET_MICROSEC(elapsed);
+
+	if (elapsed_us / 1000 >= log_startup_progress_interval)
+		ereport(LOG,
+				(errmsg(msg, (long) (elapsed_us / USECS_PER_SEC),
+						(int) (elapsed_us % USECS_PER_SEC / 10000))));
+}
+
+/*
  * Perform cleanup actions at the conclusion of archive recovery.
  */
 static void
 CleanupAfterArchiveRecovery(TimeLineID EndOfLogTLI, XLogRecPtr EndOfLog,
 							TimeLineID newTLI)
 {
+	instr_time	step_start;
+
 	/*
 	 * Execute the recovery_end_command, if any.
 	 */
 	if (recoveryEndCommand && strcmp(recoveryEndCommand, "") != 0)
+	{
+		step_start = StartEndOfRecoveryStep(true);
 		ExecuteRecoveryCommand(recoveryEndCommand,
 							   "recovery_end_command",
 							   true,
 							   WAIT_EVENT_RECOVERY_END_COMMAND);
+		LogEndOfRecoveryStep(step_start,
+							 gettext_noop("end of recovery: \"recovery_end_command\" took %ld.%02d s"));
+	}
+
+	step_start = StartEndOfRecoveryStep(true);
 
 	/*
 	 * We switched to a new timeline. Clean up segments on the old timeline.
@@ -6025,6 +6071,9 @@ CleanupAfterArchiveRecovery(TimeLineID EndOfLogTLI, XLogRecPtr EndOfLog,
 			XLogArchiveNotify(partialfname);
 		}
 	}
+
+	LogEndOfRecoveryStep(step_start,
+						 gettext_noop("end of recovery: cleaning up WAL from the old timeline took %ld.%02d s"));
 }
 
 /*
@@ -6097,6 +6146,8 @@ StartupXLOG(void)
 	XLogRecPtr	missingContrecPtr;
 	TransactionId oldestActiveXID;
 	bool		promoted = false;
+	bool		report_recovery_progress;
+	instr_time	step_start;
 	char		timebuf[128];
 
 	/*
@@ -6567,7 +6618,11 @@ StartupXLOG(void)
 	/*
 	 * Finish WAL recovery.
 	 */
+	report_recovery_progress = InRecovery;
+	step_start = StartEndOfRecoveryStep(report_recovery_progress);
 	endOfRecoveryInfo = FinishWalRecovery();
+	LogEndOfRecoveryStep(step_start,
+						 gettext_noop("end of recovery: finishing WAL recovery took %ld.%02d s"));
 	EndOfLog = endOfRecoveryInfo->endOfLog;
 	EndOfLogTLI = endOfRecoveryInfo->endOfLogTLI;
 	abortedRecPtr = endOfRecoveryInfo->abortedRecPtr;
@@ -6629,14 +6684,25 @@ StartupXLOG(void)
 	 * end-of-recovery steps fail.
 	 */
 	if (InRecovery)
+	{
+		step_start = StartEndOfRecoveryStep(true);
+
+		/* This restarts the progress timer disabled during standby replay. */
 		ResetUnloggedRelations(UNLOGGED_RELATION_INIT);
+		disable_startup_progress_timeout();
+		LogEndOfRecoveryStep(step_start,
+							 gettext_noop("end of recovery: resetting unlogged relations took %ld.%02d s"));
+	}
 
 	/*
 	 * Pre-scan prepared transactions to find out the range of XIDs present.
 	 * This information is not quite needed yet, but it is positioned here so
 	 * as potential problems are detected before any on-disk change is done.
 	 */
+	step_start = StartEndOfRecoveryStep(report_recovery_progress);
 	oldestActiveXID = PrescanPreparedTransactions(NULL, NULL);
+	LogEndOfRecoveryStep(step_start,
+						 gettext_noop("end of recovery: scanning prepared transactions took %ld.%02d s"));
 
 	/*
 	 * Allow ordinary WAL segment creation before possibly switching to a new
@@ -6661,6 +6727,7 @@ StartupXLOG(void)
 	newTLI = endOfRecoveryInfo->lastRecTLI;
 	if (ArchiveRecoveryRequested)
 	{
+		step_start = StartEndOfRecoveryStep(true);
 		newTLI = findNewestTimeLine(recoveryTargetTLI) + 1;
 		INJECTION_POINT("promotion-before-timeline-switch", NULL);
 		ereport(LOG,
@@ -6702,6 +6769,9 @@ StartupXLOG(void)
 
 		ereport(LOG,
 				(errmsg("archive recovery complete")));
+
+		LogEndOfRecoveryStep(step_start,
+							 gettext_noop("end of recovery: switching to the new timeline took %ld.%02d s"));
 	}
 
 	/* Save the selected TimeLineID in shared memory, too */
@@ -6786,7 +6856,10 @@ StartupXLOG(void)
 	/*
 	 * Preallocate additional log files, if wanted.
 	 */
+	step_start = StartEndOfRecoveryStep(report_recovery_progress);
 	PreallocXlogFiles(EndOfLog, newTLI);
+	LogEndOfRecoveryStep(step_start,
+						 gettext_noop("end of recovery: preallocating WAL files took %ld.%02d s"));
 
 	/*
 	 * Okay, we're officially UP.
@@ -6821,7 +6894,10 @@ StartupXLOG(void)
 	 * happen before renaming the last partial segment of the old timeline as
 	 * it may be possible that we have to recover some transactions from it.
 	 */
+	step_start = StartEndOfRecoveryStep(report_recovery_progress);
 	RecoverPreparedTransactions();
+	LogEndOfRecoveryStep(step_start,
+						 gettext_noop("end of recovery: recovering prepared transactions took %ld.%02d s"));
 
 	/* Shut down xlogreader */
 	ShutdownWalRecovery();
@@ -6848,7 +6924,12 @@ StartupXLOG(void)
 	 * Emit checkpoint or end-of-recovery record in XLOG, if required.
 	 */
 	if (performedWalRecovery)
+	{
+		step_start = StartEndOfRecoveryStep(report_recovery_progress);
 		promoted = PerformRecoveryXLogAction();
+		LogEndOfRecoveryStep(step_start,
+							 gettext_noop("end of recovery: recording the end of recovery took %ld.%02d s"));
+	}
 
 	/*
 	 * If any of the critical GUCs have changed, log them before we allow
@@ -6872,7 +6953,12 @@ StartupXLOG(void)
 	 * Update logical decoding status in shared memory and write an
 	 * XLOG_LOGICAL_DECODING_STATUS_CHANGE, if necessary.
 	 */
+	step_start = StartEndOfRecoveryStep(report_recovery_progress);
 	UpdateLogicalDecodingStatusEndOfRecovery();
+	LogEndOfRecoveryStep(step_start,
+						 gettext_noop("end of recovery: updating logical decoding status took %ld.%02d s"));
+
+	step_start = StartEndOfRecoveryStep(report_recovery_progress);
 
 	/* Clean up EndOfWalRecoveryInfo data to appease Valgrind leak checking */
 	if (endOfRecoveryInfo->lastPage)
@@ -6984,6 +7070,9 @@ StartupXLOG(void)
 	 */
 	if (promoted)
 		RequestCheckpoint(CHECKPOINT_FORCE);
+
+	LogEndOfRecoveryStep(step_start,
+						 gettext_noop("end of recovery: finalizing recovery took %ld.%02d s"));
 }
 
 /*

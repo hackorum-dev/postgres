@@ -7801,9 +7801,22 @@ local0.*    /var/log/postgresql
         </para>
 
         <para>
+         At the end of recovery, the startup process logs the duration of
+         individual steps that take at least this long.  Operations that
+         cannot report their own progress while running, such as an
+         <function>fsync</function>, the
+         <xref linkend="guc-recovery-end-command"/>, or a wait for a
+         process signal barrier, are reported when the corresponding step
+         completes.  If hot standby connections are available, the
+         <structfield>wait_event</structfield> column of
+         <xref linkend="pg-stat-activity-view"/> can show what the startup
+         process is currently waiting for.
+        </para>
+
+        <para>
          For example, if syncing the data directory takes 25 seconds and
          thereafter resetting unlogged relations takes 8 seconds, and if this
-         setting has the default value of 10 seconds, then a messages will be
+         setting has the default value of 10 seconds, then messages will be
          logged for syncing the data directory after it has been in progress
          for 10 seconds and again after it has been in progress for 20 seconds,
          but nothing will be logged for resetting unlogged relations.

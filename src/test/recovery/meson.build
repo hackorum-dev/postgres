@@ -71,6 +71,7 @@ tests += {
       't/060_multixact_crashed_updater.pl',
       't/061_recovery_target_prefetch.pl',
       't/062_promotion_state.pl',
+      't/063_end_of_recovery_progress.pl',
     ],
   },
 }
