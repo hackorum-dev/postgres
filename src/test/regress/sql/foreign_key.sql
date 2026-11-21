@@ -3345,3 +3345,25 @@ SAVEPOINT s;
 INSERT INTO ri_fk_io VALUES ('2');	-- fails
 ROLLBACK TO SAVEPOINT s;
 ROLLBACK;
+
+-- An UPDATE of an FK column whose type reaches the PK type only through an
+-- implicit I/O cast must compare the old and new values through I/O, too.
+-- The FK row must not be inserted in the same transaction as the UPDATE,
+-- or the comparison is skipped.
+CREATE TYPE ri_ioint2;
+CREATE FUNCTION ri_ioint2_in(cstring) RETURNS ri_ioint2
+    AS 'int4in' LANGUAGE internal IMMUTABLE STRICT;
+CREATE FUNCTION ri_ioint2_out(ri_ioint2) RETURNS cstring
+    AS 'int4out' LANGUAGE internal IMMUTABLE STRICT;
+CREATE TYPE ri_ioint2 (INPUT = ri_ioint2_in, OUTPUT = ri_ioint2_out, LIKE = int4);
+CREATE CAST (ri_ioint2 AS int4) WITH INOUT AS IMPLICIT;
+CREATE TABLE ri_pk_io2 (id int4 PRIMARY KEY);
+CREATE TABLE ri_fk_io2 (a ri_ioint2 REFERENCES ri_pk_io2, b int);
+INSERT INTO ri_pk_io2 VALUES (1), (2);
+INSERT INTO ri_fk_io2 VALUES ('1', 10);
+UPDATE ri_fk_io2 SET a = a, b = 11;	-- succeeds
+UPDATE ri_fk_io2 SET a = '2';	-- succeeds
+UPDATE ri_fk_io2 SET a = '3';	-- fails
+SELECT a::text, b FROM ri_fk_io2;
+DROP TABLE ri_fk_io2, ri_pk_io2;
+DROP TYPE ri_ioint2 CASCADE;
