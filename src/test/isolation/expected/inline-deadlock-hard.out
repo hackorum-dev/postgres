@@ -1,0 +1,36 @@
+Parsed test spec with 8 sessions
+
+starting permutation: s1[1] s2[1] s3[1] s4[1] s5[1] s6[1] s7[1] s8[1] s1[2] s2[2] s3[2] s4[2] s5[2] s6[2] s7[2] s8[2] s8[3] s7[3] s6[3] s5[3] s4[3] s3[3] s2[3] s1[3]
+step s1[1]: LOCK TABLE a1;
+step s2[1]: LOCK TABLE a2;
+step s3[1]: LOCK TABLE a3;
+step s4[1]: LOCK TABLE a4;
+step s5[1]: LOCK TABLE a5;
+step s6[1]: LOCK TABLE a6;
+step s7[1]: LOCK TABLE a7;
+step s8[1]: LOCK TABLE a8;
+step s1[2]: LOCK TABLE a2; <waiting ...>
+step s2[2]: LOCK TABLE a3; <waiting ...>
+step s3[2]: LOCK TABLE a4; <waiting ...>
+step s4[2]: LOCK TABLE a5; <waiting ...>
+step s5[2]: LOCK TABLE a6; <waiting ...>
+step s6[2]: LOCK TABLE a7; <waiting ...>
+step s7[2]: LOCK TABLE a8; <waiting ...>
+step s8[2]: LOCK TABLE a1; <waiting ...>
+step s8[2]: <... completed>
+ERROR:  deadlock detected
+step s7[2]: <... completed>
+step s8[3]: COMMIT;
+step s7[3]: COMMIT;
+step s6[2]: <... completed>
+step s6[3]: COMMIT;
+step s5[2]: <... completed>
+step s5[3]: COMMIT;
+step s4[2]: <... completed>
+step s4[3]: COMMIT;
+step s3[2]: <... completed>
+step s3[3]: COMMIT;
+step s2[2]: <... completed>
+step s2[3]: COMMIT;
+step s1[2]: <... completed>
+step s1[3]: COMMIT;
