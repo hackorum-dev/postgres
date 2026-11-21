@@ -32,8 +32,9 @@ typedef struct
 
 struct Step
 {
-	char	   *name;
+	char	   *name;			/* initially NULL for an inline step */
 	char	   *sql;
+	char	   *sessionname;	/* only used for inline steps */
 	/* These fields are filled by check_testspec(): */
 	int			session;		/* identifies owning session */
 	bool		used;			/* has step been used in a permutation? */
@@ -48,7 +49,7 @@ typedef enum
 
 typedef struct
 {
-	char	   *stepname;
+	char	   *stepname;		/* initially NULL for an inline step */
 	PermutationStepBlockerType blocktype;
 	int			num_notices;	/* only used for PSB_NUM_NOTICES */
 	/* These fields are filled by check_testspec(): */
