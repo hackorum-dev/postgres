@@ -120,6 +120,7 @@ static void materializeQueryResult(FunctionCallInfo fcinfo,
 								   const char *conname,
 								   const char *sql,
 								   bool fail);
+static inline bool is_copy_result(PGresult *res);
 static PGresult *storeQueryResult(storeInfo *sinfo, PGconn *conn, const char *sql);
 static void storeRow(storeInfo *sinfo, PGresult *res, bool first);
 static remoteConn *getConnectionByName(const char *name);
@@ -1220,11 +1221,29 @@ materializeQueryResult(FunctionCallInfo fcinfo,
 		/* be sure to clear out any pending data in libpq */
 		while ((res = libpqsrv_get_result(conn, dblink_we_get_result)) !=
 			   NULL)
+		{
+			bool		copy = is_copy_result(res);
+
 			PQclear(res);
+			if (copy)
+				break;
+		}
 
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
+}
+
+/*
+ * Is this the result of a COPY?  libpq keeps returning such a result, never
+ * NULL, until the COPY is finished, so loops over PQgetResult() must stop.
+ */
+static inline bool
+is_copy_result(PGresult *res)
+{
+	return PQresultStatus(res) == PGRES_COPY_IN ||
+		PQresultStatus(res) == PGRES_COPY_OUT ||
+		PQresultStatus(res) == PGRES_COPY_BOTH;
 }
 
 /*
@@ -1280,6 +1299,10 @@ storeQueryResult(storeInfo *sinfo, PGconn *conn, const char *sql)
 			sinfo->last_res = sinfo->cur_res;
 			sinfo->cur_res = NULL;
 			first = true;
+
+			/* COPY is not supported; the caller reports it as an error */
+			if (is_copy_result(sinfo->last_res))
+				break;
 		}
 	}
 
