@@ -137,6 +137,8 @@ static bool grouping_check_operands(Oid opno, Oid inputcollid,
 									List *args, grouping_walker_ctx *ctx);
 static bool grouping_check_operand(Node *arg, Oid opno, Oid inputcollid,
 								   grouping_walker_ctx *ctx);
+static Node *simplify_is_not_distinct(Node *node,
+									  eval_const_expressions_context *context);
 static Node *eval_const_expressions_mutator(Node *node,
 											eval_const_expressions_context *context);
 static bool contain_non_const_walker(Node *node, void *context);
@@ -3023,6 +3025,76 @@ estimate_expression_value(PlannerInfo *root, Node *node)
 							exprCollation((Node *) (node))))
 
 /*
+ * Assume that the node has already been processed by
+ * eval_const_expressions_mutator().
+ *
+ * If the input node is an expression of the form
+ * "NOT (a IS DISTINCT FROM b)", and at least one of the
+ * operands is known to be non-NULL, it can be safely
+ * converted to "a = b".
+ *
+ * When both operands are non-NULL, the two expressions produce
+ * the same result.  When either operand is NULL, the original
+ * expression returns FALSE, while the ordinary equality
+ * comparison returns NULL.  They therefore have the same
+ * filtering behavior in a WHERE clause.
+ */
+static Node *
+simplify_is_not_distinct(Node *node,
+						 eval_const_expressions_context *context)
+{
+	BoolExpr   *notExpr;
+	DistinctExpr *distinct;
+	List	   *args;
+	Expr	   *lexpr,
+			   *rexpr;
+	int			flag = 0;
+
+	Assert(is_notclause(node));
+	notExpr = (BoolExpr *) node;
+	args = notExpr->args;
+
+	Assert(list_length(args) == 1);
+	Assert(IsA(linitial(args), DistinctExpr));
+
+	distinct = (DistinctExpr *) linitial(args);
+	args = distinct->args;
+	lexpr = (Expr *) linitial(args);
+	rexpr = (Expr *) lsecond(args);
+
+	if (IsA(lexpr, Const) && ((Const *) lexpr)->constisnull)
+		flag++;
+	else if (!expr_is_nonnullable(context->root, lexpr,
+								  NOTNULL_SOURCE_HASHTABLE))
+		flag++;
+
+	if (IsA(rexpr, Const) && ((Const *) rexpr)->constisnull)
+		flag++;
+	else if (!expr_is_nonnullable(context->root, rexpr,
+								  NOTNULL_SOURCE_HASHTABLE))
+		flag++;
+
+	if (flag < 2)
+	{
+		OpExpr	   *eqExpr;
+
+		eqExpr = makeNode(OpExpr);
+		eqExpr->opno = distinct->opno;
+		eqExpr->opfuncid = distinct->opfuncid;
+		eqExpr->opresulttype = BOOLOID;
+		eqExpr->opretset = distinct->opretset;
+		eqExpr->opcollid = distinct->opcollid;
+		eqExpr->inputcollid = distinct->inputcollid;
+		eqExpr->args = args;
+		eqExpr->location = distinct->location;
+
+		node = (Node *) eqExpr;
+	}
+
+	return node;
+}
+
+/*
  * Recursive guts of eval_const_expressions/estimate_expression_value
  */
 static Node *
@@ -3579,6 +3651,7 @@ eval_const_expressions_mutator(Node *node,
 					case NOT_EXPR:
 						{
 							Node	   *arg;
+							bool		is_distinctexpr;
 
 							Assert(list_length(expr->args) == 1);
 							arg = eval_const_expressions_mutator(linitial(expr->args),
@@ -3588,7 +3661,13 @@ eval_const_expressions_mutator(Node *node,
 							 * Use negate_clause() to see if we can simplify
 							 * away the NOT.
 							 */
-							return negate_clause(arg);
+							is_distinctexpr = IsA(arg, DistinctExpr);
+							arg = negate_clause(arg);
+
+							if (is_distinctexpr)
+								arg = simplify_is_not_distinct(arg, context);
+
+							return arg;
 						}
 					default:
 						elog(ERROR, "unrecognized boolop: %d",
