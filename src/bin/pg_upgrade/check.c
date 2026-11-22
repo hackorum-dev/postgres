@@ -1708,7 +1708,12 @@ check_for_not_null_inheritance(ClusterInfo *cluster)
 		"WHERE cc.oid = ac.attrelid AND i.inhrelid = ac.attrelid "
 		"      AND i.inhparent = ap.attrelid AND ac.attname = ap.attname "
 		"      AND cc.relnamespace = nc.oid "
-		"      AND ap.attnum > 0 and ap.attnotnull AND NOT ac.attnotnull";
+		"      AND ap.attnum > 0 and ap.attnotnull AND NOT ac.attnotnull "
+		/* a NO INHERIT not-null constraint doesn't apply to children */
+		"      AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_constraint c "
+		"                      WHERE c.conrelid = ap.attrelid "
+		"                        AND c.contype = 'n' AND c.connoinherit "
+		"                        AND ap.attnum = ANY (c.conkey))";
 
 	task = upgrade_task_create();
 	upgrade_task_add_step(task, query,
