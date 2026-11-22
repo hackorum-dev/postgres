@@ -182,6 +182,11 @@ static void bt_check_every_level(Relation rel, Relation heaprel,
 								 bool rootdescend, bool checkunique);
 static BtreeLevel bt_check_level_from_leftmost(BtreeCheckState *state,
 											   BtreeLevel level);
+static BlockNumber bt_single_downlink_path(BtreeCheckState *state,
+										   BlockNumber blkno,
+										   BlockNumber path_page);
+static bool bt_in_interrupted_deletion(BtreeCheckState *state,
+									   BlockNumber blkno, Page page);
 static bool bt_leftmost_ignoring_half_dead(BtreeCheckState *state,
 										   BlockNumber start,
 										   BTPageOpaque start_opaque);
@@ -1020,7 +1025,8 @@ bt_leftmost_ignoring_half_dead(BtreeCheckState *state,
 		 * writes that side-links will continue to point to the siblings.
 		 * Check btpo_next for that property.
 		 */
-		all_half_dead = P_ISHALFDEAD(reached_opaque) &&
+		all_half_dead = (P_ISHALFDEAD(reached_opaque) ||
+						 bt_in_interrupted_deletion(state, reached, page)) &&
 			reached != start &&
 			reached != reached_from &&
 			reached_opaque->btpo_next == reached_from;
@@ -1045,6 +1051,114 @@ bt_leftmost_ignoring_half_dead(BtreeCheckState *state,
 	}
 
 	return all_half_dead;
+}
+
+/*
+ * Follow the only downlink of each page from blkno down to the leaf level.
+ * Returns the leaf's block number, or InvalidBlockNumber if some page on the
+ * way is not a live internal page with exactly one downlink, or if path_page
+ * is given and the path does not pass through it.
+ */
+static BlockNumber
+bt_single_downlink_path(BtreeCheckState *state, BlockNumber blkno,
+						BlockNumber path_page)
+{
+	bool		passed = !BlockNumberIsValid(path_page);
+	uint32		level = 0;
+	bool		first = true;
+
+	for (;;)
+	{
+		Page		page = palloc_btree_page(state, blkno);
+		BTPageOpaque opaque = BTPageGetOpaque(page);
+		ItemId		itemid;
+		IndexTuple	itup;
+		BlockNumber child;
+
+		CHECK_FOR_INTERRUPTS();
+
+		if (blkno == path_page)
+			passed = true;
+
+		/*
+		 * Each step must go down exactly one level, through live internal
+		 * pages; the leaf may be half-dead, but not deleted.
+		 */
+		if ((!first && opaque->btpo_level != level - 1) ||
+			P_ISDELETED(opaque) ||
+			(!P_ISLEAF(opaque) && P_ISHALFDEAD(opaque)))
+		{
+			pfree(page);
+			return InvalidBlockNumber;
+		}
+		first = false;
+		level = opaque->btpo_level;
+
+		if (P_ISLEAF(opaque))
+		{
+			pfree(page);
+			return passed ? blkno : InvalidBlockNumber;
+		}
+
+		if (PageGetMaxOffsetNumber(page) != P_FIRSTDATAKEY(opaque))
+		{
+			pfree(page);
+			return InvalidBlockNumber;
+		}
+		itemid = PageGetItemIdCareful(state, blkno, page,
+									  P_FIRSTDATAKEY(opaque));
+		itup = (IndexTuple) PageGetItem(page, itemid);
+		child = BTreeTupleGetDownLink(itup);
+		pfree(page);
+
+		if (!BlockNumberIsValid(child) || child == P_NONE || child == blkno)
+			return InvalidBlockNumber;
+		blkno = child;
+	}
+}
+
+/*
+ * Does internal page blkno belong to the subtree of a multi-level page
+ * deletion that was interrupted after its first stage?
+ * _bt_mark_page_halfdead() marks only the leaf half-dead and removes the
+ * downlink to the subtree's top parent, which it stores in the leaf's high
+ * key.  The internal pages from the top parent down to the leaf stay live,
+ * each with a single downlink.
+ */
+static bool
+bt_in_interrupted_deletion(BtreeCheckState *state, BlockNumber blkno,
+						   Page page)
+{
+	BTPageOpaque opaque = BTPageGetOpaque(page);
+	BlockNumber leafblk;
+	Page		leaf;
+	BTPageOpaque leafopaque;
+	BlockNumber topparent = InvalidBlockNumber;
+
+	if (P_ISLEAF(opaque) || P_IGNORE(opaque))
+		return false;
+
+	leafblk = bt_single_downlink_path(state, blkno, InvalidBlockNumber);
+	if (!BlockNumberIsValid(leafblk))
+		return false;
+
+	leaf = palloc_btree_page(state, leafblk);
+	leafopaque = BTPageGetOpaque(leaf);
+	if (P_ISHALFDEAD(leafopaque) && !P_RIGHTMOST(leafopaque))
+	{
+		ItemId		itemid = PageGetItemIdCareful(state, leafblk, leaf,
+												  P_HIKEY);
+		IndexTuple	hikey = (IndexTuple) PageGetItem(leaf, itemid);
+
+		topparent = BTreeTupleGetTopParent(hikey);
+	}
+	pfree(leaf);
+
+	/* The leaf must name blkno, or a page above it on the same path */
+	if (!BlockNumberIsValid(topparent))
+		return false;
+	return topparent == blkno ||
+		bt_single_downlink_path(state, topparent, blkno) == leafblk;
 }
 
 /*
