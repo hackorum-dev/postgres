@@ -1302,6 +1302,8 @@ LogStandbySnapshot(void)
 	}
 #endif
 
+	INJECTION_POINT_LOAD("log-standby-snapshot-before-insert");
+
 	/*
 	 * Get details of any AccessExclusiveLocks being held at the moment.
 	 */
@@ -1349,6 +1351,8 @@ LogStandbySnapshot(void)
 	 */
 	if (!xlog_logical_info)
 		LWLockRelease(ProcArrayLock);
+
+	INJECTION_POINT_CACHED("log-standby-snapshot-before-insert", NULL);
 
 	recptr = LogCurrentRunningXacts(running);
 

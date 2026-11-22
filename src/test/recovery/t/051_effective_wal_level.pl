@@ -8,6 +8,7 @@ use warnings FATAL => 'all';
 use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
+use Time::HiRes qw(usleep);
 
 # Check both wal_level and effective_wal_level values on the given node
 # are expected.
@@ -43,6 +44,51 @@ sub quit_and_wait
 	$node->poll_query_until('postgres',
 		qq[select count(*) = 0 from pg_stat_activity where pid = $backend_pid]
 	) or die "timed out waiting for backend $backend_pid to exit";
+}
+
+# Wait on an existing session ($psql_ctl) until $snap_pid reaches
+# log-standby-snapshot-before-insert, as new backends block in ProcArrayAdd()
+# while ProcArrayLock is held.
+sub wait_for_snapshot_before_insert
+{
+	my ($psql_ctl, $snap_pid) = @_;
+	my $max_attempts = 10 * $PostgreSQL::Test::Utils::timeout_default;
+	my $reached = '';
+
+	for (my $i = 0; $i < $max_attempts; $i++)
+	{
+		$reached = $psql_ctl->query_safe(
+			qq[select wait_event = 'log-standby-snapshot-before-insert' from pg_stat_activity where pid = $snap_pid],
+			verbose => 0);
+		last if $reached eq 't';
+		usleep(100_000);
+	}
+	die "timed out waiting for log-standby-snapshot-before-insert"
+	  unless $reached eq 't';
+}
+
+# Commit $psql_xact and verify via $psql_ctl that it blocks on ProcArrayLock.
+sub check_commit_waits_on_procarray
+{
+	my ($psql_ctl, $psql_xact, $xact_pid, $msg) = @_;
+	my $max_attempts = 10 * $PostgreSQL::Test::Utils::timeout_default;
+
+	$psql_xact->query_until(
+		qr/commit_xact/,
+		q(\echo commit_xact
+commit;
+));
+
+	my $state = '';
+	for (my $i = 0; $i < $max_attempts; $i++)
+	{
+		$state = $psql_ctl->query_safe(
+			qq[select case when wait_event = 'ProcArray' then 'waiting' when state = 'idle' then 'committed' end from pg_stat_activity where pid = $xact_pid],
+			verbose => 0);
+		last if $state ne '';
+		usleep(100_000);
+	}
+	is($state, 'waiting', $msg);
 }
 
 # Initialize the primary server with wal_level = 'replica'.
@@ -561,17 +607,9 @@ select pg_cancel_backend(pid) from pg_stat_activity where query ~ 'slot_canceled
 
 	quit_and_wait($primary, $psql_create_slot, $psql_create_slot_pid);
 
-	# Test races between the deactivation of logical decoding and slot
-	# creation during recovery. Logical decoding can be deactivated while a
-	# logical slot is being created on a standby, either by replaying an
-	# XLOG_LOGICAL_DECODING_STATUS_CHANGE record or by the end-of-recovery
-	# transition upon promotion. Slot creation paths must detect the
-	# deactivation after creating their slot and fail cleanly, instead
-	# of leaving a slot that cannot be decoded.
-
 	# Restore the disabled state, and disable autovacuum so that the primary
-	# assigns no XIDs, keeping the slot synchronization test below
-	# deterministic.
+	# assigns no XIDs, keeping the snapshot and slot synchronization tests
+	# below deterministic.
 	$primary->safe_psql('postgres',
 		qq[select pg_drop_replication_slot('test_slot2')]);
 	wait_for_logical_decoding_disabled($primary);
@@ -580,6 +618,158 @@ select pg_cancel_backend(pid) from pg_stat_activity where query ~ 'slot_canceled
 alter system set autovacuum = off;
 select pg_reload_conf();
 ]);
+
+	# Test that LogStandbySnapshot() holds ProcArrayLock across
+	# LogCurrentRunningXacts() when logical decoding activation is in
+	# progress (after the caller has absorbed the ProcSignalBarrier while
+	# logical_decoding_enabled is still false), preventing out-of-order
+	# xl_running_xacts records from corrupting historic snapshots.
+	my $psql_snap = $primary->background_psql('postgres');
+	my $psql_snap_pid = $psql_snap->query_safe('select pg_backend_pid()');
+	my $psql_xact = $primary->background_psql('postgres');
+	my $psql_xact_pid = $psql_xact->query_safe('select pg_backend_pid()');
+	my $psql_act = $primary->background_psql('postgres');
+	my $psql_act_pid = $psql_act->query_safe('select pg_backend_pid()');
+	# Keep a control session open before GetRunningTransactionData() acquires
+	# ProcArrayLock, as new backend startups wait on it in ProcArrayAdd().
+	my $psql_ctl = $primary->background_psql('postgres');
+
+	$psql_snap->query_safe(q[select injection_points_set_local()]);
+	$psql_act->query_safe(q[select injection_points_set_local()]);
+
+	# Case 1: Activation pauses at logical-decoding-activation
+	# (xlog_logical_info is true and all backends have absorbed the barrier,
+	# while logical_decoding_enabled is still false). LogStandbySnapshot()
+	# starts in that window and pauses before LogCurrentRunningXacts(), then
+	# activation finishes and reserves the slot's restart_lsn before the WAL
+	# record is inserted.
+	$psql_act->query_safe(
+		q[select injection_points_attach('logical-decoding-activation', 'wait');]
+	);
+	$psql_act->query_until(
+		qr/start_act1/,
+		q(\echo start_act1
+select pg_create_logical_replication_slot('test_slot_snap', 'test_decoding');
+));
+	$primary->wait_for_event('client backend', 'logical-decoding-activation');
+
+	$psql_xact->query_safe(
+		q[begin; create table tab_snap (a int); insert into tab_snap values (1);]
+	);
+	$psql_snap->query_safe(
+		q[select injection_points_attach('log-standby-snapshot-before-insert', 'wait');]
+	);
+	$psql_snap->query_until(
+		qr/start_snap1/,
+		q(\echo start_snap1
+select pg_log_standby_snapshot();
+));
+	wait_for_snapshot_before_insert($psql_ctl, $psql_snap_pid);
+
+	# Let activation finish enabling logical decoding and reserve the slot's
+	# restart_lsn while $psql_snap has not yet logged its xl_running_xacts.
+	$psql_ctl->query_safe(
+		q[
+select injection_points_detach('logical-decoding-activation');
+select injection_points_wakeup('logical-decoding-activation');
+]);
+
+	check_commit_waits_on_procarray($psql_ctl, $psql_xact, $psql_xact_pid,
+		"commit waits on ProcArrayLock when LogStandbySnapshot() started during activation"
+	);
+
+	# Wake $psql_snap and verify that subsequent catalog changes and decoding
+	# do not see a backwards xmin retreat.
+	$psql_ctl->query_safe(
+		q[
+select injection_points_detach('log-standby-snapshot-before-insert');
+select injection_points_wakeup('log-standby-snapshot-before-insert');
+]);
+	$psql_snap->query_safe('');
+	$psql_xact->query_safe('');
+	$psql_act->query_safe('');
+
+	$primary->safe_psql(
+		'postgres', qq[
+alter table tab_snap add column b int;
+insert into tab_snap values (2, 3);
+]);
+	like(
+		$primary->safe_psql(
+			'postgres',
+			qq[select string_agg(data, E'\n') from pg_logical_slot_get_changes('test_slot_snap', null, null)]
+		),
+		qr/table public\.tab_snap: INSERT: a\[integer\]:2 b\[integer\]:3/,
+		"decoding succeeds without historic snapshot corruption");
+
+	$primary->safe_psql(
+		'postgres', qq[
+drop table tab_snap;
+select pg_drop_replication_slot('test_slot_snap');
+]);
+	wait_for_logical_decoding_disabled($primary);
+
+	# Case 2: $psql_snap already has an assigned XID before activation
+	# starts, so its process-local XLogLogicalInfo update is deferred; it
+	# must still hold ProcArrayLock based on shared xlog_logical_info.
+	$psql_snap->query_safe(q[begin; select pg_current_xact_id();]);
+
+	$psql_act->query_safe(
+		q[select injection_points_attach('logical-decoding-activation', 'wait');]
+	);
+	$psql_act->query_until(
+		qr/start_act2/,
+		q(\echo start_act2
+select pg_create_logical_replication_slot('test_slot_snap', 'test_decoding');
+));
+	$primary->wait_for_event('client backend', 'logical-decoding-activation');
+
+	$psql_xact->query_safe(q[begin; select pg_current_xact_id();]);
+	$psql_snap->query_safe(
+		q[select injection_points_attach('log-standby-snapshot-before-insert', 'wait');]
+	);
+	$psql_snap->query_until(
+		qr/start_snap2/,
+		q(\echo start_snap2
+select pg_log_standby_snapshot();
+));
+	wait_for_snapshot_before_insert($psql_ctl, $psql_snap_pid);
+
+	check_commit_waits_on_procarray($psql_ctl, $psql_xact, $psql_xact_pid,
+		"commit waits on ProcArrayLock when caller's local XLogLogicalInfo update is deferred"
+	);
+
+	$psql_ctl->query_safe(
+		q[
+select injection_points_detach('log-standby-snapshot-before-insert');
+select injection_points_wakeup('log-standby-snapshot-before-insert');
+]);
+	$psql_snap->query_safe('commit');
+	$psql_xact->query_safe('');
+
+	$psql_ctl->query_safe(
+		q[
+select injection_points_detach('logical-decoding-activation');
+select injection_points_wakeup('logical-decoding-activation');
+]);
+	$psql_act->query_safe('');
+
+	$psql_ctl->quit;
+	$psql_xact->quit;
+	quit_and_wait($primary, $psql_snap, $psql_snap_pid);
+	quit_and_wait($primary, $psql_act, $psql_act_pid);
+
+	$primary->safe_psql('postgres',
+		qq[select pg_drop_replication_slot('test_slot_snap')]);
+	wait_for_logical_decoding_disabled($primary);
+
+	# Test races between the deactivation of logical decoding and slot
+	# creation during recovery. Logical decoding can be deactivated while a
+	# logical slot is being created on a standby, either by replaying an
+	# XLOG_LOGICAL_DECODING_STATUS_CHANGE record or by the end-of-recovery
+	# transition upon promotion. Slot creation paths must detect the
+	# deactivation after creating their slot and fail cleanly, instead
+	# of leaving a slot that cannot be decoded.
 
 	# Initialize standby5 node, setting up the requirements for slot
 	# synchronization.
