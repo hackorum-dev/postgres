@@ -1287,7 +1287,7 @@ LogStandbySnapshot(void)
 	RunningTransactions running;
 	xl_standby_lock *locks;
 	int			nlocks;
-	bool		logical_decoding_enabled = IsLogicalDecodingEnabled();
+	bool		xlog_logical_info;
 
 	Assert(XLogStandbyInfoActive());
 
@@ -1311,6 +1311,17 @@ LogStandbySnapshot(void)
 	pfree(locks);
 
 	/*
+	 * Check whether logical WAL logging is enabled before
+	 * GetRunningTransactionData() acquires ProcArrayLock.
+	 * IsXLogLogicalInfoEnabled() acquires LogicalDecodingControlLock, so
+	 * calling it while holding ProcArrayLock could cause a three-way deadlock
+	 * with DisableLogicalDecoding() (which takes LogicalDecodingControlLock
+	 * before ReplicationSlotControlLock) and e.g. CreateInitDecodingContext()
+	 * (which takes ReplicationSlotControlLock before ProcArrayLock).
+	 */
+	xlog_logical_info = IsXLogLogicalInfoEnabled();
+
+	/*
 	 * Log details of all in-progress transactions. This should be the last
 	 * record we write, because standby will open up when it sees this.
 	 */
@@ -1327,14 +1338,22 @@ LogStandbySnapshot(void)
 	 * which, according to the WAL, has committed before the xl_running_xacts
 	 * record. Fortunately this routine isn't executed frequently, and it's
 	 * only a shared lock.
+	 *
+	 * Check shared xlog_logical_info (sampled above) so we also keep the lock
+	 * while logical decoding is being enabled, or when this backend's local
+	 * XLogLogicalInfo update is delayed until transaction end. If
+	 * xlog_logical_info was false, no concurrent activation can finish its
+	 * ProcSignalBarrier wait until LogCurrentRunningXacts() inserts the WAL
+	 * record, since neither GetRunningTransactionData() nor
+	 * LogCurrentRunningXacts() processes barriers.
 	 */
-	if (!logical_decoding_enabled)
+	if (!xlog_logical_info)
 		LWLockRelease(ProcArrayLock);
 
 	recptr = LogCurrentRunningXacts(running);
 
 	/* Release lock if we kept it longer ... */
-	if (logical_decoding_enabled)
+	if (xlog_logical_info)
 		LWLockRelease(ProcArrayLock);
 
 	/* GetRunningTransactionData() acquired XidGenLock, we must release it */
