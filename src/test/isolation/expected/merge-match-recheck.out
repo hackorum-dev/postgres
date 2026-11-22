@@ -650,3 +650,30 @@ key|balance|status|val
 (1 row)
 
 step c1: COMMIT;
+
+starting permutation: break_match_pa merge_nmbs_move_pa c2 select_pa2 c1
+step break_match_pa: UPDATE target_pa SET key = 2 WHERE key = 1;
+step merge_nmbs_move_pa: 
+  MERGE INTO target_pa t
+  USING target s
+  ON s.key = t.key
+  WHEN MATCHED THEN
+    UPDATE SET val = s.val
+  WHEN NOT MATCHED BY SOURCE THEN
+    UPDATE SET balance = 210
+  RETURNING s.key AS source_key, t.balance;
+ <waiting ...>
+step c2: COMMIT;
+step merge_nmbs_move_pa: <... completed>
+source_key|balance
+----------+-------
+          |    210
+(1 row)
+
+step select_pa2: SELECT balance FROM ONLY target_pa2;
+balance
+-------
+    210
+(1 row)
+
+step c1: COMMIT;

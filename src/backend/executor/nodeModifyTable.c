@@ -119,6 +119,12 @@ typedef struct ModifyTableContext
 	 * cross-partition UPDATE
 	 */
 	TupleTableSlot *cpUpdateReturningSlot;
+
+	/*
+	 * Alternate subplan slot for RETURNING during a MERGE update.
+	 * NULL means to use planSlot.
+	 */
+	TupleTableSlot *returningSlot;
 } ModifyTableContext;
 
 /*
@@ -1328,6 +1334,7 @@ ExecInsert(ModifyTableContext *context,
 	if (resultRelInfo->ri_projectReturning)
 	{
 		TupleTableSlot *oldSlot = NULL;
+		TupleTableSlot *returningSlot = context->returningSlot;
 
 		/*
 		 * If this is part of a cross-partition UPDATE, and the RETURNING list
@@ -1360,7 +1367,8 @@ ExecInsert(ModifyTableContext *context,
 		}
 
 		result = ExecProcessReturning(context, resultRelInfo, false,
-									  oldSlot, slot, planSlot);
+									  oldSlot, slot,
+									  returningSlot ? returningSlot : planSlot);
 
 		/*
 		 * For a cross-partition UPDATE, release the old tuple, first making
@@ -3458,9 +3466,12 @@ lmerge_matched:
 					/* checked ri_needLockTagTuple above */
 					Assert(oldtuple == NULL);
 
+					/* Use the action's source values for RETURNING. */
+					context->returningSlot = planSlot;
 					result = ExecUpdateAct(context, resultRelInfo, tupleid,
 										   NULL, newslot, canSetTag,
 										   &updateCxt);
+					context->returningSlot = NULL;
 
 					/*
 					 * As in ExecUpdate(), if ExecUpdateAct() reports that a
@@ -4506,6 +4517,7 @@ ExecModifyTable(PlanState *pstate)
 	context.mtstate = node;
 	context.epqstate = &node->mt_epqstate;
 	context.estate = estate;
+	context.returningSlot = NULL;
 
 	/*
 	 * Fetch rows from subplan, and execute the required table modification

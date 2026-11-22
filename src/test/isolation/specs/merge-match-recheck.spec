@@ -103,6 +103,17 @@ step "merge_bal_pa"
 	UPDATE SET balance = balance * 8, val = t.val || ' when3'
   RETURNING t.key, old.balance AS old_balance, new.balance AS new_balance, t.status, t.val;
 }
+step "merge_nmbs_move_pa"
+{
+  MERGE INTO target_pa t
+  USING target s
+  ON s.key = t.key
+  WHEN MATCHED THEN
+    UPDATE SET val = s.val
+  WHEN NOT MATCHED BY SOURCE THEN
+    UPDATE SET balance = 210
+  RETURNING s.key AS source_key, t.balance;
+}
 step "merge_bal_tg"
 {
   WITH t AS (
@@ -145,6 +156,7 @@ step "merge_delete_tg"
 
 step "select1" { SELECT * FROM target; }
 step "select1_pa" { SELECT * FROM target_pa; }
+step "select_pa2" { SELECT balance FROM ONLY target_pa2; }
 step "select1_tg" { SELECT * FROM target_tg; }
 step "c1" { COMMIT; }
 
@@ -170,6 +182,7 @@ step "update7" { UPDATE target t SET balance = 350, val = t.val || ' updated by 
 step "update_bal1" { UPDATE target t SET balance = 50, val = t.val || ' updated by update_bal1' WHERE t.key = 1; }
 step "update_bal1_pa" { UPDATE target_pa t SET balance = 50, val = t.val || ' updated by update_bal1_pa' WHERE t.key = 1; }
 step "update_bal1_tg" { UPDATE target_tg t SET balance = 50, val = t.val || ' updated by update_bal1_tg' WHERE t.key = 1; }
+step "break_match_pa" { UPDATE target_pa SET key = 2 WHERE key = 1; }
 step "c2" { COMMIT; }
 
 # merge_status sees concurrently updated row and rechecks WHEN conditions, but recheck passes and final status = 's2'
@@ -217,3 +230,6 @@ permutation "update1_tg" "merge_delete_tg" "c2" "select1_tg" "c1"
 # merge_delete sees concurrently updated row and rechecks WHEN conditions, recheck fails, so final balance is 100
 permutation "update_bal1" "merge_delete" "c2" "select1" "c1"
 permutation "update_bal1_tg" "merge_delete_tg" "c2" "select1_tg" "c1"
+
+# A concurrent update breaks the match, then the NMBS action moves the row.
+permutation "break_match_pa" "merge_nmbs_move_pa" "c2" "select_pa2" "c1"
