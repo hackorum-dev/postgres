@@ -141,6 +141,62 @@ unlike(
 	'no checksum verification failures in the combined backup');
 
 $restored->stop('immediate');
-$node->stop;
+
+# An incremental backup taken while checksums are still being enabled online
+# is accepted: when recovery ends before the enable completes, checksums go
+# back to "off", so the blocks inherited from the full backup are never
+# verified.
+$node->backup('full3');
+
+# Slow enough that the backup below is taken in the middle of it.
+enable_data_checksums(
+	$node,
+	cost_delay => 100,
+	cost_limit => 1,
+	wait => 'inprogress-on');
+
+$node->safe_psql('postgres',
+	"CREATE TABLE t4 AS SELECT generate_series(1,1000) AS a;");
+
+$node->command_ok(
+	[
+		'pg_basebackup',
+		'--pgdata' => $node->backup_dir . '/incr3',
+		'--dbname' => $node->connstr('postgres'),
+		'--no-sync',
+		'--checkpoint' => 'fast',
+		'--incremental' => $node->backup_dir . '/full3/backup_manifest',
+	],
+	'incremental backup while checksums are being enabled');
+
+my $restored2 = PostgreSQL::Test::Cluster->new('restored2');
+$restored2->init_from_backup(
+	$node, 'incr3',
+	combine_with_prior => ['full3'],
+	has_restoring => 1,
+	standby => 0);
+# The node "restored" above may have archived a newer timeline into the
+# shared archive; stay on the timeline of the backup.
+$restored2->append_conf('postgresql.conf',
+	"recovery_target_timeline = 'current'");
+$restored2->start;
+
+# The state goes back to "off" only at the end of recovery.
+$restored2->poll_query_until('postgres', 'SELECT NOT pg_is_in_recovery();')
+  or die "timed out waiting for the end of recovery";
+
+($rc, $stdout, $stderr) = $restored2->psql('postgres',
+	"SELECT setting FROM pg_settings WHERE name = 'data_checksums';");
+is($rc, 0, 'combined in-progress backup accepts connections')
+  or diag("stderr: $stderr");
+is($stdout, 'off', 'interrupted enable leaves the combined backup off');
+
+($rc, $stdout, $stderr) = $restored2->psql('postgres',
+	'SELECT (SELECT count(*) FROM t1) + (SELECT count(*) FROM t4);');
+is($stdout, '201000', 'all blocks of the combined in-progress backup are readable')
+  or diag("stderr: $stderr");
+
+$restored2->stop('immediate');
+$node->stop('immediate');
 
 done_testing();

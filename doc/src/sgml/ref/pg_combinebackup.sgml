@@ -313,7 +313,9 @@ PostgreSQL documentation
    would fail checksum verification as soon as it reads them.  Take a new
    full backup once data checksums have been enabled, whether offline with
    <xref linkend="app-pgchecksums"/> or online (see
-   <xref linkend="checksums-online-enable-disable"/>).
+   <xref linkend="checksums-online-enable-disable"/>).  A chain whose final
+   backup was taken while checksums were still being enabled or disabled is
+   accepted.
   </para>
 
   <para>

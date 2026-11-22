@@ -650,11 +650,14 @@ check_control_files(int n_backups, char **backup_dirs)
 
 		/*
 		 * Detect checksum mismatches, but only if the last backup in the
-		 * chain has checksums enabled.
+		 * chain has checksums enabled.  If checksums were still being
+		 * enabled or disabled in the last backup, recovery either ends with
+		 * them off, or replays the rest of the transition, which writes every
+		 * page with a full-page image and a checksum.
 		 */
 		if (i == n_backups - 1)
 			data_checksum_version = control_file->data_checksum_version;
-		else if (data_checksum_version != PG_DATA_CHECKSUM_OFF &&
+		else if (data_checksum_version == PG_DATA_CHECKSUM_VERSION &&
 				 data_checksum_version != control_file->data_checksum_version)
 			data_checksum_mismatch = true;
 
