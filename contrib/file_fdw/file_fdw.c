@@ -36,6 +36,7 @@
 #include "optimizer/pathnode.h"
 #include "optimizer/planmain.h"
 #include "optimizer/restrictinfo.h"
+#include "utils/backend_status.h"
 #include "utils/acl.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
@@ -120,6 +121,22 @@ typedef struct FileFdwExecutionState
 } FileFdwExecutionState;
 
 /*
+ * Since progress tracking of multiple COPY commands is not supported, the
+ * first file_fdw node of the plan needs to set pgstat_track_progress to false
+ * during startup, and the last active node needs to restore the original
+ * value during shutdown.
+ */
+static bool save_pgstat_track_progress = false;
+/* Total number of file_fdw nodes in the plan. */
+static int	nodes = 0;
+/* Number of file_fdw nodes actually started. */
+static int	active_nodes = 0;
+
+/* Callback to reset the fields above on ABORT. */
+static void xact_callback(XactEvent event, void *arg);
+static bool xact_callback_registered = false;
+
+/*
  * SQL functions
  */
 PG_FUNCTION_INFO_V1(file_fdw_handler);
@@ -172,6 +189,8 @@ static void estimate_costs(PlannerInfo *root, RelOptInfo *baserel,
 static int	file_acquire_sample_rows(Relation onerel, int elevel,
 									 HeapTuple *rows, int targrows,
 									 double *totalrows, double *totaldeadrows);
+static void suspend_progress_tracking_if_needed(void);
+static void resume_progress_tracking_if_needed(void);
 
 
 /*
@@ -617,6 +636,17 @@ fileGetForeignPlan(PlannerInfo *root,
 	Index		scan_relid = baserel->relid;
 
 	/*
+	 * This seems to be the appropriate place to count file_fdw nodes in the
+	 * plan.
+	 */
+	nodes++;
+	if (!xact_callback_registered)
+	{
+		RegisterXactCallback(xact_callback, NULL);
+		xact_callback_registered = true;
+	}
+
+	/*
 	 * We have no native ability to evaluate restriction clauses, so we just
 	 * put all the scan_clauses into the plan node's qual list for the
 	 * executor to check.  So all we have to do here is strip RestrictInfo
@@ -681,6 +711,12 @@ fileBeginForeignScan(ForeignScanState *node, int eflags)
 	List	   *options;
 	CopyFromState cstate;
 	FileFdwExecutionState *festate;
+
+	/*
+	 * Since fileEndForeignScan() deals with progress tracking regardless
+	 * EXPLAIN, we need to do here as well.
+	 */
+	suspend_progress_tracking_if_needed();
 
 	/*
 	 * Do nothing in EXPLAIN (no ANALYZE) case.  node->fdw_state stays NULL.
@@ -846,6 +882,12 @@ static void
 fileEndForeignScan(ForeignScanState *node)
 {
 	FileFdwExecutionState *festate = (FileFdwExecutionState *) node->fdw_state;
+
+	/*
+	 * Since we cannot distinguish the EXPLAIN case in fileGetForeignPlan(),
+	 * this is needed regardless EXPLAIN.
+	 */
+	resume_progress_tracking_if_needed();
 
 	/* if festate is NULL, we are in EXPLAIN; nothing to do */
 	if (!festate)
@@ -1343,4 +1385,63 @@ file_acquire_sample_rows(Relation onerel, int elevel,
 					*totalrows, numrows)));
 
 	return numrows;
+}
+
+/*
+ * Save the value of pgstat_track_progress if this is the first file_fdw node
+ * of a plan containing multiple file_fdw nodes, and disable the progress
+ * tracking. The monitoring infrastructure currently does not support
+ * monitoring of multiple COPY commands.
+ */
+static void
+suspend_progress_tracking_if_needed(void)
+{
+	if (nodes > 1 && active_nodes++ == 0)
+	{
+		save_pgstat_track_progress = pgstat_track_progress;
+		pgstat_track_progress = false;
+	}
+}
+
+/*
+ * Restore the value of pgstat_track_progress if this is the last file_fdw
+ * node of a plan containing multiple file_fdw nodes, and enable progress
+ * tracking if we disabled it earlier.
+ */
+static void
+resume_progress_tracking_if_needed(void)
+{
+	if (active_nodes > 0 && --active_nodes == 0)
+		pgstat_track_progress = save_pgstat_track_progress;
+
+	/*
+	 * During shutdown, it'd make sense to just decrement this variable, since
+	 * the function should be called for each node anyway. However, the
+	 * function is also called from xact_callback(), which is only called
+	 * once. Since the variable is only checked during startup, it's o.k. that
+	 * we set it to zero too early during shutdown of a plan that has more
+	 * than one file_fdw node.
+	 */
+	nodes = 0;
+}
+
+/*
+ * Make sure resume_progress_tracking_if_needed() is called on transaction
+ * abort.
+ */
+static void
+xact_callback(XactEvent event, void *arg)
+{
+	if (event != XACT_EVENT_ABORT)
+	{
+		/*
+		 * resume_progress_tracking_if_needed() should have been called on
+		 * COMMIT.
+		 */
+		Assert(active_nodes == 0 || event != XACT_EVENT_COMMIT);
+
+		return;
+	}
+
+	resume_progress_tracking_if_needed();
 }
