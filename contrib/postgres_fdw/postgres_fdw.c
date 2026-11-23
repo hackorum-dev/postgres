@@ -8472,6 +8472,19 @@ add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 				(IsA(path, ProjectionPath) &&
 				 IsA(((ProjectionPath *) path)->subpath, ForeignPath)))
 			{
+				ForeignPath *fpath;
+
+				/*
+				 * We need the ForeignPath's fdw_restrictinfo to pass down to
+				 * the final path, since create_scan_plan() consults it to
+				 * find any pseudoconstant quals that need a gating Result
+				 * node.
+				 */
+				if (IsA(path, ProjectionPath))
+					fpath = (ForeignPath *) ((ProjectionPath *) path)->subpath;
+				else
+					fpath = (ForeignPath *) path;
+
 				/*
 				 * Create foreign final path; this gets rid of a
 				 * no-longer-needed outer plan (if any), which makes the
@@ -8486,8 +8499,7 @@ add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 													   path->total_cost,
 													   path->pathkeys,
 													   NULL,	/* no extra plan */
-													   NIL, /* no fdw_restrictinfo
-															 * list */
+													   fpath->fdw_restrictinfo,
 													   NIL);	/* no fdw_private */
 
 				/* and add it to the final_rel */
