@@ -257,6 +257,13 @@ FROM dblink('SELECT * FROM foo') AS t(a int, b text, c text[]);
 SELECT *
 FROM dblink('SELECT * FROM foobar',false) AS t(a int, b text, c text[]);
 
+-- Return no rows after a remote error, even if some rows were received.
+SELECT *
+FROM dblink('SELECT 42; SELECT 1 / 0', false) AS t(a int);
+SELECT *
+FROM dblink('SELECT 1 / (1 - i) FROM generate_series(0, 1) AS g(i)', false)
+	AS t(a int);
+
 -- change some data
 SELECT dblink_exec('UPDATE foo SET f3[2] = ''b99'' WHERE f1 = 11');
 

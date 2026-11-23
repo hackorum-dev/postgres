@@ -416,6 +416,24 @@ CONTEXT:  while executing query on unnamed dblink connection
 ---+---+---
 (0 rows)
 
+-- Return no rows after a remote error, even if some rows were received.
+SELECT *
+FROM dblink('SELECT 42; SELECT 1 / 0', false) AS t(a int);
+NOTICE:  division by zero
+CONTEXT:  while executing query on unnamed dblink connection
+ a 
+---
+(0 rows)
+
+SELECT *
+FROM dblink('SELECT 1 / (1 - i) FROM generate_series(0, 1) AS g(i)', false)
+	AS t(a int);
+NOTICE:  division by zero
+CONTEXT:  while executing query on unnamed dblink connection
+ a 
+---
+(0 rows)
+
 -- change some data
 SELECT dblink_exec('UPDATE foo SET f3[2] = ''b99'' WHERE f1 = 11');
  dblink_exec 

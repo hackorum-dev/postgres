@@ -1147,7 +1147,14 @@ materializeQueryResult(FunctionCallInfo fcinfo,
 		{
 			dblink_res_error(conn, conname, res, fail,
 							 "while executing query");
-			/* if fail isn't set, we'll return an empty query result */
+
+			/*
+			 * With fail = false, return no rows, even if we already stored
+			 * some from the failed query or an earlier statement in the
+			 * command string.
+			 */
+			if (sinfo.tuplestore)
+				tuplestore_clear(sinfo.tuplestore);
 		}
 		else if (PQresultStatus(res) == PGRES_COMMAND_OK)
 		{
