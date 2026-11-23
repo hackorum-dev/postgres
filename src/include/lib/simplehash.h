@@ -1206,6 +1206,7 @@ SH_STAT(SH_TYPE * tb)
 #undef SH_STORE_HASH
 #undef SH_USE_NONDEFAULT_ALLOCATOR
 #undef SH_EQUAL
+#undef SH_RAW_ALLOCATOR
 
 /* undefine locally declared macros */
 #undef SH_MAKE_PREFIX
