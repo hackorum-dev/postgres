@@ -140,6 +140,7 @@ CREATE TABLE trunc_stats_test1(id serial, stuff text);
 CREATE TABLE trunc_stats_test2(id serial);
 CREATE TABLE trunc_stats_test3(id serial, stuff text);
 CREATE TABLE trunc_stats_test4(id serial);
+CREATE TABLE trunc_stats_test5(id serial);
 -- check that n_live_tup is reset to 0 after truncate
 INSERT INTO trunc_stats_test DEFAULT VALUES;
 INSERT INTO trunc_stats_test DEFAULT VALUES;
@@ -185,6 +186,25 @@ INSERT INTO trunc_stats_test4 DEFAULT VALUES;
 TRUNCATE trunc_stats_test4;
 INSERT INTO trunc_stats_test4 DEFAULT VALUES;
 ROLLBACK;
+-- truncate committed, then another transaction writes to the table before
+-- the pending stats are flushed: the truncate must still reset n_live_tup.
+-- A procedural block is used so that no stats flush can happen in between.
+INSERT INTO trunc_stats_test5 DEFAULT VALUES;
+INSERT INTO trunc_stats_test5 DEFAULT VALUES;
+INSERT INTO trunc_stats_test5 DEFAULT VALUES;
+SELECT pg_stat_force_next_flush();
+ pg_stat_force_next_flush 
+--------------------------
+ 
+(1 row)
+
+DO $$
+BEGIN
+  TRUNCATE trunc_stats_test5;
+  COMMIT;
+  INSERT INTO trunc_stats_test5 DEFAULT VALUES;
+  COMMIT;
+END $$;
 -- do a seqscan
 SELECT count(*) FROM tenk2;
  count 
@@ -222,7 +242,8 @@ SELECT relname, n_tup_ins, n_tup_upd, n_tup_del, n_live_tup, n_dead_tup
  trunc_stats_test2 |         1 |         0 |         0 |          1 |          0
  trunc_stats_test3 |         4 |         0 |         0 |          2 |          2
  trunc_stats_test4 |         2 |         0 |         0 |          0 |          2
-(5 rows)
+ trunc_stats_test5 |         4 |         0 |         0 |          1 |          0
+(6 rows)
 
 SELECT st.seq_scan >= pr.seq_scan + 1,
        st.seq_tup_read >= pr.seq_tup_read + cl.reltuples,
@@ -656,7 +677,7 @@ SELECT pg_stat_get_live_tuples(:drop_stats_test_subxact_oid);
                        0
 (1 row)
 
-DROP TABLE trunc_stats_test, trunc_stats_test1, trunc_stats_test2, trunc_stats_test3, trunc_stats_test4;
+DROP TABLE trunc_stats_test, trunc_stats_test1, trunc_stats_test2, trunc_stats_test3, trunc_stats_test4, trunc_stats_test5;
 DROP TABLE prevstats;
 -----
 -- Test that last_seq_scan, last_idx_scan are correctly maintained

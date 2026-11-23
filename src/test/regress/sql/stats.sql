@@ -44,6 +44,7 @@ CREATE TABLE trunc_stats_test1(id serial, stuff text);
 CREATE TABLE trunc_stats_test2(id serial);
 CREATE TABLE trunc_stats_test3(id serial, stuff text);
 CREATE TABLE trunc_stats_test4(id serial);
+CREATE TABLE trunc_stats_test5(id serial);
 
 -- check that n_live_tup is reset to 0 after truncate
 INSERT INTO trunc_stats_test DEFAULT VALUES;
@@ -95,6 +96,21 @@ INSERT INTO trunc_stats_test4 DEFAULT VALUES;
 TRUNCATE trunc_stats_test4;
 INSERT INTO trunc_stats_test4 DEFAULT VALUES;
 ROLLBACK;
+
+-- truncate committed, then another transaction writes to the table before
+-- the pending stats are flushed: the truncate must still reset n_live_tup.
+-- A procedural block is used so that no stats flush can happen in between.
+INSERT INTO trunc_stats_test5 DEFAULT VALUES;
+INSERT INTO trunc_stats_test5 DEFAULT VALUES;
+INSERT INTO trunc_stats_test5 DEFAULT VALUES;
+SELECT pg_stat_force_next_flush();
+DO $$
+BEGIN
+  TRUNCATE trunc_stats_test5;
+  COMMIT;
+  INSERT INTO trunc_stats_test5 DEFAULT VALUES;
+  COMMIT;
+END $$;
 
 -- do a seqscan
 SELECT count(*) FROM tenk2;
@@ -292,7 +308,7 @@ RELEASE SAVEPOINT sp1;
 COMMIT;
 SELECT pg_stat_get_live_tuples(:drop_stats_test_subxact_oid);
 
-DROP TABLE trunc_stats_test, trunc_stats_test1, trunc_stats_test2, trunc_stats_test3, trunc_stats_test4;
+DROP TABLE trunc_stats_test, trunc_stats_test1, trunc_stats_test2, trunc_stats_test3, trunc_stats_test4, trunc_stats_test5;
 DROP TABLE prevstats;
 
 

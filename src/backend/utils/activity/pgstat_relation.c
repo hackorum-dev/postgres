@@ -570,9 +570,15 @@ AtEOXact_PgStat_Relations(PgStat_SubXactStatus *xact_state, bool isCommit)
 		tabstat->counts.tuples_deleted += trans->tuples_deleted;
 		if (isCommit)
 		{
-			tabstat->counts.truncdropped = trans->truncdropped;
 			if (trans->truncdropped)
 			{
+				/*
+				 * Remember the truncate/drop until the pending entry is
+				 * flushed.  Never clear the flag here: an earlier transaction
+				 * whose stats are not flushed yet may have set it, and the
+				 * shared live/dead counters still need to be reset then.
+				 */
+				tabstat->counts.truncdropped = true;
 				/* forget live/dead stats seen by backend thus far */
 				tabstat->counts.delta_live_tuples = 0;
 				tabstat->counts.delta_dead_tuples = 0;
@@ -758,9 +764,10 @@ pgstat_twophase_postcommit(FullTransactionId fxid, uint16 info,
 	pgstat_info->counts.tuples_inserted += rec->tuples_inserted;
 	pgstat_info->counts.tuples_updated += rec->tuples_updated;
 	pgstat_info->counts.tuples_deleted += rec->tuples_deleted;
-	pgstat_info->counts.truncdropped = rec->truncdropped;
 	if (rec->truncdropped)
 	{
+		/* see AtEOXact_PgStat_Relations() for why the flag is only set */
+		pgstat_info->counts.truncdropped = true;
 		/* forget live/dead stats seen by backend thus far */
 		pgstat_info->counts.delta_live_tuples = 0;
 		pgstat_info->counts.delta_dead_tuples = 0;
