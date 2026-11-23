@@ -399,6 +399,21 @@ PostgreSQL documentation
             extra write-ahead logs to be saved on the source server.
            </para>
            <para>
+            If <application>pg_basebackup</application> creates the
+            replication slot used for streaming (a temporary slot, or one
+            requested with <option>--create-slot</option>), it does so before
+            the backup is started, so that the slot reserves all the
+            write-ahead log the backup needs.  If the checkpoint at the start
+            of the backup invalidates the slot, because of
+            <xref linkend="guc-max-slot-wal-keep-size"/> or
+            <xref linkend="guc-idle-replication-slot-timeout"/>,
+            <application>pg_basebackup</application> prints a warning and
+            creates the slot again.  For a slot requested with
+            <option>--create-slot</option>, this is only done with servers of
+            version 15 or later, and only if the slot was invalidated because
+            of <varname>max_slot_wal_keep_size</varname>.
+           </para>
+           <para>
             When tar format is used, the write-ahead log files will be
             written to a separate file named <filename>pg_wal.tar</filename>
             (if the server is a version earlier than 10, the file will be named
@@ -514,7 +529,10 @@ PostgreSQL documentation
        <para>
         Specifies that the replication slot named by the
         <literal>--slot</literal> option should be created before starting
-        the backup.  An error is raised if the slot already exists.
+        the backup.  An error is raised if the slot already exists, and the
+        existing slot is left untouched.  If the backup fails after the slot
+        has been created but before write-ahead log streaming has started,
+        the slot is dropped.
        </para>
       </listitem>
      </varlistentry>
