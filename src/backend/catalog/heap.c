@@ -2220,7 +2220,7 @@ heap_drop_with_catalog(Oid relid)
 		 * space previously covered by the dropped partition.
 		 */
 		if (OidIsValid(defaultPartOid) && relid != defaultPartOid)
-			CacheInvalidateRelcacheByRelid(defaultPartOid);
+			invalidate_default_partition(defaultPartOid);
 
 		/*
 		 * Invalidate the parent's relcache so that the partition is no longer
@@ -4458,7 +4458,7 @@ StorePartitionBound(Relation rel, Relation parent, PartitionBoundSpec *bound)
 	defaultPartOid =
 		get_default_oid_from_partdesc(RelationGetPartitionDesc(parent, true));
 	if (OidIsValid(defaultPartOid))
-		CacheInvalidateRelcacheByRelid(defaultPartOid);
+		invalidate_default_partition(defaultPartOid);
 
 	CacheInvalidateRelcache(parent);
 }

@@ -27,6 +27,7 @@
 #include "optimizer/optimizer.h"
 #include "rewrite/rewriteManip.h"
 #include "utils/fmgroids.h"
+#include "utils/inval.h"
 #include "utils/partcache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
@@ -362,6 +363,27 @@ update_default_partition_oid(Oid parentId, Oid defaultPartId)
 
 	heap_freetuple(tuple);
 	table_close(pg_partitioned_table, RowExclusiveLock);
+}
+
+/*
+ * invalidate_default_partition
+ *
+ * Invalidate the relcache entry of a default partition after a sibling
+ * partition was added or removed, since its partition constraint depends on
+ * the bounds of every other partition.  If the default partition is itself
+ * partitioned, do the same for all of its descendants: the partition
+ * constraint cached for them (rd_partcheck) includes the constraints of
+ * their ancestors.  The caller must hold AccessExclusiveLock on the default
+ * partition; its descendants are locked the same way here.
+ */
+void
+invalidate_default_partition(Oid defaultPartId)
+{
+	List	   *parts;
+
+	parts = find_all_inheritors(defaultPartId, AccessExclusiveLock, NULL);
+	foreach_oid(partId, parts)
+		CacheInvalidateRelcacheByRelid(partId);
 }
 
 /*

@@ -3389,6 +3389,27 @@ insert into attach_parted_part1 values (2, 1);
 alter table target_parted detach partition attach_parted;
 insert into attach_parted_part1 values (2, 1);
 
+-- Likewise, adding or removing a sibling of a partitioned default partition
+-- must update the partition constraint of the default partition's partitions
+create table defpart_parent (a int) partition by list (a);
+create table defpart_p1 partition of defpart_parent for values in (1);
+create table defpart_p2 partition of defpart_parent for values in (2);
+create table defpart_def partition of defpart_parent default
+  partition by list (a);
+create table defpart_def_def partition of defpart_def default;
+-- build the leaf partition's constraint and store it in the relcache
+insert into defpart_def_def values (0);
+-- the following inserts must succeed after the sibling is detached or dropped
+alter table defpart_parent detach partition defpart_p1;
+insert into defpart_parent values (1);
+drop table defpart_p2;
+insert into defpart_def_def values (2);
+-- ...and this one must fail after a new sibling is created
+create table defpart_p3 partition of defpart_parent for values in (3);
+insert into defpart_def_def values (3);
+select tableoid::regclass, a from defpart_parent order by a;
+drop table defpart_parent, defpart_p1;
+
 -- Test altering table having publication
 create schema alter1;
 create schema alter2;

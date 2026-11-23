@@ -22780,7 +22780,7 @@ DetachPartitionFinalize(Relation rel, Relation partRel, bool concurrent,
 		if (RelationGetRelid(partRel) == defaultPartOid)
 			update_default_partition_oid(RelationGetRelid(rel), InvalidOid);
 		else
-			CacheInvalidateRelcacheByRelid(defaultPartOid);
+			invalidate_default_partition(defaultPartOid);
 	}
 
 	/*
