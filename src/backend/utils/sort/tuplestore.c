@@ -1364,8 +1364,12 @@ tuplestore_seek(Tuplestorestate *state, int64 row)
 		case TSS_INMEM:
 			{
 				int64		base = state->tuples - state->memtupcount;
+				int64		lowest = base + state->memtupdeleted;
 
-				if (row < base + state->memtupdeleted)
+				/* After a trim, the tuple kept for a slot is not a position */
+				if (state->truncated)
+					lowest++;
+				if (row < lowest)
 					return false;
 				if (row > state->tuples)
 					readptr->eof_reached = true;
@@ -1738,7 +1742,7 @@ tuplestore_trim(Tuplestorestate *state)
 	}
 	Assert(state->memtupdeleted == nremove);
 
-	/* mark tuplestore as truncated (used for Assert crosschecks only) */
+	/* mark tuplestore as truncated; tuplestore_seek() relies on this */
 	state->truncated = true;
 
 	/*
