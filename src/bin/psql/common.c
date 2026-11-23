@@ -2475,6 +2475,47 @@ command_no_begin(const char *query)
 		return true;			/* it's CLUSTER without arguments */
 	}
 
+	/* repack (analyze) and repack (concurrently) are also not allowed */
+	if (wordlen == 6 && pg_strncasecmp(query, "repack", 6) == 0)
+	{
+		const char *option;
+		const char *optend;
+
+		/*
+		 * XXX I think assuming that '(' or ')' (and ',' below) don't appear as
+		 * second byte of a multibyte character is flawed, so this could easily
+		 * be fooled.  How bad are the consequences of that happening, though?
+		 */
+		option = strchr(query, '(');
+		if (option == NULL)
+			return false;
+		option = skip_white_space(option);
+		optend = strchr(option, ')');
+		if (optend == NULL)
+			return false;
+		for (;;)
+		{
+			const char *nextoption;
+
+			if (pg_strncasecmp(option, "concurrently", 12))
+				/* XXX what if it's 'CONCURRENTLY OFF'? */
+				return true;
+			if (pg_strncasecmp(option, "analyze", 7))
+				/* XXX what if it's 'ANALYZE OFF'? */
+				return true;
+
+			nextoption = strchr(option, ',');
+			if (nextoption == NULL)
+				return false;
+			if (nextoption > optend)
+				return false;
+			option = nextoption;
+			option = skip_white_space(option);
+		}
+
+		return false;
+	}
+
 	if (wordlen == 6 && pg_strncasecmp(query, "create", 6) == 0)
 	{
 		query += wordlen;
