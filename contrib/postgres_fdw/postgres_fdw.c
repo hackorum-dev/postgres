@@ -8459,6 +8459,7 @@ add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 		foreach(lc, input_rel->pathlist)
 		{
 			Path	   *path = (Path *) lfirst(lc);
+			Path	   *underlying_path;
 
 			/*
 			 * apply_scanjoin_target_to_paths() uses create_projection_path()
@@ -8468,10 +8469,21 @@ add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 			 * the ForeignPath; look through ProjectionPath and see if the
 			 * path underneath it is ForeignPath.
 			 */
-			if (IsA(path, ForeignPath) ||
-				(IsA(path, ProjectionPath) &&
-				 IsA(((ProjectionPath *) path)->subpath, ForeignPath)))
+			if (IsA(path, ProjectionPath))
+				underlying_path = ((ProjectionPath *) path)->subpath;
+			else
+				underlying_path = path;
+
+			if (IsA(underlying_path, ForeignPath))
 			{
+				/*
+				 * We need the ForeignPath's fdw_restrictinfo to pass down to
+				 * the final path, since create_scan_plan() consults it to
+				 * find any pseudoconstant quals that need a gating Result
+				 * node.
+				 */
+				ForeignPath *fpath = (ForeignPath *) underlying_path;
+
 				/*
 				 * Create foreign final path; this gets rid of a
 				 * no-longer-needed outer plan (if any), which makes the
@@ -8486,8 +8498,7 @@ add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 													   path->total_cost,
 													   path->pathkeys,
 													   NULL,	/* no extra plan */
-													   NIL, /* no fdw_restrictinfo
-															 * list */
+													   fpath->fdw_restrictinfo,
 													   NIL);	/* no fdw_private */
 
 				/* and add it to the final_rel */
