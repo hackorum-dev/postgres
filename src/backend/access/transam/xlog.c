@@ -6692,6 +6692,8 @@ StartupXLOG(void)
 		writeTimeLineHistory(newTLI, recoveryTargetTLI,
 							 EndOfLog, endOfRecoveryInfo->recoveryStopReason);
 
+		INJECTION_POINT("promotion-after-timeline-history", NULL);
+
 		ereport(LOG,
 				(errmsg("archive recovery complete")));
 	}
