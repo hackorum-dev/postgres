@@ -5814,6 +5814,85 @@ create_ordered_paths(PlannerInfo *root,
 	return ordered_rel;
 }
 
+/*
+ * collect_agg_key_vars_walker
+ *		Expression-tree walker callback to collect the Vars used in the
+ *		ORDER BY / DISTINCT key expressions of presorted aggregates.
+ *
+ * adjust_group_pathkeys_for_groupagg() arranges for the aggregation input
+ * to be sorted by the ORDER BY / DISTINCT keys of the aggregates it has
+ * marked aggpresorted.  Here we collect the Vars used in those key
+ * expressions, in key order, so that make_group_input_target can place them
+ * in the aggregation input target before the plain argument Vars.
+ *
+ * Aggregates that are not presorted sort their own input inside the
+ * Aggregate node.  Their keys are not sort keys of the Aggregate's input, so
+ * moving their columns would only reshuffle the arguments of the other
+ * aggregates; we leave them alone.
+ *
+ * Putting the sort key columns in front of the payload columns matches the
+ * convention make_window_input_target uses for window PARTITION BY / ORDER
+ * BY clauses:  when the aggregation input needs an explicit Sort, the
+ * tuples fed to the Sort then have the sort keys in front of the argument
+ * columns.  tuplesort caches only the first sort key in SortTuple.datum1,
+ * so comparisons of any later key must fetch that column afresh via
+ * heap_getattr; that fetch is much cheaper when it does not have to step
+ * over variable-width argument columns to locate the key (offsets beyond
+ * the first variable-width column cannot be cached).
+ *
+ * We recurse into the whole expression tree, so that Aggrefs nested inside
+ * other expression types, e.g. WindowFunc arguments, are handled too.  The
+ * pull_var_clause flags used here must match the ones used for
+ * non_group_vars in make_group_input_target, so that the equal()-based
+ * de-duplication in add_new_columns_to_pathtarget works.
+ */
+static bool
+collect_agg_key_vars_walker(Node *node, void *context)
+{
+	List	  **vars = context;
+
+	if (node == NULL)
+		return false;
+
+	if (IsA(node, Aggref))
+	{
+		Aggref	   *aggref = (Aggref *) node;
+
+		if (aggref->aggpresorted)
+		{
+			/*
+			 * The keys are taken in sort order, not in Aggref->args order:
+			 * the parser lets an ORDER BY item that equals an argument reuse
+			 * the argument's TargetEntry (see transformAggregateCall), so a
+			 * plain argument may come first in args while being a later sort
+			 * key.  When there is a DISTINCT clause, the ORDER BY keys are a
+			 * prefix of the DISTINCT keys (see transformDistinctClause) and
+			 * it is the latter the input is sorted by.  This is the same
+			 * sort list adjust_group_pathkeys_for_groupagg() uses, and
+			 * the one build_pertrans_for_aggref() would sort by.
+			 */
+			List	   *sortlist = aggref->aggdistinct ?
+											aggref->aggdistinct : aggref->aggorder;
+			ListCell   *lc;
+
+			foreach(lc, sortlist)
+			{
+				SortGroupClause *sortcl = lfirst_node(SortGroupClause, lc);
+				TargetEntry *tle = get_sortgroupclause_tle(sortcl,
+														   aggref->args);
+
+				*vars = list_concat(*vars,
+									pull_var_clause((Node *) tle->expr,
+													PVC_RECURSE_AGGREGATES |
+													PVC_RECURSE_WINDOWFUNCS |
+													PVC_INCLUDE_PLACEHOLDERS));
+			}
+		}
+	}
+
+	return expression_tree_walker(node, collect_agg_key_vars_walker,
+								  context);
+}
 
 /*
  * make_group_input_target
@@ -5836,6 +5915,9 @@ create_ordered_paths(PlannerInfo *root,
  *		a+b,c,d
  * where the a+b target will be used by the Sort/Group steps, and the
  * other targets will be used for computing the final results.
+ * If ordered aggregates make the subplan sort by keys beyond the GROUP
+ * BY ones, the Vars in those keys are placed right after the GROUP BY
+ * items and ahead of the remaining Vars (see the comment in the body).
  *
  * 'final_target' is the query's final target list (in PathTarget form)
  *
@@ -5928,6 +6010,37 @@ make_group_input_target(PlannerInfo *root, PathTarget *final_target)
 								  bms_make_singleton(root->group_rtindex),
 								  NULL);
 	}
+
+	/*
+	 * Put the Vars used in the sort keys of presorted aggregates into the
+	 * input target before the remaining non-group Vars, so that any Sort
+	 * below the grouping step sees the sort keys in front of the argument
+	 * columns (see collect_agg_key_vars_walker).
+	 *
+	 * Only do that when it can matter.  adjust_group_pathkeys_for_groupagg()
+	 * appends the keys of presorted aggregates to root->group_pathkeys, after
+	 * the plain GROUP BY keys; a key column can be something other than the
+	 * first sort key only when such keys were appended and there is more
+	 * than one sort key in total.  (tuplesort fetches the first sort key
+	 * only once per tuple, so the position of a lone sort key does not
+	 * matter.)  The first test is the same one gather_grouping_paths() uses
+	 * to detect the extra keys.  When it fails, every sort key is a GROUP BY
+	 * column, and those already come before the argument columns, whether
+	 * or not some aggregate is presorted.  Nothing would be moved then, so
+	 * leave the input target alone.
+	 */
+	if (list_length(root->group_pathkeys) > root->num_groupby_pathkeys &&
+		list_length(root->group_pathkeys) > 1)
+	{
+		List	   *agg_key_vars = NIL;
+
+		(void) expression_tree_walker((Node *) non_group_cols,
+									  collect_agg_key_vars_walker,
+									  &agg_key_vars);
+		add_new_columns_to_pathtarget(input_target, agg_key_vars);
+		list_free(agg_key_vars);
+	}
+
 	add_new_columns_to_pathtarget(input_target, non_group_vars);
 
 	/* clean up cruft */
