@@ -368,3 +368,13 @@ INT4
 UNIQUE
 NOT
 NULL);
+
+--
+-- Check that the error position of a deeply nested expression can be
+-- computed without overrunning the stack.
+--
+(SELECT 1 ORDER BY 1) ORDER BY 1+1;
+SELECT '(SELECT 1 ORDER BY 1) ORDER BY ' || repeat('1+', 10000) || '1' AS deep_query \gset
+SET max_stack_depth = '100kB';
+:deep_query;
+RESET max_stack_depth;

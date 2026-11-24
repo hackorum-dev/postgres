@@ -445,3 +445,17 @@ NULL);
 ERROR:  syntax error at or near "NUL"
 LINE 16: ...L, id2 TEXT NOT NULL PRIMARY KEY, id3 INTEGER NOT NUL, id4 I...
                                                               ^
+--
+-- Check that the error position of a deeply nested expression can be
+-- computed without overrunning the stack.
+--
+(SELECT 1 ORDER BY 1) ORDER BY 1+1;
+ERROR:  multiple ORDER BY clauses not allowed
+LINE 1: (SELECT 1 ORDER BY 1) ORDER BY 1+1;
+                                       ^
+SELECT '(SELECT 1 ORDER BY 1) ORDER BY ' || repeat('1+', 10000) || '1' AS deep_query \gset
+SET max_stack_depth = '100kB';
+:deep_query;
+ERROR:  stack depth limit exceeded
+HINT:  Increase the configuration parameter "max_stack_depth" (currently 100kB), after ensuring the platform's stack depth limit is adequate.
+RESET max_stack_depth;
