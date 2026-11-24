@@ -19,6 +19,7 @@
 #include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/cost.h"
 #include "optimizer/optimizer.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/planmain.h"
@@ -220,6 +221,90 @@ static void record_elided_node(PlannerGlobal *glob, int plan_node_id,
  *		SUBPLAN REFERENCES
  *
  *****************************************************************************/
+
+/*
+ * Fix references in the main plan and its subplans.  For a buffered INSERT,
+ * check whether a Gather actually survived selection of AlternativeSubPlans.
+ * Choosing an alternative happens here, later than path and plan creation.
+ */
+Plan *
+set_stmt_references(PlannerInfo *root, Plan *plan)
+{
+	PlannerGlobal *glob = root->glob;
+	ParallelInsertInfo *insert = glob->parallelInsert;
+	bool		check_parallel = insert && glob->parallelModeNeeded;
+	Bitmapset  *parallel_plans = NULL;
+	Bitmapset  *main_deps = NULL;
+	ListCell   *lp,
+			   *lr;
+
+	plan = set_plan_references(root, plan);
+	if (check_parallel)
+	{
+		main_deps = insert->plan_deps;
+		parallel_plans = bms_make_singleton(0);
+	}
+
+	Assert(list_length(glob->subplans) == list_length(glob->subroots));
+	forboth(lp, glob->subplans, lr, glob->subroots)
+	{
+		Plan	   *subplan = (Plan *) lfirst(lp);
+		PlannerInfo *subroot = lfirst_node(PlannerInfo, lr);
+
+		if (check_parallel)
+			insert->plan_deps = NULL;
+		lfirst(lp) = set_plan_references(subroot, subplan);
+
+		/* Subplans are built before any plan that references them. */
+		if (check_parallel && bms_overlap(parallel_plans, insert->plan_deps))
+			parallel_plans = bms_add_member(parallel_plans,
+											foreach_current_index(lp) + 1);
+	}
+
+	if (check_parallel)
+	{
+		TupleBuffer *buffer = insert->buffer;
+
+		/*
+		 * All AlternativeSubPlans have now been resolved.  Count only Gathers
+		 * reachable from the main plan, including via initplans and SubPlans.
+		 * If the only Gather was in a discarded alternative, keep the node
+		 * but let the INSERT read its input directly, without a tuplestore or
+		 * parallel mode.
+		 */
+		glob->parallelModeNeeded = bms_overlap(parallel_plans, main_deps);
+		if (buffer && !glob->parallelModeNeeded)
+			buffer->mode = TUPLEBUFFER_PASSTHROUGH;
+		else if (buffer)
+		{
+			Plan	   *bplan = &buffer->plan;
+			Cost		startup_cost;
+			Cost		total_cost;
+
+			/*
+			 * So far the INSERT path has only been charged for its source.
+			 * Add the fill and replay costs to the buffer, the INSERT, and
+			 * any intervening projection or SubqueryScan.
+			 */
+			cost_tuplebuffer(&startup_cost, &total_cost, bplan->total_cost,
+							 bplan->plan_rows, bplan->plan_width);
+			for (Plan *p = plan; p != bplan;)
+			{
+				Assert(p != NULL);
+				p->startup_cost += startup_cost - bplan->startup_cost;
+				p->total_cost += total_cost - bplan->total_cost;
+				if (IsA(p, SubqueryScan))
+					p = ((SubqueryScan *) p)->subplan;
+				else
+					p = outerPlan(p);
+			}
+			bplan->startup_cost = startup_cost;
+			bplan->total_cost = total_cost;
+		}
+	}
+
+	return plan;
+}
 
 /*
  * set_plan_references
@@ -647,6 +732,14 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 	/* Assign this node a unique ID. */
 	plan->plan_node_id = root->glob->lastPlanNodeId++;
 
+	if (plan->initPlan && root->glob->parallelInsert && root->glob->parallelModeNeeded)
+	{
+		ParallelInsertInfo *insert = root->glob->parallelInsert;
+
+		foreach_node(SubPlan, splan, plan->initPlan)
+			insert->plan_deps = bms_add_member(insert->plan_deps, splan->plan_id);
+	}
+
 	/*
 	 * Plan-type-specific fixes
 	 */
@@ -883,6 +976,10 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 		case T_Gather:
 		case T_GatherMerge:
 			{
+				ParallelInsertInfo *insert = root->glob->parallelInsert;
+
+				if (insert)
+					insert->plan_deps = bms_add_member(insert->plan_deps, 0);
 				set_upper_references(root, plan, rtoffset);
 				set_param_references(root, plan);
 			}
@@ -2123,6 +2220,15 @@ static void
 fix_expr_common(PlannerInfo *root, Node *node)
 {
 	/* We assume callers won't call us on a NULL pointer */
+	if (IsA(node, SubPlan) && root->glob->parallelInsert &&
+		root->glob->parallelModeNeeded)
+	{
+		ParallelInsertInfo *insert = root->glob->parallelInsert;
+
+		insert->plan_deps = bms_add_member(insert->plan_deps,
+										   ((SubPlan *) node)->plan_id);
+	}
+
 	if (IsA(node, Aggref))
 	{
 		record_plan_function_dependency(root,

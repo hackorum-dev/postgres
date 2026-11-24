@@ -955,6 +955,13 @@
   boot_val => 'true',
 },
 
+{ name => 'enable_insert_select_parallel', type => 'bool', context => 'PGC_USERSET', group => 'QUERY_TUNING_METHOD',
+  short_desc => 'Enables parallel plans for the SELECT part of INSERT ... SELECT.',
+  flags => 'GUC_EXPLAIN',
+  variable => 'enable_insert_select_parallel',
+  boot_val => 'false',
+},
+
 { name => 'enable_material', type => 'bool', context => 'PGC_USERSET', group => 'QUERY_TUNING_METHOD',
   short_desc => 'Enables the planner\'s use of materialization.',
   flags => 'GUC_EXPLAIN',

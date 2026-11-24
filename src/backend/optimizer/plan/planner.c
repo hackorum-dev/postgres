@@ -68,6 +68,7 @@
 double		cursor_tuple_fraction = DEFAULT_CURSOR_TUPLE_FRACTION;
 int			debug_parallel_query = DEBUG_PARALLEL_OFF;
 bool		parallel_leader_participation = true;
+bool		enable_insert_select_parallel = false;
 bool		enable_distinct_reordering = true;
 
 /* Hook for plugins to get control in planner() */
@@ -153,6 +154,7 @@ typedef struct
 } preprocess_subquery_phvs_context;
 
 /* Local functions */
+static ParallelInsertInfo *parallel_insert_select_info(Query *parse);
 static Node *preprocess_expression(PlannerInfo *root, Node *expr, int kind);
 static void preprocess_qual_conditions(PlannerInfo *root, Node *jtnode);
 static Bitmapset *find_having_conflicts(Query *parse, Index group_rtindex);
@@ -364,9 +366,7 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	RelOptInfo *final_rel;
 	Path	   *best_path;
 	Plan	   *top_plan;
-	ListCell   *lp,
-			   *lr,
-			   *lc;
+	ListCell   *lc;
 
 	/*
 	 * Set up global state for this planner invocation.  This data is needed
@@ -410,11 +410,13 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	 * (Note that we do allow CREATE TABLE AS, SELECT INTO, and CREATE
 	 * MATERIALIZED VIEW to use parallel plans, but this is safe only because
 	 * the command is writing into a completely new table which workers won't
-	 * be able to see.  If the workers could see the table, the fact that
-	 * group locking would cause them to ignore the leader's heavyweight GIN
-	 * page locks would make this unsafe.  We'll have to fix that somehow if
-	 * we want to allow parallel inserts in general; updates and deletes have
-	 * additional problems especially around combo CIDs.)
+	 * be able to see.  INSERT ... SELECT is a separate exception: we can
+	 * finish its SELECT before inserting anything.  If reads and writes
+	 * overlapped on a table visible to workers, the fact that group locking
+	 * would cause them to ignore the leader's heavyweight GIN page locks
+	 * would make this unsafe.  We'll have to fix that somehow if we want to
+	 * allow parallel inserts in general; updates and deletes have additional
+	 * problems especially around combo CIDs.)
 	 *
 	 * For now, we don't try to use parallel mode if we're running inside a
 	 * parallel worker.  We might eventually be able to relax this
@@ -423,21 +425,20 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	 */
 	if ((cursorOptions & CURSOR_OPT_PARALLEL_OK) != 0 &&
 		IsUnderPostmaster &&
-		parse->commandType == CMD_SELECT &&
 		!parse->hasModifyingCTE &&
 		max_parallel_workers_per_gather > 0 &&
 		!IsParallelWorker())
 	{
-		/* all the cheap tests pass, so scan the query tree */
-		glob->maxParallelHazard = max_parallel_hazard(parse);
-		glob->parallelModeOK = (glob->maxParallelHazard != PROPARALLEL_UNSAFE);
+		if (parse->commandType == CMD_SELECT)
+		{
+			glob->maxParallelHazard = max_parallel_hazard(parse);
+			glob->parallelModeOK = (glob->maxParallelHazard != PROPARALLEL_UNSAFE);
+		}
+		else if (parse->commandType == CMD_INSERT && enable_insert_select_parallel)
+			glob->parallelInsert = parallel_insert_select_info(parse);
 	}
-	else
-	{
-		/* skip the query tree scan, just assume it's unsafe */
+	if (!glob->parallelModeOK)
 		glob->maxParallelHazard = PROPARALLEL_UNSAFE;
-		glob->parallelModeOK = false;
-	}
 
 	/*
 	 * glob->parallelModeNeeded is normally set to false here and changed to
@@ -448,13 +449,14 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	 * regress, then we impose parallel mode whenever it's safe to do so, even
 	 * if the final plan doesn't use parallelism.  It's not safe to do so if
 	 * the query contains anything parallel-unsafe; parallelModeOK will be
-	 * false in that case.  Note that parallelModeOK can't change after this
-	 * point. Otherwise, everything in the query is either parallel-safe or
-	 * parallel-restricted, and in either case it should be OK to impose
-	 * parallel-mode restrictions.  If that ends up breaking something, then
-	 * either some function the user included in the query is incorrectly
-	 * labeled as parallel-safe or parallel-restricted when in reality it's
-	 * parallel-unsafe, or else the query planner itself has a bug.
+	 * false in that case.  In particular, don't force parallel mode for an
+	 * INSERT, even if its SELECT can use it.  Otherwise, everything in the
+	 * query is either parallel-safe or parallel-restricted, and in either
+	 * case it should be OK to impose parallel-mode restrictions.  If that
+	 * ends up breaking something, then either some function the user included
+	 * in the query is incorrectly labeled as parallel-safe or
+	 * parallel-restricted when in reality it's parallel-unsafe, or else the
+	 * query planner itself has a bug.
 	 */
 	glob->parallelModeNeeded = glob->parallelModeOK &&
 		(debug_parallel_query != DEBUG_PARALLEL_OFF);
@@ -634,6 +636,9 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	 */
 	if (glob->paramExecTypes != NIL)
 	{
+		ListCell   *lp,
+				   *lr;
+
 		Assert(list_length(glob->subplans) == list_length(glob->subroots));
 		forboth(lp, glob->subplans, lr, glob->subroots)
 		{
@@ -651,16 +656,7 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	Assert(glob->finalrowmarks == NIL);
 	Assert(glob->resultRelations == NIL);
 	Assert(glob->appendRelations == NIL);
-	top_plan = set_plan_references(root, top_plan);
-	/* ... and the subplans (both regular subplans and initplans) */
-	Assert(list_length(glob->subplans) == list_length(glob->subroots));
-	forboth(lp, glob->subplans, lr, glob->subroots)
-	{
-		Plan	   *subplan = (Plan *) lfirst(lp);
-		PlannerInfo *subroot = lfirst_node(PlannerInfo, lr);
-
-		lfirst(lp) = set_plan_references(subroot, subplan);
-	}
+	top_plan = set_stmt_references(root, top_plan);
 
 	/* build the PlannedStmt result */
 	result = makeNode(PlannedStmt);
@@ -739,6 +735,41 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 		DestroyPartitionDirectory(glob->partition_directory);
 
 	return result;
+}
+
+/*
+ * Identify the SELECT that transformInsertStmt put in the INSERT's FROM
+ * list.  Don't mistake VALUES or more complex products of rule rewriting for
+ * such a source.  CTEs belonging to the INSERT can be evaluated on demand
+ * inside the SELECT, so they too must be safe to run in parallel mode.
+ */
+static ParallelInsertInfo *
+parallel_insert_select_info(Query *parse)
+{
+	ParallelInsertInfo *info;
+	RangeTblRef *rtr;
+	RangeTblEntry *rte;
+
+	if (list_length(parse->jointree->fromlist) != 1 ||
+		!IsA(linitial(parse->jointree->fromlist), RangeTblRef) ||
+		parse->jointree->quals)
+		return NULL;
+	rtr = linitial_node(RangeTblRef, parse->jointree->fromlist);
+	rte = rt_fetch(rtr->rtindex, parse->rtable);
+	if (rte->rtekind != RTE_SUBQUERY || rte->lateral || rte->securityQuals ||
+		rte->subquery->commandType != CMD_SELECT ||
+		rte->subquery->hasModifyingCTE)
+		return NULL;
+
+	foreach_node(CommonTableExpr, cte, parse->cteList)
+	{
+		if (max_parallel_hazard(castNode(Query, cte->ctequery)) == PROPARALLEL_UNSAFE)
+			return NULL;
+	}
+
+	info = palloc0_object(ParallelInsertInfo);
+	info->source_rti = rtr->rtindex;
+	return info;
 }
 
 

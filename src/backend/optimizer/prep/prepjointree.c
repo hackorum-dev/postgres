@@ -1301,6 +1301,11 @@ pull_up_subqueries_recurse(PlannerInfo *root, Node *jtnode,
 		int			varno = ((RangeTblRef *) jtnode)->rtindex;
 		RangeTblEntry *rte = rt_fetch(varno, root->parse->rtable);
 
+		/* Keep the parallelizable source separate from the INSERT. */
+		if (root->glob->parallelInsert && root->query_level == 1 &&
+			varno == root->glob->parallelInsert->source_rti)
+			return jtnode;
+
 		/*
 		 * Is this a subquery RTE, and if so, is the subquery simple enough to
 		 * pull up?

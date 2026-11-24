@@ -6091,6 +6091,27 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-enable-insert-select-parallel" xreflabel="enable_insert_select_parallel">
+      <term><varname>enable_insert_select_parallel</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>enable_insert_select_parallel</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Allows the planner to use a parallel plan for the <command>SELECT</command>
+        part of <command>INSERT ... SELECT</command>.  When it chooses such a
+        plan, a <literal>TupleBuffer</literal> node collects all source rows
+        before insertion begins.  This can use temporary disk space if the
+        rows exceed <xref linkend="guc-work-mem"/>.  If a parallel subplan is
+        considered but discarded, <command>EXPLAIN</command> may still show
+        a <literal>TupleBuffer</literal> with <literal>Buffering: false</literal>;
+        it passes rows through without storing them.  The insert itself is
+        always serial.  The default is <literal>off</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-enable-material" xreflabel="enable_material">
       <term><varname>enable_material</varname> (<type>boolean</type>)
       <indexterm>

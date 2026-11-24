@@ -2689,6 +2689,9 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 {
 	Query	   *parse = root->parse;
 	Query	   *subquery = rte->subquery;
+	ParallelInsertInfo *insert = root->glob->parallelInsert;
+	bool		insert_source = insert && root->query_level == 1 &&
+		rti == insert->source_rti;
 	bool		trivial_pathtarget;
 	Relids		required_outer;
 	pushdown_safety_info safetyInfo;
@@ -2838,10 +2841,28 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	/* plan_params should not be in use in current query level */
 	Assert(root->plan_params == NIL);
 
+	/*
+	 * Only this subquery, not the INSERT's defaults, RETURNING list, etc.,
+	 * may use parallel mode.  Check the actual source after CTE inlining.
+	 */
+	if (insert_source)
+	{
+		Assert(!root->glob->parallelModeOK && !root->glob->parallelModeNeeded);
+		root->glob->maxParallelHazard = max_parallel_hazard(subquery);
+		root->glob->parallelModeOK =
+			root->glob->maxParallelHazard != PROPARALLEL_UNSAFE;
+	}
+
 	/* Generate a subroot and Paths for the subquery */
 	plan_name = choose_plan_name(root->glob, rte->eref->aliasname, false);
 	rel->subroot = subquery_planner(root->glob, subquery, plan_name,
 									root, NULL, false, tuple_fraction, NULL);
+
+	if (insert_source)
+	{
+		root->glob->parallelModeOK = false;
+		root->glob->maxParallelHazard = PROPARALLEL_UNSAFE;
+	}
 
 	/* Isolate the params needed by this specific subplan */
 	rel->subplan_params = root->plan_params;
@@ -2905,6 +2926,21 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	{
 		Path	   *subpath = (Path *) lfirst(lc);
 		List	   *pathkeys;
+
+		/*
+		 * An INSERT consumes the entire source.  Reserve a place for a buffer
+		 * above the chosen source path, below any INSERT-side projection.
+		 * Don't build the plan here: parallelModeNeeded is set when a Gather
+		 * or Gather Merge plan is built, not when its path is created.
+		 * create_tuplebuffer_plan() checks the flag after building its child.
+		 */
+		if (insert_source)
+		{
+			if (subpath != sub_final_rel->cheapest_total_path)
+				continue;
+			subpath = (Path *) create_tuplebuffer_path(subpath->parent,
+													   subpath, true);
+		}
 
 		/* Convert subpath's pathkeys to outer representation */
 		pathkeys = convert_subquery_pathkeys(root,

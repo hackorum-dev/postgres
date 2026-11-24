@@ -1748,6 +1748,16 @@ ExecutePlan(QueryDesc *queryDesc,
 		use_parallel_mode = queryDesc->plannedstmt->parallelModeNeeded;
 	queryDesc->already_executed = true;
 
+	/*
+	 * For INSERT ... SELECT, only the TupleBuffer's fill may launch workers.
+	 * Don't impose parallel-mode restrictions on ModifyTable, including its
+	 * BEFORE STATEMENT triggers, which run before the first source tuple is
+	 * requested.
+	 */
+	estate->es_parallel_insert_select = use_parallel_mode && operation == CMD_INSERT;
+	if (estate->es_parallel_insert_select)
+		use_parallel_mode = false;
+
 	estate->es_use_parallel_mode = use_parallel_mode;
 	if (use_parallel_mode)
 		EnterParallelMode();

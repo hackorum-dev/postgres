@@ -117,6 +117,7 @@ extern bool remove_useless_self_joins(PlannerInfo *root, List *joinlist);
  * prototypes for plan/setrefs.c
  */
 extern Plan *set_plan_references(PlannerInfo *root, Plan *plan);
+extern Plan *set_stmt_references(PlannerInfo *root, Plan *plan);
 extern bool trivial_subqueryscan(SubqueryScan *plan);
 extern Param *find_minmax_agg_replacement_param(PlannerInfo *root,
 												Aggref *aggref);

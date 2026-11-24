@@ -163,6 +163,13 @@ EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
           </listitem>
         </itemizedlist>
       </para>
+      <para>
+        When <xref linkend="guc-enable-insert-select-parallel"/> is enabled,
+        <command>INSERT ... SELECT</command> can also use a parallel plan for
+        its source query.  In that case the leader buffers all source rows and
+        shuts down the parallel workers before inserting any rows.  Queries
+        with a data-modifying CTE or row locking in the source are not eligible.
+      </para>
     </listitem>
 
     <listitem>
@@ -185,7 +192,9 @@ EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
         Most system-defined functions are <literal>PARALLEL SAFE</literal>,
         but user-defined functions are marked <literal>PARALLEL
         UNSAFE</literal> by default. See the discussion of
-        <xref linkend="parallel-safety"/>.
+        <xref linkend="parallel-safety"/>.  For <command>INSERT ... SELECT</command>,
+        this restriction applies to the source query, not to expressions
+        evaluated during insertion.
       </para>
     </listitem>
 
