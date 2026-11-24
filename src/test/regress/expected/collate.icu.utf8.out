@@ -2102,6 +2102,61 @@ DETAIL:  Key (x)=(ABC) already exists.
 CREATE UNIQUE INDEX ON test3ci (x);  -- error
 ERROR:  could not create unique index "test3ci_x_idx"
 DETAIL:  Key (x)=(abc) is duplicated.
+-- The pattern_ops ordering operators sort bytewise, which disagrees with
+-- equality under a nondeterministic collation, so ORDER BY rejects them.
+SELECT x FROM test3ci ORDER BY x USING ~<~;  -- error
+ERROR:  nondeterministic collations are not supported for ordering operator ~<~
+LINE 1: SELECT x FROM test3ci ORDER BY x USING ~<~;
+               ^
+HINT:  You can sort in byte order by applying COLLATE "C" to the expression.
+SELECT x FROM test3ci ORDER BY x || '' USING ~>~;  -- error
+ERROR:  nondeterministic collations are not supported for ordering operator ~>~
+LINE 1: SELECT x FROM test3ci ORDER BY x || '' USING ~>~;
+                                       ^
+HINT:  You can sort in byte order by applying COLLATE "C" to the expression.
+SELECT x FROM test3ci ORDER BY x::char(3) USING ~<~;  -- error
+ERROR:  nondeterministic collations are not supported for ordering operator ~<~
+LINE 1: SELECT x FROM test3ci ORDER BY x::char(3) USING ~<~;
+                                       ^
+HINT:  You can sort in byte order by applying COLLATE "C" to the expression.
+SELECT x FROM test3cs ORDER BY x COLLATE case_insensitive USING ~<~;  -- error
+ERROR:  nondeterministic collations are not supported for ordering operator ~<~
+LINE 1: SELECT x FROM test3cs ORDER BY x COLLATE case_insensitive US...
+                                       ^
+HINT:  You can sort in byte order by applying COLLATE "C" to the expression.
+SELECT string_agg(x, ',' ORDER BY x USING ~<~) FROM test3ci;  -- error
+ERROR:  nondeterministic collations are not supported for ordering operator ~<~
+LINE 1: SELECT string_agg(x, ',' ORDER BY x USING ~<~) FROM test3ci;
+                          ^
+HINT:  You can sort in byte order by applying COLLATE "C" to the expression.
+SELECT mode() WITHIN GROUP (ORDER BY x USING ~<~) FROM test3ci;  -- error
+ERROR:  nondeterministic collations are not supported for ordering operator ~<~
+LINE 1: SELECT mode() WITHIN GROUP (ORDER BY x USING ~<~) FROM test3...
+                                             ^
+HINT:  You can sort in byte order by applying COLLATE "C" to the expression.
+SELECT rank() OVER (ORDER BY x USING ~<~) FROM test3ci;  -- error
+ERROR:  nondeterministic collations are not supported for ordering operator ~<~
+LINE 1: SELECT rank() OVER (ORDER BY x USING ~<~) FROM test3ci;
+                                     ^
+HINT:  You can sort in byte order by applying COLLATE "C" to the expression.
+SELECT x FROM test3ci ORDER BY x COLLATE "C" USING ~<~;  -- ok
+  x  
+-----
+ ABC
+ abc
+ def
+ ghi
+(4 rows)
+
+SELECT x FROM test3cs ORDER BY x USING ~<~;  -- ok
+  x  
+-----
+ ABC
+ abc
+ def
+ ghi
+(4 rows)
+
 -- ON CONFLICT ON CONSTRAINT must not use an index that differs from the
 -- named constraint's index in collation
 CREATE TABLE test_arbiter_ci (x text, y text);

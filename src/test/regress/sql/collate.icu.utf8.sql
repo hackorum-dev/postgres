@@ -749,6 +749,18 @@ CREATE UNIQUE INDEX ON test1ci (x);  -- ok
 INSERT INTO test1ci VALUES ('ABC');  -- error
 CREATE UNIQUE INDEX ON test3ci (x);  -- error
 
+-- The pattern_ops ordering operators sort bytewise, which disagrees with
+-- equality under a nondeterministic collation, so ORDER BY rejects them.
+SELECT x FROM test3ci ORDER BY x USING ~<~;  -- error
+SELECT x FROM test3ci ORDER BY x || '' USING ~>~;  -- error
+SELECT x FROM test3ci ORDER BY x::char(3) USING ~<~;  -- error
+SELECT x FROM test3cs ORDER BY x COLLATE case_insensitive USING ~<~;  -- error
+SELECT string_agg(x, ',' ORDER BY x USING ~<~) FROM test3ci;  -- error
+SELECT mode() WITHIN GROUP (ORDER BY x USING ~<~) FROM test3ci;  -- error
+SELECT rank() OVER (ORDER BY x USING ~<~) FROM test3ci;  -- error
+SELECT x FROM test3ci ORDER BY x COLLATE "C" USING ~<~;  -- ok
+SELECT x FROM test3cs ORDER BY x USING ~<~;  -- ok
+
 -- ON CONFLICT ON CONSTRAINT must not use an index that differs from the
 -- named constraint's index in collation
 CREATE TABLE test_arbiter_ci (x text, y text);
