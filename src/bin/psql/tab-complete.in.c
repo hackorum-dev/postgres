@@ -222,7 +222,9 @@ static int	completion_max_records;
  * macros) and then used by the completion callback functions.  Ugly but there
  * is no better way.
  */
+#ifdef USE_FILENAME_QUOTING_FUNCTIONS
 static char completion_last_char;	/* last char of input word */
+#endif
 static const char *completion_charp;	/* to pass a string */
 static const char *const *completion_charpp;	/* to pass a list of strings */
 static const VersionedQuery *completion_vquery; /* to pass a VersionedQuery */
@@ -1950,8 +1952,10 @@ psql_completion(const char *text, int start, int end)
 	char	   *text_copy = pnstrdup(rl_line_buffer + start, end - start);
 	text = text_copy;
 
+#ifdef USE_FILENAME_QUOTING_FUNCTIONS
 	/* Remember last char of the given input word. */
 	completion_last_char = (end > start) ? text[end - start - 1] : '\0';
+#endif
 
 	/* We usually want the append character to be a space. */
 	rl_completion_append_character = ' ';

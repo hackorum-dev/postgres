@@ -33,7 +33,9 @@ static bool useHistory;
 
 static char *psql_history;
 
+#if defined(HAVE_HISTORY_TRUNCATE_FILE) && defined(HAVE_APPEND_HISTORY)
 static int	history_lines_added;
+#endif
 
 
 /*
@@ -161,8 +163,10 @@ pg_send_history(PQExpBuffer history_buf)
 			prev_hist = pg_strdup(s);
 			/* And send it to readline */
 			add_history(s);
+#if defined(HAVE_HISTORY_TRUNCATE_FILE) && defined(HAVE_APPEND_HISTORY)
 			/* Count lines added to history for use later */
 			history_lines_added++;
+#endif
 		}
 	}
 
@@ -364,7 +368,9 @@ initializeInput(int flags)
 
 		useHistory = true;
 		using_history();
+#if defined(HAVE_HISTORY_TRUNCATE_FILE) && defined(HAVE_APPEND_HISTORY)
 		history_lines_added = 0;
+#endif
 
 		histfile = GetVariable(pset.vars, "HISTFILE");
 
