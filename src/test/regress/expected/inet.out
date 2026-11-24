@@ -1168,3 +1168,27 @@ SELECT * FROM pg_input_error_info('1234', 'inet');
  invalid input syntax for type inet: "1234" |        |      | 22P02
 (1 row)
 
+-- A subset qual can be converted to range bounds only for the default order.
+CREATE TABLE inet_subset_tbl (i inet);
+INSERT INTO inet_subset_tbl VALUES
+  ('10.3.0.0/16'), ('10.3.1.0/24'), ('10.4.0.0/16');
+CREATE FUNCTION inet_reverse_cmp(inet, inet) RETURNS int
+  LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE
+  AS 'SELECT pg_catalog.network_cmp($2, $1)';
+CREATE OPERATOR CLASS inet_reverse_ops FOR TYPE inet USING btree AS
+  OPERATOR 1 > (inet, inet), OPERATOR 2 >= (inet, inet), OPERATOR 3 = (inet, inet),
+  OPERATOR 4 <= (inet, inet), OPERATOR 5 < (inet, inet),
+  FUNCTION 1 inet_reverse_cmp(inet, inet);
+CREATE INDEX inet_subset_idx ON inet_subset_tbl USING btree (i inet_reverse_ops);
+SET enable_seqscan = off;
+SELECT count(*) FROM inet_subset_tbl WHERE i <<= '10.3.0.0/16';
+ count 
+-------
+     2
+(1 row)
+
+RESET enable_seqscan;
+DROP TABLE inet_subset_tbl;
+DROP OPERATOR CLASS inet_reverse_ops USING btree;
+DROP OPERATOR FAMILY inet_reverse_ops USING btree;
+DROP FUNCTION inet_reverse_cmp(inet, inet);
