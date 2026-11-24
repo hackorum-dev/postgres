@@ -1591,16 +1591,24 @@ copy_table_data(Relation NewHeap, Relation OldHeap, Relation OldIndex,
 	num_pages = RelationGetNumberOfBlocks(NewHeap);
 
 	/* Log what we did */
-	ereport(elevel,
-			(errmsg("\"%s.%s\": found %.0f removable, %.0f nonremovable row versions in %u pages",
-					nspname,
-					RelationGetRelationName(OldHeap),
-					tups_vacuumed, num_tuples,
-					RelationGetNumberOfBlocks(OldHeap)),
-			 errdetail("%.0f dead row versions cannot be removed yet.\n"
-					   "%s.",
-					   tups_recently_dead,
-					   pg_rusage_show(&ru0))));
+	if (!concurrent)
+		ereport(elevel,
+				errmsg("\"%s.%s\": found %.0f removable, %.0f nonremovable row versions in %u pages",
+					   nspname,
+					   RelationGetRelationName(OldHeap),
+					   tups_vacuumed, num_tuples,
+					   RelationGetNumberOfBlocks(OldHeap)),
+				errdetail("%.0f dead row versions cannot be removed yet.\n"
+						  "%s.",
+						  tups_recently_dead,
+						  pg_rusage_show(&ru0)));
+	else
+		ereport(elevel,
+				errmsg("\"%s.%s\": copied %.0f row versions in %u pages",
+					   nspname, RelationGetRelationName(OldHeap),
+					   num_tuples, num_pages),
+				errdetail("%s.", pg_rusage_show(&ru0)));
+
 
 	/* Update pg_class to reflect the correct values of pages and tuples. */
 	relRelation = table_open(RelationRelationId, RowExclusiveLock);
