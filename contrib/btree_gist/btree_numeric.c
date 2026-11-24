@@ -10,6 +10,7 @@
 #include "btree_gist.h"
 #include "btree_utils_var.h"
 #include "utils/builtins.h"
+#include "nodes/miscnodes.h"
 #include "utils/numeric.h"
 #include "utils/rel.h"
 #include "utils/sortsupport.h"
@@ -166,6 +167,9 @@ gbt_numeric_penalty(PG_FUNCTION_ARGS)
 	GBT_VARKEY_R rk,
 				ok,
 				uk;
+	ErrorSaveContext escontext = {T_ErrorSaveContext};
+	bool		us_unmeasurable,
+				os_unmeasurable;
 
 	rk = gbt_var_key_readable(org);
 	uni = PointerGetDatum(gbt_var_key_copy(&rk));
@@ -173,21 +177,31 @@ gbt_numeric_penalty(PG_FUNCTION_ARGS)
 	ok = gbt_var_key_readable(org);
 	uk = gbt_var_key_readable((GBT_VARKEY *) DatumGetPointer(uni));
 
-	us = DatumGetNumeric(DirectFunctionCall2(numeric_sub,
-											 PointerGetDatum(uk.upper),
-											 PointerGetDatum(uk.lower)));
+	/*
+	 * Compute the key widths with the soft-error subtraction.  Extreme but
+	 * valid bounds (e.g. repeat('9', 131072) and its negation) can make a
+	 * width overflow the numeric format; rather than failing the insert, we
+	 * treat such a width as unmeasurable and fall into the same branch used
+	 * for a NaN width below.  (A NaN bound, which is a valid stored value,
+	 * already reaches that branch: numeric_sub_safe returns NaN for it
+	 * without error.)  The union contains the original key, so if the
+	 * original width overflows the union width does too; hence os is finite
+	 * whenever us is, and the ds subtraction below cannot overflow.
+	 */
+	us = numeric_sub_safe(DatumGetNumeric(PointerGetDatum(uk.upper)),
+						  DatumGetNumeric(PointerGetDatum(uk.lower)),
+						  (Node *) &escontext);
+	us_unmeasurable = escontext.error_occurred;
+	escontext.error_occurred = false;
 
-	os = DatumGetNumeric(DirectFunctionCall2(numeric_sub,
-											 PointerGetDatum(ok.upper),
-											 PointerGetDatum(ok.lower)));
+	os = numeric_sub_safe(DatumGetNumeric(PointerGetDatum(ok.upper)),
+						  DatumGetNumeric(PointerGetDatum(ok.lower)),
+						  (Node *) &escontext);
+	os_unmeasurable = escontext.error_occurred;
 
-	ds = DatumGetNumeric(DirectFunctionCall2(numeric_sub,
-											 NumericGetDatum(us),
-											 NumericGetDatum(os)));
-
-	if (numeric_is_nan(us))
+	if (us_unmeasurable || numeric_is_nan(us))
 	{
-		if (numeric_is_nan(os))
+		if (os_unmeasurable || numeric_is_nan(os))
 			*result = 0.0;
 		else
 			*result = 1.0;
@@ -195,6 +209,10 @@ gbt_numeric_penalty(PG_FUNCTION_ARGS)
 	else
 	{
 		Numeric		nul = int64_to_numeric(0);
+
+		ds = DatumGetNumeric(DirectFunctionCall2(numeric_sub,
+												 NumericGetDatum(us),
+												 NumericGetDatum(os)));
 
 		*result = 0.0;
 
