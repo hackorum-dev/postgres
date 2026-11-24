@@ -3526,8 +3526,12 @@ TriggerEnabled(EState *estate, ResultRelInfo *relinfo,
 	/* Check replication-role-dependent enable state */
 	if (SessionReplicationRole == SESSION_REPLICATION_ROLE_REPLICA)
 	{
-		if (trigger->tgenabled == TRIGGER_FIRES_ON_ORIGIN ||
-			trigger->tgenabled == TRIGGER_DISABLED)
+		if (trigger->tgenabled == TRIGGER_DISABLED)
+			return false;
+
+		/* The uniqueness recheck must run in replica mode. */
+		if (trigger->tgenabled == TRIGGER_FIRES_ON_ORIGIN &&
+			!(trigger->tgisinternal && trigger->tgfoid == F_UNIQUE_KEY_RECHECK))
 			return false;
 	}
 	else						/* ORIGIN or LOCAL role */

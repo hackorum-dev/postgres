@@ -2776,6 +2776,20 @@ CONTEXT:  processing remote data for replication origin "pg_16395" during "INSER
    and statement triggers for <command>INSERT</command>.
   </para>
 
+  <para>
+   Constraints declared as <literal>DEFERRABLE</literal> use recheck triggers
+   that fired by default during logical replication.
+  </para>
+
+  <para>
+   When a subscription is configured with <literal>run_as_owner = false</literal>,
+   the apply worker applies changes as the table owner. If the table owner
+   cannot <literal>SET ROLE</literal> to the subscription owner, the worker
+   applies those changes in a security-restricted operation. Such an operation
+   cannot defer a constraint recheck trigger until commit, so replication stops
+   if a change requires a deferred recheck.
+  </para>
+
   <sect2 id="logical-replication-snapshot">
     <title>Initial Snapshot</title>
     <para>
