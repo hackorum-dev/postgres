@@ -56,6 +56,7 @@
 #include "executor/nodeTableFuncscan.h"
 #include "executor/nodeTidrangescan.h"
 #include "executor/nodeTidscan.h"
+#include "executor/nodeTupleBuffer.h"
 #include "executor/nodeUnique.h"
 #include "executor/nodeValuesscan.h"
 #include "executor/nodeWindowAgg.h"
@@ -262,6 +263,10 @@ ExecReScan(PlanState *node)
 			ExecReScanMaterial((MaterialState *) node);
 			break;
 
+		case T_TupleBufferState:
+			ExecReScanTupleBuffer((TupleBufferState *) node);
+			break;
+
 		case T_MemoizeState:
 			ExecReScanMemoize((MemoizeState *) node);
 			break;
@@ -352,6 +357,10 @@ ExecMarkPos(PlanState *node)
 			ExecMaterialMarkPos((MaterialState *) node);
 			break;
 
+		case T_TupleBufferState:
+			ExecTupleBufferMarkPos((TupleBufferState *) node);
+			break;
+
 		case T_SortState:
 			ExecSortMarkPos((SortState *) node);
 			break;
@@ -401,6 +410,10 @@ ExecRestrPos(PlanState *node)
 			ExecMaterialRestrPos((MaterialState *) node);
 			break;
 
+		case T_TupleBufferState:
+			ExecTupleBufferRestrPos((TupleBufferState *) node);
+			break;
+
 		case T_SortState:
 			ExecSortRestrPos((SortState *) node);
 			break;
@@ -439,6 +452,18 @@ ExecSupportsMarkRestore(Path *pathnode)
 			 * Not all index types support mark/restore.
 			 */
 			return castNode(IndexPath, pathnode)->indexinfo->amcanmarkpos;
+
+		case T_TupleBuffer:
+			{
+				TupleBufferPath *bpath = castNode(TupleBufferPath, pathnode);
+
+				/*
+				 * The final mode isn't known at path costing time.  If the
+				 * buffer passes through, only its child can mark and restore.
+				 */
+				return !bpath->buffer_if_parallel ||
+					ExecSupportsMarkRestore(bpath->subpath);
+			}
 
 		case T_Material:
 		case T_Sort:
@@ -570,6 +595,10 @@ ExecSupportsBackwardScan(Plan *node)
 		case T_SubqueryScan:
 			return ExecSupportsBackwardScan(((SubqueryScan *) node)->subplan);
 
+		case T_TupleBuffer:
+			return ((TupleBuffer *) node)->mode != TUPLEBUFFER_PASSTHROUGH ||
+				ExecSupportsBackwardScan(outerPlan(node));
+
 		case T_CustomScan:
 			if (((CustomScan *) node)->flags & CUSTOMPATH_SUPPORT_BACKWARD_SCAN)
 				return true;
@@ -652,6 +681,10 @@ ExecMaterializesOutput(NodeTag plantype)
 		case T_WorkTableScan:
 		case T_Sort:
 			return true;
+
+		case T_TupleBuffer:
+			/* The node tag alone can't rule out pass-through mode. */
+			return false;
 
 		default:
 			break;

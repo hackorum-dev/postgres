@@ -131,6 +131,8 @@ extern void cost_material(Path *path,
 						  bool enabled, int input_disabled_nodes,
 						  Cost input_startup_cost, Cost input_total_cost,
 						  double tuples, int width);
+extern void cost_tuplebuffer(Cost *startup_cost, Cost *total_cost,
+							 Cost input_total_cost, double tuples, int width);
 extern void cost_agg(Path *path, PlannerInfo *root,
 					 AggStrategy aggstrategy, const AggClauseCosts *aggcosts,
 					 int numGroupCols, double numGroups,

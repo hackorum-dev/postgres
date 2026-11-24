@@ -59,6 +59,7 @@ backend_sources += files(
   'nodeTableFuncscan.c',
   'nodeTidrangescan.c',
   'nodeTidscan.c',
+  'nodeTupleBuffer.c',
   'nodeUnique.c',
   'nodeValuesscan.c',
   'nodeWindowAgg.c',

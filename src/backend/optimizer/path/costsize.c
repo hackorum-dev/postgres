@@ -2636,6 +2636,31 @@ cost_material(Path *path,
 }
 
 /*
+ * cost_tuplebuffer
+ *	  Charge the entire input and the cost of storing it to startup.
+ *	  The first scan and subsequent scans just read the buffered tuples.
+ */
+void
+cost_tuplebuffer(Cost *startup_cost, Cost *total_cost, Cost input_total_cost,
+				 double tuples, int width)
+{
+	double		nbytes = relation_byte_size(tuples, width);
+	Cost		fill_cost = 2 * cpu_operator_cost * tuples;
+	Cost		run_cost = cpu_operator_cost * tuples;
+
+	if (nbytes > work_mem * (Size) 1024)
+	{
+		Cost		spill_cost = seq_page_cost * ceil(nbytes / BLCKSZ);
+
+		fill_cost += spill_cost;
+		run_cost += spill_cost;
+	}
+
+	*startup_cost = input_total_cost + fill_cost;
+	*total_cost = *startup_cost + run_cost;
+}
+
+/*
  * cost_memoize_rescan
  *	  Determines the estimated cost of rescanning a Memoize node.
  *
@@ -4887,6 +4912,11 @@ cost_rescan(PlannerInfo *root, Path *path,
 {
 	switch (path->pathtype)
 	{
+		case T_TupleBuffer:
+			/* Only the cost of reading the completed buffer recurs. */
+			*rescan_startup_cost = 0;
+			*rescan_total_cost = path->total_cost - path->startup_cost;
+			break;
 		case T_FunctionScan:
 
 			/*

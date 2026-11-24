@@ -756,6 +756,7 @@ typedef struct EState
 	struct EPQState *es_epq_active;
 
 	bool		es_use_parallel_mode;	/* can we use parallel workers? */
+	bool		es_parallel_insert_select;	/* only while filling TupleBuffer */
 
 	int			es_parallel_workers_to_launch;	/* number of workers to
 												 * launch. */
@@ -2284,6 +2285,19 @@ typedef struct MaterialState
 	Tuplestorestate *tuplestorestate;
 	SharedMaterialInfo *shared_info;	/* statistics for parallel workers */
 } MaterialState;
+
+/*
+ * TupleBufferState fills the store before returning tuples, or delegates
+ * directly to the child in pass-through mode.
+ */
+typedef struct TupleBufferState
+{
+	PlanState	ps;
+	Tuplestorestate *tuplestore;
+	int			eflags;			/* tuplestore positioning capabilities */
+	int			markptr;		/* read pointer for mark/restore, if requested */
+	bool		filled;
+} TupleBufferState;
 
 struct MemoizeEntry;
 struct MemoizeKey;

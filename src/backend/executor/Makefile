@@ -71,6 +71,7 @@ OBJS = \
 	nodeTableFuncscan.o \
 	nodeTidrangescan.o \
 	nodeTidscan.o \
+	nodeTupleBuffer.o \
 	nodeUnique.o \
 	nodeValuesscan.o \
 	nodeWindowAgg.o \

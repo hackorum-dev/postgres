@@ -116,6 +116,8 @@ extern GroupResultPath *create_group_result_path(PlannerInfo *root,
 												 List *havingqual);
 extern MaterialPath *create_material_path(RelOptInfo *rel, Path *subpath,
 										  bool enabled);
+extern TupleBufferPath *create_tuplebuffer_path(RelOptInfo *rel, Path *subpath,
+												bool buffer_if_parallel);
 extern MemoizePath *create_memoize_path(PlannerInfo *root,
 										RelOptInfo *rel,
 										Path *subpath,

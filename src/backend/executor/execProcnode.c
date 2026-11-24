@@ -113,6 +113,7 @@
 #include "executor/nodeTableFuncscan.h"
 #include "executor/nodeTidrangescan.h"
 #include "executor/nodeTidscan.h"
+#include "executor/nodeTupleBuffer.h"
 #include "executor/nodeUnique.h"
 #include "executor/nodeValuesscan.h"
 #include "executor/nodeWindowAgg.h"
@@ -315,6 +316,11 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 		case T_Material:
 			result = (PlanState *) ExecInitMaterial((Material *) node,
 													estate, eflags);
+			break;
+
+		case T_TupleBuffer:
+			result = (PlanState *) ExecInitTupleBuffer((TupleBuffer *) node,
+													   estate, eflags);
 			break;
 
 		case T_Sort:
@@ -685,6 +691,10 @@ ExecEndNode(PlanState *node)
 			 */
 		case T_MaterialState:
 			ExecEndMaterial((MaterialState *) node);
+			break;
+
+		case T_TupleBufferState:
+			ExecEndTupleBuffer((TupleBufferState *) node);
 			break;
 
 		case T_SortState:

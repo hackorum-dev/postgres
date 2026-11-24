@@ -3183,6 +3183,7 @@ finalize_plan(PlannerInfo *root, Plan *plan,
 
 		case T_ProjectSet:
 		case T_Material:
+		case T_TupleBuffer:
 		case T_Sort:
 		case T_IncrementalSort:
 		case T_Unique:

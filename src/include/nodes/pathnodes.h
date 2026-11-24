@@ -153,6 +153,14 @@ typedef enum UpperRelationKind
 	/* NB: UPPERREL_FINAL must be last enum entry; it's used to size arrays */
 } UpperRelationKind;
 
+/* Private workspace for planning the SELECT input of a top-level INSERT. */
+typedef struct ParallelInsertInfo
+{
+	Index		source_rti;		/* SELECT's RT index in the INSERT */
+	struct TupleBuffer *buffer; /* provisional buffer, if one was added */
+	Bitmapset  *plan_deps;		/* setrefs: SubPlan IDs, or zero for Gather */
+} ParallelInsertInfo;
+
 /*----------
  * PlannerGlobal
  *		Global information for planning/optimization
@@ -252,6 +260,9 @@ typedef struct PlannerGlobal
 
 	/* parallel mode potentially OK? */
 	bool		parallelModeOK;
+
+	/* workspace for a top-level INSERT with a separately planned SELECT */
+	ParallelInsertInfo *parallelInsert pg_node_attr(read_write_ignore);
 
 	/* parallel mode actually required? */
 	bool		parallelModeNeeded;
@@ -2359,6 +2370,26 @@ typedef struct MaterialPath
 	Path		path;
 	Path	   *subpath;
 } MaterialPath;
+
+/*
+ * TupleBufferPath represents a TupleBuffer node.  With buffer_if_parallel
+ * unset, the node reads its entire input into a tuplestore before returning
+ * the first tuple.
+ *
+ * INSERT ... SELECT sets buffer_if_parallel to request buffering only if
+ * the final SELECT plan uses parallelism, so workers finish before the
+ * first write.  The flag does not mean the source is known to be parallel.
+ * If no Gather or Gather Merge is built, plan creation omits the buffer.
+ * If setrefs discards the only parallel alternative, the node remains but
+ * passes tuples through without storing them.  A conditional buffer can
+ * therefore promise mark/restore only if its subpath supports it.
+ */
+typedef struct TupleBufferPath
+{
+	Path		path;
+	Path	   *subpath;
+	bool		buffer_if_parallel;
+} TupleBufferPath;
 
 /*
  * MemoizePath represents a Memoize plan node, i.e., a cache that caches

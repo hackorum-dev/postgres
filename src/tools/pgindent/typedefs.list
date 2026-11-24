@@ -2147,6 +2147,7 @@ ParallelHashJoinBatch
 ParallelHashJoinBatchAccessor
 ParallelHashJoinState
 ParallelIndexScanDesc
+ParallelInsertInfo
 ParallelSlot
 ParallelSlotArray
 ParallelSlotResultHandler
@@ -3257,6 +3258,10 @@ TsmRoutine
 TupOutputState
 TupSortStatus
 TupStoreStatus
+TupleBuffer
+TupleBufferMode
+TupleBufferPath
+TupleBufferState
 TupleConstr
 TupleConversionMap
 TupleDesc

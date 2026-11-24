@@ -2293,6 +2293,8 @@ get_param_path_clause_serials(Path *path)
 			 */
 		case T_MaterialPath:
 			return get_param_path_clause_serials(((MaterialPath *) path)->subpath);
+		case T_TupleBufferPath:
+			return get_param_path_clause_serials(((TupleBufferPath *) path)->subpath);
 		case T_MemoizePath:
 			return get_param_path_clause_serials(((MemoizePath *) path)->subpath);
 		case T_ProjectionPath:

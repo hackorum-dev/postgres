@@ -92,6 +92,8 @@ static Result *create_group_result_plan(PlannerInfo *root,
 static ProjectSet *create_project_set_plan(PlannerInfo *root, ProjectSetPath *best_path);
 static Material *create_material_plan(PlannerInfo *root, MaterialPath *best_path,
 									  int flags);
+static Plan *create_tuplebuffer_plan(PlannerInfo *root,
+									 TupleBufferPath *best_path, int flags);
 static Memoize *create_memoize_plan(PlannerInfo *root, MemoizePath *best_path,
 									int flags);
 static Gather *create_gather_plan(PlannerInfo *root, GatherPath *best_path);
@@ -472,6 +474,10 @@ create_plan_recurse(PlannerInfo *root, Path *best_path, int flags)
 			plan = (Plan *) create_material_plan(root,
 												 (MaterialPath *) best_path,
 												 flags);
+			break;
+		case T_TupleBuffer:
+			plan = create_tuplebuffer_plan(root, (TupleBufferPath *) best_path,
+										   flags);
 			break;
 		case T_Memoize:
 			plan = (Plan *) create_memoize_plan(root,
@@ -1735,6 +1741,57 @@ create_material_plan(PlannerInfo *root, MaterialPath *best_path, int flags)
 	copy_generic_path_info(&plan->plan, (Path *) best_path);
 
 	return plan;
+}
+
+/*
+ * create_tuplebuffer_plan
+ *	  Create a TupleBuffer plan over the input to be buffered.
+ */
+static Plan *
+create_tuplebuffer_plan(PlannerInfo *root, TupleBufferPath *best_path, int flags)
+{
+	TupleBuffer *plan;
+	Plan	   *subplan;
+
+	/* Store only the columns the parent needs. */
+	subplan = create_plan_recurse(root, best_path->subpath,
+								  flags | CP_SMALL_TLIST);
+
+	/*
+	 * At this point parallelModeNeeded accounts for Gathers in the source
+	 * plan as well as in its initplans and subplans.  Don't add an INSERT
+	 * buffer unless one was built.  It could still belong to a discarded
+	 * AlternativeSubPlan; setrefs will decide whether to buffer any rows.
+	 */
+	if (best_path->buffer_if_parallel && !root->glob->parallelModeNeeded)
+		return subplan;
+
+	plan = makeNode(TupleBuffer);
+	plan->plan.lefttree = subplan;
+	plan->plan.targetlist = subplan->targetlist;
+	if (best_path->buffer_if_parallel)
+	{
+		Cost		initplan_cost;
+		bool		unsafe_initplans;
+
+		plan->mode = TUPLEBUFFER_PARALLEL;
+		root->glob->parallelInsert->buffer = plan;
+
+		/*
+		 * create_plan() will attach the source's initplans to this new top
+		 * node.  Both paths already include their cost; remove it from the
+		 * child, where the initplans will no longer appear.
+		 */
+		SS_compute_initplan_cost(root->init_plans,
+								 &initplan_cost, &unsafe_initplans);
+		subplan->startup_cost -= initplan_cost;
+		subplan->total_cost -= initplan_cost;
+	}
+	else
+		plan->mode = TUPLEBUFFER_EAGER;
+	copy_generic_path_info(&plan->plan, (Path *) best_path);
+
+	return &plan->plan;
 }
 
 /*
@@ -7372,6 +7429,7 @@ is_projection_capable_path(Path *path)
 	{
 		case T_Hash:
 		case T_Material:
+		case T_TupleBuffer:
 		case T_Memoize:
 		case T_Sort:
 		case T_IncrementalSort:
@@ -7422,6 +7480,7 @@ is_projection_capable_plan(Plan *plan)
 	{
 		case T_Hash:
 		case T_Material:
+		case T_TupleBuffer:
 		case T_Memoize:
 		case T_Sort:
 		case T_Unique:

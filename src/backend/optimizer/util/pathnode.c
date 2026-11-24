@@ -1765,6 +1765,44 @@ create_material_path(RelOptInfo *rel, Path *subpath, bool enabled)
 }
 
 /*
+ * create_tuplebuffer_path
+ *	  Creates a path that buffers the subpath to completion.
+ */
+TupleBufferPath *
+create_tuplebuffer_path(RelOptInfo *rel, Path *subpath, bool buffer_if_parallel)
+{
+	TupleBufferPath *pathnode = makeNode(TupleBufferPath);
+
+	Assert(subpath->parent == rel);
+
+	pathnode->path.pathtype = T_TupleBuffer;
+	pathnode->path.parent = rel;
+	pathnode->path.pathtarget = subpath->pathtarget;
+	pathnode->path.param_info = get_wrapper_parampathinfo(subpath);
+	/* The leader owns the buffer; the subpath can still contain a Gather. */
+	pathnode->path.parallel_aware = false;
+	pathnode->path.parallel_safe = false;
+	pathnode->path.parallel_workers = 0;
+	pathnode->path.pathkeys = subpath->pathkeys;
+	pathnode->subpath = subpath;
+	pathnode->buffer_if_parallel = buffer_if_parallel;
+
+	pathnode->path.rows = subpath->rows;
+	pathnode->path.disabled_nodes = subpath->disabled_nodes;
+	if (buffer_if_parallel)
+	{
+		/* Charge the INSERT for buffering only if its final plan needs it. */
+		pathnode->path.startup_cost = subpath->startup_cost;
+		pathnode->path.total_cost = subpath->total_cost;
+	}
+	else
+		cost_tuplebuffer(&pathnode->path.startup_cost, &pathnode->path.total_cost,
+						 subpath->total_cost, subpath->rows, subpath->pathtarget->width);
+
+	return pathnode;
+}
+
+/*
  * create_memoize_path
  *	  Creates a path corresponding to a Memoize plan, returning the pathnode.
  */
@@ -4081,6 +4119,18 @@ reparameterize_path(PlannerInfo *root, Path *path,
 					(mpath->path.disabled_nodes <= spath->disabled_nodes);
 				return (Path *) create_material_path(rel, spath, enabled);
 			}
+		case T_TupleBuffer:
+			{
+				TupleBufferPath *bpath = (TupleBufferPath *) path;
+				Path	   *spath;
+
+				spath = reparameterize_path(root, bpath->subpath,
+											required_outer, loop_count);
+				if (spath == NULL)
+					return NULL;
+				return (Path *) create_tuplebuffer_path(rel, spath,
+														bpath->buffer_if_parallel);
+			}
 		case T_Memoize:
 			{
 				MemoizePath *mpath = (MemoizePath *) path;
@@ -4335,6 +4385,15 @@ do { \
 			}
 			break;
 
+		case T_TupleBufferPath:
+			{
+				TupleBufferPath *bpath = (TupleBufferPath *) path;
+
+				REPARAMETERIZE_CHILD_PATH(bpath->subpath);
+				new_path = (Path *) bpath;
+			}
+			break;
+
 		case T_MemoizePath:
 			{
 				MemoizePath *mpath = (MemoizePath *) path;
@@ -4523,6 +4582,14 @@ do { \
 				MaterialPath *mpath = (MaterialPath *) path;
 
 				REJECT_IF_PATH_NOT_REPARAMETERIZABLE(mpath->subpath);
+			}
+			break;
+
+		case T_TupleBufferPath:
+			{
+				TupleBufferPath *bpath = (TupleBufferPath *) path;
+
+				REJECT_IF_PATH_NOT_REPARAMETERIZABLE(bpath->subpath);
 			}
 			break;
 

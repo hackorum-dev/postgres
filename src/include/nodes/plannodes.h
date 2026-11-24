@@ -1084,6 +1084,19 @@ typedef struct Material
 	Plan		plan;
 } Material;
 
+typedef enum TupleBufferMode
+{
+	TUPLEBUFFER_EAGER,			/* buffer the entire input */
+	TUPLEBUFFER_PARALLEL,		/* do so in the INSERT's parallel read phase */
+	TUPLEBUFFER_PASSTHROUGH		/* the final INSERT source is serial */
+} TupleBufferMode;
+
+typedef struct TupleBuffer
+{
+	Plan		plan;
+	TupleBufferMode mode;
+} TupleBuffer;
+
 /* ----------------
  *		memoize node
  * ----------------

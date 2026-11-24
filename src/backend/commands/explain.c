@@ -128,6 +128,7 @@ static void show_incremental_sort_info(IncrementalSortState *incrsortstate,
 									   ExplainState *es);
 static void show_hash_info(HashState *hashstate, ExplainState *es);
 static void show_material_info(MaterialState *mstate, ExplainState *es);
+static void show_tuplebuffer_info(TupleBufferState *bstate, ExplainState *es);
 static void show_windowagg_info(WindowAggState *winstate, ExplainState *es);
 static void show_ctescan_info(CteScanState *ctescanstate, ExplainState *es);
 static void show_functionscan_info(FunctionScanState *fsstate,
@@ -1530,6 +1531,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_Material:
 			pname = sname = "Materialize";
 			break;
+		case T_TupleBuffer:
+			pname = sname = "TupleBuffer";
+			break;
 		case T_Memoize:
 			pname = sname = "Memoize";
 			break;
@@ -2265,6 +2269,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 		case T_Material:
 			show_material_info(castNode(MaterialState, planstate), es);
+			break;
+		case T_TupleBuffer:
+			show_tuplebuffer_info(castNode(TupleBufferState, planstate), es);
 			break;
 		case T_Memoize:
 			show_memoize_info(castNode(MemoizeState, planstate), ancestors,
@@ -3528,6 +3535,26 @@ show_material_info(MaterialState *mstate, ExplainState *es)
 
 		if (es->workers_state)
 			ExplainCloseWorker(n, es);
+	}
+}
+
+/* Show whether rows are buffered and, if so, peak tuplestore usage. */
+static void
+show_tuplebuffer_info(TupleBufferState *bstate, ExplainState *es)
+{
+	TupleBuffer *plan = castNode(TupleBuffer, bstate->ps.plan);
+	bool		buffering = plan->mode != TUPLEBUFFER_PASSTHROUGH;
+
+	if (!buffering || es->format != EXPLAIN_FORMAT_TEXT)
+		ExplainPropertyBool("Buffering", buffering, es);
+
+	if (es->analyze && bstate->tuplestore != NULL)
+	{
+		bool		usedDisk;
+		int64		maxSpaceUsed;
+
+		tuplestore_get_stats(bstate->tuplestore, &usedDisk, &maxSpaceUsed);
+		show_storage_info(usedDisk, maxSpaceUsed, es);
 	}
 }
 
