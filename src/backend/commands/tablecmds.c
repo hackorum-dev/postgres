@@ -11790,10 +11790,17 @@ addFkRecurseReferencing(List **wqueue, Constraint *fkconstraint, Relation rel,
 		 * specified as NOT ENFORCED, or when requested explicitly by
 		 * specifying NOT VALID in an ADD FOREIGN KEY command, and when we're
 		 * recreating a constraint following a SET DATA TYPE operation that
-		 * did not impugn its validity.
+		 * did not impugn its validity.  We also skip the check when in binary
+		 * upgrade mode as we expect the referencing (and referenced) tables
+		 * to be empty, in which case there can be no rows violating the
+		 * foreign key.  You might think that it's barely worth skipping this
+		 * for empty tables, but since the validation work is done via SPI an
+		 * query, a fairly large amount of effort can be saved, especially so
+		 * when the referenced table is partitioned, which requires much more
+		 * planning and executor startup / shutdown effort.
 		 */
 		if (wqueue && !old_check_ok && !fkconstraint->skip_validation &&
-			fkconstraint->is_enforced)
+			fkconstraint->is_enforced && !IsBinaryUpgrade)
 		{
 			NewConstraint *newcon;
 			AlteredTableInfo *tab;
