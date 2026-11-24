@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include "catalog/pg_opfamily.h"
 #include "catalog/pg_type.h"
 #include "common/hashfn.h"
 #include "common/ip.h"
@@ -1053,6 +1054,10 @@ match_network_subset(Node *leftop,
 		((Const *) rightop)->constisnull)
 		return NIL;
 	rightopval = ((Const *) rightop)->constvalue;
+
+	/* This transformation is only valid for the default inet ordering. */
+	if (opfamily != NETWORK_BTREE_FAM_OID)
+		return NIL;
 
 	/*
 	 * create clause "key >= network_scan_first( rightopval )", or ">" if the
