@@ -351,6 +351,16 @@ $node->command_fails_like(
 	],
 	qr/multiple "=" signs in tablespace mapping/,
 	'--tablespace-mapping with multiple = fails');
+# A directory name of MAXPGPATH bytes leaves no room for the terminating NUL.
+$node->command_fails_like(
+	[
+		@pg_basebackup_defs,
+		'--pgdata' => "$tempdir/backup_foo",
+		'--format' => 'plain',
+		'--tablespace-mapping' => '/foo=/' . ('a' x 1023)
+	],
+	qr/directory name too long/,
+	'--tablespace-mapping with too long new directory fails');
 $node->command_fails_like(
 	[
 		@pg_basebackup_defs,

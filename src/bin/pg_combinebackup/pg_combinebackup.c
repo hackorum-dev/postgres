@@ -472,7 +472,7 @@ add_tablespace_mapping(cb_options *opt, char *arg)
 	dst_ptr = dst = tsmap->old_dir;
 	for (arg_ptr = arg; *arg_ptr != '\0'; arg_ptr++)
 	{
-		if (dst_ptr - dst >= MAXPGPATH)
+		if (dst_ptr - dst >= MAXPGPATH - 1)
 			pg_fatal("directory name too long");
 
 		if (*arg_ptr == '\\' && *(arg_ptr + 1) == '=')

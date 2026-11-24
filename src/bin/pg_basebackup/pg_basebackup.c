@@ -329,7 +329,7 @@ tablespace_list_append(const char *arg)
 	dst_ptr = dst = cell->old_dir;
 	for (arg_ptr = arg; *arg_ptr; arg_ptr++)
 	{
-		if (dst_ptr - dst >= MAXPGPATH)
+		if (dst_ptr - dst >= MAXPGPATH - 1)
 			pg_fatal("directory name too long");
 
 		if (*arg_ptr == '\\' && *(arg_ptr + 1) == '=')
