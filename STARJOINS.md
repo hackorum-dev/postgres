@@ -57,8 +57,9 @@ The optimization consists of these parts:
 - `has_starjoin_fk` looks for a foreign key of the fact that makes a
   relation its dimension, using `has_extra_starjoin_quals` to check that
   the foreign key accounts for all the join clauses between them.
-- `starjoin_fk_collations_match` and `starjoin_equality_implies` check
-  the collations of the join clauses.
+- `starjoin_fk_comparisons_match`, `starjoin_fk_operand_matches` and
+  `starjoin_equality_implies` check the operators, input coercions and
+  collations of the join clauses.
 - `starjoin_order_invalid`, called by `make_join_rel`, rejects joins
   violating the canonical order, just like various other join
   restrictions.
@@ -399,7 +400,7 @@ orders.  For example, a case-insensitive join to a text primary key
 using the C collation can match both 'a' and 'A' for a single fact row.
 A satisfied foreign key guarantees a match under the equality of the
 referenced column, and the unique index enforces uniqueness under its
-own equality.  `starjoin_fk_collations_match` finds the unique index of
+own equality.  `starjoin_fk_comparisons_match` finds the unique index of
 the foreign key (`conindid`), and matches its keys to the referenced
 columns, not to the foreign key positions (REFERENCES can list the
 columns in a different order).  If the index is not available to the
@@ -429,6 +430,30 @@ foreign key are built-in string comparisons, and otherwise the
 collations have to be the same.  Both are checked, as extensions can add
 cross-type operators to a built-in family.  Identical collations need no
 such proof.
+
+An equality useful for estimating join selectivity need not preserve
+fact rows either.  For example, a varchar foreign key referencing a name
+key is checked with "name = name", so converting the reference to name
+truncates it, while the join uses "name = text" and compares the full
+string.  Both operators are immutable and in the same B-tree family.  So
+the equivalence class source clauses involving the dimension, and the
+loose quals matched outside equivalence classes, have to use the PK = FK
+operator of the foreign key (`conpfeqop`), or its commutator for
+reversed operands.  Both matchers look through binary relabels, so
+`starjoin_fk_operand_matches` checks that the referential integrity
+checks pass each column to that operator using only binary-coercible
+casts too.  The operator OID alone is not enough, as a binary cast
+through a third type can bypass the implicit cast used by the
+referential integrity checks.  For polymorphic inputs, the relabel must
+not change the actual type seen by the operator either.  The equivalence
+class source clauses not involving the dimension only filter fact rows.
+But such a clause can bring the foreign key column into the equivalence
+class, while the clauses involving the dimension name another fact
+column, so the members that are the foreign key column are checked the
+same way as the operands.  Genuine cross-type operators and
+binary-compatible coercions remain eligible, and the collation checks
+still apply.  Keys needing a cast that is not binary-coercible (e.g.
+integer to numeric) are not used, even if the cast preserves the value.
 
 These checks change only which relations are treated as dimensions, not
 foreign key enforcement or selectivity estimation.
@@ -511,6 +536,8 @@ the plans, the planning cost, or the regression tests.
   planning the canonical order (see the regression tests).  That's an
   indirect check, and changes of the planning memory use could flip its
   results.
+- No regression test makes `starjoin_fk_operand_matches` reject a
+  relabel changing the actual type seen by a polymorphic operator.
 
 ## Regression tests
 
@@ -609,3 +636,9 @@ the plans, the planning cost, or the regression tests.
     An otherwise identical foreign key using timestamptz on both sides
     still qualifies, including with an immutable int/smallint comparison
     on its first column.
+  - starjoin_fk_coercion: the name truncation through an equivalence
+    class, and a same-operator cast that bypasses lowercasing, both as a
+    loose qual and as an equivalence class (including through another
+    fact column).  A commuted name/text comparison, a binary
+    varchar-to-text conversion and a fact-only expression in the
+    equivalence class still qualify.

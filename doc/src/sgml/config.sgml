@@ -6327,8 +6327,12 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
         non-temporal foreign key with <literal>NOT NULL</literal> referencing
         columns, the join preserves the number of fact rows if the key's
         equality operators are immutable and the join uses the same equality
-        semantics as the key.  The planner assumes this even for foreign keys
-        marked <literal>NOT VALID</literal>.
+        semantics as the key.  Keys are not used for this optimization if
+        either column needs a cast that is not binary-coercible to match the
+        key's equality operator, even one that preserves the value, such as
+        from <type>integer</type> to <type>numeric</type>.  The planner
+        assumes row preservation even for foreign keys marked
+        <literal>NOT VALID</literal>.
         All orders of joining such dimension tables to the fact table thus
         produce the same number of rows, and the planner considers only one
         of them.

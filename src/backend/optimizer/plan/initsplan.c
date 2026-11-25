@@ -34,6 +34,7 @@
 #include "optimizer/planmain.h"
 #include "optimizer/restrictinfo.h"
 #include "parser/analyze.h"
+#include "parser/parse_coerce.h"
 #include "rewrite/rewriteManip.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -158,9 +159,10 @@ static bool has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
 									 ForeignKeyOptInfo *fkinfo);
 static bool starjoin_equality_implies(Oid coll1, Oid coll2, Oid opfamily,
 									  Oid eqop);
-static bool starjoin_fk_collations_match(PlannerInfo *root,
-										 RelOptInfo *dim_rel,
-										 ForeignKeyOptInfo *fkinfo);
+static bool starjoin_fk_operand_matches(Node *arg, Oid inputtype);
+static bool starjoin_fk_comparisons_match(PlannerInfo *root,
+										  RelOptInfo *dim_rel,
+										  ForeignKeyOptInfo *fkinfo);
 static bool has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel,
 							RelOptInfo *dim_rel);
 
@@ -4252,14 +4254,42 @@ starjoin_equality_implies(Oid coll1, Oid coll2, Oid opfamily, Oid eqop)
 }
 
 /*
- * The FK guarantees a match under the referenced column's equality, while
- * uniqueness is enforced under the index key's equality.  So a row matching
- * under the referenced column's equality must also match under the join's,
- * and rows matching under the join's must be equal under the index key's.
+ * The FK matcher accepts Vars under binary relabels.  That gives the join
+ * the column's original Datum, so RI's direct conversion from the column
+ * type to the operator input must not change the value either.
  */
 static bool
-starjoin_fk_collations_match(PlannerInfo *root, RelOptInfo *dim_rel,
-							 ForeignKeyOptInfo *fkinfo)
+starjoin_fk_operand_matches(Node *arg, Oid inputtype)
+{
+	Oid			argtype = exprType(arg);
+	Var		   *var;
+
+	while (IsA(arg, RelabelType))
+		arg = (Node *) ((RelabelType *) arg)->arg;
+	if (!IsA(arg, Var))
+		return false;
+	var = (Var *) arg;
+
+	/*
+	 * Normally the operand exposes the operator's declared input type.  A
+	 * polymorphic operator sees the actual type instead; in that case don't
+	 * let a relabel substitute a different actual type.
+	 */
+	if (argtype != inputtype &&
+		((!IsPolymorphicType(inputtype) && inputtype != RECORDOID) ||
+		 argtype != var->vartype))
+		return false;
+	return IsBinaryCoercible(var->vartype, inputtype);
+}
+
+/*
+ * Does the join use the same comparison of the key values as RI?  The FK
+ * guarantees a match under the referenced column's collation, but uniqueness
+ * is enforced under the index collation.  Check both implications.
+ */
+static bool
+starjoin_fk_comparisons_match(PlannerInfo *root, RelOptInfo *dim_rel,
+							  ForeignKeyOptInfo *fkinfo)
 {
 	RangeTblEntry *dim_rte = root->simple_rte_array[dim_rel->relid];
 
@@ -4274,14 +4304,11 @@ starjoin_fk_collations_match(PlannerInfo *root, RelOptInfo *dim_rel,
 			Oid			indcoll = index->indexcollations[j];
 			Oid			opfamily = index->opfamily[j];
 			Oid			eqop;
-			Oid			attcoll;
-			Oid			typid;
-			int32		typmod;
+			Oid			pktype;
+			Oid			fktype;
+			Oid			attcoll = InvalidOid;
+			List	   *clauses;
 			int			i;
-
-			/* No collation to check for a noncollatable key. */
-			if (!OidIsValid(indcoll))
-				continue;
 
 			/* REFERENCES can list the columns in a different order. */
 			for (i = 0; i < fkinfo->nkeys; i++)
@@ -4293,31 +4320,86 @@ starjoin_fk_collations_match(PlannerInfo *root, RelOptInfo *dim_rel,
 				return false;
 
 			eqop = fkinfo->conpfeqop[i];
-			get_atttypetypmodcoll(dim_rte->relid, attno,
-								  &typid, &typmod, &attcoll);
-			if (fkinfo->eclass[i] != NULL)
+			op_input_types(eqop, &pktype, &fktype);
+			if (OidIsValid(indcoll))
 			{
-				Oid			joincoll = fkinfo->eclass[i]->ec_collation;
+				Oid			typid;
+				int32		typmod;
 
-				if (!starjoin_equality_implies(attcoll, joincoll,
-											   opfamily, eqop) ||
-					!starjoin_equality_implies(joincoll, indcoll,
-											   opfamily, eqop))
-					return false;
+				get_atttypetypmodcoll(dim_rte->relid, attno,
+									  &typid, &typmod, &attcoll);
 			}
-			else
-			{
-				foreach_node(RestrictInfo, rinfo, fkinfo->rinfos[i])
-				{
-					Oid			joincoll;
 
-					joincoll = exprInputCollation((Node *) rinfo->clause);
-					if (!starjoin_equality_implies(attcoll, joincoll,
-												   opfamily, eqop) ||
-						!starjoin_equality_implies(joincoll, indcoll,
-												   opfamily, eqop))
+			/*
+			 * has_extra_starjoin_quals already ruled out EC members other
+			 * than the dimension's FK column and expressions of the fact.
+			 * Check the source clauses, not just the EC's operator families:
+			 * e.g. name = name and name = text are in the same family.
+			 * Clauses not involving the dimension only filter fact rows.
+			 */
+			clauses = fkinfo->eclass[i] ? fkinfo->eclass[i]->ec_sources :
+				fkinfo->rinfos[i];
+			if (clauses == NIL)
+				return false;
+
+			/*
+			 * A clause not involving the dimension can still bring the FK
+			 * column into the EC, while the clauses involving the dimension
+			 * name other fact columns.  The EC then equates the FK column
+			 * with the key through a member the loop below doesn't check, so
+			 * check the members that are the FK column directly.
+			 */
+			if (fkinfo->eclass[i])
+			{
+				foreach_node(EquivalenceMember, em,
+							 fkinfo->eclass[i]->ec_members)
+				{
+					Node	   *expr = (Node *) em->em_expr;
+
+					while (IsA(expr, RelabelType))
+						expr = (Node *) ((RelabelType *) expr)->arg;
+					if (IsA(expr, Var) &&
+						((Var *) expr)->varno == fkinfo->con_relid &&
+						((Var *) expr)->varattno == fkinfo->conkey[i] &&
+						!starjoin_fk_operand_matches((Node *) em->em_expr,
+													 fktype))
 						return false;
 				}
+			}
+
+			foreach_node(RestrictInfo, rinfo, clauses)
+			{
+				OpExpr	   *clause = castNode(OpExpr, rinfo->clause);
+				Oid			required_op = eqop;
+				Oid			joincoll = clause->inputcollid;
+				Node	   *pkarg;
+				Node	   *fkarg;
+
+				if (!bms_is_member(fkinfo->ref_relid, rinfo->clause_relids))
+					continue;
+
+				if (bms_is_member(fkinfo->ref_relid, rinfo->left_relids))
+				{
+					pkarg = linitial(clause->args);
+					fkarg = lsecond(clause->args);
+				}
+				else
+				{
+					pkarg = lsecond(clause->args);
+					fkarg = linitial(clause->args);
+					required_op = get_commutator(eqop);
+				}
+
+				if (clause->opno != required_op ||
+					!starjoin_fk_operand_matches(pkarg, pktype) ||
+					!starjoin_fk_operand_matches(fkarg, fktype))
+					return false;
+				if (OidIsValid(indcoll) &&
+					(!starjoin_equality_implies(attcoll, joincoll,
+												opfamily, eqop) ||
+					 !starjoin_equality_implies(joincoll, indcoll,
+												opfamily, eqop)))
+					return false;
 			}
 		}
 		return true;
@@ -4388,7 +4470,7 @@ has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel, RelOptInfo *dim_rel)
 		}
 		if (i == fkinfo->nkeys &&
 			!has_extra_starjoin_quals(root, dim_rel, fkinfo) &&
-			starjoin_fk_collations_match(root, dim_rel, fkinfo))
+			starjoin_fk_comparisons_match(root, dim_rel, fkinfo))
 			return true;
 	}
 

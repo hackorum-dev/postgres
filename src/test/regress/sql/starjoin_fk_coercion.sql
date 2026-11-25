@@ -1,0 +1,95 @@
+-- Does the join compare the same values as the foreign key?
+\set ON_ERROR_STOP on
+BEGIN;
+SET LOCAL geqo = off;
+SET LOCAL enable_starjoin_ordering = on;
+SET LOCAL client_min_messages = warning;
+
+CREATE TEMP TABLE d (id int PRIMARY KEY);
+INSERT INTO d VALUES (1);
+CREATE TEMP TABLE names (k name COLLATE "C" PRIMARY KEY);
+SELECT repeat('a', current_setting('max_identifier_length')::int) AS prefix \gset
+INSERT INTO names VALUES (:'prefix');
+
+-- RI lowercases folded values when comparing them to text. A binary
+-- detour through varchar can pass the original bytes to the same operator.
+CREATE TYPE pg_temp.folded;
+CREATE FUNCTION pg_temp.folded_in(cstring) RETURNS pg_temp.folded
+  AS 'textin' LANGUAGE internal IMMUTABLE STRICT;
+CREATE FUNCTION pg_temp.folded_out(pg_temp.folded) RETURNS cstring
+  AS 'textout' LANGUAGE internal IMMUTABLE STRICT;
+CREATE TYPE pg_temp.folded (INPUT = pg_temp.folded_in, OUTPUT = pg_temp.folded_out,
+                            LIKE = text, COLLATABLE = true);
+CREATE FUNCTION pg_temp.folded_text(pg_temp.folded) RETURNS text
+  AS 'lower' LANGUAGE internal IMMUTABLE STRICT;
+CREATE CAST (pg_temp.folded AS text) WITH FUNCTION pg_temp.folded_text(pg_temp.folded) AS IMPLICIT;
+CREATE CAST (pg_temp.folded AS varchar) WITHOUT FUNCTION;
+
+CREATE OPERATOR pg_temp.=== (LEFTARG = text, RIGHTARG = text, FUNCTION = texteq);
+CREATE OPERATOR CLASS pg_temp.loose_ops FOR TYPE text USING btree AS
+  OPERATOR 1 <, OPERATOR 2 <=, OPERATOR 3 pg_temp.===, OPERATOR 4 >=, OPERATOR 5 >,
+  FUNCTION 1 bttextcmp(text, text);
+CREATE TEMP TABLE words (k text COLLATE "C" NOT NULL);
+CREATE UNIQUE INDEX ON words (k pg_temp.loose_ops);
+INSERT INTO words VALUES ('abc');
+CREATE TEMP TABLE fact (
+  v varchar COLLATE "C" NOT NULL REFERENCES names,
+  t text COLLATE "C" NOT NULL REFERENCES names,
+  folded pg_temp.folded COLLATE "C" NOT NULL REFERENCES words(k),
+  plain varchar COLLATE "C" NOT NULL REFERENCES words(k),
+  x text COLLATE "C" NOT NULL,
+  a int NOT NULL REFERENCES d, b int NOT NULL REFERENCES d,
+  c int NOT NULL REFERENCES d, d int NOT NULL REFERENCES d
+);
+INSERT INTO fact SELECT :'prefix' || 'b', :'prefix', 'ABC', 'abc', 'ABC', 1, 1, 1, 1
+  FROM generate_series(1, 100);
+ANALYZE fact, names, words, d;
+
+-- As in starjoin_fk_collation, compare planning memory for flat and forced
+-- join order. The four other dimensions always qualify.
+CREATE FUNCTION pg_temp.qualifies(candidate text) RETURNS bool
+LANGUAGE plpgsql SET join_collapse_limit = 8 AS $$
+DECLARE
+  query text := 'SELECT count(*) FROM fact f JOIN ' || candidate ||
+    ' JOIN d d1 ON f.a = d1.id JOIN d d2 ON f.b = d2.id
+      JOIN d d3 ON f.c = d3.id JOIN d d4 ON f.d = d4.id';
+  plan json;
+  search_memory bigint;
+BEGIN
+  EXECUTE 'EXPLAIN ' || query;
+  EXECUTE 'EXPLAIN (MEMORY, FORMAT JSON) ' || query INTO plan;
+  search_memory := plan->0->'Planning'->>'Memory Used';
+  SET LOCAL join_collapse_limit = 1;
+  EXECUTE 'EXPLAIN (MEMORY, FORMAT JSON) ' || query INTO plan;
+  RETURN search_memory <= (plan->0->'Planning'->>'Memory Used')::bigint * 1.1;
+END;
+$$;
+
+-- The varchar FK truncates to name, but the join compares the full text.
+-- The text FK actually uses name = text, including in commuted joins.
+SELECT (SELECT count(*) FROM fact f JOIN names n ON n.k = f.v::name) AS fk_matches,
+       (SELECT count(*) FROM fact f JOIN names n ON n.k = f.v) AS join_matches,
+       pg_temp.qualifies('names n ON n.k = f.v') AS varchar_qualifies,
+       pg_temp.qualifies('names n ON f.t = n.k') AS text_qualifies;
+
+-- An exact operator match in joininfo does not prove that the correct cast
+-- was applied. A varchar FK that needs only a binary relabel still qualifies.
+SELECT (SELECT count(*) FROM fact f JOIN words w ON w.k OPERATOR(pg_temp.===) f.folded)
+         AS fk_matches,
+       (SELECT count(*) FROM fact f JOIN words w ON w.k OPERATOR(pg_temp.===) f.folded::varchar::text)
+         AS join_matches;
+\set bypass 'words w ON w.k OPERATOR(pg_temp.===) f.folded::varchar::text'
+\set binary 'words w ON w.k OPERATOR(pg_temp.===) f.plain'
+SELECT pg_temp.qualifies(:'bypass') AS loose_bypass, pg_temp.qualifies(:'binary') AS loose_binary;
+
+-- Exercise the same pair of comparisons through equivalence classes.
+ALTER OPERATOR pg_temp.=== (text, text) SET (COMMUTATOR = OPERATOR(pg_temp.===), MERGES);
+SELECT pg_temp.qualifies(:'bypass') AS ec_bypass, pg_temp.qualifies(:'binary') AS ec_binary;
+
+-- Clauses not involving the dimension only filter fact rows, but they can
+-- also bring the FK column into the EC while the dimension's clause names
+-- another fact column.
+\set filter 'words w ON w.k OPERATOR(pg_temp.===) f.plain AND f.plain OPERATOR(pg_temp.===) lower(f.x)'
+\set relay 'words w ON w.k OPERATOR(pg_temp.===) f.x AND f.x OPERATOR(pg_temp.===) f.folded::varchar::text'
+SELECT pg_temp.qualifies(:'filter') AS ec_fact_filter, pg_temp.qualifies(:'relay') AS ec_relay_bypass;
+ROLLBACK;
