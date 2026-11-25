@@ -1857,11 +1857,9 @@ table_scan_analyze_next_tuple(TableScanDesc scan,
  * starting the scan, and PROGRESS_SCAN_BLOCKS_DONE is updated as we go along.
  *
  * A side effect is to set indexInfo->ii_BrokenHotChain to true if we detect
- * any potentially broken HOT chains.  Currently, we set this if there are any
- * RECENTLY_DEAD or DELETE_IN_PROGRESS entries in a HOT chain, without trying
- * very hard to detect whether they're really incompatible with the chain tip.
- * This only really makes sense for heap AM, it might need to be generalized
- * for other AMs later.
+ * any potentially broken HOT chains.  The heap AM sets this if it skips a
+ * HOT-updated version that is RECENTLY_DEAD or deleted by our own transaction.
+ * Summarizing indexes include those versions instead.
  */
 static inline double
 table_index_build_scan(Relation table_rel,

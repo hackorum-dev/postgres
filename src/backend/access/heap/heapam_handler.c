@@ -1311,14 +1311,11 @@ heapam_index_build_range_scan(Relation heapRelation,
 		}
 
 		/*
-		 * When dealing with a HOT-chain of updated tuples, we want to index
-		 * the values of the live tuple (if any), but index it under the TID
-		 * of the chain's root tuple.  This approach is necessary to preserve
-		 * the HOT-chain structure in the heap. So we need to be able to find
-		 * the root item offset for every tuple that's in a HOT-chain.  When
-		 * first reaching a new page of the relation, call
-		 * heap_get_root_tuples() to build a map of root item offsets on the
-		 * page.
+		 * Pass the root TID to the callback for members of a HOT chain.
+		 * Indexes with per-tuple entries must point to the root, and for
+		 * summarizing indexes only the block number matters.  When first
+		 * reaching a new page, call heap_get_root_tuples() to build a map of
+		 * root item offsets on the page.
 		 *
 		 * It might look unsafe to use this information across buffer
 		 * lock/unlock.  However, we hold ShareLock on the table so no
@@ -1398,15 +1395,17 @@ heapam_index_build_range_scan(Relation heapRelation,
 					 * transactions could try to use the index after we finish
 					 * building it, and may need to see such tuples.)
 					 *
-					 * However, if it was HOT-updated then we must only index
-					 * the live tuple at the end of the HOT-chain.  Since this
-					 * breaks semantics for pre-existing snapshots, mark the
-					 * index as unusable for them.
+					 * A per-tuple index must skip HOT-updated versions to
+					 * avoid indexing different keys under the same root TID.
+					 * Mark it unsafe for old snapshots.  A summarizing index
+					 * must include these versions: a HOT update can change a
+					 * summarized key, even after the index was created.
 					 *
 					 * We don't count recently-dead tuples in reltuples, even
 					 * if we index them; see heapam_scan_analyze_next_tuple().
 					 */
-					if (HeapTupleIsHotUpdated(heapTuple))
+					if (!indexInfo->ii_Summarizing &&
+						HeapTupleIsHotUpdated(heapTuple))
 					{
 						indexIt = false;
 						/* mark the index as unsafe for old snapshots */
@@ -1511,16 +1510,13 @@ heapam_index_build_range_scan(Relation heapRelation,
 						 * uniqueness violation.  In that case we wait for the
 						 * deleting transaction to finish and check again.
 						 *
-						 * Also, if it's a HOT-updated tuple, we should not
-						 * index it but rather the live tuple at the end of
-						 * the HOT-chain.  However, the deleting transaction
-						 * could abort, possibly leaving this tuple as live
-						 * after all, in which case it has to be indexed. The
-						 * only way to know what to do is to wait for the
-						 * deleting transaction to finish and check again.
+						 * A per-tuple index must skip a HOT-updated tuple if
+						 * the update commits, but index it if the update
+						 * aborts.  Wait and recheck in this case, too.
 						 */
 						if (checking_uniqueness ||
-							HeapTupleIsHotUpdated(heapTuple))
+							(!indexInfo->ii_Summarizing &&
+							 HeapTupleIsHotUpdated(heapTuple)))
 						{
 							/*
 							 * Must drop the lock on the buffer before we wait
@@ -1548,7 +1544,8 @@ heapam_index_build_range_scan(Relation heapRelation,
 						 */
 						reltuples += 1;
 					}
-					else if (HeapTupleIsHotUpdated(heapTuple))
+					else if (!indexInfo->ii_Summarizing &&
+							 HeapTupleIsHotUpdated(heapTuple))
 					{
 						/*
 						 * It's a HOT-updated tuple deleted by our own xact.
@@ -1563,9 +1560,8 @@ heapam_index_build_range_scan(Relation heapRelation,
 					else
 					{
 						/*
-						 * It's a regular tuple deleted by our own xact. Index
-						 * it, but don't check for uniqueness nor count in
-						 * reltuples, the same as a RECENTLY_DEAD tuple.
+						 * Index it, but don't check for uniqueness or count
+						 * it in reltuples, just as for RECENTLY_DEAD.
 						 */
 						indexIt = true;
 					}

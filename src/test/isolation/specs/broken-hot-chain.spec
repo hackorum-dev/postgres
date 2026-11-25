@@ -1,12 +1,10 @@
-# Test that an index built over broken HOT chains is not used by a snapshot
-# that can still see the old row versions.
+# Test index builds over HOT chains with older row versions still visible.
 #
-# CREATE INDEX indexes only the live member of a HOT chain, under the TID of
-# the chain's root.  When the heap scan of the build skips an older member
-# that some snapshot can still see, the build must set pg_index.indcheckxmin,
-# which keeps such a snapshot from using the index (see README.HOT).  s2
-# requests one parallel worker per build.  In a parallel build, each
-# participant must tell the leader whether it skipped such a tuple.
+# An index with per-tuple entries uses the root TID and skips HOT-updated
+# versions.  If an old snapshot might still see them, the build must set
+# pg_index.indcheckxmin to keep it from using the index (see README.HOT).
+# A summarizing index can include both old and new values.  s2 requests a
+# parallel worker to exercise reporting of skipped versions to the leader.
 
 setup
 {
@@ -52,7 +50,7 @@ step s2_btree { CREATE INDEX broken_hot_idx ON broken_hot USING btree (a); }
 step s2_brin { CREATE INDEX broken_hot_idx ON broken_hot USING brin (a); }
 step s2_gin { CREATE INDEX broken_hot_idx ON broken_hot USING gin (b); }
 
-# The build must set indcheckxmin
+# Only the btree and GIN builds must set indcheckxmin.
 step s2_indcheckxmin
 {
     SELECT indcheckxmin FROM pg_index

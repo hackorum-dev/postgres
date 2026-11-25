@@ -59,7 +59,7 @@ step s2_indcheckxmin:
 
 indcheckxmin
 ------------
-t           
+f           
 (1 row)
 
 step s1_a_old: SELECT count(*) FROM broken_hot WHERE a = 1;

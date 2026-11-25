@@ -301,10 +301,11 @@ This area probably needs further work ...
 CREATE INDEX
 ------------
 
-CREATE INDEX presents a problem for HOT updates.  While the existing HOT
-chains all have the same index values for existing indexes, the columns
-in the new index might change within a pre-existing HOT chain, creating
-a "broken" chain that can't be indexed properly.
+CREATE INDEX presents a problem for indexes with per-tuple entries.
+While the members of a HOT chain have the same index values for existing
+indexes of this kind, the columns in a new index might change within a
+pre-existing HOT chain, creating a "broken" chain that can't be indexed
+properly.
 
 To address this issue, regular (non-concurrent) CREATE INDEX makes the
 new index usable only by new transactions and transactions that don't
@@ -360,6 +361,12 @@ objection, since there are few users of SnapshotAny and most use seqscans.
 The only exception at this writing is CLUSTER, which is okay because it
 does not require perfect ordering of the indexscan readout (and especially
 so because CLUSTER tends to write recently-dead tuples out of order anyway).
+
+A summarizing index does not need indcheckxmin for HOT chains: it can
+include more than one value for the same heap block.  HOT updates can
+change a summarized key even after the index exists.  A non-concurrent
+build, rebuild, or range summarization must therefore consider every HOT
+chain member that could still be visible, not just the end of the chain.
 
 
 CREATE INDEX CONCURRENTLY
