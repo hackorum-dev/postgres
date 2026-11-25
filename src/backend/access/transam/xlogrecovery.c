@@ -2772,31 +2772,18 @@ recoveryStopsAfter(XLogReaderState *record)
 		}
 	}
 
-	/* Check if the target LSN has been reached */
-	if (recoveryTarget == RECOVERY_TARGET_LSN &&
-		recoveryTargetInclusive &&
-		record->ReadRecPtr >= recoveryTargetLSN)
-	{
-		recoveryStopAfter = true;
-		recoveryStopXid = InvalidTransactionId;
-		recoveryStopLSN = record->ReadRecPtr;
-		recoveryStopTime = 0;
-		recoveryStopName[0] = '\0';
-		ereport(LOG,
-				errmsg("recovery stopping after WAL location (LSN) \"%X/%08X\"",
-					   LSN_FORMAT_ARGS(recoveryStopLSN)));
-		return true;
-	}
-
-	if (rmid != RM_XACT_ID)
-		return false;
-
+	/*
+	 * Process transaction completion records before checking other recovery
+	 * targets, so that the latest transaction timestamp is updated even if we
+	 * stop at such a record.
+	 */
 	xact_info = info & XLOG_XACT_OPMASK;
 
-	if (xact_info == XLOG_XACT_COMMIT ||
-		xact_info == XLOG_XACT_COMMIT_PREPARED ||
-		xact_info == XLOG_XACT_ABORT ||
-		xact_info == XLOG_XACT_ABORT_PREPARED)
+	if (rmid == RM_XACT_ID &&
+		(xact_info == XLOG_XACT_COMMIT ||
+		 xact_info == XLOG_XACT_COMMIT_PREPARED ||
+		 xact_info == XLOG_XACT_ABORT ||
+		 xact_info == XLOG_XACT_ABORT_PREPARED))
 	{
 		TransactionId recordXid;
 
@@ -2864,6 +2851,22 @@ recoveryStopsAfter(XLogReaderState *record)
 			}
 			return true;
 		}
+	}
+
+	/* Check if the target LSN has been reached */
+	if (recoveryTarget == RECOVERY_TARGET_LSN &&
+		recoveryTargetInclusive &&
+		record->ReadRecPtr >= recoveryTargetLSN)
+	{
+		recoveryStopAfter = true;
+		recoveryStopXid = InvalidTransactionId;
+		recoveryStopLSN = record->ReadRecPtr;
+		recoveryStopTime = 0;
+		recoveryStopName[0] = '\0';
+		ereport(LOG,
+				errmsg("recovery stopping after WAL location (LSN) \"%X/%08X\"",
+					   LSN_FORMAT_ARGS(recoveryStopLSN)));
+		return true;
 	}
 
 	/* Check if we should stop as soon as reaching consistency */

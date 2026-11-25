@@ -60,6 +60,7 @@ sub test_recovery_standby
 # Initialize primary node
 my $node_primary = PostgreSQL::Test::Cluster->new('primary');
 $node_primary->init(has_archiving => 1, allows_streaming => 1);
+$node_primary->append_conf('postgresql.conf', 'autovacuum = off');
 
 # Bump the transaction ID epoch.  This is useful to stress the portability
 # of recovery_target_xid parsing.
@@ -300,5 +301,59 @@ like(
 	$stderr,
 	qr/without epoch must be greater than or equal to 3/,
 	"invalid recovery_target_xid (lower bound check)");
+
+# Test recovery to an immediate target when consistency is reached
+# at the last available WAL record, which is not a transaction record.
+my $node_immediate_standby =
+  PostgreSQL::Test::Cluster->new('immediate_standby');
+$node_immediate_standby->init_from_backup(
+	$node_primary, 'my_backup',
+	has_streaming => 1,
+	standby => 1);
+$node_immediate_standby->append_conf(
+	'postgresql.conf', 'bgwriter_lru_maxpages = 0');
+$node_immediate_standby->start;
+
+$node_primary->safe_psql('postgres', "CHECKPOINT");
+$node_primary->safe_psql('postgres',
+	"INSERT INTO tab_int VALUES (generate_series(6001,7000))");
+
+# Make a restore point the last WAL record on the primary.
+# Ensure that the standby has replayed WAL at least through that point.
+my $restore_lsn = $node_primary->safe_psql('postgres',
+	"SELECT pg_create_restore_point('last_record')");
+$node_primary->wait_for_catchup($node_immediate_standby, 'replay',
+	$restore_lsn);
+$node_primary->stop('immediate');
+
+$node_immediate_standby->backup('my_backup');
+$node_immediate_standby->stop;
+
+my $node_immediate =
+  PostgreSQL::Test::Cluster->new('immediate');
+$node_immediate->init_from_backup(
+	$node_immediate_standby, 'my_backup');
+unlink($node_immediate->data_dir . '/standby.signal');
+$node_immediate->set_recovery_mode;
+$node_immediate->append_conf(
+	'postgresql.conf', "
+restore_command = 'false'
+primary_conninfo = ''
+recovery_target = 'immediate'
+recovery_target_action = 'promote'");
+
+if (ok($node_immediate->start(fail_ok => 1),
+		"start recovery to immediate target at end of WAL"))
+{
+	ok($node_immediate->poll_query_until('postgres',
+			"SELECT NOT pg_is_in_recovery()"),
+		"promotion after reaching immediate target");
+
+	ok($node_immediate->log_contains(
+			"recovery stopping after reaching consistency"),
+		"immediate recovery target reached at end of WAL");
+
+	$node_immediate->stop;
+}
 
 done_testing();
