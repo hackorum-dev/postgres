@@ -164,10 +164,13 @@ The fact has to be a base relation too.
    reference.  The check uses the NOT NULL constraints of the columns
    (`notnullattnums`).
 
-3. The dimension has no local restriction quals (`baserestrictinfo`).
+3. The dimension has neither local restriction quals
+   (`baserestrictinfo`) nor a TABLESAMPLE clause.
 
    A restriction removes some dimension rows, so some fact rows might
-   lose their match.
+   lose their match.  Similarly, a sample of the dimension need not
+   contain the referenced row.  A sampled fact is fine, as each
+   remaining fact row still has its match.
 
 4. The dimension has no relevant join clauses to any rel other than the
    fact (checked via `have_relevant_joinclause`, which also covers
@@ -318,3 +321,7 @@ the plans, the planning cost, or the regression tests.
   subproblems, GEQO, and eager aggregation.  Each check is a single
   boolean, so that the output does not depend on platform-specific costs
   or memory usage, and some checks show the known limitations.
+- starjoin_sample checks that the GUC does not change the plans starting
+  with a sample of a dimension estimated to have a single row (which the
+  canonical order would join last), and that the join search for a
+  sampled fact is still pruned.

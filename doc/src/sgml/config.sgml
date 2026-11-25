@@ -6330,8 +6330,9 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
         same number of rows, and the planner considers only one of them.
         This can significantly reduce planning time for queries joining many
         dimension tables, but may occasionally miss a cheaper join order.
-        Only inner joins of plain tables, with no other conditions on the
-        dimension tables, are optimized.  The default is <literal>on</literal>.
+        Only inner joins of plain tables, with no other conditions or
+        <literal>TABLESAMPLE</literal> clauses on the dimension tables, are
+        optimized.  The default is <literal>on</literal>.
        </para>
       </listitem>
      </varlistentry>

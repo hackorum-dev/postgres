@@ -1,0 +1,133 @@
+--
+-- Checks for star queries with sampled relations and enable_starjoin_ordering
+--
+-- A foreign key guarantees a matching row in the referenced table, but not in
+-- a sample of it.  So a join to a sampled dimension may eliminate fact rows,
+-- and the dimension must not be part of the starjoin cluster.  Each row of a
+-- sampled fact still matches one row of each dimension, so the dimensions of
+-- a sampled fact still form a cluster.
+--
+-- The check for a sampled fact is about the planning effort (the number of
+-- join rels the join search builds), which is not visible in SQL.  So it
+-- compares the planner memory usage reported by EXPLAIN (MEMORY), which is
+-- proportional to the number of join rels and paths.
+--
+
+SET max_parallel_workers_per_gather = 0;
+
+-- the plan (without costs), with enable_starjoin_ordering enabled/disabled
+CREATE FUNCTION starjoin_sample_plan(query text, starjoin bool) RETURNS text
+LANGUAGE plpgsql AS $$
+DECLARE
+  plan json;
+BEGIN
+  PERFORM set_config('enable_starjoin_ordering', starjoin::text, true);
+  EXECUTE 'EXPLAIN (COSTS OFF, FORMAT JSON) ' || query INTO plan;
+  RETURN plan::text;
+END;
+$$;
+
+-- memory used by the planner (in kB), with enable_starjoin_ordering
+-- enabled/disabled
+CREATE FUNCTION starjoin_sample_memory(query text, starjoin bool) RETURNS bigint
+LANGUAGE plpgsql AS $$
+DECLARE
+  plan json;
+BEGIN
+  PERFORM set_config('enable_starjoin_ordering', starjoin::text, true);
+  EXECUTE 'EXPLAIN (MEMORY, FORMAT JSON) ' || query INTO plan;
+  RETURN (plan->0->'Planning'->>'Memory Used')::bigint;
+END;
+$$;
+
+-- star with 6 dimensions d1-d6, with an index on the reference to d6
+DO $$
+BEGIN
+  FOR i IN 1..6 LOOP
+    EXECUTE format('CREATE TABLE starjoin_sample_d%s (id int PRIMARY KEY) WITH (autovacuum_enabled = off)', i);
+    EXECUTE format('INSERT INTO starjoin_sample_d%s SELECT generate_series(1, 1000)', i);
+  END LOOP;
+END;
+$$;
+
+CREATE TABLE starjoin_sample_f (id int PRIMARY KEY, d1 int NOT NULL,
+  d2 int NOT NULL, d3 int NOT NULL, d4 int NOT NULL, d5 int NOT NULL,
+  d6 int NOT NULL) WITH (autovacuum_enabled = off);
+
+INSERT INTO starjoin_sample_f
+SELECT i, 1 + (i * 3) % 1000, 1 + (i * 7) % 1000, 1 + (i * 11) % 1000,
+       1 + (i * 13) % 1000, 1 + (i * 17) % 1000, 1 + (i * 19) % 1000
+  FROM generate_series(1, 20000) i;
+
+-- add the foreign keys after loading the data (faster than checking each row)
+ALTER TABLE starjoin_sample_f
+  ADD FOREIGN KEY (d1) REFERENCES starjoin_sample_d1,
+  ADD FOREIGN KEY (d2) REFERENCES starjoin_sample_d2,
+  ADD FOREIGN KEY (d3) REFERENCES starjoin_sample_d3,
+  ADD FOREIGN KEY (d4) REFERENCES starjoin_sample_d4,
+  ADD FOREIGN KEY (d5) REFERENCES starjoin_sample_d5,
+  ADD FOREIGN KEY (d6) REFERENCES starjoin_sample_d6;
+
+CREATE INDEX ON starjoin_sample_f (d6);
+
+VACUUM ANALYZE starjoin_sample_f, starjoin_sample_d1, starjoin_sample_d2,
+  starjoin_sample_d3, starjoin_sample_d4, starjoin_sample_d5,
+  starjoin_sample_d6;
+
+SELECT $$
+SELECT count(*) FROM starjoin_sample_f AS f
+  JOIN starjoin_sample_d1 AS d1 ON f.d1 = d1.id
+  JOIN starjoin_sample_d2 AS d2 ON f.d2 = d2.id
+  JOIN starjoin_sample_d3 AS d3 ON f.d3 = d3.id
+  JOIN starjoin_sample_d4 AS d4 ON f.d4 = d4.id
+  JOIN starjoin_sample_d5 AS d5 ON f.d5 = d5.id
+  JOIN starjoin_sample_d6 AS d6 ON f.d6 = d6.id
+$$ AS q_star \gset
+
+--
+-- Sampled dimension
+--
+-- A 0.1% sample of d6 is estimated to have a single row, matching only 20
+-- rows of the fact.  Fetching them through the index is cheaper than scanning
+-- the whole fact, so the cheapest plan starts with the sample, while the
+-- canonical order of a cluster with d6 would join it last.
+--
+SELECT replace(:'q_star', 'starjoin_sample_d6 AS d6',
+               'starjoin_sample_d6 AS d6 TABLESAMPLE BERNOULLI (0.1)')
+       AS q_bernoulli,
+       replace(:'q_star', 'starjoin_sample_d6 AS d6',
+               'starjoin_sample_d6 AS d6 TABLESAMPLE SYSTEM (0.1)')
+       AS q_system \gset
+
+-- the plan starts with the sample of d6
+SET enable_starjoin_ordering = on;
+EXPLAIN (COSTS OFF) :q_bernoulli;
+RESET enable_starjoin_ordering;
+
+-- the GUC does not change the plan
+SELECT starjoin_sample_plan(:'q_bernoulli', true)
+       = starjoin_sample_plan(:'q_bernoulli', false) AS bernoulli_plan_ok;
+SELECT starjoin_sample_plan(:'q_system', true)
+       = starjoin_sample_plan(:'q_system', false) AS system_plan_ok;
+
+--
+-- Sampled fact
+--
+-- The dimensions of a sampled fact form a cluster, so the join search is
+-- pruned.
+--
+SELECT replace(:'q_star', 'starjoin_sample_f AS f',
+               'starjoin_sample_f AS f TABLESAMPLE BERNOULLI (10)')
+       AS q_fact \gset
+
+SELECT starjoin_sample_memory(:'q_fact', true)
+       < starjoin_sample_memory(:'q_fact', false) * 0.5 AS sampled_fact_pruned;
+
+RESET max_parallel_workers_per_gather;
+
+DROP FUNCTION starjoin_sample_plan(text, bool);
+DROP FUNCTION starjoin_sample_memory(text, bool);
+
+DROP TABLE starjoin_sample_f, starjoin_sample_d1, starjoin_sample_d2,
+  starjoin_sample_d3, starjoin_sample_d4, starjoin_sample_d5,
+  starjoin_sample_d6;

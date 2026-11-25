@@ -4207,7 +4207,8 @@ has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
  *
  *	2. All join columns on the fact are NOT NULL.
  *
- *	3. The dimension has no local restriction quals (baserestrictinfo).
+ *	3. The dimension has neither local restriction quals (baserestrictinfo)
+ *	   nor a TABLESAMPLE clause.
  *
  *	4. The dimension has no relevant join clauses to any rel other than
  *	   the fact (checked via have_relevant_joinclause, which also covers
@@ -4332,6 +4333,10 @@ generate_starjoin_clusters(PlannerInfo *root)
 
 			/* has to be a baserel (it's referenced by a FK, so?) */
 			if (dim_rel == NULL || dim_rel->reloptkind != RELOPT_BASEREL)
+				continue;
+
+			/* Sampling may remove the row referenced by the foreign key. */
+			if (root->simple_rte_array[d]->tablesample != NULL)
 				continue;
 
 			/* No local restriction quals on the dimension. */
