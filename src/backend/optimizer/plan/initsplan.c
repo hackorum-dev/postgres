@@ -4129,7 +4129,44 @@ check_memoizable(RestrictInfo *restrictinfo)
 }
 
 /*
+ * Does the dimension have a relevant join clause to the other rel?
+ *
+ * This is have_relevant_joinclause(), except that pseudoconstant quals are
+ * ignored.  A pseudoconstant qual (e.g. "now() > '2000-01-01'", or a qual
+ * with an uncorrelated sub-SELECT) gets the relids of the whole join domain
+ * (see distribute_qual_to_rels), so it's in the joininfo list of every rel.
+ * But it's Var-free, so it doesn't relate the dimension to any rel, and it's
+ * evaluated only once, in a gating Result node, so it doesn't change the
+ * number of rows produced by the joins.
+ */
+static bool
+have_relevant_starjoin_clause(PlannerInfo *root, RelOptInfo *dim_rel,
+							  RelOptInfo *other_rel)
+{
+	ListCell   *lc;
+
+	foreach(lc, dim_rel->joininfo)
+	{
+		RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
+
+		if (rinfo->pseudoconstant)
+			continue;
+
+		if (bms_overlap(other_rel->relids, rinfo->required_relids))
+			return true;
+	}
+
+	/* join clauses not emitted into the joininfo lists */
+	if (dim_rel->has_eclass_joins && other_rel->has_eclass_joins)
+		return have_relevant_eclass_joinclause(root, dim_rel, other_rel);
+
+	return false;
+}
+
+/*
  * Does the dimension have join conditions not accounted for by this FK?
+ *
+ * Pseudoconstant quals are ignored, see have_relevant_starjoin_clause.
  */
 static bool
 has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
@@ -4142,6 +4179,9 @@ has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
 	{
 		RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
 		int			colno;
+
+		if (rinfo->pseudoconstant)
+			continue;
 
 		for (colno = 0; colno < fkinfo->nkeys; colno++)
 		{
@@ -4498,8 +4538,8 @@ has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel, RelOptInfo *dim_rel)
  *	   nor a TABLESAMPLE clause.
  *
  *	4. The dimension has no relevant join clauses to any rel other than
- *	   the fact (checked via have_relevant_joinclause, which also covers
- *	   equivalence-class joins).
+ *	   the fact (including equivalence-class joins), ignoring pseudoconstant
+ *	   quals (see have_relevant_starjoin_clause).
  *
  *	5. The dimension is not in the minimal LHS or RHS of any SpecialJoinInfo
  *	   (it may be in the syntactic LHS, e.g. of a LEFT JOIN written after it).
@@ -4508,10 +4548,10 @@ has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel, RelOptInfo *dim_rel)
  *
  *	7. The dimension is not constrained by any PlaceHolderInfo.
  *
- *	8. All join conditions between the fact and the dimension are accounted
- *	   for by the matched FK, with compatible equality semantics and no
- *	   additional EC members other than expressions of the fact, in ECs
- *	   that are not broken.
+ *	8. All join conditions between the fact and the dimension (again
+ *	   ignoring pseudoconstant quals) are accounted for by the matched FK,
+ *	   with compatible equality semantics and no additional EC members other
+ *	   than expressions of the fact, in ECs that are not broken.
  *
  * Under these conditions, the join is strictly cardinality-preserving with
  * respect to the fact table, and all join orderings for a cluster produce
@@ -4684,8 +4724,7 @@ generate_starjoin_clusters(PlannerInfo *root)
 
 			/*
 			 * The dimension must have no relevant join clause to any rel
-			 * other than the fact.  have_relevant_joinclause() also covers
-			 * equivalence-class joins.
+			 * other than the fact.
 			 */
 			for (r = 1; r < nrels; r++)
 			{
@@ -4697,7 +4736,7 @@ generate_starjoin_clusters(PlannerInfo *root)
 				if (other_rel == NULL ||
 					other_rel->reloptkind != RELOPT_BASEREL)
 					continue;
-				if (have_relevant_joinclause(root, dim_rel, other_rel))
+				if (have_relevant_starjoin_clause(root, dim_rel, other_rel))
 				{
 					ok = false;
 					break;

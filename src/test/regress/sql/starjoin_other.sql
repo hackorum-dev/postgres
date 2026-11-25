@@ -514,6 +514,12 @@ $$ AS q_clauseless \gset
 SELECT starjoin_other_cost(:'q_clauseless', true)
        <= starjoin_other_cost(:'q_clauseless', false) * 1.01 AS clauseless_cost_ok;
 
+-- the same with a pseudoconstant qual, which is in the joininfo list of every
+-- rel, but is not a join clause
+SELECT starjoin_other_cost(:'q_clauseless' || $$WHERE now() > '2000-01-01'$$, true)
+       <= starjoin_other_cost(:'q_clauseless' || $$WHERE now() > '2000-01-01'$$, false) * 1.01
+       AS clauseless_where_now_cost_ok;
+
 -- The dimension still gets joined to the fact in the canonical order.  With
 -- h1 as the first dimension, the joins to h2 and h3 process the multiplied
 -- rows, so the plan with the GUC enabled is more expensive.
@@ -527,6 +533,49 @@ $$ AS q_clauseless_first \gset
 
 SELECT starjoin_other_cost(:'q_clauseless_first', true)
        > starjoin_other_cost(:'q_clauseless_first', false) * 1.01 AS clauseless_first_cost_higher;
+
+-- But without the fact, a dimension must not be joined to rels with join
+-- clauses, or the search might consider each dimension with all subsets of
+-- c1-c5.  A pseudoconstant qual is in the joininfo list of every rel, but it
+-- is not a join clause, so it must not make the rels joinable to each other.
+-- The rels c1-c5 are joinable to each other even without the qual, through
+-- an equivalence class (including f.id) or through a join clause referencing
+-- all of them, so the qual should not add any joinrels.
+SELECT $$
+SELECT count(*) FROM starjoin_other_f AS f
+  JOIN starjoin_other_d1 AS d1 ON f.d1 = d1.id
+  JOIN starjoin_other_d2 AS d2 ON f.d2 = d2.id
+  JOIN starjoin_other_d3 AS d3 ON f.d3 = d3.id
+  JOIN starjoin_other_d4 AS d4 ON f.d4 = d4.id
+  JOIN starjoin_other_c1 AS c1 ON f.id = c1.v
+  JOIN starjoin_other_c2 AS c2 ON c1.v = c2.v
+  JOIN starjoin_other_c3 AS c3 ON c2.v = c3.v
+  JOIN starjoin_other_c4 AS c4 ON c3.v = c4.v
+  JOIN starjoin_other_c5 AS c5 ON c4.v = c5.v
+$$ AS q_ec_joins \gset
+
+SELECT $$
+SELECT count(*) FROM starjoin_other_f AS f
+  JOIN starjoin_other_d1 AS d1 ON f.d1 = d1.id
+  JOIN starjoin_other_d2 AS d2 ON f.d2 = d2.id
+  JOIN starjoin_other_d3 AS d3 ON f.d3 = d3.id
+  JOIN starjoin_other_d4 AS d4 ON f.d4 = d4.id
+  CROSS JOIN starjoin_other_c1 AS c1
+  CROSS JOIN starjoin_other_c2 AS c2
+  CROSS JOIN starjoin_other_c3 AS c3
+  CROSS JOIN starjoin_other_c4 AS c4
+  JOIN starjoin_other_c5 AS c5 ON f.id < c1.v + c2.v + c3.v + c4.v + c5.v
+$$ AS q_joininfo \gset
+
+-- single subproblems with 10 rels (below geqo_threshold)
+SET join_collapse_limit = 20;
+SELECT starjoin_other_memory(:'q_ec_joins' || $$WHERE now() > '2000-01-01'$$, true)
+       < starjoin_other_memory(:'q_ec_joins', true) * 1.5
+       AS ec_joins_where_now_memory_ok;
+SELECT starjoin_other_memory(:'q_joininfo' || $$WHERE now() > '2000-01-01'$$, true)
+       < starjoin_other_memory(:'q_joininfo', true) * 1.5
+       AS joininfo_where_now_memory_ok;
+RESET join_collapse_limit;
 
 RESET max_parallel_workers_per_gather;
 

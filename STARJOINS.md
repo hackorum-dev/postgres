@@ -60,6 +60,8 @@ The optimization consists of these parts:
 - `starjoin_fk_comparisons_match`, `starjoin_fk_operand_matches` and
   `starjoin_equality_implies` check the operators, input coercions and
   collations of the join clauses.
+- `have_relevant_starjoin_clause` checks for join clauses other than
+  pseudoconstant quals.
 - `starjoin_order_invalid`, called by `make_join_rel`, rejects joins
   violating the canonical order, just like various other join
   restrictions.
@@ -157,13 +159,12 @@ cost the same as with the GUC disabled.  The numbers of queries with
 plans more expensive than with the GUC disabled (by more than 0.1%)
 dropped from 493 to 285, from 199 to 32 and from 235 to 29 (there were
 none in the third corpus).  No query failed to plan or tripped an
-assertion.  Star queries with a pseudoconstant qual were not affected,
-as they have no starjoin clusters (see the open issues).  The search
-considers joining the dimensions to the rels without join clauses, which
-increased the planning memory with the GUC enabled by 13% for the 897
-star queries without a pseudoconstant qual, and by 2.7%, 4.3% and 0% for
-the three other corpora (by up to 48% for a single query).  That's still
-only 20%, 80%, 34% and 74% of the planning memory with the GUC disabled.
+assertion.  The search considers joining the dimensions to the rels
+without join clauses, which increased the planning memory with the GUC
+enabled by 13% for the 897 star queries without a pseudoconstant qual,
+and by 2.7%, 4.3% and 0% for the three other corpora (by up to 48% for a
+single query).  That's still only 20%, 80%, 34% and 74% of the planning
+memory with the GUC disabled.
 
 Without the condition on the join clauses (allowing a single dimension
 joined to any rel), or without any restriction at all, the plan costs
@@ -261,6 +262,27 @@ joinrels by d+1.  For example, for a query joining 4 facts with 10
 dimensions each, the standard join search would take 1.2s and 440MB,
 compared to 120ms with GEQO.
 
+### Pseudoconstant quals
+
+A Var-free qual that is not volatile (e.g. "now() > '2000-01-01'", or an
+uncorrelated EXISTS evaluated as an InitPlan) is a pseudoconstant.  It
+gets the relids of the whole join domain, so it's in the joininfo list
+of every rel.  Such quals don't relate the dimension to any rel, and are
+evaluated only once, in a gating Result node.  So they are ignored when
+checking the join clauses of the dimensions (conditions 4 and 8).
+Otherwise every dimension would fail condition 4, and a single such qual
+would disable all starjoin clusters in the query, including their effect
+on `geqo_threshold`.  The quals still make the dimensions joinable to
+each other, and to all the other rels.  That's fine thanks to the rule
+rejecting joinrels with a dimension but without the fact, except for a
+single dimension joined to rels without join clauses (ignoring
+pseudoconstant quals).  Without that rule, the standard join search
+would consider all subsets of the dimensions, and planning a star with
+11 dimensions in starjoin_var_free would use about 32MB of memory
+instead of about 0.2MB.  So the quals neither make the search join the
+dimensions to rels with join clauses, nor prevent it from joining them
+to rels without join clauses.
+
 ## Conditions for a dimension
 
 A relation is a dimension of a fact if it's referenced by a foreign key
@@ -305,8 +327,8 @@ The fact has to be a base relation too.
    remaining fact row still has its match.
 
 4. The dimension has no relevant join clauses to any rel other than the
-   fact (checked via `have_relevant_joinclause`, which also covers
-   equivalence class joins).
+   fact (including equivalence class joins), ignoring pseudoconstant
+   quals (see `have_relevant_starjoin_clause`).
 
    So the dimension can be joined only to the fact (or to joinrels
    including it), which makes the dimensions interchangeable.
@@ -325,10 +347,11 @@ The fact has to be a base relation too.
 
    Conditions 5 to 7 rule out join order restrictions on the dimension.
 
-8. All join conditions between the fact and the dimension are accounted
-   for by the matched foreign key, with compatible equality semantics
-   and no additional equivalence class members other than expressions of
-   the fact, in equivalence classes that are not broken.
+8. All join conditions between the fact and the dimension (again
+   ignoring pseudoconstant quals) are accounted for by the matched
+   foreign key, with compatible equality semantics and no additional
+   equivalence class members other than expressions of the fact, in
+   equivalence classes that are not broken.
 
    A fully matched NOT NULL foreign key does not make the join preserve
    the fact rows if other conditions connect the same pair of relations,
@@ -515,18 +538,6 @@ the plans, the planning cost, or the regression tests.
   (see starjoin_eager, and the eager_first_partial_agg_on check in
   starjoin_other).  A possible direction, not tried yet, is an explicit
   canonical order putting the dimensions with grouping columns last.
-- A pseudoconstant qual (e.g. "now() > '2000-01-01'", or an uncorrelated
-  EXISTS) gets the relids of the whole join domain, so it's in the
-  joininfo list of every rel, and every dimension appears to have join
-  clauses to rels other than the fact.  So a single such qual disables
-  all starjoin clusters in the query, even if it's in the ON clause of a
-  single dimension's join.  The dimensions then count fully toward
-  `geqo_threshold`, so with the default settings a star with 11
-  dimensions gets planned by GEQO.  The three checks marked XXX in
-  starjoin_var_free show this.  Ignoring pseudoconstant quals when
-  building the clusters would be enough to fix this.  The quals would
-  still make the dimensions joinable to each other without the fact, but
-  such joinrels are restricted (see `starjoin_order_invalid`).
 - A dimension gets joined to the fact at its position in the canonical
   order, so if a rel without join clauses is joined to a dimension
   that's not the last one, the joins of the following dimensions process
@@ -544,6 +555,8 @@ the plans, the planning cost, or the regression tests.
   results.
 - No regression test makes `starjoin_fk_operand_matches` reject a
   relabel changing the actual type seen by a polymorphic operator.
+- Volatile Var-free quals are not pseudoconstant, so they still disable
+  the clusters, which is conservative.
 
 ## Regression tests
 
@@ -652,4 +665,5 @@ the plans, the planning cost, or the regression tests.
 - starjoin_var_free checks star queries with Var-free quals (in WHERE,
   as an uncorrelated EXISTS, and in the ON clause of a single
   dimension's join), and whether they're planned by the standard join
-  search.  The three checks marked XXX return false.
+  search.  It also checks that such a qual does not double the planning
+  memory of the star with 11 dimensions.
