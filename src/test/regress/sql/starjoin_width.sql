@@ -37,14 +37,16 @@ INSERT INTO starjoin_width_wf SELECT i, 1 + i % 100, 1 + (i * 7) % 100, 1 + (i *
 VACUUM ANALYZE starjoin_width_wa, starjoin_width_wb, starjoin_width_wc, starjoin_width_wf;
 
 SET max_parallel_workers_per_gather = 0;
-SET work_mem = '4MB';
+-- Use a small work_mem, so that the hash join to wc (the largest dimension)
+-- needs multiple batches. With the default (4MB) the hash table fits in
+-- memory, and the plans with the GUC on and off would be the same.
+SET work_mem = '128kB';
 SET enable_nestloop = off; SET enable_mergejoin = off;
 
 -- All the joins preserve the cardinality, but the cost of a batched hash join
 -- depends on the width of the outer rows. So when the hash join to wc needs
--- multiple batches (as in starjoin_width_large), the plan with the GUC off
--- joins wc before the wide dimensions (wa, wb), while the canonical order
--- joins it last. Otherwise the plans are the same.
+-- multiple batches, the plan with the GUC off joins wc before the wide
+-- dimensions (wa, wb), while the canonical order joins it last.
 
 -- pure FK joins, GUC on
 SELECT pg_temp.starjoin_explain($$

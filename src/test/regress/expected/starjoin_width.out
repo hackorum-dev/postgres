@@ -30,13 +30,15 @@ CREATE TABLE starjoin_width_wf (id int, a int NOT NULL REFERENCES starjoin_width
 INSERT INTO starjoin_width_wf SELECT i, 1 + i % 100, 1 + (i * 7) % 100, 1 + (i * 13) % 10000 FROM generate_series(1,10000) i;
 VACUUM ANALYZE starjoin_width_wa, starjoin_width_wb, starjoin_width_wc, starjoin_width_wf;
 SET max_parallel_workers_per_gather = 0;
-SET work_mem = '4MB';
+-- Use a small work_mem, so that the hash join to wc (the largest dimension)
+-- needs multiple batches. With the default (4MB) the hash table fits in
+-- memory, and the plans with the GUC on and off would be the same.
+SET work_mem = '128kB';
 SET enable_nestloop = off; SET enable_mergejoin = off;
 -- All the joins preserve the cardinality, but the cost of a batched hash join
 -- depends on the width of the outer rows. So when the hash join to wc needs
--- multiple batches (as in starjoin_width_large), the plan with the GUC off
--- joins wc before the wide dimensions (wa, wb), while the canonical order
--- joins it last. Otherwise the plans are the same.
+-- multiple batches, the plan with the GUC off joins wc before the wide
+-- dimensions (wa, wb), while the canonical order joins it last.
 -- pure FK joins, GUC on
 SELECT pg_temp.starjoin_explain($$
 SELECT wa.t, wb.t, wc.v FROM starjoin_width_wf AS wf JOIN starjoin_width_wa AS wa ON wf.a = wa.id JOIN starjoin_width_wb AS wb ON wf.b = wb.id JOIN starjoin_width_wc AS wc ON wf.c = wc.id
@@ -57,7 +59,7 @@ $$) AS "QUERY PLAN";
                Buckets: N  Batches: 1  Memory Usage: NkB
                ->  Seq Scan on starjoin_width_wb wb (actual rows=100.00 loops=1)
    ->  Hash (actual rows=10000.00 loops=1)
-         Buckets: N  Batches: 1  Memory Usage: NkB
+         Buckets: N  Batches: multiple  Memory Usage: NkB
          ->  Seq Scan on starjoin_width_wc wc (actual rows=10000.00 loops=1)
 (16 rows)
 
@@ -66,24 +68,24 @@ SET enable_starjoin_ordering = off;
 SELECT pg_temp.starjoin_explain($$
 SELECT wa.t, wb.t, wc.v FROM starjoin_width_wf AS wf JOIN starjoin_width_wa AS wa ON wf.a = wa.id JOIN starjoin_width_wb AS wb ON wf.b = wb.id JOIN starjoin_width_wc AS wc ON wf.c = wc.id
 $$) AS "QUERY PLAN";
-                                      QUERY PLAN                                       
----------------------------------------------------------------------------------------
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
  Hash Join (actual rows=10000.00 loops=1)
-   Hash Cond: (wf.c = wc.id)
+   Hash Cond: (wf.b = wb.id)
    ->  Hash Join (actual rows=10000.00 loops=1)
-         Hash Cond: (wf.b = wb.id)
+         Hash Cond: (wf.a = wa.id)
          ->  Hash Join (actual rows=10000.00 loops=1)
-               Hash Cond: (wf.a = wa.id)
+               Hash Cond: (wf.c = wc.id)
                ->  Seq Scan on starjoin_width_wf wf (actual rows=10000.00 loops=1)
-               ->  Hash (actual rows=100.00 loops=1)
-                     Buckets: N  Batches: 1  Memory Usage: NkB
-                     ->  Seq Scan on starjoin_width_wa wa (actual rows=100.00 loops=1)
+               ->  Hash (actual rows=10000.00 loops=1)
+                     Buckets: N  Batches: multiple  Memory Usage: NkB
+                     ->  Seq Scan on starjoin_width_wc wc (actual rows=10000.00 loops=1)
          ->  Hash (actual rows=100.00 loops=1)
                Buckets: N  Batches: 1  Memory Usage: NkB
-               ->  Seq Scan on starjoin_width_wb wb (actual rows=100.00 loops=1)
-   ->  Hash (actual rows=10000.00 loops=1)
+               ->  Seq Scan on starjoin_width_wa wa (actual rows=100.00 loops=1)
+   ->  Hash (actual rows=100.00 loops=1)
          Buckets: N  Batches: 1  Memory Usage: NkB
-         ->  Seq Scan on starjoin_width_wc wc (actual rows=10000.00 loops=1)
+         ->  Seq Scan on starjoin_width_wb wb (actual rows=100.00 loops=1)
 (16 rows)
 
 DROP TABLE starjoin_width_wf, starjoin_width_wa, starjoin_width_wb, starjoin_width_wc;

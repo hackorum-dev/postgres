@@ -225,8 +225,8 @@ the plans, the planning cost, or the regression tests.
   dimension needs multiple batches, and the cost of batching depends on
   the width of the outer rows, so it's much cheaper to join the large
   dimension before the wide ones.  If the canonical order joins it last,
-  the planner misses the cheaper plan.  This is shown by
-  starjoin_width_large, and by the width_cost_higher check in
+  the planner misses the cheaper plan.  This is shown by starjoin_width
+  and starjoin_width_large, and by the width_cost_higher check in
   starjoin_other.  There's no fix, as this comes with considering a
   single order.
 - With GROUP BY on a column of a dimension, eager aggregation can place
@@ -277,8 +277,9 @@ the plans, the planning cost, or the regression tests.
   EXPLAIN ANALYZE output, to ignore platform-dependent memory usage and
   hash table sizing, while retaining the actual row counts and the
   distinction between single-batch and multi-batch hash joins.  With
-  `work_mem` set to 4MB in starjoin_width, its plans are the same with
-  the GUC enabled and disabled.
+  `work_mem` set to 128kB in starjoin_width, the hash join to its
+  largest dimension needs multiple batches, and the plan with the GUC
+  enabled is more expensive.
 - The _large variants of these three suites use larger tables, and
   starjoin_eager_large and starjoin_width_large set `work_mem` to 400kB,
   so that their hash joins need multiple batches.  They're too expensive
