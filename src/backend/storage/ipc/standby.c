@@ -1287,7 +1287,7 @@ LogStandbySnapshot(void)
 	RunningTransactions running;
 	xl_standby_lock *locks;
 	int			nlocks;
-	bool		logical_decoding_enabled = IsLogicalDecodingEnabled();
+	bool		xlog_logical_info;
 
 	Assert(XLogStandbyInfoActive());
 
@@ -1301,6 +1301,36 @@ LogStandbySnapshot(void)
 		return GetInsertRecPtr();
 	}
 #endif
+
+	/*
+	 * Check whether logical WAL logging is enabled to decide if ProcArrayLock
+	 * must be held until the xl_running_xacts record is inserted.
+	 *
+	 * During logical decoding activation, xlog_logical_info is enabled and
+	 * all processes must absorb the barrier before logical_decoding_enabled
+	 * is set (see EnableLogicalDecoding()). Checking
+	 * IsLogicalDecodingEnabled() here is therefore insufficient, as a process
+	 * that has already absorbed the barrier could still observe logical
+	 * decoding as disabled and release ProcArrayLock early while activation
+	 * completes. Moreover, the local XLogLogicalInfo cache cannot be used
+	 * because its update is delayed until transaction end when an XID is
+	 * assigned.
+	 *
+	 * Checking this upfront is safe because none of the calls before
+	 * inserting the xl_running_xacts record process interrupts, so this
+	 * backend cannot absorb the barrier and let a concurrent activation
+	 * complete in the meantime. We also must not defer this check until
+	 * ProcArrayLock is held, since taking LogicalDecodingControlLock while
+	 * holding ProcArrayLock could cause a deadlock with
+	 * DisableLogicalDecoding() and CreateInitDecodingContext().
+	 */
+	xlog_logical_info = IsXLogLogicalInfoEnabled();
+
+	/*
+	 * Tests wait here to let a concurrent activation complete. Unlike the
+	 * normal case, a waiting process can process interrupts.
+	 */
+	INJECTION_POINT("log-standby-snapshot", NULL);
 
 	/*
 	 * Get details of any AccessExclusiveLocks being held at the moment.
@@ -1328,13 +1358,20 @@ LogStandbySnapshot(void)
 	 * record. Fortunately this routine isn't executed frequently, and it's
 	 * only a shared lock.
 	 */
-	if (!logical_decoding_enabled)
+	if (!xlog_logical_info)
 		LWLockRelease(ProcArrayLock);
 
 	recptr = LogCurrentRunningXacts(running);
 
+	/*
+	 * If xlog_logical_info was false when we checked it above, logical
+	 * decoding must not have been enabled since then, as we cannot absorb the
+	 * barrier until releasing XidGenLock.
+	 */
+	Assert(xlog_logical_info || !IsLogicalDecodingEnabled());
+
 	/* Release lock if we kept it longer ... */
-	if (logical_decoding_enabled)
+	if (xlog_logical_info)
 		LWLockRelease(ProcArrayLock);
 
 	/* GetRunningTransactionData() acquired XidGenLock, we must release it */
