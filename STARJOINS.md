@@ -459,3 +459,10 @@ the plans, the planning cost, or the regression tests.
 - starjoin_geqo checks which star queries are planned by GEQO, and how
   the GUC affects their plans.  It detects GEQO by setting
   `geqo_pool_size` so large that GEQO fails to allocate the population.
+- starjoin_geqo_large plans a star with 80 dimensions with GEQO enabled,
+  with the GUC enabled and disabled, and with GEQO disabled as a
+  control, for `geqo_threshold` set to 2 and 12.  At 12, the fact and
+  the dimensions count as 8 rels with the GUC enabled, so the standard
+  join search is used.  It compares the plan costs, and reports the
+  planning times through the starjoin_geqo_timings psql variable.  It's
+  commented out in parallel_schedule, like the other _large suites.
