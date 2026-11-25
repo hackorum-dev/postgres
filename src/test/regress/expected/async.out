@@ -27,6 +27,36 @@ SELECT pg_notify(NULL,'sample message1');
 ERROR:  channel name cannot be empty
 SELECT pg_notify('notify_async_channel_name_too_long______________________________','sample_message1');
 ERROR:  channel name too long
+-- Should work. Notifications that don't need commit ordering
+SELECT pg_notify('notify_async1', 'sample message1', false);
+ pg_notify 
+-----------
+ 
+(1 row)
+
+SELECT pg_notify('notify_async1', 'sample message1', true);
+ pg_notify 
+-----------
+ 
+(1 row)
+
+SELECT pg_notify('notify_async1', 'sample message1', NULL);
+ pg_notify 
+-----------
+ 
+(1 row)
+
+SELECT pg_notify(channel => 'notify_async1', payload => NULL, ordered => false);
+ pg_notify 
+-----------
+ 
+(1 row)
+
+-- Should fail. Same argument checks as the two-argument form
+SELECT pg_notify('', 'sample message1', false);
+ERROR:  channel name cannot be empty
+SELECT pg_notify(NULL, 'sample message1', false);
+ERROR:  channel name cannot be empty
 --Should work. Valid NOTIFY/LISTEN/UNLISTEN commands
 NOTIFY notify_async2;
 LISTEN notify_async2;

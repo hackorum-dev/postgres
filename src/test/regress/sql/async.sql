@@ -12,6 +12,16 @@ SELECT pg_notify('','sample message1');
 SELECT pg_notify(NULL,'sample message1');
 SELECT pg_notify('notify_async_channel_name_too_long______________________________','sample_message1');
 
+-- Should work. Notifications that don't need commit ordering
+SELECT pg_notify('notify_async1', 'sample message1', false);
+SELECT pg_notify('notify_async1', 'sample message1', true);
+SELECT pg_notify('notify_async1', 'sample message1', NULL);
+SELECT pg_notify(channel => 'notify_async1', payload => NULL, ordered => false);
+
+-- Should fail. Same argument checks as the two-argument form
+SELECT pg_notify('', 'sample message1', false);
+SELECT pg_notify(NULL, 'sample message1', false);
+
 --Should work. Valid NOTIFY/LISTEN/UNLISTEN commands
 NOTIFY notify_async2;
 LISTEN notify_async2;

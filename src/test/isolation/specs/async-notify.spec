@@ -45,6 +45,21 @@ step notify_many_with_dup	{
 	SELECT pg_notify('c1', 'msg1');
 	COMMIT;
 }
+step notifyu	{ SELECT pg_notify('c1', 'unordered', false); }
+step notifyumix	{
+	BEGIN;
+	SELECT pg_notify('c1', 'mixed', false);
+	NOTIFY c1, 'mixed';
+	SELECT pg_notify('c2', 'u1', false);
+	SAVEPOINT s1;
+	SELECT pg_notify('c2', 'u2', false);
+	SELECT pg_notify('c2', 'u1', false);
+	RELEASE SAVEPOINT s1;
+	SAVEPOINT s2;
+	SELECT pg_notify('c2', 'rolled back', false);
+	ROLLBACK TO SAVEPOINT s2;
+	COMMIT;
+}
 step usage		{ SELECT pg_notification_queue_usage() > 0 AS nonzero; }
 step bignotify	{ SELECT count(pg_notify('c1', s::text)) FROM generate_series(1, 1000) s; }
 teardown		{ UNLISTEN *; }
@@ -135,6 +150,13 @@ permutation l2listen l2begin notify1 lbegins llisten lcommit l2commit l2stop
 # Check that notifications sent from a backend that has not done LISTEN
 # are properly delivered to a listener in another backend.
 permutation lch_listen nch_notify lch_check
+
+# Check notifications sent without commit ordering, alone and mixed with
+# ordered ones in the same transaction (including deduplication between the
+# two kinds and across subtransactions), with local and cross-backend
+# delivery.  Ordering between concurrent transactions is tested in
+# src/test/modules/injection_points/specs/notify_unordered.spec.
+permutation listenc llisten notifyu notifyumix lcheck
 
 # Verify that pg_notification_queue_usage correctly reports a non-zero result,
 # after submitting notifications while another connection is listening for

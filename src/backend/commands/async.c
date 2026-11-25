@@ -148,6 +148,20 @@
  *	  head; that is to ensure that we can advance the queue tail without undue
  *	  delay.
  *
+ * 9. Normally, writers also serialize on a cluster-wide heavyweight lock,
+ *	  which they hold from PreCommit_Notify() until their commit is complete.
+ *	  That keeps queue entries in commit order, and ensures that uncommitted
+ *	  entries never precede committed ones.  But the lock is held across the
+ *	  commit's WAL flush and any synchronous replication wait, so it limits
+ *	  how fast notifying transactions can commit.  Notifications sent with
+ *	  pg_notify(channel, payload, false) don't need to be ordered relative to
+ *	  other transactions' notifications, and a transaction that sent only such
+ *	  notifications skips the heavyweight lock.  Its entries can then precede
+ *	  entries of transactions that commit before it does.  Readers stop at
+ *	  uncommitted entries, so those later notifications are delayed, not lost,
+ *	  until the earlier transaction finishes; the stoppedAtUncommitted rule in
+ *	  item 8 makes sure the reader is woken again when that happens.
+ *
  * An application that listens on the same channel it notifies will get
  * NOTIFY messages for its own NOTIFYs.  These can be ignored, if not useful,
  * by comparing be_pid in the NOTIFY message to the application's own backend's
@@ -532,6 +546,7 @@ typedef struct NotificationList
 	HTAB	   *hashtab;		/* hash of NotificationHash structs, or NULL */
 	List	   *uniqueChannelNames; /* unique channel names being notified */
 	HTAB	   *uniqueChannelHash;	/* hash of unique channel names, or NULL */
+	bool		ordered;		/* does any event need commit ordering? */
 	struct NotificationList *upper; /* details for upper transaction levels */
 } NotificationList;
 
@@ -602,6 +617,9 @@ static dshash_hash globalChannelTableHash(const void *key, size_t size,
 										  void *arg);
 static void initGlobalChannelTable(void);
 static void initLocalChannelTable(void);
+static void Async_Notify_internal(const char *channel, const char *payload,
+								  bool ordered);
+static void pg_notify_internal(FunctionCallInfo fcinfo, bool ordered);
 static void queue_listen(ListenActionKind action, const char *channel);
 static void Async_UnlistenOnExit(int code, Datum arg);
 static void BecomeRegisteredListener(void);
@@ -872,6 +890,35 @@ AsyncShmemInit(void *arg)
 Datum
 pg_notify(PG_FUNCTION_ARGS)
 {
+	pg_notify_internal(fcinfo, true);
+
+	PG_RETURN_VOID();
+}
+
+/*
+ * pg_notify_with_ordering -
+ *	  SQL function to send a notification event, saying whether it must be
+ *	  delivered in commit order relative to other transactions' notifications
+ *
+ * A NULL "ordered" argument means the default, true.
+ */
+Datum
+pg_notify_with_ordering(PG_FUNCTION_ARGS)
+{
+	bool		ordered = PG_ARGISNULL(2) ? true : PG_GETARG_BOOL(2);
+
+	pg_notify_internal(fcinfo, ordered);
+
+	PG_RETURN_VOID();
+}
+
+/*
+ * Common code for the pg_notify SQL functions, whose first two arguments are
+ * the channel name and the payload.
+ */
+static void
+pg_notify_internal(FunctionCallInfo fcinfo, bool ordered)
+{
 	const char *channel;
 	const char *payload;
 
@@ -888,9 +935,7 @@ pg_notify(PG_FUNCTION_ARGS)
 	/* For NOTIFY as a statement, this is checked in ProcessUtility */
 	PreventCommandDuringRecovery("NOTIFY");
 
-	Async_Notify(channel, payload);
-
-	PG_RETURN_VOID();
+	Async_Notify_internal(channel, payload, ordered);
 }
 
 
@@ -905,6 +950,21 @@ pg_notify(PG_FUNCTION_ARGS)
  */
 void
 Async_Notify(const char *channel, const char *payload)
+{
+	Async_Notify_internal(channel, payload, true);
+}
+
+/*
+ * Async_Notify_internal
+ *
+ *		Workhorse for Async_Notify.  If "ordered" is false, the notification
+ *		doesn't need to be delivered in commit order relative to other
+ *		transactions' notifications; if no notification of the transaction
+ *		needs that, PreCommit_Notify can skip the cluster-wide lock that
+ *		provides it.
+ */
+static void
+Async_Notify_internal(const char *channel, const char *payload, bool ordered)
 {
 	int			my_level = GetCurrentTransactionNestLevel();
 	size_t		channel_len;
@@ -976,11 +1036,20 @@ Async_Notify(const char *channel, const char *payload)
 		/* We won't build uniqueChannelNames/Hash till later, either */
 		notifies->uniqueChannelNames = NIL;
 		notifies->uniqueChannelHash = NULL;
+		notifies->ordered = ordered;
 		notifies->upper = pendingNotifies;
 		pendingNotifies = notifies;
 	}
 	else
 	{
+		/*
+		 * If any event of the (sub)transaction needs commit ordering, all of
+		 * them get it.  Note this before checking for duplicates, so that an
+		 * ordered event is honored even if it duplicates an unordered one.
+		 */
+		if (ordered)
+			pendingNotifies->ordered = true;
+
 		/* Now check for duplicates */
 		if (AsyncExistsPendingNotify(n))
 		{
@@ -1288,11 +1357,14 @@ PreCommit_Notify(void)
 		(void) GetCurrentTransactionId();
 
 		/*
-		 * Serialize writers by acquiring a special lock that we hold till
-		 * after commit.  This ensures that queue entries appear in commit
-		 * order, and in particular that there are never uncommitted queue
-		 * entries ahead of committed ones, so an uncommitted transaction
-		 * can't block delivery of deliverable notifications.
+		 * Unless all of our notifications were sent unordered, serialize
+		 * writers by acquiring a special lock that we hold till after commit.
+		 * This ensures that queue entries appear in commit order, and in
+		 * particular that there are never uncommitted queue entries ahead of
+		 * committed ones, so an uncommitted transaction can't block delivery
+		 * of deliverable notifications.  Writers of unordered notifications
+		 * give up both properties for their own entries, to avoid waiting for
+		 * this lock; see item 9 at the top of this file.
 		 *
 		 * We use a heavyweight lock so that it'll automatically be released
 		 * after either commit or abort.  This also allows deadlocks to be
@@ -1303,18 +1375,20 @@ PreCommit_Notify(void)
 		 * (Historical note: before PG 9.0, a similar lock on "database 0" was
 		 * used by the flatfiles mechanism.)
 		 */
-		LockSharedObject(DatabaseRelationId, InvalidOid, 0,
-						 AccessExclusiveLock);
+		if (pendingNotifies->ordered)
+			LockSharedObject(DatabaseRelationId, InvalidOid, 0,
+							 AccessExclusiveLock);
 
 		/*
 		 * Now push the notifications into the queue.
 		 *
 		 * For the direct advancement optimization in SignalBackends(), we
 		 * need to ensure that no other backend can insert queue entries
-		 * between queueHeadBeforeWrite and queueHeadAfterWrite.  We hold
-		 * NotifyQueueLock in EXCLUSIVE mode across all our insertions, even
-		 * if they span several pages, so that this doesn't depend on the
-		 * heavyweight lock above serializing all writers.
+		 * between queueHeadBeforeWrite and queueHeadAfterWrite.  The
+		 * heavyweight lock above isn't enough for that, since writers of
+		 * unordered notifications don't take it.  So we hold NotifyQueueLock
+		 * in EXCLUSIVE mode across all our insertions, even if they span
+		 * several pages.
 		 *
 		 * A full queue is very uncommon and should really not happen, given
 		 * that we have so much space available in the SLRU pages.
@@ -2512,6 +2586,9 @@ AtSubCommit_Notify(void)
 				if (!AsyncExistsPendingNotify(childn))
 					AddEventToPendingNotifies(childn);
 			}
+			/* The parent needs commit ordering if the subxact did */
+			if (childPendingNotifies->ordered)
+				pendingNotifies->ordered = true;
 			pfree(childPendingNotifies);
 		}
 	}

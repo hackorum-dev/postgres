@@ -104,7 +104,9 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
    <command>NOTIFY</command> guarantees that notifications from the same
    transaction get delivered in the order they were sent.  It is also
    guaranteed that messages from different transactions are delivered in
-   the order in which the transactions committed.
+   the order in which the transactions committed, except for notifications
+   sent without commit ordering using <function>pg_notify</function>
+   (see <xref linkend="sql-notify-pg-notify"/>).
   </para>
 
   <para>
@@ -175,7 +177,7 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
    prepared for two-phase commit.
   </para>
 
-  <refsect2>
+  <refsect2 id="sql-notify-pg-notify">
    <title>pg_notify</title>
 
    <indexterm>
@@ -184,11 +186,40 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
 
    <para>
     To send a notification you can also use the function
-    <literal><function>pg_notify</function>(<type>text</type>,
-    <type>text</type>)</literal>. The function takes the channel name as the
+    <literal><function>pg_notify</function>(<parameter>channel</parameter>
+    <type>text</type>, <parameter>payload</parameter> <type>text</type>
+    <optional>, <parameter>ordered</parameter> <type>boolean</type>
+    </optional>)</literal>. The function takes the channel name as the
     first argument and the payload as the second. The function is much easier
     to use than the <command>NOTIFY</command> command if you need to work with
     non-constant channel names and payloads.
+   </para>
+
+   <para>
+    To deliver notifications from different transactions in commit order, a
+    transaction that has sent notifications holds a lock from just before it
+    commits until its commit is complete.  That includes waiting for the
+    commit record to be flushed to disk and, with synchronous replication,
+    for the standby to confirm it.  The lock is shared by all databases of
+    the cluster, so only one notifying transaction in the whole cluster can
+    be committing at a time, which limits how many such transactions can
+    commit per second.
+   </para>
+
+   <para>
+    If <parameter>ordered</parameter> is <literal>false</literal>, the
+    notification need not be delivered in commit order relative to other
+    transactions' notifications, and a transaction that sent only such
+    notifications does not take that lock.  This is useful when the
+    notification just tells listeners to look at the database again, so that
+    the order in which they hear about different transactions does not
+    matter.  Such notifications are still sent only if the transaction
+    commits, and are still delivered in the order they were sent within
+    their transaction.  However, they can be delayed until notifications
+    queued before them by transactions that have not finished committing yet
+    are delivered.  If a transaction sends both kinds of notifications, all
+    of them are delivered in commit order.  A null
+    <parameter>ordered</parameter> is treated as <literal>true</literal>.
    </para>
   </refsect2>
  </refsect1>

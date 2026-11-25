@@ -217,6 +217,69 @@ x
 
 listener_ch: NOTIFY "ch" with payload "aa" from notifier_ch
 
+starting permutation: listenc llisten notifyu notifyumix lcheck
+step listenc: LISTEN c1; LISTEN c2;
+step llisten: LISTEN c1; LISTEN c2;
+step notifyu: SELECT pg_notify('c1', 'unordered', false);
+pg_notify
+---------
+         
+(1 row)
+
+notifier: NOTIFY "c1" with payload "unordered" from notifier
+step notifyumix: 
+	BEGIN;
+	SELECT pg_notify('c1', 'mixed', false);
+	NOTIFY c1, 'mixed';
+	SELECT pg_notify('c2', 'u1', false);
+	SAVEPOINT s1;
+	SELECT pg_notify('c2', 'u2', false);
+	SELECT pg_notify('c2', 'u1', false);
+	RELEASE SAVEPOINT s1;
+	SAVEPOINT s2;
+	SELECT pg_notify('c2', 'rolled back', false);
+	ROLLBACK TO SAVEPOINT s2;
+	COMMIT;
+
+pg_notify
+---------
+         
+(1 row)
+
+pg_notify
+---------
+         
+(1 row)
+
+pg_notify
+---------
+         
+(1 row)
+
+pg_notify
+---------
+         
+(1 row)
+
+pg_notify
+---------
+         
+(1 row)
+
+notifier: NOTIFY "c1" with payload "mixed" from notifier
+notifier: NOTIFY "c2" with payload "u1" from notifier
+notifier: NOTIFY "c2" with payload "u2" from notifier
+step lcheck: SELECT 1 AS x;
+x
+-
+1
+(1 row)
+
+listener: NOTIFY "c1" with payload "unordered" from notifier
+listener: NOTIFY "c1" with payload "mixed" from notifier
+listener: NOTIFY "c2" with payload "u1" from notifier
+listener: NOTIFY "c2" with payload "u2" from notifier
+
 starting permutation: llisten lbegin usage bignotify usage
 step llisten: LISTEN c1; LISTEN c2;
 step lbegin: BEGIN;

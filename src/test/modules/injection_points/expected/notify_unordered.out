@@ -1,0 +1,168 @@
+Parsed test spec with 4 sessions
+
+starting permutation: l_listen n1_unordered n2_unordered l_check w_wakeup l_check
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step l_listen: LISTEN ch_b;
+step n1_unordered: 
+	INSERT INTO notify_unordered_tab VALUES (1);
+	SELECT pg_notify('ch_a', 'from n1', false);
+ <waiting ...>
+step n2_unordered: SELECT pg_notify('ch_b', 'from n2', false);
+pg_notify
+---------
+         
+(1 row)
+
+step l_check: SELECT 1 AS x;
+x
+-
+1
+(1 row)
+
+step w_wakeup: SELECT injection_points_wakeup('commit-before-clog-update');
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step n1_unordered: <... completed>
+pg_notify
+---------
+         
+(1 row)
+
+step l_check: SELECT 1 AS x;
+x
+-
+1
+(1 row)
+
+listener: NOTIFY "ch_b" with payload "from n2" from n2
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+
+starting permutation: l_listen n1_ordered n2_ordered w_wakeup l_check
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step l_listen: LISTEN ch_b;
+step n1_ordered: 
+	INSERT INTO notify_unordered_tab VALUES (1);
+	NOTIFY ch_a, 'from n1';
+ <waiting ...>
+step n2_ordered: NOTIFY ch_b, 'from n2'; <waiting ...>
+step w_wakeup: SELECT injection_points_wakeup('commit-before-clog-update');
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step n1_ordered: <... completed>
+step n2_ordered: <... completed>
+step l_check: SELECT 1 AS x;
+x
+-
+1
+(1 row)
+
+listener: NOTIFY "ch_b" with payload "from n2" from n2
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+
+starting permutation: l_listen n1_ordered n2_unordered l_check w_wakeup l_check
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step l_listen: LISTEN ch_b;
+step n1_ordered: 
+	INSERT INTO notify_unordered_tab VALUES (1);
+	NOTIFY ch_a, 'from n1';
+ <waiting ...>
+step n2_unordered: SELECT pg_notify('ch_b', 'from n2', false);
+pg_notify
+---------
+         
+(1 row)
+
+step l_check: SELECT 1 AS x;
+x
+-
+1
+(1 row)
+
+step w_wakeup: SELECT injection_points_wakeup('commit-before-clog-update');
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step n1_ordered: <... completed>
+step l_check: SELECT 1 AS x;
+x
+-
+1
+(1 row)
+
+listener: NOTIFY "ch_b" with payload "from n2" from n2
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+
+starting permutation: l_listen n1_unordered n2_ordered l_check w_wakeup l_check
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step l_listen: LISTEN ch_b;
+step n1_unordered: 
+	INSERT INTO notify_unordered_tab VALUES (1);
+	SELECT pg_notify('ch_a', 'from n1', false);
+ <waiting ...>
+step n2_ordered: NOTIFY ch_b, 'from n2';
+step l_check: SELECT 1 AS x;
+x
+-
+1
+(1 row)
+
+step w_wakeup: SELECT injection_points_wakeup('commit-before-clog-update');
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step n1_unordered: <... completed>
+pg_notify
+---------
+         
+(1 row)
+
+step l_check: SELECT 1 AS x;
+x
+-
+1
+(1 row)
+
+listener: NOTIFY "ch_b" with payload "from n2" from n2
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
