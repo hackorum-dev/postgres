@@ -2173,6 +2173,75 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
 }
 
 /*
+ * starjoin_setup_subproblem
+ *		Determine the dimensions of each starjoin cluster that the join
+ *		search of the current subproblem has to join in the canonical order.
+ *
+ * Called by make_rel_from_joinlist for each join search subproblem, once
+ * root->initial_rels is set.  The subproblems are solved one at a time, and
+ * each nested one is solved before the subproblem containing its result is
+ * set up, so the subproblem_dims of the clusters always describe the
+ * subproblem being searched.  So starjoin_order_invalid doesn't need to look
+ * at the initial rels for every proposed join.
+ */
+void
+starjoin_setup_subproblem(PlannerInfo *root)
+{
+	ListCell   *lc;
+	Relids		all_relids = NULL;	/* all relids in this subproblem */
+	Relids		baserel_relids = NULL;	/* baserels in this subproblem */
+
+	/* no starjoins found (maybe because the option is disabled) */
+	if (root->starjoin_clusters == NIL)
+		return;
+
+	/* The initial rels of the current subproblem. */
+	foreach(lc, root->initial_rels)
+	{
+		RelOptInfo *rel = (RelOptInfo *) lfirst(lc);
+
+		all_relids = bms_add_members(all_relids, rel->relids);
+		if (rel->reloptkind == RELOPT_BASEREL)
+			baserel_relids = bms_add_members(baserel_relids, rel->relids);
+	}
+
+	foreach(lc, root->starjoin_clusters)
+	{
+		StarJoinClusterInfo *c = (StarJoinClusterInfo *) lfirst(lc);
+
+		/*
+		 * The fact is not part of this subproblem, nothing to enforce.
+		 *
+		 * We must not enforce the canonical order without the fact.  The
+		 * order relies on joins of dimensions to the fact not changing the
+		 * cardinality of the fact.  Without the fact, the dimensions can only
+		 * be joined by cartesian products (they have join clauses only to the
+		 * fact), which do change the cardinality, so the order matters and
+		 * enforcing it might eliminate the cheapest plan.  Nor can we forbid
+		 * joining the dimensions without the fact, as that may be the only
+		 * way to join them (e.g. "d1 CROSS JOIN d2" with join_collapse_limit
+		 * set to 1).  The joinrel is joined to the fact in an upper
+		 * subproblem, where the dimensions are not initial rels, and so are
+		 * not checked.
+		 *
+		 * Snowflake joins are not an exception: a dimension with its own
+		 * dimensions is not a member of this cluster, but it may be the fact
+		 * of another cluster, enforced in subproblems including it.
+		 */
+		if (!bms_is_member(c->fact_relid, all_relids))
+			c->subproblem_dims = NULL;
+		else
+		{
+			/* dimensions joined individually in this subproblem */
+			c->subproblem_dims = bms_intersect(c->dim_relids, baserel_relids);
+		}
+	}
+
+	bms_free(all_relids);
+	bms_free(baserel_relids);
+}
+
+/*
  * starjoin_order_invalid
  *		Return true if the proposed join (rel1, rel2) would build a
  *		non-canonical ordering of a starjoin cluster.
@@ -2193,6 +2262,8 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
  * with the fact) can't, so we ignore them here and treat their joinrel just
  * like any other relation.  Otherwise there might be no valid join order at
  * all.  Clusters with the fact outside the current subproblem are ignored.
+ * starjoin_setup_subproblem determines the dimensions to check, once per
+ * subproblem.
  *
  * So the fact gets joined to the dimensions in the canonical order, and the
  * other orderings are pruned.  Other rels may be joined at any point.  The
@@ -2216,23 +2287,11 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 {
 	ListCell   *lc;
 	Relids		join_relids;
-	Relids		all_relids = NULL;	/* all relids in this subproblem */
-	Relids		baserel_relids = NULL;	/* baserels in this subproblem */
 	bool		violates = false;
 
 	/* no starjoins found (maybe because the option is disabled) */
 	if (root->starjoin_clusters == NIL)
 		return false;
-
-	/* The initial rels of the current subproblem. */
-	foreach(lc, root->initial_rels)
-	{
-		RelOptInfo *rel = (RelOptInfo *) lfirst(lc);
-
-		all_relids = bms_add_members(all_relids, rel->relids);
-		if (rel->reloptkind == RELOPT_BASEREL)
-			baserel_relids = bms_add_members(baserel_relids, rel->relids);
-	}
 
 	/* relids of the result */
 	join_relids = bms_union(rel1->relids, rel2->relids);
@@ -2242,33 +2301,12 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 	{
 		StarJoinClusterInfo *c = (StarJoinClusterInfo *) lfirst(lc);
 		Relids		cluster_dims;
-		bool		gap = false;
-		int			idx;
+		Relids		missing_dims;
 
-		/*
-		 * The fact is not part of this subproblem, nothing to enforce.
-		 *
-		 * We must not enforce the canonical order without the fact.  The
-		 * order relies on joins of dimensions to the fact not changing the
-		 * cardinality of the fact.  Without the fact, the dimensions can only
-		 * be joined by cartesian products (they have join clauses only to the
-		 * fact), which do change the cardinality, so the order matters and
-		 * enforcing it might eliminate the cheapest plan.  Nor can we forbid
-		 * joining the dimensions without the fact, as that may be the only
-		 * way to join them (e.g. "d1 CROSS JOIN d2" with join_collapse_limit
-		 * set to 1).  The joinrel is joined to the fact in an upper
-		 * subproblem, where the dimensions are not initial rels, and so are
-		 * not checked.
-		 *
-		 * Snowflake joins are not an exception: a dimension with its own
-		 * dimensions is not a member of this cluster, but it may be the fact
-		 * of another cluster, enforced in subproblems including it.
-		 */
-		if (!bms_is_member(c->fact_relid, all_relids))
+		/* dimensions of this subproblem in the join, if any */
+		cluster_dims = bms_intersect(c->subproblem_dims, join_relids);
+		if (cluster_dims == NULL)
 			continue;
-
-		/* dimensions joined individually in this subproblem */
-		cluster_dims = bms_intersect(c->dim_relids, baserel_relids);
 
 		/*
 		 * With the fact in this subproblem, joinrels with a dimension but
@@ -2302,11 +2340,9 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 		 */
 		if (!bms_is_member(c->fact_relid, join_relids))
 		{
-			cluster_dims = bms_int_members(cluster_dims, join_relids);
-
 			if (bms_membership(cluster_dims) == BMS_MULTIPLE)
 				violates = true;
-			else if (cluster_dims != NULL)
+			else
 			{
 				RelOptInfo *other;
 				ListCell   *lc2;
@@ -2338,28 +2374,21 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 		 * dimensions (in relid order), i.e. there must be no dimension after
 		 * the first gap.  This applies even if only one side of the join has
 		 * dimensions, so that the fact gets joined to the dimensions in this
-		 * order, and not e.g. to the second dimension first.
+		 * order, and not e.g. to the second dimension first.  A missing
+		 * dimension is fine on its own, as the join may not include all the
+		 * dimensions yet.  It's a violation only if the join includes a
+		 * dimension after it, i.e. if the first missing dimension precedes
+		 * the last one in the join.
 		 *
 		 * XXX Using the relid order is fine for now, but if we choose to
 		 * allow snowflake joins, we'll need an explicit (ordered) list.
 		 */
-		idx = -1;
-		while ((idx = bms_next_member(cluster_dims, idx)) >= 0)
-		{
-			/*
-			 * A missing dimension is fine on its own, as the join may not
-			 * include all the dimensions yet.  It's a violation only if the
-			 * join includes a dimension after it.
-			 */
-			if (!bms_is_member(idx, join_relids))
-				gap = true;
-			else if (gap)
-			{
-				violates = true;
-				break;
-			}
-		}
+		missing_dims = bms_difference(c->subproblem_dims, join_relids);
+		violates = (missing_dims != NULL &&
+					bms_next_member(missing_dims, -1) <
+					bms_prev_member(cluster_dims, -1));
 
+		bms_free(missing_dims);
 		bms_free(cluster_dims);
 
 		if (violates)
@@ -2367,8 +2396,6 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 	}
 
 	bms_free(join_relids);
-	bms_free(all_relids);
-	bms_free(baserel_relids);
 
 	return violates;
 }

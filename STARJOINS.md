@@ -57,6 +57,9 @@ The optimization consists of these parts:
 - `starjoin_order_invalid`, called by `make_join_rel`, rejects joins
   violating the canonical order, just like various other join
   restrictions.
+- `starjoin_setup_subproblem`, called by `make_rel_from_joinlist` for
+  each join search subproblem, determines the dimensions to check in the
+  subproblem.
 
 The clusters are determined in `src/backend/optimizer/plan/initsplan.c`,
 and the join order is restricted in
@@ -188,9 +191,22 @@ product of the dimensions is then joined to the fact in an upper
 subproblem, where the dimensions are not initial rels, and so are not
 checked.
 
-`starjoin_order_invalid` walks the initial rels of the current
-subproblem on each call, to find the base rels of the subproblem, and
-whether it contains the fact of each cluster.
+`starjoin_setup_subproblem` determines the dimensions to check once per
+subproblem, and keeps them in the `subproblem_dims` field of each
+cluster: the dimensions joined individually in the subproblem if it
+contains the fact, or NULL.  `make_rel_from_joinlist` calls it right
+after setting the initial rels, before running the join search
+(standard, GEQO or `join_search_hook`).  The subproblems are solved one
+at a time, and each nested one is solved before the subproblem
+containing its result is set up, so the field always describes the
+subproblem being searched.  `starjoin_order_invalid` then only
+intersects the joinrel with those sets, while walking the initial rels
+for every proposed join would dominate the search with many dimensions.
+For a star of 100, 200 and 400 dimensions in a single subproblem,
+determining the dimensions once per subproblem reduced the median
+planning time (release build, with GEQO disabled) from 11.6 to 6.7 ms,
+from 68-69 to 24-26 ms, and from 562-568 to 123-124 ms, with the same
+plan costs and planning memory (within 1 kB).
 
 ### Why the join search cannot fail
 

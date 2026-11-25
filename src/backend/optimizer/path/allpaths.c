@@ -3919,6 +3919,12 @@ make_rel_from_joinlist(PlannerInfo *root, List *joinlist)
 		 */
 		root->initial_rels = initial_rels;
 
+		/*
+		 * Determine the starjoin dimensions this subproblem has to join in
+		 * the canonical order.
+		 */
+		starjoin_setup_subproblem(root);
+
 		if (join_search_hook)
 			return (*join_search_hook) (root, levels_needed, initial_rels);
 		else if (enable_geqo && levels_needed >= geqo_threshold)

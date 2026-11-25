@@ -494,6 +494,27 @@ SELECT starjoin_other_memory(:'q_subproblems', true)
  t
 (1 row)
 
+-- with the default join_collapse_limit, c1 and c2 are a separate subproblem,
+-- searched before the star, which is still pruned
+SELECT $$
+SELECT count(*)
+  FROM (starjoin_other_c1 AS c1
+        JOIN starjoin_other_c2 AS c2 ON c1.v = c2.v)
+  JOIN (starjoin_other_f AS f
+        JOIN starjoin_other_d1 AS d1 ON f.d1 = d1.id
+        JOIN starjoin_other_d2 AS d2 ON f.d2 = d2.id
+        JOIN starjoin_other_d3 AS d3 ON f.d3 = d3.id
+        JOIN starjoin_other_d4 AS d4 ON f.d4 = d4.id
+        JOIN starjoin_other_d5 AS d5 ON f.d5 = d5.id
+        JOIN starjoin_other_d6 AS d6 ON f.d6 = d6.id) ON f.id = c1.id
+$$ AS q_star_second \gset
+SELECT starjoin_other_memory(:'q_star_second', true)
+       < starjoin_other_memory(:'q_star_second', false) * 0.5 AS star_second_pruned;
+ star_second_pruned 
+--------------------
+ t
+(1 row)
+
 --
 -- Eager aggregation
 --

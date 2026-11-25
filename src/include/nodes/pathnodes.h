@@ -1539,6 +1539,13 @@ typedef struct StarJoinClusterInfo
 	NodeTag		type;
 	Index		fact_relid;		/* index of the fact relation */
 	Relids		dim_relids;		/* indexes of the dimension relations */
+
+	/*
+	 * Dimensions the current join search subproblem has to join in the
+	 * canonical order, set by starjoin_setup_subproblem(): the dimensions
+	 * joined individually, if the fact is part of the subproblem, else NULL.
+	 */
+	Relids		subproblem_dims;
 } StarJoinClusterInfo;
 
 
