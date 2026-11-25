@@ -381,6 +381,16 @@ the plans, the planning cost, or the regression tests.
   the multiplied rows.  The clauseless_first_cost_higher check in
   starjoin_other shows this, for a star with two scans of a 2-row table
   without join clauses.
+- A FROM list of tables is never split into join search subproblems, so
+  with the default settings a star with 11 or more dimensions is planned
+  by GEQO, even though the canonical order makes the number of joinrels
+  in the standard join search linear in the number of dimensions.  For a
+  star with 11 dimensions, planning takes 20ms with the GUC enabled
+  (18ms with the GUC disabled), while the standard join search takes
+  0.3ms (the star_list_standard_search check in starjoin_geqo).
+- GEQO evaluates a fixed number of join orders, so enforcing the
+  canonical order in GEQO only adds overhead, and the GUC changes the
+  GEQO plans (the geqo_plan_unaffected check in starjoin_geqo).
 
 ## Regression tests
 
@@ -422,3 +432,6 @@ the plans, the planning cost, or the regression tests.
   with a sample of a dimension estimated to have a single row (which the
   canonical order would join last), and that the join search for a
   sampled fact is still pruned.
+- starjoin_geqo checks which star queries are planned by GEQO, and how
+  the GUC affects their plans.  It detects GEQO by setting
+  `geqo_pool_size` so large that GEQO fails to allocate the population.

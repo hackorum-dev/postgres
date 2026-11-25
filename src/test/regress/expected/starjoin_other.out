@@ -1,6 +1,7 @@
 --
 -- Checks for various other cases with enable_starjoin_ordering (the
--- planning failures are covered by starjoin_reproducers).
+-- planning failures are covered by starjoin_reproducers, and GEQO by
+-- starjoin_geqo).
 --
 -- Each check is a single boolean, so that the output does not depend on
 -- platform-specific costs or memory usage.  Some checks show known
@@ -439,7 +440,9 @@ SELECT starjoin_other_memory(:'q_exists', true)
 -- Star split into subproblems
 --
 -- With the default join_collapse_limit, the star with 10 dimensions is split
--- into two subproblems, and the canonical order is enforced in both.
+-- into two subproblems, and the canonical order is enforced in both.  The
+-- checks with GEQO (and with the whole star in a single subproblem above
+-- geqo_threshold) are in starjoin_geqo.
 --
 SELECT starjoin_other_memory(:'q_star', true)
        < starjoin_other_memory(:'q_star', false) * 0.5 AS split_search_pruned;
@@ -448,22 +451,6 @@ SELECT starjoin_other_memory(:'q_star', true)
  t
 (1 row)
 
---
--- GEQO
---
--- The canonical order is enforced by GEQO too.
---
-SET join_collapse_limit = 20;
-SET geqo_threshold = 8;
--- GEQO uses the canonical order
-SELECT starjoin_other_plan(:'q_star', true) = :'plan_canonical' AS geqo_plan_canonical;
- geqo_plan_canonical 
----------------------
- t
-(1 row)
-
-RESET geqo_threshold;
-RESET join_collapse_limit;
 --
 -- Overhead in subproblems unrelated to the star
 --
