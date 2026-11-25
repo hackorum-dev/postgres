@@ -3,7 +3,7 @@
  * passwordcheck.c
  *
  *
- * Copyright (c) 2009-2026, PostgreSQL Global Development Group
+ * Copyright (c) 2009-2025, PostgreSQL Global Development Group
  *
  * Author: Laurenz Albe <laurenz.albe@wien.gv.at>
  *
@@ -21,9 +21,11 @@
 #include <crack.h>
 #endif
 
+#include "catalog/pg_collation.h"
 #include "commands/user.h"
 #include "fmgr.h"
 #include "libpq/crypt.h"
+#include "utils/formatting.h"
 
 PG_MODULE_MAGIC_EXT(
 					.name = "passwordcheck",
@@ -101,14 +103,25 @@ check_password(const char *username,
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("password is too short"),
-					 errdetail("Password must be at least \"passwordcheck.min_password_length\" (%d) bytes long.",
+					 errdetail("password must be at least \"passwordcheck.min_password_length\" (%d) bytes long",
 							   min_password_length)));
 
-		/* check if the password contains the username */
-		if (strstr(password, username))
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("password must not contain user name")));
+		/* check for username in password, case-insensitive (str_tolower) */
+		{
+			char	   *lower_pwd = str_tolower(password, pwdlen,
+												DEFAULT_COLLATION_OID);
+			char	   *lower_user = str_tolower(username, strlen(username),
+												 DEFAULT_COLLATION_OID);
+			bool		found = (strstr(lower_pwd, lower_user) != NULL);
+
+			pfree(lower_pwd);
+			pfree(lower_user);
+
+			if (found)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("password must not contain user name")));
+		}
 
 		/* check if the password contains both letters and non-letters */
 		pwd_has_letter = false;

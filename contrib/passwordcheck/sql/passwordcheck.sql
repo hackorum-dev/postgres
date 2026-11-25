@@ -16,6 +16,9 @@ ALTER USER regress_passwordcheck_user1 PASSWORD 'v_shrt';
 -- error: contains user name
 ALTER USER regress_passwordcheck_user1 PASSWORD 'xyzregress_passwordcheck_user1';
 
+-- error: contains user name (different case)
+ALTER USER regress_passwordcheck_user1 PASSWORD 'xyzREGRESS_PasswordCheck_User1';
+
 -- error: contains only letters
 ALTER USER regress_passwordcheck_user1 PASSWORD 'alessnicelongpassword';
 
