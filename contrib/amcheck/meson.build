@@ -50,6 +50,9 @@ tests += {
       't/004_verify_nbtree_unique.pl',
       't/005_pitr.pl',
       't/006_verify_gin.pl',
+      't/007_btree_merge_wal.pl',
+      't/008_btree_merge_scan.pl',
+      't/009_btree_merge_corrupt.pl',
     ],
   },
 }

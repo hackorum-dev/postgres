@@ -124,6 +124,12 @@ typedef struct BtreeCheckState
 	bool		previncompletesplit;
 
 	/*
+	 * Tombstone of the merge group the leaf level walk is in, or
+	 * InvalidBlockNumber.  Only used in readonly mode.
+	 */
+	BlockNumber mergegroup;
+
+	/*
 	 * Mutable state, for optional heapallindexed verification:
 	 */
 
@@ -237,6 +243,8 @@ static ItemId PageGetItemIdCareful(BtreeCheckState *state, BlockNumber block,
 static inline ItemPointer BTreeTupleGetHeapTIDCareful(BtreeCheckState *state,
 													  IndexTuple itup, bool nonpivot);
 static inline ItemPointer BTreeTupleGetPointsToTID(IndexTuple itup);
+static void bt_check_ma_page(BtreeCheckState *state);
+static void bt_check_m_page(BtreeCheckState *state);
 
 /*
  * bt_index_check(index regclass, heapallindexed boolean, checkunique boolean)
@@ -633,6 +641,7 @@ bt_check_level_from_leftmost(BtreeCheckState *state, BtreeLevel level)
 
 	state->prevrightlink = InvalidBlockNumber;
 	state->previncompletesplit = false;
+	state->mergegroup = InvalidBlockNumber;
 
 	do
 	{
@@ -646,7 +655,28 @@ bt_check_level_from_leftmost(BtreeCheckState *state, BtreeLevel level)
 
 		opaque = BTPageGetOpaque(state->target);
 
-		if (P_IGNORE(opaque))
+		/*
+		 * The merged pages of a group follow its tombstone, with no other
+		 * page between them.  This holds only while no VACUUM or merge runs.
+		 */
+		if (state->readonly && level.level == 0)
+		{
+			if (P_ISMERGEDAWAY(opaque))
+				state->mergegroup = current;
+			else if (P_ISMERGED(opaque))
+			{
+				if (BTMergedPageGetMABlkno(state->target) != state->mergegroup)
+					ereport(ERROR,
+							(errcode(ERRCODE_INDEX_CORRUPTED),
+							 errmsg("merged page %u is not in the merge group of block %u in index \"%s\"",
+									current, BTMergedPageGetMABlkno(state->target),
+									RelationGetRelationName(state->rel))));
+			}
+			else
+				state->mergegroup = InvalidBlockNumber;
+		}
+
+		if (P_IGNORE(opaque) || P_ISMERGEDAWAY(opaque))
 		{
 			/*
 			 * Since there cannot be a concurrent VACUUM operation in readonly
@@ -666,6 +696,16 @@ bt_check_level_from_leftmost(BtreeCheckState *state, BtreeLevel level)
 								RelationGetRelationName(state->rel)),
 						 errdetail_internal("Block=%u left block=%u left link from block=%u.",
 											current, leftcurrent, opaque->btpo_prev)));
+
+			if (P_ISMERGEDAWAY(opaque))
+			{
+				/* A merge leaves sibling links alone, so check them as usual */
+				if (opaque->btpo_prev != leftcurrent && leftcurrent != P_NONE)
+					bt_recheck_sibling_links(state, opaque->btpo_prev,
+											 leftcurrent);
+
+				bt_check_ma_page(state);
+			}
 
 			if (P_RIGHTMOST(opaque))
 				ereport(ERROR,
@@ -803,7 +843,7 @@ nextpage:
 		 * splits wasn't investigated yet.  Thankfully we only need low key
 		 * for readonly verification and concurrent splits won't happen.
 		 */
-		if (state->readonly && !P_RIGHTMOST(opaque))
+		if (state->readonly && !P_RIGHTMOST(opaque) && !P_ISMERGEDAWAY(opaque))
 		{
 			IndexTuple	itup;
 			ItemId		itemid;
@@ -1266,6 +1306,9 @@ bt_target_page_check(BtreeCheckState *state)
 		}
 	}
 
+	if (P_ISMERGED(topaque))
+		bt_check_m_page(state);
+
 	/*
 	 * Loop over page items, starting from first non-highkey item, not high
 	 * key (if any).  Most tests are not performed for the "negative infinity"
@@ -1725,7 +1768,7 @@ bt_target_page_check(BtreeCheckState *state)
 					/*
 					 * All !readonly checks now performed; just return
 					 */
-					if (P_IGNORE(topaque))
+					if (P_IGNORE(topaque) || P_ISMERGEDAWAY(topaque))
 						return;
 				}
 
@@ -1775,7 +1818,21 @@ bt_target_page_check(BtreeCheckState *state)
 												  rightblock_number);
 					topaque = BTPageGetOpaque(rightpage);
 
-					if (P_IGNORE(topaque))
+					/*
+					 * A tombstone stays until VACUUM cleans up its group, so
+					 * step over it to the page that holds the right key.
+					 */
+					while (P_ISMERGEDAWAY(topaque) && !P_RIGHTMOST(topaque))
+					{
+						CHECK_FOR_INTERRUPTS();
+						rightblock_number = topaque->btpo_next;
+						pfree(rightpage);
+						rightpage = palloc_btree_page(state,
+													  rightblock_number);
+						topaque = BTPageGetOpaque(rightpage);
+					}
+
+					if (P_IGNORE(topaque) || P_ISMERGEDAWAY(topaque))
 					{
 						pfree(rightpage);
 						break;
@@ -1897,7 +1954,7 @@ bt_right_page_check_scankey(BtreeCheckState *state, OffsetNumber *rightfirstoffs
 		rightpage = palloc_btree_page(state, targetnext);
 		opaque = BTPageGetOpaque(rightpage);
 
-		if (!P_IGNORE(opaque) || P_RIGHTMOST(opaque))
+		if ((!P_IGNORE(opaque) && !P_ISMERGEDAWAY(opaque)) || P_RIGHTMOST(opaque))
 			break;
 
 		/*
@@ -2245,7 +2302,8 @@ bt_child_highkey_check(BtreeCheckState *state,
 		 * If we visit page with high key, check that it is equal to the
 		 * target key next to corresponding downlink.
 		 */
-		if (!rightsplit && !P_RIGHTMOST(opaque) && !P_ISHALFDEAD(opaque))
+		if (!rightsplit && !P_RIGHTMOST(opaque) && !P_ISHALFDEAD(opaque) &&
+			!P_ISMERGEDAWAY(opaque))
 		{
 			BTPageOpaque topaque;
 			IndexTuple	highkey;
@@ -2484,6 +2542,22 @@ bt_child_check(BtreeCheckState *state, BTScanInsert targetkey,
 									state->targetblock, childblock,
 									LSN_FORMAT_ARGS(state->targetlsn))));
 
+	/*
+	 * A merged-away (MA) page is a tombstone that should have had its parent
+	 * downlink redirected to the merged destination page (R) during the merge
+	 * operation. In readonly mode, no concurrent merge can be in progress, so
+	 * finding a downlink to an MA page indicates corruption.
+	 */
+	if (P_ISMERGEDAWAY(copaque))
+		ereport(ERROR,
+				(errcode(ERRCODE_INDEX_CORRUPTED),
+				 errmsg("downlink to merged-away page found in index \"%s\"",
+						RelationGetRelationName(state->rel)),
+				 errdetail_internal("Parent block=%u child block=%u parent page lsn=%X/%08X.",
+									state->targetblock, childblock,
+									LSN_FORMAT_ARGS(state->targetlsn))));
+
+
 	for (offset = P_FIRSTDATAKEY(copaque);
 		 offset <= maxoffset;
 		 offset = OffsetNumberNext(offset))
@@ -2597,6 +2671,13 @@ bt_downlink_missing_check(BtreeCheckState *state, bool rightsplit,
 									LSN_FORMAT_ARGS(pagelsn))));
 		return;
 	}
+
+	/*
+	 * A merged-away leaf page intentionally lacks a parent downlink, as it
+	 * was unlinked during the custom bt_merge operation.
+	 */
+	if (P_ISMERGEDAWAY(opaque))
+		return;
 
 	/*
 	 * Page under check is probably the "top parent" of a multi-level page
@@ -3422,7 +3503,7 @@ palloc_btree_page(BtreeCheckState *state, BlockNumber blocknum)
 				 errmsg_internal("internal page block %u in index \"%s\" has garbage items",
 								 blocknum, RelationGetRelationName(state->rel))));
 
-	if (P_HAS_FULLXID(opaque) && !P_ISDELETED(opaque))
+	if (P_HAS_FULLXID(opaque) && (!P_ISDELETED(opaque) && !P_ISMERGEDAWAY(opaque)))
 		ereport(ERROR,
 				(errcode(ERRCODE_INDEX_CORRUPTED),
 				 errmsg_internal("full transaction id page flag appears in non-deleted block %u in index \"%s\"",
@@ -3577,4 +3658,150 @@ BTreeTupleGetPointsToTID(IndexTuple itup)
 
 	/* Pivot tuple returns TID with downlink block (heapkeyspace variant) */
 	return &itup->t_tid;
+}
+
+/*
+ * Check a tombstone (BTP_MERGED_AWAY) page: its flags, its right sibling and
+ * its safemergexid.
+ */
+static void
+bt_check_ma_page(BtreeCheckState *state)
+{
+	Page		page = state->target;
+	BlockNumber block = state->targetblock;
+	BTPageOpaque opaque = BTPageGetOpaque(page);
+	BTMergedAwayPageData *contents;
+	IndexTuple	boundary;
+	Size		lower;
+	int			nkeyatts = IndexRelationGetNumberOfKeyAttributes(state->rel);
+
+
+	if (!P_ISLEAF(opaque))
+		ereport(ERROR,
+				(errcode(ERRCODE_INDEX_CORRUPTED),
+				 errmsg("merged-away block %u is not a leaf page in index \"%s\"",
+						block, RelationGetRelationName(state->rel))));
+
+	if (P_ISROOT(opaque))
+		ereport(ERROR,
+				(errcode(ERRCODE_INDEX_CORRUPTED),
+				 errmsg("merged-away block %u cannot be root page in index \"%s\"",
+						block, RelationGetRelationName(state->rel))));
+
+
+	if (P_ISMERGED(opaque) || P_ISHALFDEAD(opaque) || P_ISDELETED(opaque))
+		ereport(ERROR,
+				(errcode(ERRCODE_INDEX_CORRUPTED),
+				 errmsg("merged-away block %u has conflicting page flags in index \"%s\"",
+						block, RelationGetRelationName(state->rel))));
+
+	if (opaque->btpo_next == P_NONE)
+		ereport(ERROR,
+				(errcode(ERRCODE_INDEX_CORRUPTED),
+				 errmsg("merged-away block %u lacks right sibling in index \"%s\"",
+						block, RelationGetRelationName(state->rel))));
+
+	if (!P_HAS_FULLXID(opaque) ||
+		!FullTransactionIdIsValid(BTMergedAwayGetSafeXid(page)))
+		ereport(ERROR,
+				(errcode(ERRCODE_INDEX_CORRUPTED),
+				 errmsg("merged-away block %u has invalid safemergexid in index \"%s\"",
+						block, RelationGetRelationName(state->rel))));
+
+	contents = (BTMergedAwayPageData *) PageGetContents(page);
+	boundary = BTMergedAwayGetBoundary(page);
+	lower = MAXALIGN(SizeOfPageHeaderData) +
+		MAXALIGN(sizeof(BTMergedAwayPageData)) +
+		MAXALIGN(contents->boundary_size);
+
+	if (((PageHeader) page)->pd_lower != lower)
+		ereport(ERROR,
+				(errcode(ERRCODE_INDEX_CORRUPTED),
+				 errmsg("merged-away block %u has invalid pd_lower in index \"%s\"",
+						block, RelationGetRelationName(state->rel))));
+
+	if (IndexTupleSize(boundary) != contents->boundary_size)
+		ereport(ERROR,
+				(errcode(ERRCODE_INDEX_CORRUPTED),
+				 errmsg("merged-away block %u has boundary key size that does not match boundary_size in index \"%s\"",
+						block, RelationGetRelationName(state->rel))));
+
+	if (!BTreeTupleIsPivot(boundary) ||
+		BTreeTupleGetNAtts(boundary, state->rel) != nkeyatts ||
+		BTreeTupleGetHeapTID(boundary) == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_INDEX_CORRUPTED),
+				 errmsg("merged-away block %u has invalid boundary key in index \"%s\"",
+						block, RelationGetRelationName(state->rel))));
+
+
+}
+
+/*
+ * Check a merged (BTP_MERGED) page: it must point to a valid tombstone.
+ */
+static void
+bt_check_m_page(BtreeCheckState *state)
+{
+	Page		page = state->target;
+	BlockNumber block = state->targetblock;
+	BTPageOpaque opaque = BTPageGetOpaque(page);
+
+	BlockNumber ma_blkno;
+	Page		ma_page;
+	BTPageOpaque ma_opaque;
+
+	if (!P_ISLEAF(opaque))
+		ereport(ERROR,
+				(errcode(ERRCODE_INDEX_CORRUPTED),
+				 errmsg("merged page %u is not a leaf page in index \"%s\"",
+						block, RelationGetRelationName(state->rel))));
+
+	if (P_ISMERGEDAWAY(opaque))
+		ereport(ERROR,
+				(errcode(ERRCODE_INDEX_CORRUPTED),
+				 errmsg("merged page %u cannot also be a merged-away tombstone in index \"%s\"",
+						block, RelationGetRelationName(state->rel))));
+
+	ma_blkno = BTMergedPageGetMABlkno(page);
+
+	if (!BlockNumberIsValid(ma_blkno) ||
+		ma_blkno == BTREE_METAPAGE ||
+		ma_blkno == block)
+		ereport(ERROR,
+				(errcode(ERRCODE_INDEX_CORRUPTED),
+				 errmsg("merged page %u has invalid MA block number %u in index \"%s\"",
+						block, ma_blkno, RelationGetRelationName(state->rel))));
+
+	ma_page = palloc_btree_page(state, ma_blkno);
+	ma_opaque = BTPageGetOpaque(ma_page);
+
+	if (P_ISMERGEDAWAY(ma_opaque))
+	{
+		pfree(ma_page);
+		return;
+	}
+	pfree(ma_page);
+
+	/*
+	 * Without readonly, VACUUM may have cleared this page's flag and removed
+	 * the tombstone after we read the page.  VACUUM clears the merged pages
+	 * of a group before its tombstone, so if this page has not changed since,
+	 * the tombstone was still one when we read it.
+	 */
+	if (!state->readonly)
+	{
+		Page		recheck = palloc_btree_page(state, block);
+		XLogRecPtr	recheck_lsn = PageGetLSN(recheck);
+
+		pfree(recheck);
+
+		if (recheck_lsn != state->targetlsn)
+			return;
+	}
+
+	ereport(ERROR,
+			(errcode(ERRCODE_INDEX_CORRUPTED),
+			 errmsg("merged page %u points to MA block %u which is not a merged-away tombstone in index \"%s\"",
+					block, ma_blkno, RelationGetRelationName(state->rel))));
 }

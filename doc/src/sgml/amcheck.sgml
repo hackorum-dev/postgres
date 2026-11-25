@@ -121,7 +121,10 @@ ORDER BY c.relpages DESC LIMIT 10;
       <literal>true</literal>.  When <parameter>checkunique</parameter>
       is <literal>true</literal> <function>bt_index_check</function> will
       check that no more than one among duplicate entries in unique
-      index is visible.  When a routine, lightweight test for
+      index is visible.  Both functions also check the pages that a leaf
+      page merge leaves behind (see <xref linkend="pageinspect"/>): a
+      tombstone must be well formed, and a merged page must name a
+      tombstone.  When a routine, lightweight test for
       corruption is required in a live production environment, using
       <function>bt_index_check</function> often provides the best
       trade-off between thoroughness of verification and limiting the
@@ -159,7 +162,9 @@ ORDER BY c.relpages DESC LIMIT 10;
       unlike <function>bt_index_check</function>,
       <function>bt_index_parent_check</function> also checks
       invariants that span parent/child relationships, including checking
-      that there are no missing downlinks in the index structure.
+      that there are no missing downlinks in the index structure.  It also
+      checks that the merged pages of a merge group follow their tombstone
+      with no other page in between, and that all of them name it.
       <function>bt_index_parent_check</function> follows the general
       convention of raising an error if it finds a logical
       inconsistency or other problem.
