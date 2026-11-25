@@ -1520,9 +1520,9 @@ typedef struct ForeignKeyOptInfo
  * each dimension must be joined to the fact via an equality condition that
  * matches a foreign key on the fact referencing the dimension. The columns
  * on the fact must all be NOT NULL, and the dimension must have no other
- * join clauses, no local restriction quals, no participation in special
- * joins or lateral references, etc. (see generate_starjoin_clusters for
- * the full list of preconditions).
+ * join clauses, no local restriction quals, no join order restrictions from
+ * special joins, no lateral references, etc. (see generate_starjoin_clusters
+ * for the full list of preconditions).
  *
  * When all of these conditions hold, every join ordering that has the fact
  * as the driver produces the same row counts.  The costs may still differ

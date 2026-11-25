@@ -262,12 +262,12 @@ RESET join_collapse_limit;
 --
 -- Outer joins and semijoins
 --
--- Dimensions must not be part of any SpecialJoinInfo, but the check considers
--- the syntactic relids (syn_lefthand/syn_righthand), not only the minimal
--- ones.  So a LEFT JOIN or a semijoin (EXISTS) placed after the star joins
--- disables the optimization, even if it references only the fact.  Writing
--- the LEFT JOIN first works.  Each query has 8 rels (a single subproblem), and
--- with the optimization the join search needs much less memory.
+-- Dimensions must not be constrained by any SpecialJoinInfo, but only the
+-- minimal relids (min_lefthand/min_righthand) matter.  So a LEFT JOIN or a
+-- semijoin (EXISTS) referencing only the fact does not disable the
+-- optimization, even if written after the star joins, with the dimensions in
+-- its syntactic LHS.  Each query has 8 rels (a single subproblem), and with
+-- the optimization the join search needs much less memory.
 --
 SELECT $$
 SELECT count(a.v) FROM starjoin_other_f AS f
@@ -306,20 +306,20 @@ SELECT starjoin_other_memory(:'q_left_join_first', true)
  t
 (1 row)
 
--- XXX no pruning with the LEFT JOIN at the end
+-- pruning with the LEFT JOIN at the end
 SELECT starjoin_other_memory(:'q_left_join_last', true)
        < starjoin_other_memory(:'q_left_join_last', false) * 0.5 AS left_join_last_pruned;
  left_join_last_pruned 
 -----------------------
- f
+ t
 (1 row)
 
--- XXX no pruning with a semijoin
+-- pruning with a semijoin
 SELECT starjoin_other_memory(:'q_exists', true)
        < starjoin_other_memory(:'q_exists', false) * 0.5 AS exists_pruned;
  exists_pruned 
 ---------------
- f
+ t
 (1 row)
 
 --

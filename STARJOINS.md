@@ -174,7 +174,13 @@ The fact has to be a base relation too.
    So the dimension can be joined only to the fact (or to joinrels
    including it), which makes the dimensions interchangeable.
 
-5. The dimension does not participate in any `SpecialJoinInfo`.
+5. The dimension is not in the minimal LHS or RHS of any
+   `SpecialJoinInfo` (it may be in the syntactic LHS, e.g. of a LEFT
+   JOIN written after it).
+
+   Only the minimal sets restrict the join order.  A dimension in the
+   syntactic RHS of a special join is always in a minimal set of some
+   special join, so it's still rejected.
 
 6. The dimension has no lateral references in or out.
 
@@ -239,12 +245,6 @@ the plans, the planning cost, or the regression tests.
   (see starjoin_eager, and the eager_first_partial_agg_on check in
   starjoin_other).  A possible direction, not tried yet, is an explicit
   canonical order putting the dimensions with grouping columns last.
-- A dimension in any relid set of a `SpecialJoinInfo` is rejected,
-  including the syntactic ones (`syn_lefthand` and `syn_righthand`).  So
-  a LEFT JOIN or a semijoin (EXISTS) placed after the star joins
-  disables the optimization, even if it references only the fact, while
-  writing the LEFT JOIN first works (the left_join_last_pruned and
-  exists_pruned checks in starjoin_other).
 - The conditions check the join clauses of a dimension to other rels,
   but not additional join clauses to the fact (not matching the foreign
   key).  Such a clause makes the join selective, so the dimension should

@@ -4130,7 +4130,8 @@ check_memoizable(RestrictInfo *restrictinfo)
  *	   the fact (checked via have_relevant_joinclause, which also covers
  *	   equivalence-class joins).
  *
- *	5. The dimension does not participate in any SpecialJoinInfo.
+ *	5. The dimension is not in the minimal LHS or RHS of any SpecialJoinInfo
+ *	   (it may be in the syntactic LHS, e.g. of a LEFT JOIN written after it).
  *
  *	6. The dimension has no lateral references in or out.
  *
@@ -4292,8 +4293,13 @@ generate_starjoin_clusters(PlannerInfo *root)
 				continue;
 
 			/*
-			 * Should not be involved in any SpecialJoinInfo (for now the
-			 * starjoin is done only for inner joins).
+			 * Should not be constrained by any SpecialJoinInfo (for now the
+			 * starjoin is done only for inner joins).  Only the minimal sets
+			 * restrict the join order, so a dimension may be in the syntactic
+			 * LHS (e.g. of a LEFT JOIN written after the star joins).  A
+			 * dimension in the syntactic RHS of an outer join or semijoin is
+			 * always in one of the minimal sets of the lowest such join, or
+			 * of a join below it.
 			 *
 			 * XXX We could relax this, and allow left joins, as long as the
 			 * target has a unique constraint.
@@ -4303,9 +4309,7 @@ generate_starjoin_clusters(PlannerInfo *root)
 				SpecialJoinInfo *sjinfo = (SpecialJoinInfo *) lfirst(lc3);
 
 				if (bms_is_member(d, sjinfo->min_lefthand) ||
-					bms_is_member(d, sjinfo->min_righthand) ||
-					bms_is_member(d, sjinfo->syn_lefthand) ||
-					bms_is_member(d, sjinfo->syn_righthand))
+					bms_is_member(d, sjinfo->min_righthand))
 				{
 					ok = false;
 					break;
