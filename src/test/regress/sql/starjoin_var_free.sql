@@ -1,23 +1,16 @@
 --
 -- Checks for star queries with Var-free quals and enable_starjoin_ordering
 --
--- A Var-free qual that is not volatile, e.g. "now() > '2000-01-01'", is a
--- pseudoconstant, evaluated only once (in a gating Result node).  But it gets
--- the relids of the whole join domain, so it's in the joininfo list of every
--- rel, and have_relevant_joinclause() finds a join clause between any two
--- rels.  The starjoin clusters ignore such quals, as otherwise every
--- dimension would fail the check that it has no join clauses to rels other
--- than the fact (see generate_starjoin_clusters), and the query would have no
--- starjoin clusters at all.
+-- A qual marked pseudoconstant is evaluated as a one-time qual in a gating
+-- Result node.  Although its required_relids can cover the whole join domain,
+-- it is not a join condition linking those relations.  Ignore it for both
+-- starjoin eligibility and join enumeration, without changing where it is
+-- evaluated.  Such quals must neither disable clusters nor cause excessive
+-- planning memory use.
 --
--- The qual still makes the dimensions joinable to each other, so the
--- standard join search would consider all subsets of the dimensions, if
--- joinrels with a dimension but without the fact were allowed (see
--- starjoin_order_invalid).  The planning would then use much more memory.
---
--- Each check is a single boolean, phrased as the desired behavior.  EXPLAIN
--- does not show whether a query was planned by GEQO, so the checks detect
--- GEQO by making it fail (see starjoin_var_free_geqo_used).
+-- EXPLAIN does not show whether a query was planned by GEQO, so the search
+-- selection checks detect GEQO by making it fail (see
+-- starjoin_var_free_geqo_used).
 --
 
 -- is the query planned by GEQO? (with enable_starjoin_ordering
@@ -45,6 +38,19 @@ DECLARE
 BEGIN
   EXECUTE 'EXPLAIN (FORMAT JSON, MEMORY, COSTS OFF) ' || query INTO plan;
   RETURN (plan->0->'Planning'->>'Memory Used')::bigint;
+END;
+$$;
+
+-- Execute with both search strategies for the eleven-dimension star.
+CREATE FUNCTION starjoin_var_free_check(query text,
+                                        OUT starjoin_on text,
+                                        OUT starjoin_off text)
+LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM set_config('enable_starjoin_ordering', 'on', true);
+  EXECUTE format('SELECT row(q.*)::text FROM (%s) q', query) INTO starjoin_on;
+  PERFORM set_config('enable_starjoin_ordering', 'off', true);
+  EXECUTE format('SELECT row(q.*)::text FROM (%s) q', query) INTO starjoin_off;
 END;
 $$;
 
@@ -82,8 +88,8 @@ ANALYZE starjoin_var_free_f;
 --
 -- With join_collapse_limit = 20 the star with 11 dimensions (12 rels) is a
 -- single subproblem, reaching the default geqo_threshold = 12.  But the
--- dimensions count as only 4 rels, so the star is planned by the standard
--- join search, even with a Var-free qual.
+-- dimensions count as only 4 rels, so even with a pseudoconstant qual the
+-- star is planned by the standard join search.
 --
 SET join_collapse_limit = 20;
 
@@ -107,16 +113,16 @@ SELECT starjoin_var_free_geqo_used(:'q_star', false) AS star_geqo_off;
 -- the dimensions count as fewer rels toward geqo_threshold
 SELECT NOT starjoin_var_free_geqo_used(:'q_star', true) AS star_standard_search;
 
--- a pseudoconstant qual does not disable the starjoin clusters
+-- A stable Var-free WHERE qual does not disable the starjoin clusters.
 SELECT NOT starjoin_var_free_geqo_used(:'q_star' || $$WHERE now() > '2000-01-01'$$, true)
        AS where_now_standard_search;
 
--- the same for an uncorrelated sub-SELECT (an InitPlan)
+-- The same applies to an uncorrelated sub-SELECT (an InitPlan).
 SELECT NOT starjoin_var_free_geqo_used(:'q_star' ||
          'WHERE EXISTS (SELECT 1 FROM starjoin_var_free_d1 WHERE id = 0)', true)
        AS where_exists_standard_search;
 
--- the same for a qual in the ON clause of one dimension's join
+-- A pseudoconstant in an inner-join ON clause is also a gating qual.
 SELECT NOT starjoin_var_free_geqo_used(replace(:'q_star', 'f.d11 = d11.id',
          $$f.d11 = d11.id AND now() > '2000-01-01'$$), true)
        AS join_on_standard_search;
@@ -127,10 +133,42 @@ SELECT starjoin_var_free_planning_memory(:'q_star' || $$WHERE now() > '2000-01-0
        < 2 * starjoin_var_free_planning_memory(:'q_star')
        AS where_now_planning_memory;
 
+-- A volatile Var-free qual is not pseudoconstant and still excludes dimensions.
+SELECT starjoin_var_free_geqo_used(:'q_star' || 'WHERE random() < 0.5', true)
+       AS where_volatile_geqo;
+
+-- Execution-time TRUE, FALSE and NULL gates must retain their filtering effect,
+-- with standard search (starjoin on) and GEQO (starjoin off).
+SELECT * FROM starjoin_var_free_check(:'q_star' ||
+         $$WHERE now() > '-infinity'::timestamptz$$);
+SELECT * FROM starjoin_var_free_check(:'q_star' ||
+         'WHERE EXISTS (SELECT 1 FROM starjoin_var_free_d1 WHERE id = 0)');
+SELECT * FROM starjoin_var_free_check(:'q_star' ||
+         'WHERE (SELECT bool_or(id > 0) FROM starjoin_var_free_d1 WHERE id = 0)');
+
+-- A Var-free outer-join ON qual must not become a gate above the outer join.
+SELECT * FROM starjoin_var_free_check($$
+SELECT count(*), count(d1.id)
+  FROM starjoin_var_free_f AS f
+  LEFT JOIN (starjoin_var_free_d1 AS d1 CROSS JOIN starjoin_var_free_d2 AS d2)
+    ON f.d1 = d1.id AND f.d2 = d2.id AND now() < '-infinity'::timestamptz
+$$);
+
+-- A fact-free subproblem still needs the Cartesian-product fallback.
+SET join_collapse_limit = 1;
+SELECT * FROM starjoin_var_free_check($$
+SELECT count(*)
+  FROM starjoin_var_free_f AS f
+  JOIN (starjoin_var_free_d1 AS d1 CROSS JOIN starjoin_var_free_d2 AS d2)
+    ON f.d1 = d1.id AND f.d2 = d2.id
+ WHERE now() > '-infinity'::timestamptz
+$$);
+
 RESET join_collapse_limit;
 
 DROP FUNCTION starjoin_var_free_geqo_used(text, bool);
 DROP FUNCTION starjoin_var_free_planning_memory(text);
+DROP FUNCTION starjoin_var_free_check(text);
 
 DROP TABLE starjoin_var_free_f, starjoin_var_free_d1, starjoin_var_free_d2,
   starjoin_var_free_d3, starjoin_var_free_d4, starjoin_var_free_d5,

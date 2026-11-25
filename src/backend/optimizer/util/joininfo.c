@@ -27,6 +27,9 @@
  *		Detect whether there is a joinclause that involves
  *		the two given relations.
  *
+ * Pseudoconstant quals are not join clauses for this purpose: their
+ * required_relids control placement, not join connectivity.
+ *
  * Note: the joinclause does not have to be evaluable with only these two
  * relations.  This is intentional.  For example consider
  *		SELECT * FROM a, b, c WHERE a.x = (b.y + c.z)
@@ -62,6 +65,9 @@ have_relevant_joinclause(PlannerInfo *root,
 	foreach(l, joininfo)
 	{
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(l);
+
+		if (rinfo->pseudoconstant)
+			continue;
 
 		if (bms_overlap(other_relids, rinfo->required_relids))
 		{

@@ -2319,11 +2319,9 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 		 * without the fact are cartesian products, as the dimensions have
 		 * join clauses only to the fact (and no join order restrictions).
 		 * join_search_one_level builds them when the other rel has no join
-		 * clauses, in the last-ditch pass, or because of a pseudoconstant
-		 * qual (which is in the joininfo list of every rel, see
-		 * have_relevant_starjoin_clause).  They may get joined further, and
-		 * so the search might consider many subsets of the dimensions without
-		 * the fact (all of them, with a pseudoconstant qual).
+		 * clauses, or in the last-ditch pass.  They may get joined further,
+		 * and so the search might consider many subsets of the dimensions
+		 * without the fact.
 		 *
 		 * Most of them are not needed, as the dimensions can be joined to the
 		 * joinrels with the fact (in the canonical order).  But a rel without
@@ -2339,13 +2337,12 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 		 * fact, which is consistent with how the dimensions count toward
 		 * geqo_threshold (see starjoin_geqo_levels).
 		 *
-		 * Outside the last-ditch pass, and without pseudoconstant quals,
-		 * join_search_one_level joins a dimension to a rel without the fact
-		 * only if that rel has no join clauses, and the joinrel then gets
-		 * joined only to rels with the fact (by the join clauses of the
-		 * dimension).  So it builds joinrels with several dimensions but
-		 * without the fact only as a result of the last-ditch pass, or of
-		 * pseudoconstant quals, and rejecting them maintains the d+1 bound
+		 * Outside the last-ditch pass, join_search_one_level joins a
+		 * dimension to a rel without the fact only if that rel has no join
+		 * clauses, and the joinrel then gets joined only to rels with the
+		 * fact (by the join clauses of the dimension).  So it builds joinrels
+		 * with several dimensions but without the fact only as a result of
+		 * the last-ditch pass, and rejecting them maintains the d+1 bound
 		 * even then.
 		 */
 		if (!bms_is_member(c->fact_relid, join_relids))

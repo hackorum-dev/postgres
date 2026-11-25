@@ -46,7 +46,9 @@ The optimization consists of these parts:
 - The `enable_starjoin_ordering` GUC (on by default), documented with
   the other planner method configuration parameters.  With the GUC
   disabled, no clusters are built, so the join search is not restricted.
-  The dimensions then count fully toward `geqo_threshold`.
+  The dimensions then count fully toward `geqo_threshold`.  Ignoring
+  pseudoconstant quals for join connectivity does not depend on the GUC
+  (see below).
 - `generate_starjoin_clusters` determines the starjoin clusters of the
   query.  `query_planner` calls it after matching the foreign keys to
   the join clauses, once the lateral, placeholder and special join
@@ -60,8 +62,6 @@ The optimization consists of these parts:
 - `starjoin_fk_comparisons_match`, `starjoin_fk_operand_matches` and
   `starjoin_equality_implies` check the operators, input coercions and
   collations of the join clauses.
-- `have_relevant_starjoin_clause` checks for join clauses other than
-  pseudoconstant quals.
 - `starjoin_order_invalid`, called by `make_join_rel`, rejects joins
   violating the canonical order, just like various other join
   restrictions.
@@ -272,16 +272,33 @@ evaluated only once, in a gating Result node.  So they are ignored when
 checking the join clauses of the dimensions (conditions 4 and 8).
 Otherwise every dimension would fail condition 4, and a single such qual
 would disable all starjoin clusters in the query, including their effect
-on `geqo_threshold`.  The quals still make the dimensions joinable to
-each other, and to all the other rels.  That's fine thanks to the rule
-rejecting joinrels with a dimension but without the fact, except for a
-single dimension joined to rels without join clauses (ignoring
-pseudoconstant quals).  Without that rule, the standard join search
-would consider all subsets of the dimensions, and planning a star with
-11 dimensions in starjoin_var_free would use about 32MB of memory
-instead of about 0.2MB.  So the quals neither make the search join the
-dimensions to rels with join clauses, nor prevent it from joining them
-to rels without join clauses.
+on `geqo_threshold`.
+
+`have_relevant_joinclause` ignores RestrictInfos marked pseudoconstant.
+The quals remain in the regular RestrictInfo lists, so that
+`required_relids` can determine where their gating Result nodes belong.
+For flat inner joins, that set can cover the entire join domain, even
+though the qual contains no Vars of the current query level.  Otherwise
+`have_relevant_joinclause` would mistake the placement relids for join
+connectivity, and unrelated rels would appear connected.  The cluster
+detection uses the same function for condition 4, while
+`has_extra_starjoin_quals` ignores the quals for condition 8.  The quals
+are not removed from their lists, and `required_relids` is not changed,
+so that the existing clause propagation and plan creation still place
+and evaluate the gates at the appropriate semantic level.  The
+pseudoconstant flag is used, not just an empty Var set, so volatile
+Var-free quals and non-gating outer-join ON quals retain their
+treatment.  This is deliberately a generic planner change, not
+conditional on the GUC.  It affects clause-based join enumeration in the
+standard join search and GEQO, including queries without starjoin
+clusters, and with the GUC disabled.  In the 1500 random star queries,
+it makes 384 of the 603 plans with a pseudoconstant qual more expensive
+with the GUC disabled (by up to 16%), and 1 cheaper (by 38%).  In the
+three other corpora, it makes 45 plans more expensive with the GUC
+disabled (by up to 25%, or 42% for a query planned by GEQO), and 11
+cheaper (by up to 1.9%).  The plans that get more expensive relied on
+the qual making all the rels joinable to each other.  The plans of
+queries without a pseudoconstant qual do not change.
 
 ## Conditions for a dimension
 
@@ -328,7 +345,7 @@ The fact has to be a base relation too.
 
 4. The dimension has no relevant join clauses to any rel other than the
    fact (including equivalence class joins), ignoring pseudoconstant
-   quals (see `have_relevant_starjoin_clause`).
+   quals (see `have_relevant_joinclause`).
 
    So the dimension can be joined only to the fact (or to joinrels
    including it), which makes the dimensions interchangeable.
@@ -557,6 +574,12 @@ the plans, the planning cost, or the regression tests.
   relabel changing the actual type seen by a polymorphic operator.
 - Volatile Var-free quals are not pseudoconstant, so they still disable
   the clusters, which is conservative.
+- Ignoring pseudoconstant quals in `have_relevant_joinclause` changes
+  the plans also with the GUC disabled.  It makes 384 of the 603 plans
+  with a pseudoconstant qual in the 1500 random star queries more
+  expensive (by up to 16%), and 45 plans in the three other corpora (by
+  up to 25%, or 42% for a query planned by GEQO), as they relied on the
+  qual making all the rels joinable to each other.
 
 ## Regression tests
 
@@ -666,4 +689,8 @@ the plans, the planning cost, or the regression tests.
   as an uncorrelated EXISTS, and in the ON clause of a single
   dimension's join), and whether they're planned by the standard join
   search.  It also checks that such a qual does not double the planning
-  memory of the star with 11 dimensions.
+  memory of the star with 11 dimensions.  It has a volatile negative
+  control, and checks the execution-time TRUE, FALSE and NULL gates with
+  the GUC enabled and disabled, in the standard join search and in GEQO,
+  the outer-join ON semantics, and the cartesian fallback needed by a
+  subproblem without the fact.
