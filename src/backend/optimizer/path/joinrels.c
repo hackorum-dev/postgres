@@ -2181,7 +2181,8 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
  * decomposition of any joinrel containing the fact - the cluster dimensions
  * in the joinrel must form a prefix of the order determined when collecting
  * the starjoin clusters.  Joinrels containing a cluster dimension but not
- * the fact are not allowed at all.
+ * the fact may contain only a single dimension, joined to rels without join
+ * clauses.
  *
  * Clusters are computed for the whole query, but the join search may be split
  * into multiple subproblems (join_collapse_limit, from_collapse_limit, FULL
@@ -2271,18 +2272,61 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 
 		/*
 		 * With the fact in this subproblem, joinrels with a dimension but
-		 * without the fact are not needed, as the dimensions can be joined to
-		 * the joinrels with the fact (in the canonical order).  The
-		 * dimensions have join clauses only to the fact (and no join order
-		 * restrictions), so such joinrels are cartesian products, built only
-		 * when the other rel has no join clauses, or by the last-ditch pass
-		 * of join_search_one_level.  But they may get joined further, and so
-		 * the search might consider many subsets of the dimensions without
-		 * the fact.
+		 * without the fact are cartesian products, as the dimensions have
+		 * join clauses only to the fact (and no join order restrictions).
+		 * join_search_one_level builds them when the other rel has no join
+		 * clauses, or in the last-ditch pass.  They may get joined further,
+		 * and so the search might consider many subsets of the dimensions
+		 * without the fact.
+		 *
+		 * Most of them are not needed, as the dimensions can be joined to the
+		 * joinrels with the fact (in the canonical order).  But a rel without
+		 * join clauses can only be joined by a cartesian product, and joining
+		 * it to the fact multiplies the rows for all the following joins,
+		 * while joining it to a dimension (e.g. in the inner of the hash join
+		 * of the last dimension to the fact) may be much cheaper.  So we
+		 * allow joinrels with a single dimension, joined to a rel without
+		 * join clauses (ignoring pseudoconstant quals), as in the clauseless
+		 * joins of join_search_one_level.  For each set of the other rels,
+		 * the search then builds at most d+1 joinrels without the fact (with
+		 * no dimension, or with one of the d dimensions), just like with the
+		 * fact.
+		 *
+		 * Outside the last-ditch pass, join_search_one_level joins a
+		 * dimension to a rel without the fact only if that rel has no join
+		 * clauses, and the joinrel then gets joined only to rels with the
+		 * fact (by the join clauses of the dimension).  So it builds joinrels
+		 * with several dimensions but without the fact only as a result of
+		 * the last-ditch pass, and rejecting them maintains the d+1 bound
+		 * even then.
 		 */
 		if (!bms_is_member(c->fact_relid, join_relids))
 		{
-			violates = bms_overlap(cluster_dims, join_relids);
+			cluster_dims = bms_int_members(cluster_dims, join_relids);
+
+			if (bms_membership(cluster_dims) == BMS_MULTIPLE)
+				violates = true;
+			else if (cluster_dims != NULL)
+			{
+				RelOptInfo *other;
+				ListCell   *lc2;
+
+				/* the input without the dimension */
+				other = bms_overlap(rel1->relids, cluster_dims) ? rel2 : rel1;
+
+				violates = other->has_eclass_joins;
+				foreach(lc2, other->joininfo)
+				{
+					RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc2);
+
+					if (!rinfo->pseudoconstant)
+					{
+						violates = true;
+						break;
+					}
+				}
+			}
+
 			bms_free(cluster_dims);
 			if (violates)
 				break;

@@ -5,6 +5,15 @@ by the `enable_starjoin_ordering` GUC: the overall design, the
 conditions for a relation to be treated as a dimension, and the open
 questions and issues.
 
+The plan costs, planning memory and timings quoted below were measured
+when the corresponding rule was introduced or the issue was found.  The
+query corpora are 1500 random star queries, each with some rels without
+join clauses (603 of them with a pseudoconstant qual), and three other
+corpora of 600 random queries, mixing stars with outer joins, subqueries
+and other rels.  One of the three was generated to make the last-ditch
+pass of `join_search_one_level` join the dimensions to rels without the
+fact.
+
 ## Overall design
 
 ### Motivation
@@ -98,9 +107,62 @@ the dimensions have join clauses only to the fact (and no join order
 restrictions).  `join_search_one_level` builds them when the other rel
 has no join clauses, or in the last-ditch pass, when no other join is
 possible at that level.  They may get joined further, and so the search
-might consider many subsets of the dimensions without the fact.  So such
-joinrels are rejected.  They are not needed, as the dimensions can
-always be joined to the joinrels with the fact, in the canonical order.
+might consider many subsets of the dimensions without the fact.  Most of
+them are not needed, as the dimensions can be joined to the joinrels
+with the fact, in the canonical order.  But joining the other rel to the
+fact by a cartesian product multiplies the rows for all the following
+joins, while joining it to a dimension (e.g. in the inner of the hash
+join of the last dimension to the fact) may be much cheaper.  So a
+joinrel with a dimension but without the fact is allowed if it has a
+single dimension, and the input without the dimension has no join
+clauses, i.e. no equivalence class joins and no joininfo clauses other
+than pseudoconstant ones.  This is similar to the test
+`join_search_one_level` uses to decide which rels to join by clauseless
+joins.  A pseudoconstant qual is in the joininfo list of every rel in
+its join domain, but it's not a join clause (it's evaluated just once,
+in a gating Result node), so it's ignored.
+
+For example, with a fact table xf (100k rows), dimensions xd1, xd2 and
+xd3 (10, 100 and 1000 rows), and tables xo1 and xo2 (1 and 2 rows)
+without join clauses:
+
+    SELECT ... FROM xo1, xd3, xf, xd2, xo2, xd1
+     WHERE xf.xd2 = xd2.id AND xf.xd3 = xd3.id AND xf.xd1 = xd1.id
+
+With the GUC disabled, the plan hashes the product of xd1, xo1 and xo2
+(20 rows) for the last join, so the hash joins process just the 100k
+fact rows (cost 9406.66).  If all joinrels with a dimension but without
+the fact were rejected, the product of xo1 and xo2 could only be joined
+to joinrels with xf, and the cheapest such plan would join it to xf
+first, so all three hash joins would process 200k rows (cost 10691.02,
+14% more).
+
+Compared to rejecting all these joinrels, allowing them made 400 of the
+1500 random star queries cheaper (they were up to 30% more expensive),
+and none more expensive.  In the three other corpora, it made 188, 231
+and 0 plans cheaper (they were up to 66% and 111% more expensive), and
+1, 9 and 0 plans more expensive, by less than 1%, but those 10 plans
+cost the same as with the GUC disabled.  The numbers of queries with
+plans more expensive than with the GUC disabled (by more than 0.1%)
+dropped from 493 to 285, from 199 to 32 and from 235 to 29 (there were
+none in the third corpus).  No query failed to plan or tripped an
+assertion.  Star queries with a pseudoconstant qual were not affected,
+as they have no starjoin clusters (see the open issues).  The search
+considers joining the dimensions to the rels without join clauses, which
+increased the planning memory with the GUC enabled by 13% for the 897
+star queries without a pseudoconstant qual, and by 2.7%, 4.3% and 0% for
+the three other corpora (by up to 48% for a single query).  That's still
+only 20%, 80%, 34% and 74% of the planning memory with the GUC disabled.
+
+Without the condition on the join clauses (allowing a single dimension
+joined to any rel), or without any restriction at all, the plan costs
+are the same in all the queries, but the search builds more joinrels.
+In 25 queries (23 of them generated for the last-ditch pass), the
+planning memory increased by up to 17% (20% without any restriction).
+
+For each set of the other rels, the search builds at most d+1 joinrels
+without the fact (with no dimension, or with one of the d dimensions),
+just like with the fact.
 
 ### Join search subproblems
 
@@ -297,6 +359,12 @@ the plans, the planning cost, or the regression tests.
   the clusters would be enough to fix this.  The quals would still make
   the dimensions joinable to each other without the fact, but such
   joinrels are restricted (see `starjoin_order_invalid`).
+- A dimension gets joined to the fact at its position in the canonical
+  order, so if a rel without join clauses is joined to a dimension
+  that's not the last one, the joins of the following dimensions process
+  the multiplied rows.  The clauseless_first_cost_higher check in
+  starjoin_other shows this, for a star with two scans of a 2-row table
+  without join clauses.
 
 ## Regression tests
 
@@ -330,9 +398,10 @@ the plans, the planning cost, or the regression tests.
   the GUC enabled and disabled.  The cases include extra join clauses
   between the fact and a dimension, OR clauses, dimensions of very
   different widths, outer joins and semijoins, stars split into
-  subproblems, GEQO, and eager aggregation.  Each check is a single
-  boolean, so that the output does not depend on platform-specific costs
-  or memory usage, and some checks show the known limitations.
+  subproblems, GEQO, eager aggregation, and rels without join clauses.
+  Each check is a single boolean, so that the output does not depend on
+  platform-specific costs or memory usage, and some checks show the
+  known limitations.
 - starjoin_sample checks that the GUC does not change the plans starting
   with a sample of a dimension estimated to have a single row (which the
   canonical order would join last), and that the join search for a

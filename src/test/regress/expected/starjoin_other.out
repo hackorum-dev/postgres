@@ -135,6 +135,9 @@ ALTER TABLE starjoin_other_f
   ADD FOREIGN KEY (d8) REFERENCES starjoin_other_d8,
   ADD FOREIGN KEY (d9) REFERENCES starjoin_other_d9,
   ADD FOREIGN KEY (d10) REFERENCES starjoin_other_d10;
+-- small table, joined to a star without join clauses
+CREATE TABLE starjoin_other_s (id int) WITH (autovacuum_enabled = off);
+INSERT INTO starjoin_other_s VALUES (1), (2);
 VACUUM ANALYZE starjoin_other_p1, starjoin_other_p2, starjoin_other_p3,
   starjoin_other_pf, starjoin_other_wa, starjoin_other_wb, starjoin_other_wc,
   starjoin_other_wf, starjoin_other_h1, starjoin_other_h2, starjoin_other_h3,
@@ -143,7 +146,7 @@ VACUUM ANALYZE starjoin_other_p1, starjoin_other_p2, starjoin_other_p3,
   starjoin_other_d7, starjoin_other_d8, starjoin_other_d9, starjoin_other_d10,
   starjoin_other_c1, starjoin_other_c2, starjoin_other_c3, starjoin_other_c4,
   starjoin_other_c5, starjoin_other_c6, starjoin_other_c7, starjoin_other_c8,
-  starjoin_other_f;
+  starjoin_other_f, starjoin_other_s;
 --
 -- Extra (non-FK) join clause between the fact and a dimension
 --
@@ -537,6 +540,48 @@ SELECT starjoin_other_plan(:'q_eager_last', true)
  t
 (1 row)
 
+--
+-- Rels without join clauses
+--
+-- A rel without join clauses can only be joined by a cartesian product.
+-- Joining it to the fact multiplies the rows for all the following joins,
+-- while joining it to a dimension (in the inner of the hash join of the
+-- dimension to the fact) may be much cheaper.  So a dimension may be joined
+-- to such rels before the fact.  Here two scans of a table with 2 rows (s1
+-- and s2) have no join clauses, and the best plan joins their product to h1,
+-- the last dimension in the canonical order.
+--
+SELECT $$
+SELECT count(*) FROM starjoin_other_hf AS hf
+  JOIN starjoin_other_h2 AS h2 ON hf.d2 = h2.id
+  JOIN starjoin_other_h3 AS h3 ON hf.d3 = h3.id
+  JOIN starjoin_other_h1 AS h1 ON hf.d1 = h1.id,
+  starjoin_other_s AS s1, starjoin_other_s AS s2
+$$ AS q_clauseless \gset
+SELECT starjoin_other_cost(:'q_clauseless', true)
+       <= starjoin_other_cost(:'q_clauseless', false) * 1.01 AS clauseless_cost_ok;
+ clauseless_cost_ok 
+--------------------
+ t
+(1 row)
+
+-- The dimension still gets joined to the fact in the canonical order.  With
+-- h1 as the first dimension, the joins to h2 and h3 process the multiplied
+-- rows, so the plan with the GUC enabled is more expensive.
+SELECT $$
+SELECT count(*) FROM starjoin_other_hf AS hf
+  JOIN starjoin_other_h1 AS h1 ON hf.d1 = h1.id
+  JOIN starjoin_other_h2 AS h2 ON hf.d2 = h2.id
+  JOIN starjoin_other_h3 AS h3 ON hf.d3 = h3.id,
+  starjoin_other_s AS s1, starjoin_other_s AS s2
+$$ AS q_clauseless_first \gset
+SELECT starjoin_other_cost(:'q_clauseless_first', true)
+       > starjoin_other_cost(:'q_clauseless_first', false) * 1.01 AS clauseless_first_cost_higher;
+ clauseless_first_cost_higher 
+------------------------------
+ t
+(1 row)
+
 RESET max_parallel_workers_per_gather;
 DROP FUNCTION starjoin_other_cost(text, bool);
 DROP FUNCTION starjoin_other_memory(text, bool);
@@ -549,4 +594,4 @@ DROP TABLE starjoin_other_pf, starjoin_other_p1, starjoin_other_p2,
   starjoin_other_d6, starjoin_other_d7, starjoin_other_d8, starjoin_other_d9,
   starjoin_other_d10, starjoin_other_c1, starjoin_other_c2, starjoin_other_c3,
   starjoin_other_c4, starjoin_other_c5, starjoin_other_c6, starjoin_other_c7,
-  starjoin_other_c8;
+  starjoin_other_c8, starjoin_other_s;
