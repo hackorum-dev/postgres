@@ -92,16 +92,15 @@ d), instead of 2^d.
 
 ### Joinrels without the fact
 
-Joins without the fact are not restricted, even in subproblems including
-the fact.  The dimensions have join clauses only to the fact (and no
-join order restrictions), so `join_search_one_level` joins them to rels
-without the fact only by cartesian products, e.g. in the last-ditch
-pass, when no other join is possible at that level.  Such joins with
-dimensions on both sides are rare, but possible: if the other rels have
-join clauses usable only at a later level, two such joinrels (each with
-a different dimension) may get joined.  The canonical order is not
-enforced for them, for the same reason as in subproblems without the
-fact (see below).
+In a subproblem containing the fact of a cluster, joinrels with a
+dimension of the cluster but without the fact are cartesian products, as
+the dimensions have join clauses only to the fact (and no join order
+restrictions).  `join_search_one_level` builds them when the other rel
+has no join clauses, or in the last-ditch pass, when no other join is
+possible at that level.  They may get joined further, and so the search
+might consider many subsets of the dimensions without the fact.  So such
+joinrels are rejected.  They are not needed, as the dimensions can
+always be joined to the joinrels with the fact, in the canonical order.
 
 ### Join search subproblems
 
@@ -120,9 +119,12 @@ joins of dimensions to the fact not changing the cardinality of the
 fact.  Without the fact, the dimensions can only be joined by cartesian
 products (they have join clauses only to the fact), which do change the
 cardinality, so the order matters, and enforcing it might eliminate the
-cheapest plan.  The product of the dimensions is then joined to the fact
-in an upper subproblem, where the dimensions are not initial rels, and
-so are not checked.
+cheapest plan.  Nor can the search forbid joining the dimensions without
+the fact in such subproblems, as that may be the only way to join them
+(e.g. "d1 CROSS JOIN d2" with `join_collapse_limit` set to 1).  The
+product of the dimensions is then joined to the fact in an upper
+subproblem, where the dimensions are not initial rels, and so are not
+checked.
 
 `starjoin_order_invalid` walks the initial rels of the current
 subproblem on each call, to find the base rels of the subproblem, and
@@ -133,8 +135,11 @@ whether it contains the fact of each cluster.
 The dimensions are interchangeable, as they have join clauses only to
 the fact, and no join order restrictions.  So for each pruned joinrel
 with the fact, the search builds the joinrel with the dimensions
-replaced by the first ones in the canonical order.  The pruning
-therefore can't make the join search fail.
+replaced by the first ones in the canonical order.  A pruned joinrel
+without the fact is a cartesian product of the dimensions and other
+rels, and the search builds it without the dimensions, which can then be
+joined to the joinrels with the fact.  The pruning therefore can't make
+the join search fail.
 
 ### GEQO
 
@@ -283,8 +288,15 @@ the plans, the planning cost, or the regression tests.
   (see starjoin_eager, and the eager_first_partial_agg_on check in
   starjoin_other).  A possible direction, not tried yet, is an explicit
   canonical order putting the dimensions with grouping columns last.
-- The search might forbid additional joins, e.g. joinrels containing a
-  dimension of a cluster but not its fact.
+- A pseudoconstant qual (e.g. "now() > '2000-01-01'", or an uncorrelated
+  EXISTS) gets the relids of the whole join domain, so it's in the
+  joininfo list of every rel, and every dimension appears to have join
+  clauses to rels other than the fact.  So a single such qual disables
+  all starjoin clusters in the query, even if it's in the ON clause of a
+  single dimension's join.  Ignoring pseudoconstant quals when building
+  the clusters would be enough to fix this.  The quals would still make
+  the dimensions joinable to each other without the fact, but such
+  joinrels are restricted (see `starjoin_order_invalid`).
 
 ## Regression tests
 

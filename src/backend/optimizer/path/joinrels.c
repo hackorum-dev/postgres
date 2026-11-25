@@ -2180,7 +2180,8 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
  * For every star cluster in root->starjoin_clusters, we enforce the canonical
  * decomposition of any joinrel containing the fact - the cluster dimensions
  * in the joinrel must form a prefix of the order determined when collecting
- * the starjoin clusters.
+ * the starjoin clusters.  Joinrels containing a cluster dimension but not
+ * the fact are not allowed at all.
  *
  * Clusters are computed for the whole query, but the join search may be split
  * into multiple subproblems (join_collapse_limit, from_collapse_limit, FULL
@@ -2193,12 +2194,14 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
  * all.  Clusters with the fact outside the current subproblem are ignored.
  *
  * So the fact gets joined to the dimensions in the canonical order, and the
- * other orderings are pruned.  Other rels may be joined at any point, and
- * joins without the fact are not restricted.  The dimensions are
- * interchangeable (they have join clauses only to the fact, and no join order
- * restrictions), so for each pruned joinrel the search builds the joinrel
- * with the dimensions replaced by the first ones in the canonical order.  So
- * the pruning can't make the join search fail.
+ * other orderings are pruned.  Other rels may be joined at any point.  The
+ * dimensions are interchangeable (they have join clauses only to the fact,
+ * and no join order restrictions), so for each pruned joinrel with the fact
+ * the search builds the joinrel with the dimensions replaced by the first
+ * ones in the canonical order.  A pruned joinrel without the fact is a
+ * cartesian product of the dimensions and other rels, and the search builds
+ * it without the dimensions, which can then be joined to the joinrels with
+ * the fact.  So the pruning can't make the join search fail.
  *
  * GEQO is subject to the same check.  It joins a dimension only to the clump
  * with the fact (the only desirable join), and a dimension that can't be
@@ -2206,9 +2209,6 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
  * grows, GEQO tries to merge it with the other clumps again, so the
  * dimensions get joined in the canonical order, whatever their order in the
  * tour.
- *
- * We might forbid additional joins, for example we might forbid joinrels
- * containing a cluster dimension without the fact.
  */
 static bool
 starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
@@ -2252,9 +2252,12 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 		 * cardinality of the fact.  Without the fact, the dimensions can only
 		 * be joined by cartesian products (they have join clauses only to the
 		 * fact), which do change the cardinality, so the order matters and
-		 * enforcing it might eliminate the cheapest plan.  The joinrel is
-		 * joined to the fact in an upper subproblem, where the dimensions are
-		 * not initial rels, and so are not checked.
+		 * enforcing it might eliminate the cheapest plan.  Nor can we forbid
+		 * joining the dimensions without the fact, as that may be the only
+		 * way to join them (e.g. "d1 CROSS JOIN d2" with join_collapse_limit
+		 * set to 1).  The joinrel is joined to the fact in an upper
+		 * subproblem, where the dimensions are not initial rels, and so are
+		 * not checked.
 		 *
 		 * Snowflake joins are not an exception: a dimension with its own
 		 * dimensions is not a member of this cluster, but it may be the fact
@@ -2267,18 +2270,22 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 		cluster_dims = bms_intersect(c->dim_relids, baserel_relids);
 
 		/*
-		 * Joins without the fact are not restricted either, for the same
-		 * reason as above.  The dimensions have join clauses only to the fact
-		 * (and no join order restrictions), so join_search_one_level joins
-		 * them to rels without the fact only by cartesian products, e.g. in
-		 * the last-ditch pass, when no other join is possible at that level.
-		 * But the other rel may have join clauses usable only at a later
-		 * level, and so even two such joinrels (each with a different
-		 * dimension) may get joined.
+		 * With the fact in this subproblem, joinrels with a dimension but
+		 * without the fact are not needed, as the dimensions can be joined to
+		 * the joinrels with the fact (in the canonical order).  The
+		 * dimensions have join clauses only to the fact (and no join order
+		 * restrictions), so such joinrels are cartesian products, built only
+		 * when the other rel has no join clauses, or by the last-ditch pass
+		 * of join_search_one_level.  But they may get joined further, and so
+		 * the search might consider many subsets of the dimensions without
+		 * the fact.
 		 */
 		if (!bms_is_member(c->fact_relid, join_relids))
 		{
+			violates = bms_overlap(cluster_dims, join_relids);
 			bms_free(cluster_dims);
+			if (violates)
+				break;
 			continue;
 		}
 

@@ -10,8 +10,9 @@
 -- subproblem can build, otherwise the planning fails with "ERROR:  failed to
 -- build any N-way joins".
 --
--- In query J, the last-ditch pass joins dimensions to rels without the fact,
--- and two such rels then get joined.
+-- In query J, the last-ditch pass would join dimensions to rels without the
+-- fact (and two such rels would then get joined), but such joinrels are not
+-- allowed, and the join search must not fail without them.
 --
 -- For each query, show the plan with the GUC enabled, and then check that
 -- the query returns the same result with the GUC enabled and disabled.
@@ -277,7 +278,8 @@ RESET join_collapse_limit;
 -- star (the fact has a join clause only to w, outside the subquery) and two
 -- outer joins of three rels each, linked by a non-strict clause between their
 -- nullable sides.  Nothing can be joined at level 4, so the last-ditch pass
--- joins the outer joins to dimensions, and the clause then joins those rels.
+-- joins the outer joins to other rels, but not to the dimensions, as such
+-- joinrels would not include the fact.
 SET from_collapse_limit = 9;
 EXPLAIN (COSTS OFF)
 SELECT count(*)
