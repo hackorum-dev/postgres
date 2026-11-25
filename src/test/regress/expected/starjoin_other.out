@@ -192,6 +192,69 @@ SELECT starjoin_other_plan(:'q_extra_ec_member', true)
  t
 (1 row)
 
+-- EC members of the fact alone only filter fact rows.  The dimension still
+-- qualifies, so the search uses about as much memory as the canonical order.
+SELECT $$
+SELECT count(*) FROM starjoin_other_pf AS pf
+  JOIN starjoin_other_p1 AS p1 ON pf.d1 = p1.id
+  JOIN starjoin_other_p2 AS p2 ON pf.d2 = p2.id
+  JOIN starjoin_other_p3 AS p3 ON pf.d3 = p3.id AND pf.d3 = pf.x
+$$ AS q_fact_ec_member \gset
+SET join_collapse_limit = 1;
+SELECT starjoin_other_memory(:'q_fact_ec_member', true) AS memory_fact_ec_member \gset
+RESET join_collapse_limit;
+SELECT starjoin_other_memory(:'q_fact_ec_member', true)
+       <= :memory_fact_ec_member * 1.1 AS fact_ec_member_canonical;
+ fact_ec_member_canonical 
+--------------------------
+ t
+(1 row)
+
+-- A broken EC applies its source clauses as written, instead of equating the
+-- fact's members at the fact scan, so here bf.x = bk.k filters in the
+-- dimension join.  Security quals can break the EC: the policy's date =
+-- timestamp equality isn't leakproof, and once the query's quals join the
+-- EC, it may derive only leakproof equalities.  The dimension must not
+-- qualify, so that the selective join can go first.
+CREATE ROLE regress_starjoin_other;
+SET ROLE regress_starjoin_other;
+CREATE TEMP TABLE starjoin_other_bd (id int PRIMARY KEY);
+CREATE TEMP TABLE starjoin_other_bk (k date PRIMARY KEY);
+CREATE TEMP TABLE starjoin_other_bf (
+  d1 int NOT NULL REFERENCES starjoin_other_bd,
+  d2 int NOT NULL REFERENCES starjoin_other_bd,
+  d3 int NOT NULL REFERENCES starjoin_other_bd,
+  k date NOT NULL REFERENCES starjoin_other_bk,
+  ts timestamp NOT NULL, x date NOT NULL);
+INSERT INTO starjoin_other_bd SELECT i FROM generate_series(1, 1000) i;
+INSERT INTO starjoin_other_bk
+SELECT date '2000-01-01' + i FROM generate_series(1, 1000) i;
+INSERT INTO starjoin_other_bf
+SELECT 1 + i % 1000, 1 + (i * 7) % 1000, 1 + (i * 13) % 1000,
+       date '2000-01-01' + 1 + i % 1000, date '2000-01-01' + 1 + i % 1000,
+       date '2000-01-01' + i % 5000
+  FROM generate_series(1, 10000) i;
+ANALYZE starjoin_other_bd, starjoin_other_bk, starjoin_other_bf;
+ALTER TABLE starjoin_other_bf ENABLE ROW LEVEL SECURITY;
+ALTER TABLE starjoin_other_bf FORCE ROW LEVEL SECURITY;
+CREATE POLICY starjoin_other_bf_ts ON starjoin_other_bf USING (k = ts);
+SELECT $$
+SELECT count(*) FROM starjoin_other_bf AS bf
+  JOIN starjoin_other_bd AS d1 ON bf.d1 = d1.id
+  JOIN starjoin_other_bd AS d2 ON bf.d2 = d2.id
+  JOIN starjoin_other_bd AS d3 ON bf.d3 = d3.id
+  JOIN starjoin_other_bk AS bk ON bf.k = bk.k AND bf.x = bk.k
+$$ AS q_broken_ec \gset
+SELECT starjoin_other_cost(:'q_broken_ec', true)
+       <= starjoin_other_cost(:'q_broken_ec', false) * 1.01 AS broken_ec_cost_ok;
+ broken_ec_cost_ok 
+-------------------
+ t
+(1 row)
+
+RESET ROLE;
+DROP TABLE starjoin_other_bf, starjoin_other_bk, starjoin_other_bd;
+DROP ROLE regress_starjoin_other;
 -- GEQO must also be free to join the selective dimension first.
 SET geqo_threshold = 2;
 SELECT starjoin_other_cost(:'q_extra_clause', true)

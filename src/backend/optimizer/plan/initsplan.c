@@ -4141,20 +4141,46 @@ has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
 	/*
 	 * Inner-join equalities normally live in ECs, not joininfo.  Even an EC
 	 * matching the FK can contain additional, selective equalities, so accept
-	 * only ECs containing just the two FK column expressions.
+	 * only ECs whose members other than the dimension's FK column expression
+	 * belong to the fact alone.  Equalities among those only filter fact
+	 * rows, and the EC's equality is transitive.
 	 */
 	i = -1;
 	while ((i = bms_next_member(dim_rel->eclass_indexes, i)) >= 0)
 	{
 		EquivalenceClass *ec = list_nth_node(EquivalenceClass,
 											 root->eq_classes, i);
+		int			ndim = 0;
 		int			colno;
 
 		if (list_length(ec->ec_members) <= 1 ||
 			!bms_is_member(fkinfo->con_relid, ec->ec_relids))
 			continue;
 
-		if (list_length(ec->ec_members) != 2)
+		/*
+		 * A broken EC (one lacking a usable equality operator for some pair
+		 * of members, e.g. because security quals allow only leakproof ones)
+		 * does not equate the fact's members at the fact scan.  It applies
+		 * its source clauses as written instead, so a clause comparing the
+		 * dimension with another fact column can reject fact rows in the
+		 * dimension join.
+		 */
+		if (ec->ec_broken)
+			return true;
+
+		foreach_node(EquivalenceMember, em, ec->ec_members)
+		{
+			int			relid;
+
+			/* a constant, or an expression of several rels */
+			if (!bms_get_singleton_member(em->em_relids, &relid))
+				return true;
+			if (relid == dim_rel->relid)
+				ndim++;
+			else if (relid != fkinfo->con_relid)
+				return true;
+		}
+		if (ndim != 1)
 			return true;
 
 		for (colno = 0; colno < fkinfo->nkeys; colno++)
@@ -4195,7 +4221,8 @@ has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
  *	7. The dimension is not constrained by any PlaceHolderInfo.
  *
  *	8. All join conditions between the fact and the dimension are accounted
- *	   for by the matched FK, with no additional EC members.
+ *	   for by the matched FK, with no additional EC members other than
+ *	   expressions of the fact, in ECs that are not broken.
  *
  * Under these conditions, the join is strictly cardinality-preserving with
  * respect to the fact table, and all join orderings for a cluster produce

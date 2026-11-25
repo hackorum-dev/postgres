@@ -192,7 +192,8 @@ The fact has to be a base relation too.
 
 8. All join conditions between the fact and the dimension are accounted
    for by the matched foreign key, with no additional equivalence class
-   members.
+   members other than expressions of the fact, in equivalence classes
+   that are not broken.
 
    A fully matched NOT NULL foreign key does not make the join preserve
    the fact rows if other conditions connect the same pair of relations,
@@ -202,6 +203,25 @@ The fact has to be a base relation too.
    classes of the fact and the dimension, including the equivalence
    class of the foreign key with additional members, as an additional
    equality can be merged into it.
+
+   But a member of the fact alone, as in "f.a = d.id AND f.a = f.b",
+   does not make the join selective.  All members of an equivalence
+   class are compared with the same operator family and collation, and
+   that equality is transitive, so equalities among the members of the
+   fact only filter fact rows.  Each remaining fact row matches the same
+   dimension row, whichever member a join clause uses.  Constants,
+   expressions of several relations, other members of the dimension, and
+   members of other relations still disqualify the dimension.
+
+   A broken equivalence class (without a usable equality operator for
+   some pair of its members) disqualifies the dimension too.  It applies
+   its source clauses as written, instead of equating the members of the
+   fact at the fact scan, so a clause comparing the dimension with
+   another fact column can reject fact rows in the dimension join.
+   Security quals can break the equivalence class of the foreign key:
+   once the quals of the query join an equivalence class, only leakproof
+   equalities may be derived, so a row-level security policy equating a
+   date and a timestamp column of the fact breaks it.
 
 ### Foreign key requirements
 
