@@ -4368,7 +4368,8 @@ has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel, RelOptInfo *dim_rel)
  * via an equality condition matching a non-temporal foreign key, satisfying
  * these conditions:
  *
- *	1. The dimension is a plain base relation (RELOPT_BASEREL).
+ *	1. The dimension is a plain base relation (RELOPT_BASEREL), not an ONLY
+ *	   scan of a partitioned table.
  *
  *	2. All join columns on the fact are NOT NULL.
  *
@@ -4491,6 +4492,7 @@ generate_starjoin_clusters(PlannerInfo *root)
 		{
 			Index		d = (Index) lfirst_int(lc2);
 			RelOptInfo *dim_rel = root->simple_rel_array[d];
+			RangeTblEntry *dim_rte = root->simple_rte_array[d];
 			ListCell   *lc3;
 			bool		ok = true;
 			int			r;
@@ -4499,8 +4501,12 @@ generate_starjoin_clusters(PlannerInfo *root)
 			if (dim_rel == NULL || dim_rel->reloptkind != RELOPT_BASEREL)
 				continue;
 
+			/* ONLY on a partitioned table cannot see any referenced rows. */
+			if (dim_rte->relkind == RELKIND_PARTITIONED_TABLE && !dim_rte->inh)
+				continue;
+
 			/* Sampling may remove the row referenced by the foreign key. */
-			if (root->simple_rte_array[d]->tablesample != NULL)
+			if (dim_rte->tablesample != NULL)
 				continue;
 
 			/* No local restriction quals on the dimension. */

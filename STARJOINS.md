@@ -270,7 +270,17 @@ fact row matches exactly one row of the dimension, and that the
 dimension can be joined to the fact at any point of the join search.
 The fact has to be a base relation too.
 
-1. The dimension is a plain base relation (`RELOPT_BASEREL`).
+1. The dimension is a plain base relation (`RELOPT_BASEREL`), not an
+   ONLY scan of a partitioned table.
+
+   A foreign key referencing a partitioned table is recorded against the
+   parent, so a query joining ONLY the parent still matches the foreign
+   key.  But a partitioned table stores no rows itself, so the join
+   would remove every fact row instead of preserving it.  Joins to the
+   whole partitioned table never qualify, as the referenced relation has
+   to be scanned without inheritance (see the conditions inherited from
+   foreign key matching).  Direct joins to leaf partitions are not
+   affected.
 
 2. All join columns on the fact are NOT NULL.
 
@@ -566,3 +576,6 @@ the plans, the planning cost, or the regression tests.
     index, and a nondeterministic index collation that separately breaks
     the existence and the uniqueness proof, where only the native
     comparison qualifies.
+  - starjoin_fk_only: an ONLY scan of the referenced partitioned parent
+    matches no rows and does not qualify, while an ONLY scan of a
+    directly referenced leaf partition does.
