@@ -57,6 +57,8 @@ The optimization consists of these parts:
 - `has_starjoin_fk` looks for a foreign key of the fact that makes a
   relation its dimension, using `has_extra_starjoin_quals` to check that
   the foreign key accounts for all the join clauses between them.
+- `starjoin_fk_collations_match` checks the collations of the join
+  clauses.
 - `starjoin_order_invalid`, called by `make_join_rel`, rejects joins
   violating the canonical order, just like various other join
   restrictions.
@@ -306,9 +308,9 @@ The fact has to be a base relation too.
    Conditions 5 to 7 rule out join order restrictions on the dimension.
 
 8. All join conditions between the fact and the dimension are accounted
-   for by the matched foreign key, with no additional equivalence class
-   members other than expressions of the fact, in equivalence classes
-   that are not broken.
+   for by the matched foreign key, with compatible equality semantics
+   and no additional equivalence class members other than expressions of
+   the fact, in equivalence classes that are not broken.
 
    A fully matched NOT NULL foreign key does not make the join preserve
    the fact rows if other conditions connect the same pair of relations,
@@ -359,6 +361,27 @@ satisfied.  They are skipped only when looking for a starjoin foreign
 key, not when matching foreign keys for selectivity estimation, and an
 ordinary equality foreign key between the same relations remains
 eligible.
+
+### Equality semantics
+
+Matching foreign keys to join clauses for selectivity estimation does
+not check the comparison semantics, which is not enough to prune join
+orders.  For example, a case-insensitive join to a text primary key
+using the C collation can match both 'a' and 'A' for a single fact row.
+A satisfied foreign key guarantees a match under the equality of the
+referenced column, and the unique index enforces uniqueness under its
+own equality.  `starjoin_fk_collations_match` finds the unique index of
+the foreign key (`conindid`), and matches its keys to the referenced
+columns, not to the foreign key positions (REFERENCES can list the
+columns in a different order).  If the index is not available to the
+planner (not in the index list of the dimension), the foreign key is not
+used.  The collations of the referenced column, the index, and the join
+clauses (the matched equivalence class or loose comparisons) then have
+to agree on equality.  That still accepts two different deterministic
+collations, or the same nondeterministic one.
+
+These checks change only which relations are treated as dimensions, not
+foreign key enforcement or selectivity estimation.
 
 ### Conditions inherited from foreign key matching
 
@@ -497,7 +520,9 @@ the plans, the planning cost, or the regression tests.
   point, so the search takes noticeably more memory.  So the suites
   compare the planning memory of the search and of the forced order,
   accepting up to 10% more, with four other dimensions that always
-  qualify to widen the difference.
+  qualify to widen the difference.  The starjoin_fk_collation suite
+  needs a UTF8 database with ICU collations, and has an alternative
+  output for when it's skipped.
   - starjoin_fk_overlap: a composite foreign key qualifies alone and
     together with a short one, whichever is examined first (varying both
     the creation and the name order), while a lone short key and two
@@ -505,3 +530,10 @@ the plans, the planning cost, or the regression tests.
   - starjoin_fk_period: a PERIOD foreign key, where each fact row joins
     eight adjacent periods, does not qualify, while an ordinary equality
     foreign key between the same tables does.
+  - starjoin_fk_collation: joins under deterministic collations qualify,
+    while a case-insensitive join does not, both as an equivalence class
+    and as a loose qual.  A nondeterministic collation agreeing with
+    both the column and the index qualifies, on a composite key with the
+    index columns in a different order.  An index with a collation
+    override shows that checking only the column or only the index is
+    not enough (one join matches two rows, the other none).

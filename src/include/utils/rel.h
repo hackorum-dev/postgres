@@ -290,6 +290,8 @@ typedef struct ForeignKeyCacheInfo
 	Oid			conrelid;
 	/* relation referenced by the foreign key */
 	Oid			confrelid;
+	/* index supporting the referenced key */
+	Oid			conindid;
 	/* number of columns in the foreign key */
 	int			nkeys;
 

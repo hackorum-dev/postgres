@@ -2724,10 +2724,9 @@ exprs_known_equal(PlannerInfo *root, Node *item1, Node *item2, Oid opfamily)
  *
  * If the referenced and referencing Vars of the fkey's colno'th column are
  * known equal due to any eclass, return that eclass; otherwise return NULL.
- * (In principle there might be more than one matching eclass if multiple
- * collations are involved, but since collation doesn't matter for equality,
- * we ignore that fine point here.)  This is much like exprs_known_equal,
- * except for the format of the input.
+ * There can be matches under different collations.  For selectivity
+ * estimation we accept any of them; callers relying on the FK's equality
+ * semantics must check the collation separately.
  *
  * On success, we also set fkinfo->eclass[colno] to the matching eclass,
  * and set fkinfo->fk_eclass_member[colno] to the eclass member for the

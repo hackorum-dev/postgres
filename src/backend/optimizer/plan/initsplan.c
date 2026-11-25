@@ -151,6 +151,9 @@ static void check_hashjoinable(RestrictInfo *restrictinfo);
 static void check_memoizable(RestrictInfo *restrictinfo);
 static bool has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
 									 ForeignKeyOptInfo *fkinfo);
+static bool starjoin_fk_collations_match(PlannerInfo *root,
+										 RelOptInfo *dim_rel,
+										 ForeignKeyOptInfo *fkinfo);
 static bool has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel,
 							RelOptInfo *dim_rel);
 
@@ -4198,6 +4201,75 @@ has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
 }
 
 /*
+ * The FK guarantees a match under the referenced column's equality, while
+ * uniqueness is enforced under the index key's equality.  A join using a
+ * different collation must agree with both.
+ */
+static bool
+starjoin_fk_collations_match(PlannerInfo *root, RelOptInfo *dim_rel,
+							 ForeignKeyOptInfo *fkinfo)
+{
+	RangeTblEntry *dim_rte = root->simple_rte_array[dim_rel->relid];
+
+	foreach_node(IndexOptInfo, index, dim_rel->indexlist)
+	{
+		if (index->indexoid != fkinfo->conindid)
+			continue;
+
+		for (int j = 0; j < index->nkeycolumns; j++)
+		{
+			AttrNumber	attno = index->indexkeys[j];
+			Oid			indcoll = index->indexcollations[j];
+			Oid			attcoll;
+			Oid			typid;
+			int32		typmod;
+			int			i;
+
+			/* No collation check or catalog lookup for a noncollatable key. */
+			if (!OidIsValid(indcoll))
+				continue;
+
+			/* REFERENCES can list the columns in a different order. */
+			for (i = 0; i < fkinfo->nkeys; i++)
+			{
+				if (fkinfo->confkey[i] == attno)
+					break;
+			}
+			if (i == fkinfo->nkeys)
+				return false;
+
+			get_atttypetypmodcoll(dim_rte->relid, attno,
+								  &typid, &typmod, &attcoll);
+			if (!collations_agree_on_equality(attcoll, indcoll))
+				return false;
+
+			if (fkinfo->eclass[i] != NULL)
+			{
+				Oid			joincoll = fkinfo->eclass[i]->ec_collation;
+
+				if (!collations_agree_on_equality(attcoll, joincoll))
+					return false;
+			}
+			else
+			{
+				foreach_node(RestrictInfo, rinfo, fkinfo->rinfos[i])
+				{
+					Oid			joincoll;
+
+					joincoll = exprInputCollation((Node *) rinfo->clause);
+					if (!collations_agree_on_equality(attcoll, joincoll))
+						return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/* The backing index isn't available to the planner. */
+	return false;
+}
+
+/*
  * Several FKs may match the same pair of rels.  A single FK must account
  * for the whole join, but it need not be the first one in fkey_list.
  */
@@ -4225,7 +4297,8 @@ has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel, RelOptInfo *dim_rel)
 				break;
 		}
 		if (i == fkinfo->nkeys &&
-			!has_extra_starjoin_quals(root, dim_rel, fkinfo))
+			!has_extra_starjoin_quals(root, dim_rel, fkinfo) &&
+			starjoin_fk_collations_match(root, dim_rel, fkinfo))
 			return true;
 	}
 
@@ -4259,8 +4332,9 @@ has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel, RelOptInfo *dim_rel)
  *	7. The dimension is not constrained by any PlaceHolderInfo.
  *
  *	8. All join conditions between the fact and the dimension are accounted
- *	   for by the matched FK, with no additional EC members other than
- *	   expressions of the fact, in ECs that are not broken.
+ *	   for by the matched FK, with compatible equality semantics and no
+ *	   additional EC members other than expressions of the fact, in ECs
+ *	   that are not broken.
  *
  * Under these conditions, the join is strictly cardinality-preserving with
  * respect to the fact table, and all join orderings for a cluster produce

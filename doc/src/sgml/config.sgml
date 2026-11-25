@@ -6323,9 +6323,11 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
         Enables or disables the query planner's optimization of star joins,
         where a <quote>fact</quote> table is joined to multiple
         <quote>dimension</quote> tables using foreign keys.  When a dimension
-        table is joined only to the fact table, using a join condition
-        matching a non-temporal foreign key with <literal>NOT NULL</literal>
-        referencing columns, joining it does not change the number of rows.
+        table is joined only to the fact table through an enforced
+        non-temporal foreign key with <literal>NOT NULL</literal> referencing
+        columns, the join preserves the number of fact rows if it uses the
+        same equality semantics as the key.  The planner assumes this even
+        for foreign keys marked <literal>NOT VALID</literal>.
         All orders of joining such dimension tables to the fact table thus
         produce the same number of rows, and the planner considers only one
         of them.

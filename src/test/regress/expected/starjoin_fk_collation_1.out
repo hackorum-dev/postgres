@@ -1,0 +1,8 @@
+--
+-- Starjoin lookup semantics under different collations
+--
+SELECT getdatabaseencoding() <> 'UTF8' OR NOT EXISTS
+  (SELECT FROM pg_collation WHERE collprovider = 'i' AND collname <> 'unicode')
+  AS skip_test \gset
+\if :skip_test
+\quit

@@ -1482,6 +1482,8 @@ typedef struct ForeignKeyOptInfo
 	Index		con_relid;
 	/* RT index of the referenced table */
 	Index		ref_relid;
+	/* OID of the index supporting the referenced key */
+	Oid			conindid;
 	/* Does the FK have a PERIOD column? */
 	bool		conperiod;
 	/* number of columns in the foreign key */
