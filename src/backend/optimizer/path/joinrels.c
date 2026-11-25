@@ -36,6 +36,7 @@ static void make_rels_by_clauseless_joins(PlannerInfo *root,
 static bool starjoin_order_invalid(PlannerInfo *root,
 								   RelOptInfo *rel1,
 								   RelOptInfo *rel2);
+static bool has_join_clauses(RelOptInfo *rel);
 static bool has_join_restriction(PlannerInfo *root, RelOptInfo *rel);
 static bool has_legal_joinclause(PlannerInfo *root, RelOptInfo *rel);
 static bool restriction_is_constant_false(List *restrictlist,
@@ -101,8 +102,7 @@ join_search_one_level(PlannerInfo *root, int level)
 	{
 		RelOptInfo *old_rel = (RelOptInfo *) lfirst(r);
 
-		if (old_rel->joininfo != NIL || old_rel->has_eclass_joins ||
-			has_join_restriction(root, old_rel))
+		if (has_join_clauses(old_rel) || has_join_restriction(root, old_rel))
 		{
 			int			first_rel;
 
@@ -176,7 +176,7 @@ join_search_one_level(PlannerInfo *root, int level)
 			 * participate in join-order restrictions --- then we might have
 			 * to force a bushy join plan.
 			 */
-			if (old_rel->joininfo == NIL && !old_rel->has_eclass_joins &&
+			if (!has_join_clauses(old_rel) &&
 				!has_join_restriction(root, old_rel))
 				continue;
 
@@ -1413,6 +1413,37 @@ have_join_order_restriction(PlannerInfo *root,
 
 
 /*
+ * has_join_clauses
+ *		Detect whether the specified relation has any join clauses, either
+ *		in its joininfo list or as EquivalenceClass joins.
+ *
+ * Pseudoconstant quals are ignored, as in have_relevant_joinclause().  They
+ * are in the joininfo lists only because their required_relids determine
+ * where they get evaluated, and have_relevant_joinclause() does not consider
+ * them a reason to join any rels.  A rel with no other join clauses has to
+ * be joined by cartesian products, just like a rel with no joininfo at all.
+ */
+static bool
+has_join_clauses(RelOptInfo *rel)
+{
+	ListCell   *lc;
+
+	if (rel->has_eclass_joins)
+		return true;
+
+	foreach(lc, rel->joininfo)
+	{
+		RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
+
+		if (!rinfo->pseudoconstant)
+			return true;
+	}
+
+	return false;
+}
+
+
+/*
  * has_join_restriction
  *		Detect whether the specified relation has join-order restrictions,
  *		due to being inside an outer join or an IN (sub-SELECT),
@@ -2251,8 +2282,7 @@ starjoin_setup_subproblem(PlannerInfo *root)
  * decomposition of any joinrel containing the fact - the cluster dimensions
  * in the joinrel must form a prefix of the order determined when collecting
  * the starjoin clusters.  Joinrels containing a cluster dimension but not
- * the fact may contain only a single dimension, joined to rels without join
- * clauses.
+ * the fact may contain only a single dimension.
  *
  * Clusters are computed for the whole query, but the join search may be split
  * into multiple subproblems (join_collapse_limit, from_collapse_limit, FULL
@@ -2324,18 +2354,16 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 		 * without the fact.
 		 *
 		 * Most of them are not needed, as the dimensions can be joined to the
-		 * joinrels with the fact (in the canonical order).  But a rel without
-		 * join clauses can only be joined by a cartesian product, and joining
-		 * it to the fact multiplies the rows for all the following joins,
-		 * while joining it to a dimension (e.g. in the inner of the hash join
-		 * of the last dimension to the fact) may be much cheaper.  So we
-		 * allow joinrels with a single dimension, joined to a rel without
-		 * join clauses (ignoring pseudoconstant quals), as in the clauseless
-		 * joins of join_search_one_level.  For each set of the other rels,
-		 * the search then builds at most d+1 joinrels without the fact (with
-		 * no dimension, or with one of the d dimensions), just like with the
-		 * fact, which is consistent with how the dimensions count toward
-		 * geqo_threshold (see starjoin_geqo_levels).
+		 * joinrels with the fact (in the canonical order).  But joining the
+		 * other rel to the fact by a cartesian product multiplies the rows
+		 * for all the following joins, while joining it to a dimension (e.g.
+		 * in the inner of the hash join of the last dimension to the fact)
+		 * may be much cheaper.  So we allow joinrels with a single dimension.
+		 * For each set of the other rels, the search then builds at most d+1
+		 * joinrels without the fact (with no dimension, or with one of the d
+		 * dimensions), just like with the fact, which is consistent with how
+		 * the dimensions count toward geqo_threshold (see
+		 * starjoin_geqo_levels).
 		 *
 		 * Outside the last-ditch pass, join_search_one_level joins a
 		 * dimension to a rel without the fact only if that rel has no join
@@ -2347,29 +2375,7 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 		 */
 		if (!bms_is_member(c->fact_relid, join_relids))
 		{
-			if (bms_membership(cluster_dims) == BMS_MULTIPLE)
-				violates = true;
-			else
-			{
-				RelOptInfo *other;
-				ListCell   *lc2;
-
-				/* the input without the dimension */
-				other = bms_overlap(rel1->relids, cluster_dims) ? rel2 : rel1;
-
-				violates = other->has_eclass_joins;
-				foreach(lc2, other->joininfo)
-				{
-					RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc2);
-
-					if (!rinfo->pseudoconstant)
-					{
-						violates = true;
-						break;
-					}
-				}
-			}
-
+			violates = (bms_membership(cluster_dims) == BMS_MULTIPLE);
 			bms_free(cluster_dims);
 			if (violates)
 				break;

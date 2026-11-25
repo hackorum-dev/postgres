@@ -70,6 +70,8 @@ The optimization consists of these parts:
   subproblem.
 - `starjoin_geqo_levels` counts the dimensions as fewer rels toward
   `geqo_threshold`.
+- `has_join_clauses` decides which rels `join_search_one_level` joins by
+  clauseless joins.
 
 The clusters are determined in `src/backend/optimizer/plan/initsplan.c`,
 and the join order is restricted in
@@ -125,15 +127,9 @@ them are not needed, as the dimensions can be joined to the joinrels
 with the fact, in the canonical order.  But joining the other rel to the
 fact by a cartesian product multiplies the rows for all the following
 joins, while joining it to a dimension (e.g. in the inner of the hash
-join of the last dimension to the fact) may be much cheaper.  So a
-joinrel with a dimension but without the fact is allowed if it has a
-single dimension, and the input without the dimension has no join
-clauses, i.e. no equivalence class joins and no joininfo clauses other
-than pseudoconstant ones.  This is similar to the test
-`join_search_one_level` uses to decide which rels to join by clauseless
-joins.  A pseudoconstant qual is in the joininfo list of every rel in
-its join domain, but it's not a join clause (it's evaluated just once,
-in a gating Result node), so it's ignored.
+join of the last dimension to the fact) may be much cheaper.  So
+joinrels with a single dimension but without the fact are allowed, while
+joinrels with multiple dimensions but without the fact are rejected.
 
 For example, with a fact table xf (100k rows), dimensions xd1, xd2 and
 xd3 (10, 100 and 1000 rows), and tables xo1 and xo2 (1 and 2 rows)
@@ -166,15 +162,43 @@ and by 2.7%, 4.3% and 0% for the three other corpora (by up to 48% for a
 single query).  That's still only 20%, 80%, 34% and 74% of the planning
 memory with the GUC disabled.
 
-Without the condition on the join clauses (allowing a single dimension
-joined to any rel), or without any restriction at all, the plan costs
-are the same in all the queries, but the search builds more joinrels.
-In 25 queries (23 of them generated for the last-ditch pass), the
-planning memory increased by up to 17% (20% without any restriction).
+If pseudoconstant quals made all the rels joinable to each other, a
+single dimension would have to be allowed only if the input without it
+has no join clauses (no equivalence class joins and no joininfo clauses
+other than pseudoconstant ones), as otherwise the search would consider
+each dimension with all subsets of the other rels.  But they don't (see
+the pseudoconstant quals below), so such a condition would matter only
+for the last-ditch pass, which joins rels by cartesian products when
+nothing else can be joined, including rels with join clauses (to rels
+outside the subproblem).  In the 3300 random queries of the four
+corpora, the condition rejects joins in 25 queries, all of them in that
+pass, and there it may reject the cheapest plan.  In a starjoin_other
+test, the cheapest plan with the GUC disabled joins the product of three
+rels and a dimension to the join of the fact and the other dimension
+(cost 1855.87).  With the condition, the product has to be joined to the
+fact first, and the following joins to the dimensions process the
+multiplied rows (cost 2364.13, 27% more).  Without it, the test query
+gets the same plan as with the GUC disabled, and no plan cost changes in
+the 3300 queries.  The search builds more joinrels in the 25 queries,
+which increases their planning memory by up to 17%, but it's still only
+65% to 91% of the planning memory with the GUC disabled.
 
 For each set of the other rels, the search builds at most d+1 joinrels
 without the fact (with no dimension, or with one of the d dimensions),
-just like with the fact.
+just like with the fact.  Outside the last-ditch pass,
+`join_search_one_level` joins a dimension to a rel without the fact only
+if that rel has no join clauses, and the joinrel then gets joined only
+to rels with the fact (by the join clauses of the dimension).  So it
+builds joinrels with several dimensions but without the fact only as a
+result of the last-ditch pass, and rejecting them maintains the d+1
+bound even then.  The last-ditch pass may join a dimension to a rel with
+join clauses to other rels (not the fact), and those clauses may then
+join the result to other such joinrels.  In a starjoin_other test with a
+star of four dimensions and four groups of five rels, linked by join
+clauses that can be used only above outer joins (so that the last-ditch
+pass joins each group to each dimension), the planning memory with the
+GUC enabled is 21% of that with the GUC disabled.  It would be 31% if
+joinrels with multiple dimensions but without the fact were allowed.
 
 ### Join search subproblems
 
@@ -291,14 +315,53 @@ Var-free quals and non-gating outer-join ON quals retain their
 treatment.  This is deliberately a generic planner change, not
 conditional on the GUC.  It affects clause-based join enumeration in the
 standard join search and GEQO, including queries without starjoin
-clusters, and with the GUC disabled.  In the 1500 random star queries,
-it makes 384 of the 603 plans with a pseudoconstant qual more expensive
-with the GUC disabled (by up to 16%), and 1 cheaper (by 38%).  In the
-three other corpora, it makes 45 plans more expensive with the GUC
-disabled (by up to 25%, or 42% for a query planned by GEQO), and 11
-cheaper (by up to 1.9%).  The plans that get more expensive relied on
-the qual making all the rels joinable to each other.  The plans of
-queries without a pseudoconstant qual do not change.
+clusters, and with the GUC disabled.  In the three other corpora, it
+makes 45 plans more expensive with the GUC disabled (by up to 25%, or
+42% for a query planned by GEQO), and 11 cheaper (by up to 1.9%).  The
+plans of queries without a pseudoconstant qual do not change.
+
+`join_search_one_level` decides which rels to join by clauseless joins
+using `has_join_clauses`, which checks for join clauses the same way as
+`have_relevant_joinclause`, ignoring pseudoconstant quals.  A rel whose
+joininfo list has only pseudoconstant quals is then joined by clauseless
+joins, just like a rel with an empty joininfo list.  That doesn't depend
+on the GUC either.  If `join_search_one_level` checked whether the
+joininfo list is empty instead, a rel without join clauses (e.g. a table
+listed in FROM without a join condition) would be treated as having some
+in a query with a pseudoconstant qual.  It would be joined only to rels
+it has a relevant join clause to, of which there are none, so it would
+get joined only in the last-ditch pass, once nothing else can be joined
+(typically at the top of the join tree), even if joining it at the
+bottom (e.g. to a small dimension, in the inner of a hash join) is much
+cheaper.
+
+Compared to that, `has_join_clauses` doesn't change the plans of the 897
+random star queries without a pseudoconstant qual.  Of the 603 queries
+with the qual, it makes 362 plans cheaper with the GUC enabled, and 381
+with the GUC disabled (they were up to 16% more expensive), and 4 plans
+more expensive (by 55%, 30%, 2% and 2%).  All 603 queries get the same
+join order as without the qual (including the 4 more expensive plans,
+where the last-ditch pass happened to be cheaper), while otherwise
+that's the case for only 226 of them with the GUC enabled, and for 207
+with the GUC disabled.  No plan costs change in the three other corpora,
+one of them with 445 queries with a pseudoconstant qual.  The search
+builds the clauseless joins for the queries with the qual, which
+increases their planning memory, by up to 3.7 times with the GUC enabled
+and 6.8 times with the GUC disabled, to within 75kB of the planning
+memory without the qual.
+
+Compared to the qual making all the rels joinable to each other, as when
+`have_relevant_joinclause` does not ignore pseudoconstant quals, 541 of
+the 603 plans cost the same with the GUC disabled, 1 is cheaper and 61
+are more expensive (by up to 7.4%, except for the two by 55% and 30%).
+Ignoring the quals only in `have_relevant_joinclause` would make 384 of
+the 603 plans more expensive (by up to 16%).  With the GUC disabled, the
+planning memory is lower than when the qual makes all the rels joinable
+to each other for 464 of the 603 queries (by up to 17 times), and higher
+for 71 of them (by up to 1.7%).  For a chain of eight rels without
+starjoin clusters, the planning memory is 258kB without the qual and
+259kB with it, but 2864kB if the qual makes all the rels joinable to
+each other.
 
 ## Conditions for a dimension
 
@@ -569,17 +632,27 @@ the plans, the planning cost, or the regression tests.
   dimension from the planning memory, accepting up to 10% more than when
   planning the canonical order (see the regression tests).  That's an
   indirect check, and changes of the planning memory use could flip its
-  results.
+  results.  The qualifying cases measure at most 1.0 times the memory of
+  the canonical order, while the lowest of the others measure 1.153
+  times (release build) and 1.163 times (assert-enabled build), both in
+  starjoin_fk_opclass.
 - No regression test makes `starjoin_fk_operand_matches` reject a
   relabel changing the actual type seen by a polymorphic operator.
 - Volatile Var-free quals are not pseudoconstant, so they still disable
   the clusters, which is conservative.
-- Ignoring pseudoconstant quals in `have_relevant_joinclause` changes
-  the plans also with the GUC disabled.  It makes 384 of the 603 plans
-  with a pseudoconstant qual in the 1500 random star queries more
-  expensive (by up to 16%), and 45 plans in the three other corpora (by
-  up to 25%, or 42% for a query planned by GEQO), as they relied on the
-  qual making all the rels joinable to each other.
+- Ignoring pseudoconstant quals for join connectivity makes some plans
+  with such a qual more expensive than when the qual made all the rels
+  joinable to each other, also with the GUC disabled.  That's the case
+  for 61 of the 603 plans with the qual in the 1500 random star queries
+  (by up to 7.4%, except for two by 55% and 30%), and for 45 plans in
+  the three other corpora (by up to 25%, or 42% for a query planned by
+  GEQO).
+- With the GUC enabled, plans cost more than with the GUC disabled (by
+  more than 0.1%) in 481 of the 1500 random star queries (by up to
+  7.5%), and in 32, 29 and 4 of the 600 queries in each of the three
+  other corpora (by up to 11%, 7% and 0.9%), while 6 plans of the last
+  of them are cheaper (by up to 1.9%).  All of them come from the
+  limitations of the canonical order described above.
 
 ## Regression tests
 
@@ -693,4 +766,8 @@ the plans, the planning cost, or the regression tests.
   control, and checks the execution-time TRUE, FALSE and NULL gates with
   the GUC enabled and disabled, in the standard join search and in GEQO,
   the outer-join ON semantics, and the cartesian fallback needed by a
-  subproblem without the fact.
+  subproblem without the fact.  For a chain of eight rels without
+  starjoin clusters, it checks that such a qual does not double the
+  planning memory.  For a star with two rels without join clauses, it
+  checks that the qual does not change the join tree, with the GUC
+  enabled and disabled.

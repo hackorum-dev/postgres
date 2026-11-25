@@ -41,6 +41,23 @@ BEGIN
 END;
 $$;
 
+-- plan of the join tree of an aggregate query, below the gating Result node
+-- of a pseudoconstant qual (with enable_starjoin_ordering enabled/disabled)
+CREATE FUNCTION starjoin_var_free_join_tree(query text, starjoin bool) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+  plan jsonb;
+BEGIN
+  PERFORM set_config('enable_starjoin_ordering', starjoin::text, true);
+  EXECUTE 'EXPLAIN (FORMAT JSON, COSTS OFF) ' || query INTO plan;
+  plan := plan #> '{0,Plan,Plans,0}';
+  IF plan->>'Node Type' = 'Result' THEN
+    plan := plan #> '{Plans,0}';
+  END IF;
+  RETURN plan;
+END;
+$$;
+
 -- Execute with both search strategies for the eleven-dimension star.
 CREATE FUNCTION starjoin_var_free_check(query text,
                                         OUT starjoin_on text,
@@ -133,6 +150,47 @@ SELECT starjoin_var_free_planning_memory(:'q_star' || $$WHERE now() > '2000-01-0
        < 2 * starjoin_var_free_planning_memory(:'q_star')
        AS where_now_planning_memory;
 
+-- Nor does it make rels without a join clause between them joinable, even
+-- without starjoin clusters (there are no foreign key joins in this chain),
+-- as the search would then join all subsets of the rels.  The join clauses
+-- are inequalities, so that they don't link all the rels through a single
+-- equivalence class.
+SELECT $$
+SELECT count(*) FROM starjoin_var_free_d1 AS c1
+  JOIN starjoin_var_free_d2 AS c2 ON c1.id < c2.id
+  JOIN starjoin_var_free_d3 AS c3 ON c2.id < c3.id
+  JOIN starjoin_var_free_d4 AS c4 ON c3.id < c4.id
+  JOIN starjoin_var_free_d5 AS c5 ON c4.id < c5.id
+  JOIN starjoin_var_free_d6 AS c6 ON c5.id < c6.id
+  JOIN starjoin_var_free_d7 AS c7 ON c6.id < c7.id
+  JOIN starjoin_var_free_d8 AS c8 ON c7.id < c8.id
+$$ AS q_chain \gset
+
+SELECT starjoin_var_free_planning_memory(:'q_chain' || $$WHERE now() > '2000-01-01'$$)
+       < 2 * starjoin_var_free_planning_memory(:'q_chain')
+       AS chain_where_now_planning_memory;
+
+-- Nor does the qual make rels without join clauses look like they have some,
+-- which would leave their Cartesian products to the last-ditch joins at the
+-- top of the join tree.  The plan is the same as without the qual, with
+-- starjoin ordering enabled or disabled.
+SELECT $$
+SELECT count(*) FROM starjoin_var_free_f AS f
+  JOIN starjoin_var_free_d1 AS d1 ON f.d1 = d1.id
+  JOIN starjoin_var_free_d2 AS d2 ON f.d2 = d2.id
+  JOIN starjoin_var_free_d3 AS d3 ON f.d3 = d3.id
+  CROSS JOIN starjoin_var_free_d4 AS x1
+  CROSS JOIN starjoin_var_free_d5 AS x2
+ WHERE x1.id <= 2 AND x2.id = 1
+$$ AS q_cross \gset
+
+SELECT starjoin_var_free_join_tree(:'q_cross', false) =
+       starjoin_var_free_join_tree(:'q_cross' || $$AND now() > '2000-01-01'$$, false)
+       AS cross_where_now_same_plan_off,
+       starjoin_var_free_join_tree(:'q_cross', true) =
+       starjoin_var_free_join_tree(:'q_cross' || $$AND now() > '2000-01-01'$$, true)
+       AS cross_where_now_same_plan_on;
+
 -- A volatile Var-free qual is not pseudoconstant and still excludes dimensions.
 SELECT starjoin_var_free_geqo_used(:'q_star' || 'WHERE random() < 0.5', true)
        AS where_volatile_geqo;
@@ -168,6 +226,7 @@ RESET join_collapse_limit;
 
 DROP FUNCTION starjoin_var_free_geqo_used(text, bool);
 DROP FUNCTION starjoin_var_free_planning_memory(text);
+DROP FUNCTION starjoin_var_free_join_tree(text, bool);
 DROP FUNCTION starjoin_var_free_check(text);
 
 DROP TABLE starjoin_var_free_f, starjoin_var_free_d1, starjoin_var_free_d2,

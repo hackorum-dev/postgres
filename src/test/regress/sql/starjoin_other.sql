@@ -534,13 +534,12 @@ $$ AS q_clauseless_first \gset
 SELECT starjoin_other_cost(:'q_clauseless_first', true)
        > starjoin_other_cost(:'q_clauseless_first', false) * 1.01 AS clauseless_first_cost_higher;
 
--- But without the fact, a dimension must not be joined to rels with join
--- clauses, or the search might consider each dimension with all subsets of
--- c1-c5.  A pseudoconstant qual is in the joininfo list of every rel, but it
--- is not a join clause, so it must not make the rels joinable to each other.
--- The rels c1-c5 are joinable to each other even without the qual, through
--- an equivalence class (including f.id) or through a join clause referencing
--- all of them, so the qual should not add any joinrels.
+-- A pseudoconstant qual is in the joininfo list of every rel, but it is not a
+-- join clause, so it must not make the rels joinable to each other, or the
+-- search might consider each dimension with all subsets of c1-c5 (without
+-- the fact).  The rels c1-c5 are joinable to each other even without the
+-- qual, through an equivalence class (including f.id) or through a join
+-- clause referencing all of them, so the qual should not add any joinrels.
 SELECT $$
 SELECT count(*) FROM starjoin_other_f AS f
   JOIN starjoin_other_d1 AS d1 ON f.d1 = d1.id
@@ -577,11 +576,86 @@ SELECT starjoin_other_memory(:'q_joininfo' || $$WHERE now() > '2000-01-01'$$, tr
        AS joininfo_where_now_memory_ok;
 RESET join_collapse_limit;
 
+-- Without the fact, a dimension may be joined to rels with join clauses too,
+-- in the last-ditch pass of the join search, which joins rels by Cartesian
+-- products when no other joins are possible.  Here the star and c1-c3 have
+-- join clauses only to c4, which is outside the subproblem (with
+-- join_collapse_limit = 6).  The cheapest plan joins the product of c1-c3
+-- and d2 to the join of f and d1, so that the dimensions are not joined to
+-- the product of c1-c3 and f, and the plan is as cheap as with the GUC
+-- disabled.
+SELECT $$
+SELECT count(*) FROM starjoin_other_c4 AS c4 JOIN (
+  starjoin_other_f AS f
+  JOIN starjoin_other_d1 AS d1 ON f.d1 = d1.id
+  JOIN starjoin_other_d2 AS d2 ON f.d2 = d2.id
+  CROSS JOIN (starjoin_other_c1 AS c1
+    JOIN starjoin_other_c2 AS c2 ON c1.id = c2.id
+    JOIN starjoin_other_c3 AS c3 ON c2.id = c3.id)
+) ON c3.id = c4.id AND f.a = c4.v
+$$ AS q_last_ditch \gset
+
+SET join_collapse_limit = 6;
+SELECT starjoin_other_cost(:'q_last_ditch', true)
+       <= starjoin_other_cost(:'q_last_ditch', false) * 1.01 AS last_ditch_cost_ok;
+RESET join_collapse_limit;
+
+-- The last-ditch pass may also join a dimension to rels with join clauses
+-- to other rels (not the fact), and those clauses might then build joinrels
+-- with several dimensions but without the fact.  Those joinrels are
+-- rejected, so that for each set of the other rels the search builds at
+-- most d+1 joinrels without the fact (and not up to 2^d).  Here the star
+-- has join clauses only to a, which is outside the subproblem (with
+-- join_collapse_limit = 25), and four groups (outer joins of s and a view
+-- joining four copies of s) only to each other.  But the clauses linking
+-- the groups reference the nullable sides of the outer joins, so they
+-- can't be used before the groups are complete.  So once the star and the
+-- groups are complete (with five rels each), the last-ditch pass joins
+-- each group to each dimension, and the clauses linking the groups then
+-- join those joinrels to each other.
+CREATE VIEW starjoin_other_v AS
+SELECT s1.id FROM starjoin_other_s AS s1
+  JOIN starjoin_other_s AS s2 USING (id)
+  JOIN starjoin_other_s AS s3 USING (id)
+  JOIN starjoin_other_s AS s4 USING (id);
+
+SELECT $$
+SELECT count(*) FROM starjoin_other_a AS a JOIN (
+  starjoin_other_f AS f
+  JOIN starjoin_other_d1 AS d1 ON f.d1 = d1.id
+  JOIN starjoin_other_d2 AS d2 ON f.d2 = d2.id
+  JOIN starjoin_other_d3 AS d3 ON f.d3 = d3.id
+  JOIN starjoin_other_d4 AS d4 ON f.d4 = d4.id
+  CROSS JOIN (starjoin_other_s AS s1
+    LEFT JOIN starjoin_other_v AS v1 ON s1.id = v1.id)
+  JOIN (starjoin_other_s AS s2
+    LEFT JOIN starjoin_other_v AS v2 ON s2.id = v2.id)
+    ON coalesce(v1.id, 0) = coalesce(v2.id, 0)
+  JOIN (starjoin_other_s AS s3
+    LEFT JOIN starjoin_other_v AS v3 ON s3.id = v3.id)
+    ON coalesce(v2.id, 0) = coalesce(v3.id, 0)
+  JOIN (starjoin_other_s AS s4
+    LEFT JOIN starjoin_other_v AS v4 ON s4.id = v4.id)
+    ON coalesce(v3.id, 0) = coalesce(v4.id, 0)
+) ON f.a = a.id
+$$ AS q_last_ditch_dims \gset
+
+-- single subproblem with 25 rels, without GEQO
+SET join_collapse_limit = 25;
+SET geqo = off;
+SELECT starjoin_other_memory(:'q_last_ditch_dims', true)
+       < starjoin_other_memory(:'q_last_ditch_dims', false) * 0.25
+       AS last_ditch_dims_pruned;
+RESET geqo;
+RESET join_collapse_limit;
+
 RESET max_parallel_workers_per_gather;
 
 DROP FUNCTION starjoin_other_cost(text, bool);
 DROP FUNCTION starjoin_other_memory(text, bool);
 DROP FUNCTION starjoin_other_plan(text, bool);
+
+DROP VIEW starjoin_other_v;
 
 DROP TABLE starjoin_other_pf, starjoin_other_p1, starjoin_other_p2,
   starjoin_other_p3, starjoin_other_wf, starjoin_other_wa, starjoin_other_wb,
