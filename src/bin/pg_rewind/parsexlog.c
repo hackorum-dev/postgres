@@ -224,16 +224,13 @@ findLastCheckpoint(const char *datadir, XLogRecPtr forkptr, int tliIndex,
 		if (xlogreader->seg.ws_tli != current_tli ||
 			xlogreader->seg.ws_segno != current_segno)
 		{
-			char		xlogfname[MAXFNAMELEN];
-
-			snprintf(xlogfname, MAXFNAMELEN, XLOGDIR "/");
+			char		xlogfname[MAXPGPATH];
 
 			/* update current values */
 			current_tli = xlogreader->seg.ws_tli;
 			current_segno = xlogreader->seg.ws_segno;
 
-			XLogFileName(xlogfname + sizeof(XLOGDIR),
-						 current_tli, current_segno, WalSegSz);
+			XLogFilePath(xlogfname, current_tli, current_segno, WalSegSz);
 
 			/* Track this filename as one to not remove */
 			keepwal_add_entry(xlogfname);
