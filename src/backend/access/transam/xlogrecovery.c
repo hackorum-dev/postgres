@@ -1831,6 +1831,10 @@ PerformWalRecovery(void)
 		 * end of main redo apply loop
 		 */
 
+		/* Consistency may have been reached at end of WAL. */
+		if (!reachedRecoveryTarget)
+			reachedRecoveryTarget = recoveryStopsAfter(NULL);
+
 		if (reachedRecoveryTarget)
 		{
 			if (!reachedConsistency)
@@ -2730,10 +2734,19 @@ recoveryStopsBefore(XLogReaderState *record)
 static bool
 recoveryStopsAfter(XLogReaderState *record)
 {
-	uint8		info;
-	uint8		xact_info;
-	uint8		rmid;
+	uint8		info = 0;
+	uint8		xact_info = 0;
+	uint8		rmid = 0;
 	TimestampTz recordXtime = 0;
+	bool		valid_record;
+
+	/*
+	 * We may reach consistency when we run out of WAL, even without a valid
+	 * record.  Only the immediate recovery target can be reached in this case.
+	 * The caller must pass NULL when there is no valid record.
+	 */
+	Assert(record == NULL || record->record != NULL);
+	valid_record = (record != NULL);
 
 	/*
 	 * Ignore recovery target settings when not in archive recovery (meaning
@@ -2742,14 +2755,20 @@ recoveryStopsAfter(XLogReaderState *record)
 	if (!ArchiveRecoveryRequested)
 		return false;
 
-	info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
-	rmid = XLogRecGetRmid(record);
+	/* Set up some info for valid records */
+	if (valid_record)
+	{
+		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+		rmid = XLogRecGetRmid(record);
+		xact_info = info & XLOG_XACT_OPMASK;
+	}
 
 	/*
 	 * There can be many restore points that share the same name; we stop at
 	 * the first one.
 	 */
-	if (recoveryTarget == RECOVERY_TARGET_NAME &&
+	if (valid_record &&
+		recoveryTarget == RECOVERY_TARGET_NAME &&
 		rmid == RM_XLOG_ID && info == XLOG_RESTORE_POINT)
 	{
 		xl_restore_point *recordRestorePointData;
@@ -2777,9 +2796,8 @@ recoveryStopsAfter(XLogReaderState *record)
 	 * targets, so that the latest transaction timestamp is updated even if we
 	 * stop at such a record.
 	 */
-	xact_info = info & XLOG_XACT_OPMASK;
-
-	if (rmid == RM_XACT_ID &&
+	if (valid_record &&
+		rmid == RM_XACT_ID &&
 		(xact_info == XLOG_XACT_COMMIT ||
 		 xact_info == XLOG_XACT_COMMIT_PREPARED ||
 		 xact_info == XLOG_XACT_ABORT ||
@@ -2853,8 +2871,13 @@ recoveryStopsAfter(XLogReaderState *record)
 		}
 	}
 
-	/* Check if the target LSN has been reached */
-	if (recoveryTarget == RECOVERY_TARGET_LSN &&
+	/*
+	 * Check if the target LSN has been reached.  If no valid record is
+	 * available, we have already performed this check for the last valid
+	 * record.
+	 */
+	if (valid_record &&
+		recoveryTarget == RECOVERY_TARGET_LSN &&
 		recoveryTargetInclusive &&
 		record->ReadRecPtr >= recoveryTargetLSN)
 	{

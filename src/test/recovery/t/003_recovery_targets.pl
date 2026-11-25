@@ -356,4 +356,30 @@ if (ok($node_immediate->start(fail_ok => 1),
 	$node_immediate->stop;
 }
 
+# Test recovery to an immediate target after a crash, where consistency
+# is reached only when we run out of WAL.  Clear the XID target left
+# over from the preceding tests.
+$node_primary->append_conf(
+	'postgresql.conf', "
+restore_command = 'false'
+recovery_target_xid = ''
+recovery_target = 'immediate'
+recovery_target_action = 'promote'");
+
+$node_primary->set_recovery_mode;
+
+if (ok($node_primary->start(fail_ok => 1),
+		"start recovery to immediate target after crash"))
+{
+	ok($node_primary->poll_query_until('postgres',
+			"SELECT NOT pg_is_in_recovery()"),
+		"promotion after reaching immediate target at end of WAL");
+
+	ok($node_primary->log_contains(
+			"recovery stopping after reaching consistency"),
+		"immediate target reached at end of WAL");
+
+	$node_primary->stop;
+}
+
 done_testing();
