@@ -1,0 +1,178 @@
+Parsed test spec with 2 sessions
+
+starting permutation: pin_snapshot change_key commit_update rebuild probe use_heap probe finish
+step pin_snapshot: SELECT pg_current_snapshot() IS NOT NULL AS snapshot_taken;
+snapshot_taken
+--------------
+t             
+(1 row)
+
+step change_key: 
+    BEGIN;
+    UPDATE brin_hot_rebuild SET k = 2;
+    SELECT pg_stat_get_xact_tuples_hot_updated('brin_hot_rebuild'::regclass)
+      AS hot_updates;
+
+hot_updates
+-----------
+          1
+(1 row)
+
+step commit_update: COMMIT;
+step rebuild: REINDEX INDEX brin_hot_rebuild_idx;
+step probe: 
+    EXPLAIN (COSTS OFF) SELECT count(*) FROM brin_hot_rebuild WHERE k = 1;
+    SELECT count(*) AS visible_ones FROM brin_hot_rebuild WHERE k = 1;
+
+QUERY PLAN                                           
+-----------------------------------------------------
+Aggregate                                            
+  ->  Bitmap Heap Scan on brin_hot_rebuild           
+        Recheck Cond: (k = 1)                        
+        ->  Bitmap Index Scan on brin_hot_rebuild_idx
+              Index Cond: (k = 1)                    
+(5 rows)
+
+visible_ones
+------------
+           1
+(1 row)
+
+step use_heap: SET LOCAL enable_seqscan = on; SET LOCAL enable_bitmapscan = off;
+step probe: 
+    EXPLAIN (COSTS OFF) SELECT count(*) FROM brin_hot_rebuild WHERE k = 1;
+    SELECT count(*) AS visible_ones FROM brin_hot_rebuild WHERE k = 1;
+
+QUERY PLAN                        
+----------------------------------
+Aggregate                         
+  ->  Seq Scan on brin_hot_rebuild
+        Filter: (k = 1)           
+(3 rows)
+
+visible_ones
+------------
+           1
+(1 row)
+
+step finish: COMMIT;
+
+starting permutation: pin_snapshot change_key rebuild commit_update probe use_heap probe finish
+step pin_snapshot: SELECT pg_current_snapshot() IS NOT NULL AS snapshot_taken;
+snapshot_taken
+--------------
+t             
+(1 row)
+
+step change_key: 
+    BEGIN;
+    UPDATE brin_hot_rebuild SET k = 2;
+    SELECT pg_stat_get_xact_tuples_hot_updated('brin_hot_rebuild'::regclass)
+      AS hot_updates;
+
+hot_updates
+-----------
+          1
+(1 row)
+
+step rebuild: REINDEX INDEX brin_hot_rebuild_idx;
+step commit_update: COMMIT;
+step probe: 
+    EXPLAIN (COSTS OFF) SELECT count(*) FROM brin_hot_rebuild WHERE k = 1;
+    SELECT count(*) AS visible_ones FROM brin_hot_rebuild WHERE k = 1;
+
+QUERY PLAN                                           
+-----------------------------------------------------
+Aggregate                                            
+  ->  Bitmap Heap Scan on brin_hot_rebuild           
+        Recheck Cond: (k = 1)                        
+        ->  Bitmap Index Scan on brin_hot_rebuild_idx
+              Index Cond: (k = 1)                    
+(5 rows)
+
+visible_ones
+------------
+           1
+(1 row)
+
+step use_heap: SET LOCAL enable_seqscan = on; SET LOCAL enable_bitmapscan = off;
+step probe: 
+    EXPLAIN (COSTS OFF) SELECT count(*) FROM brin_hot_rebuild WHERE k = 1;
+    SELECT count(*) AS visible_ones FROM brin_hot_rebuild WHERE k = 1;
+
+QUERY PLAN                        
+----------------------------------
+Aggregate                         
+  ->  Seq Scan on brin_hot_rebuild
+        Filter: (k = 1)           
+(3 rows)
+
+visible_ones
+------------
+           1
+(1 row)
+
+step finish: COMMIT;
+
+starting permutation: pin_snapshot change_key commit_update desummarize vacuum_range probe use_heap probe finish
+step pin_snapshot: SELECT pg_current_snapshot() IS NOT NULL AS snapshot_taken;
+snapshot_taken
+--------------
+t             
+(1 row)
+
+step change_key: 
+    BEGIN;
+    UPDATE brin_hot_rebuild SET k = 2;
+    SELECT pg_stat_get_xact_tuples_hot_updated('brin_hot_rebuild'::regclass)
+      AS hot_updates;
+
+hot_updates
+-----------
+          1
+(1 row)
+
+step commit_update: COMMIT;
+step desummarize: SELECT brin_desummarize_range('brin_hot_rebuild_idx', 0);
+brin_desummarize_range
+----------------------
+                      
+(1 row)
+
+step vacuum_range: VACUUM (INDEX_CLEANUP ON) brin_hot_rebuild;
+step probe: 
+    EXPLAIN (COSTS OFF) SELECT count(*) FROM brin_hot_rebuild WHERE k = 1;
+    SELECT count(*) AS visible_ones FROM brin_hot_rebuild WHERE k = 1;
+
+QUERY PLAN                                           
+-----------------------------------------------------
+Aggregate                                            
+  ->  Bitmap Heap Scan on brin_hot_rebuild           
+        Recheck Cond: (k = 1)                        
+        ->  Bitmap Index Scan on brin_hot_rebuild_idx
+              Index Cond: (k = 1)                    
+(5 rows)
+
+visible_ones
+------------
+           1
+(1 row)
+
+step use_heap: SET LOCAL enable_seqscan = on; SET LOCAL enable_bitmapscan = off;
+step probe: 
+    EXPLAIN (COSTS OFF) SELECT count(*) FROM brin_hot_rebuild WHERE k = 1;
+    SELECT count(*) AS visible_ones FROM brin_hot_rebuild WHERE k = 1;
+
+QUERY PLAN                        
+----------------------------------
+Aggregate                         
+  ->  Seq Scan on brin_hot_rebuild
+        Filter: (k = 1)           
+(3 rows)
+
+visible_ones
+------------
+           1
+(1 row)
+
+step finish: COMMIT;
