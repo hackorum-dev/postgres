@@ -292,6 +292,8 @@ typedef struct ForeignKeyCacheInfo
 	Oid			confrelid;
 	/* index supporting the referenced key */
 	Oid			conindid;
+	/* parent constraint, if this entry derives from partitioning */
+	Oid			conparentid;
 	/* number of columns in the foreign key */
 	int			nkeys;
 

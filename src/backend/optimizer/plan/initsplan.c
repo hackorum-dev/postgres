@@ -14,6 +14,7 @@
  */
 #include "postgres.h"
 
+#include "access/htup_details.h"
 #include "access/nbtree.h"
 #include "access/sysattr.h"
 #include "catalog/pg_constraint.h"
@@ -36,6 +37,7 @@
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/syscache.h"
 #include "utils/typcache.h"
 
 /* These parameters are set by GUC */
@@ -4345,6 +4347,30 @@ has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel, RelOptInfo *dim_rel)
 		/* Several referenced rows may together cover a PERIOD key. */
 		if (fkinfo->conperiod)
 			continue;
+
+		/*
+		 * An FK to a partitioned table has a pg_constraint row for each
+		 * referenced partition, but the match can be in any partition. A
+		 * child FK on the referencing side is fine: it references the same
+		 * table as its parent constraint.
+		 */
+		if (OidIsValid(fkinfo->conparentid))
+		{
+			HeapTuple	tuple;
+			Form_pg_constraint parent;
+			bool		same_target;
+
+			tuple = SearchSysCache1(CONSTROID,
+									ObjectIdGetDatum(fkinfo->conparentid));
+			if (!HeapTupleIsValid(tuple))
+				continue;
+			parent = (Form_pg_constraint) GETSTRUCT(tuple);
+			same_target = parent->confrelid ==
+				root->simple_rte_array[dim_rel->relid]->relid;
+			ReleaseSysCache(tuple);
+			if (!same_target)
+				continue;
+		}
 
 		for (i = 0; i < fkinfo->nkeys; i++)
 		{

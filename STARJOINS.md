@@ -279,8 +279,8 @@ The fact has to be a base relation too.
    would remove every fact row instead of preserving it.  Joins to the
    whole partitioned table never qualify, as the referenced relation has
    to be scanned without inheritance (see the conditions inherited from
-   foreign key matching).  Direct joins to leaf partitions are not
-   affected.
+   foreign key matching).  Direct joins to leaf partitions are subject
+   to the foreign key requirements below.
 
 2. All join columns on the fact are NOT NULL.
 
@@ -371,6 +371,18 @@ satisfied.  They are skipped only when looking for a starjoin foreign
 key, not when matching foreign keys for selectivity estimation, and an
 ordinary equality foreign key between the same relations remains
 eligible.
+
+A foreign key referencing a partitioned table has a pg_constraint row
+for each referenced partition, with the OID of that partition and its
+unique index.  A join directly to a leaf partition can match such an
+entry, although the foreign key guarantees a match only somewhere in the
+partition tree, so the unique index of the leaf proves at most one
+match, not that there is one.  So a foreign key whose parent constraint
+(`conparentid`) references a different relation is rejected, as it's a
+referenced-side partition entry.  A constraint inherited on the
+referencing side keeps the referenced relation, and is valid evidence,
+as is a separately declared foreign key to the leaf.  Foreign keys
+without a parent constraint need no extra catalog lookup.
 
 ### Equality semantics
 
@@ -579,3 +591,8 @@ the plans, the planning cost, or the regression tests.
   - starjoin_fk_only: an ONLY scan of the referenced partitioned parent
     matches no rows and does not qualify, while an ONLY scan of a
     directly referenced leaf partition does.
+  - starjoin_fk_partition: all 100 fact rows join the partitioned
+    parent, but only one joins the selected leaf, which does not qualify
+    on the foreign key of the parent alone, but does on a genuine
+    foreign key to it, both before and after attaching the fact table as
+    a referencing partition.

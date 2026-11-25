@@ -4816,6 +4816,7 @@ RelationGetFKeyList(Relation relation)
 		info->conrelid = constraint->conrelid;
 		info->confrelid = constraint->confrelid;
 		info->conindid = constraint->conindid;
+		info->conparentid = constraint->conparentid;
 		info->conenforced = constraint->conenforced;
 		info->conperiod = constraint->conperiod;
 

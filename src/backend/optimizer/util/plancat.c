@@ -661,6 +661,7 @@ get_relation_foreign_keys(PlannerInfo *root, RelOptInfo *rel,
 			info->con_relid = rel->relid;
 			info->ref_relid = rti;
 			info->conindid = cachedfk->conindid;
+			info->conparentid = cachedfk->conparentid;
 			info->conperiod = cachedfk->conperiod;
 			info->nkeys = cachedfk->nkeys;
 			memcpy(info->conkey, cachedfk->conkey, sizeof(info->conkey));
