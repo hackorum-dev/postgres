@@ -52,11 +52,32 @@ sub resume_walreceiver
 		"SELECT EXISTS (SELECT * FROM pg_stat_wal_receiver);");
 }
 
+# WAIT treats a target that points into or just past a WAL page header as the
+# start of that page, see section 11e.  Return $lsn the way WAIT sees it, for
+# checks that a position has reached a target taken from
+# pg_current_wal_insert_lsn().  A page header takes at most 40 bytes.  This
+# also maps the end of a record continued from the previous page if it lies
+# within those 40 bytes, which only makes such checks a bit weaker.
+sub wait_target_lsn
+{
+	my ($node, $lsn) = @_;
+
+	return $node->safe_psql(
+		'postgres', qq[
+		SELECT CASE WHEN off BETWEEN 1 AND 40 THEN lsn - off ELSE lsn END
+		FROM (SELECT '$lsn'::pg_lsn AS lsn,
+					 ('$lsn'::pg_lsn - '0/0'::pg_lsn) %
+					 current_setting('wal_block_size')::int AS off) s;
+	]);
+}
+
 # Verify the wait predicate "target <= currentLSN" at the boundary.
 # Given $current_lsn (the frozen position for $mode), check that:
 #   target == current        -> success (predicate is <=)
 #   target == current - 1    -> success
 #   target == current + 1    -> timeout
+# If $current_lsn is at a page start, current + 1 points into the page header
+# and is reached already (see wait_target_lsn()), so use current + 41 instead.
 # The caller must ensure that the relevant LSN position on $node is
 # actually frozen (e.g. walreceiver stopped and replay paused), otherwise
 # the "+1" case may racily succeed.  Returns ($lsn_minus, $lsn_plus) so
@@ -67,8 +88,13 @@ sub check_wait_for_lsn_fencepost
 
 	my $lsn_minus = $node->safe_psql('postgres',
 		"SELECT ('$current_lsn'::pg_lsn - 1)::text");
-	my $lsn_plus = $node->safe_psql('postgres',
-		"SELECT ('$current_lsn'::pg_lsn + 1)::text");
+	my $lsn_plus = $node->safe_psql(
+		'postgres', qq[
+		SELECT ('$current_lsn'::pg_lsn +
+				CASE WHEN ('$current_lsn'::pg_lsn - '0/0'::pg_lsn) %
+						  current_setting('wal_block_size')::int = 0
+					 THEN 41 ELSE 1 END)::text;
+	]);
 
 	foreach my $case (
 		[ $current_lsn, 'success', 'target == current succeeds', '5s' ],
@@ -116,10 +142,11 @@ $node_primary->safe_psql('postgres',
 	"INSERT INTO wait_test VALUES (generate_series(11, 20))");
 my $lsn1 =
   $node_primary->safe_psql('postgres', "SELECT pg_current_wal_insert_lsn()");
+my $lsn1_reached = wait_target_lsn($node_primary, $lsn1);
 my $output = $node_standby->safe_psql(
 	'postgres', qq[
 	WAIT FOR LSN '${lsn1}' WITH (timeout '1d');
-	SELECT pg_lsn_cmp(pg_last_wal_replay_lsn(), '${lsn1}'::pg_lsn);
+	SELECT pg_lsn_cmp(pg_last_wal_replay_lsn(), '${lsn1_reached}'::pg_lsn);
 ]);
 
 # Make sure the current LSN on standby is at least as big as the LSN we
@@ -148,10 +175,11 @@ $node_primary->safe_psql('postgres',
 	"INSERT INTO wait_test VALUES (generate_series(31, 40))");
 my $lsn_write =
   $node_primary->safe_psql('postgres', "SELECT pg_current_wal_insert_lsn()");
+my $lsn_write_reached = wait_target_lsn($node_primary, $lsn_write);
 $output = $node_standby->safe_psql(
 	'postgres', qq[
 	WAIT FOR LSN '${lsn_write}' WITH (MODE 'standby_write', timeout '1d');
-	SELECT pg_lsn_cmp((SELECT written_lsn FROM pg_stat_wal_receiver), '${lsn_write}'::pg_lsn);
+	SELECT pg_lsn_cmp((SELECT written_lsn FROM pg_stat_wal_receiver), '${lsn_write_reached}'::pg_lsn);
 ]);
 
 ok( (split("\n", $output))[-1] >= 0,
@@ -162,10 +190,11 @@ $node_primary->safe_psql('postgres',
 	"INSERT INTO wait_test VALUES (generate_series(41, 50))");
 my $lsn_flush =
   $node_primary->safe_psql('postgres', "SELECT pg_current_wal_insert_lsn()");
+my $lsn_flush_reached = wait_target_lsn($node_primary, $lsn_flush);
 $output = $node_standby->safe_psql(
 	'postgres', qq[
 	WAIT FOR LSN '${lsn_flush}' WITH (MODE 'standby_flush', timeout '1d');
-	SELECT pg_lsn_cmp(pg_last_wal_receive_lsn(), '${lsn_flush}'::pg_lsn);
+	SELECT pg_lsn_cmp(pg_last_wal_receive_lsn(), '${lsn_flush_reached}'::pg_lsn);
 ]);
 
 ok( (split("\n", $output))[-1] >= 0,
@@ -177,10 +206,12 @@ $node_primary->safe_psql('postgres',
 	"INSERT INTO wait_test VALUES (generate_series(51, 60))");
 my $lsn_primary_flush =
   $node_primary->safe_psql('postgres', "SELECT pg_current_wal_insert_lsn()");
+my $lsn_primary_flush_reached =
+  wait_target_lsn($node_primary, $lsn_primary_flush);
 $output = $node_primary->safe_psql(
 	'postgres', qq[
 	WAIT FOR LSN '${lsn_primary_flush}' WITH (MODE 'primary_flush', timeout '1d');
-	SELECT pg_lsn_cmp(pg_current_wal_flush_lsn(), '${lsn_primary_flush}'::pg_lsn);
+	SELECT pg_lsn_cmp(pg_current_wal_flush_lsn(), '${lsn_primary_flush_reached}'::pg_lsn);
 ]);
 
 ok( (split("\n", $output))[-1] >= 0,
@@ -605,8 +636,9 @@ for (my $i = 0; $i < 5; $i++)
 }
 
 # Verify on standby that WAL was written up to the target LSN
+my $write_lsn_reached = wait_target_lsn($node_standby, $write_lsns[4]);
 $output = $node_standby->safe_psql('postgres',
-	"SELECT pg_lsn_cmp((SELECT written_lsn FROM pg_stat_wal_receiver), '$write_lsns[4]'::pg_lsn);"
+	"SELECT pg_lsn_cmp((SELECT written_lsn FROM pg_stat_wal_receiver), '$write_lsn_reached'::pg_lsn);"
 );
 
 ok($output >= 0,
@@ -657,8 +689,9 @@ for (my $i = 0; $i < 5; $i++)
 }
 
 # Verify on standby that WAL was flushed up to the target LSN
+my $flush_lsn_reached = wait_target_lsn($node_standby, $flush_lsns[4]);
 $output = $node_standby->safe_psql('postgres',
-	"SELECT pg_lsn_cmp(pg_last_wal_receive_lsn(), '$flush_lsns[4]'::pg_lsn);"
+	"SELECT pg_lsn_cmp(pg_last_wal_receive_lsn(), '$flush_lsn_reached'::pg_lsn);"
 );
 
 ok($output >= 0,
@@ -720,11 +753,12 @@ for (my $i = 0; $i < 6; $i++)
 }
 
 # Verify all modes reached the target LSN
+my $mixed_reached = wait_target_lsn($node_standby, $mixed_target_lsn);
 $output = $node_standby->safe_psql(
 	'postgres', qq[
-	SELECT pg_lsn_cmp((SELECT written_lsn FROM pg_stat_wal_receiver), '${mixed_target_lsn}'::pg_lsn) >= 0 AND
-	       pg_lsn_cmp(pg_last_wal_receive_lsn(), '${mixed_target_lsn}'::pg_lsn) >= 0 AND
-	       pg_lsn_cmp(pg_last_wal_replay_lsn(), '${mixed_target_lsn}'::pg_lsn) >= 0;
+	SELECT pg_lsn_cmp((SELECT written_lsn FROM pg_stat_wal_receiver), '${mixed_reached}'::pg_lsn) >= 0 AND
+	       pg_lsn_cmp(pg_last_wal_receive_lsn(), '${mixed_reached}'::pg_lsn) >= 0 AND
+	       pg_lsn_cmp(pg_last_wal_replay_lsn(), '${mixed_reached}'::pg_lsn) >= 0;
 ]);
 
 ok($output eq 't',
@@ -767,8 +801,10 @@ for (my $i = 0; $i < 5; $i++)
 }
 
 # Verify on primary that WAL was flushed up to the target LSN
+my $primary_flush_reached =
+  wait_target_lsn($node_primary, $primary_flush_lsns[4]);
 $output = $node_primary->safe_psql('postgres',
-	"SELECT pg_lsn_cmp(pg_current_wal_flush_lsn(), '$primary_flush_lsns[4]'::pg_lsn);"
+	"SELECT pg_lsn_cmp(pg_current_wal_flush_lsn(), '$primary_flush_reached'::pg_lsn);"
 );
 
 ok($output >= 0,
@@ -1142,9 +1178,12 @@ SKIP:
 	# Stop streaming before generating the target.  This keeps both the
 	# walreceiver write position and the replay position below the target.
 	stop_walreceiver($rcv_standby);
+	# Use the flush position, which never points into a page header: the
+	# waiter registers such a target as the page start, and the registration
+	# checks below compare with the target exactly.
 	$rcv_primary->safe_psql('postgres', 'INSERT INTO rcv_test VALUES (300)');
 	my $stale_target = $rcv_primary->safe_psql('postgres',
-		'SELECT pg_current_wal_insert_lsn()');
+		'SELECT pg_current_wal_flush_lsn()');
 
 	# Keep WAIT FOR untimed.  After streaming resumes below, its own timeout
 	# could wake the backend and make the completion check pass even if the

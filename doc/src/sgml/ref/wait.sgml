@@ -98,7 +98,9 @@ WAIT FOR LSN '<replaceable class="parameter">lsn</replaceable>'
             <literal>standby_replay</literal>: Wait for the LSN to be replayed
             (applied to the database) on a standby server. After successful
             completion, <function>pg_last_wal_replay_lsn()</function> will
-            return a value greater than or equal to the target LSN. This mode
+            return a value greater than or equal to the target LSN, or to the
+            start of its WAL page if the target LSN points into or just past
+            the page header (see <xref linkend="sql-wait-notes"/>). This mode
             can only be used during recovery.
            </para>
           </listitem>
@@ -131,7 +133,9 @@ WAIT FOR LSN '<replaceable class="parameter">lsn</replaceable>'
             <literal>primary_flush</literal>: Wait for the WAL containing the
             LSN to be flushed to disk on a primary server. After successful
             completion, <function>pg_current_wal_flush_lsn()</function> will
-            return a value greater than or equal to the target LSN. This mode
+            return a value greater than or equal to the target LSN, or to the
+            start of its WAL page if the target LSN points into or just past
+            the page header (see <xref linkend="sql-wait-notes"/>). This mode
             can only be used on a primary server (not during recovery).
            </para>
           </listitem>
@@ -255,7 +259,7 @@ WAIT FOR LSN '<replaceable class="parameter">lsn</replaceable>'
   </variablelist>
  </refsect1>
 
- <refsect1>
+ <refsect1 id="sql-wait-notes" xreflabel="Notes">
   <title>Notes</title>
   <para>
    <command>WAIT</command> must be executed as a top-level command.
@@ -331,6 +335,19 @@ WAIT FOR LSN '<replaceable class="parameter">lsn</replaceable>'
    a primary server. In all cases, the <acronym>LSN</acronym> of the last
    modification should be stored on the client application side or the
    connection pooler side.
+  </para>
+
+  <para>
+   No WAL record can end inside a WAL page header, so a target
+   <parameter>lsn</parameter> that points into or just past a page header
+   denotes the same point in the WAL as the start of that page, and
+   <command>WAIT</command> treats it as such.  When the last record ends
+   exactly at a page boundary, <function>pg_current_wal_insert_lsn()</function>
+   returns such an <acronym>LSN</acronym>, while the replay, write, and flush
+   positions stay at the boundary until more WAL is written.
+   <command>WAIT</command> then returns once the boundary is reached, so these
+   positions can be less than the target <acronym>LSN</acronym> after a
+   successful wait.
   </para>
 
   <para>
