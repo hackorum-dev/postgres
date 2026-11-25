@@ -7442,24 +7442,27 @@ check_composite_type_dependency(ObjectAddress *depobj, Oid typeOid,
 				 */
 				if (rel->rd_indextuple)
 				{
+					Oid			indrelid = rel->rd_index->indrelid;
+
 					expr = get_node_tree_attr(INDEXRELID, rel->rd_indextuple,
 											  Anum_pg_index_indexprs);
 					if (expr)
 					{
-						if (CheckTypeDependencyInSingleRelExpr(expr, RelationGetRelid(rel), typeOid))
-							report_type_used_in_expr(depobj, origRelation, origTypeName);
-
 						/*
-						 * If it's the *return type* of an index expression,
-						 * it becomes a column type and we checked that above
-						 * already.
+						 * CheckTypeDependencyInSingleRelExpr() also checks
+						 * each expression's return type, which may differ
+						 * from the index column's storage type when the index
+						 * access method or operator class uses a separate key
+						 * type (for example in hash or GIN indexes).
 						 */
+						if (CheckTypeDependencyInSingleRelExpr(expr, indrelid, typeOid))
+							report_type_used_in_expr(depobj, origRelation, origTypeName);
 					}
 					expr = get_node_tree_attr(INDEXRELID, rel->rd_indextuple,
 											  Anum_pg_index_indpred);
 					if (expr)
 					{
-						if (CheckTypeDependencyInSingleRelExpr(expr, RelationGetRelid(rel), typeOid))
+						if (CheckTypeDependencyInSingleRelExpr(expr, indrelid, typeOid))
 							report_type_used_in_expr(depobj, origRelation, origTypeName);
 					}
 				}
