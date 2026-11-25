@@ -17,6 +17,7 @@
 #include "access/nbtree.h"
 #include "access/sysattr.h"
 #include "catalog/pg_constraint.h"
+#include "catalog/pg_opfamily.h"
 #include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
@@ -32,6 +33,7 @@
 #include "optimizer/restrictinfo.h"
 #include "parser/analyze.h"
 #include "rewrite/rewriteManip.h"
+#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/typcache.h"
@@ -151,7 +153,8 @@ static void check_hashjoinable(RestrictInfo *restrictinfo);
 static void check_memoizable(RestrictInfo *restrictinfo);
 static bool has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
 									 ForeignKeyOptInfo *fkinfo);
-static bool starjoin_equality_implies(Oid coll1, Oid coll2);
+static bool starjoin_equality_implies(Oid coll1, Oid coll2, Oid opfamily,
+									  Oid eqop);
 static bool starjoin_fk_collations_match(PlannerInfo *root,
 										 RelOptInfo *dim_rel,
 										 ForeignKeyOptInfo *fkinfo);
@@ -4202,13 +4205,43 @@ has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
 }
 
 /*
- * Does equality under coll1 imply equality under coll2?  A deterministic
- * collation treats only byte-wise equal strings as equal, and those are
- * equal under any collation.
+ * Does equality under coll1 imply equality under coll2, for the FK's
+ * equality operator eqop and the unique index's operator family?
+ *
+ * A deterministic collation treats only byte-wise equal strings as equal,
+ * and the built-in string equalities treat those as equal under any
+ * collation.  But an operator could first transform its inputs using the
+ * collation (e.g. lower-case them), so with different collations trust only
+ * the built-in string families and equality functions.  Check both, because
+ * extensions can add cross-type operators to a built-in family.
  */
 static bool
-starjoin_equality_implies(Oid coll1, Oid coll2)
+starjoin_equality_implies(Oid coll1, Oid coll2, Oid opfamily, Oid eqop)
 {
+	if (coll1 == coll2)
+		return true;
+
+	if (!OidIsValid(coll1) || !OidIsValid(coll2))
+		return false;
+
+	if (opfamily != TEXT_BTREE_FAM_OID &&
+		opfamily != TEXT_PATTERN_BTREE_FAM_OID &&
+		opfamily != BPCHAR_BTREE_FAM_OID &&
+		opfamily != BPCHAR_PATTERN_BTREE_FAM_OID)
+		return false;
+
+	switch (get_opcode(eqop))
+	{
+		case F_TEXTEQ:
+		case F_BPCHAREQ:
+		case F_NAMEEQ:
+		case F_NAMEEQTEXT:
+		case F_TEXTEQNAME:
+			break;
+		default:
+			return false;
+	}
+
 	if (collations_agree_on_equality(coll1, coll2))
 		return true;
 
@@ -4236,6 +4269,8 @@ starjoin_fk_collations_match(PlannerInfo *root, RelOptInfo *dim_rel,
 		{
 			AttrNumber	attno = index->indexkeys[j];
 			Oid			indcoll = index->indexcollations[j];
+			Oid			opfamily = index->opfamily[j];
+			Oid			eqop;
 			Oid			attcoll;
 			Oid			typid;
 			int32		typmod;
@@ -4254,14 +4289,17 @@ starjoin_fk_collations_match(PlannerInfo *root, RelOptInfo *dim_rel,
 			if (i == fkinfo->nkeys)
 				return false;
 
+			eqop = fkinfo->conpfeqop[i];
 			get_atttypetypmodcoll(dim_rte->relid, attno,
 								  &typid, &typmod, &attcoll);
 			if (fkinfo->eclass[i] != NULL)
 			{
 				Oid			joincoll = fkinfo->eclass[i]->ec_collation;
 
-				if (!starjoin_equality_implies(attcoll, joincoll) ||
-					!starjoin_equality_implies(joincoll, indcoll))
+				if (!starjoin_equality_implies(attcoll, joincoll,
+											   opfamily, eqop) ||
+					!starjoin_equality_implies(joincoll, indcoll,
+											   opfamily, eqop))
 					return false;
 			}
 			else
@@ -4271,8 +4309,10 @@ starjoin_fk_collations_match(PlannerInfo *root, RelOptInfo *dim_rel,
 					Oid			joincoll;
 
 					joincoll = exprInputCollation((Node *) rinfo->clause);
-					if (!starjoin_equality_implies(attcoll, joincoll) ||
-						!starjoin_equality_implies(joincoll, indcoll))
+					if (!starjoin_equality_implies(attcoll, joincoll,
+												   opfamily, eqop) ||
+						!starjoin_equality_implies(joincoll, indcoll,
+												   opfamily, eqop))
 						return false;
 				}
 			}

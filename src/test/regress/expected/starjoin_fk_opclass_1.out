@@ -1,0 +1,7 @@
+-- Starjoin lookup semantics with a collation-sensitive FK operator class
+\set ON_ERROR_STOP on
+SELECT getdatabaseencoding() <> 'UTF8' OR icu_unicode_version() IS NULL AS skip_test \gset
+\if :skip_test
+\echo 'SKIP: requires ICU and a UTF8 database'
+SKIP: requires ICU and a UTF8 database
+\quit

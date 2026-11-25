@@ -387,7 +387,19 @@ still single-row lookups, such as a join under "C" to a "C" key with a
 case-insensitive unique index.  `starjoin_equality_implies` accepts
 collations that agree on equality, and a deterministic first collation,
 as equality under a deterministic collation is byte-wise equality, which
-implies equality under any collation.
+implies equality under any collation.  That holds for the built-in
+string equalities, which compare strings under a deterministic collation
+byte-wise, but the equality operator of a foreign key need not compare
+the original strings.  An operator class that lower-cases its inputs,
+for example, distinguishes I from dotless i in English and matches them
+in Turkish, while English and a nondeterministic Turkish collation
+disagree on how to fold I.  So with different collations,
+`starjoin_equality_implies` accepts the implication only if both the
+operator family of the unique index and the equality function of the
+foreign key are built-in string comparisons, and otherwise the
+collations have to be the same.  Both are checked, as extensions can add
+cross-type operators to a built-in family.  Identical collations need no
+such proof.
 
 These checks change only which relations are treated as dimensions, not
 foreign key enforcement or selectivity estimation.
@@ -529,9 +541,9 @@ the plans, the planning cost, or the regression tests.
   point, so the search takes noticeably more memory.  So the suites
   compare the planning memory of the search and of the forced order,
   accepting up to 10% more, with four other dimensions that always
-  qualify to widen the difference.  The starjoin_fk_collation suite
-  needs a UTF8 database with ICU collations, and has an alternative
-  output for when it's skipped.
+  qualify to widen the difference.  The starjoin_fk_collation and
+  starjoin_fk_opclass suites need a UTF8 database with ICU, and have
+  alternative outputs for when they're skipped.
   - starjoin_fk_overlap: a composite foreign key qualifies alone and
     together with a short one, whichever is examined first (varying both
     the creation and the name order), while a lone short key and two
@@ -549,3 +561,8 @@ the plans, the planning cost, or the regression tests.
     key with a case-insensitive unique index, where joins under either
     collation qualify, while an accent-insensitive join can match two
     rows and does not.
+  - starjoin_fk_opclass: a case-folding operator class through a loose
+    qual and an equivalence class, a mismatch with just the backing
+    index, and a nondeterministic index collation that separately breaks
+    the existence and the uniqueness proof, where only the native
+    comparison qualifies.
