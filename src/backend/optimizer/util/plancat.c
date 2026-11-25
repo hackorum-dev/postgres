@@ -660,6 +660,7 @@ get_relation_foreign_keys(PlannerInfo *root, RelOptInfo *rel,
 			info = makeNode(ForeignKeyOptInfo);
 			info->con_relid = rel->relid;
 			info->ref_relid = rti;
+			info->conperiod = cachedfk->conperiod;
 			info->nkeys = cachedfk->nkeys;
 			memcpy(info->conkey, cachedfk->conkey, sizeof(info->conkey));
 			memcpy(info->confkey, cachedfk->confkey, sizeof(info->confkey));

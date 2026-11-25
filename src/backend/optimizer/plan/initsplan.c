@@ -4215,6 +4215,10 @@ has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel, RelOptInfo *dim_rel)
 			fkinfo->ref_relid != dim_rel->relid)
 			continue;
 
+		/* Several referenced rows may together cover a PERIOD key. */
+		if (fkinfo->conperiod)
+			continue;
+
 		for (i = 0; i < fkinfo->nkeys; i++)
 		{
 			if (!bms_is_member(fkinfo->conkey[i], fact_rel->notnullattnums))
@@ -4233,8 +4237,8 @@ has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel, RelOptInfo *dim_rel)
  *		Detect star-shaped sub-joins and determine canonical join order.
  *
  * A starjoin cluster is a fact relation joined to two or more dimensions
- * via an equality condition matching a foreign key, satisfying these
- * conditions:
+ * via an equality condition matching a non-temporal foreign key, satisfying
+ * these conditions:
  *
  *	1. The dimension is a plain base relation (RELOPT_BASEREL).
  *

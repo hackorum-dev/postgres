@@ -6324,10 +6324,11 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
         where a <quote>fact</quote> table is joined to multiple
         <quote>dimension</quote> tables using foreign keys.  When a dimension
         table is joined only to the fact table, using a join condition
-        matching a foreign key with <literal>NOT NULL</literal> referencing
-        columns, joining it does not change the number of rows.  All orders
-        of joining such dimension tables to the fact table thus produce the
-        same number of rows, and the planner considers only one of them.
+        matching a non-temporal foreign key with <literal>NOT NULL</literal>
+        referencing columns, joining it does not change the number of rows.
+        All orders of joining such dimension tables to the fact table thus
+        produce the same number of rows, and the planner considers only one
+        of them.
         This can significantly reduce planning time for queries joining many
         dimension tables, but may occasionally miss a cheaper join order.
         The genetic query optimizer does not use this optimization, but when

@@ -1482,6 +1482,8 @@ typedef struct ForeignKeyOptInfo
 	Index		con_relid;
 	/* RT index of the referenced table */
 	Index		ref_relid;
+	/* Does the FK have a PERIOD column? */
+	bool		conperiod;
 	/* number of columns in the foreign key */
 	int			nkeys;
 	/* cols in referencing table */
@@ -1518,11 +1520,11 @@ typedef struct ForeignKeyOptInfo
  * A "star cluster" consists of a single "fact" base relation joined to a
  * set of "dimension" base relations.  For the cluster to be recognized,
  * each dimension must be joined to the fact via an equality condition that
- * matches a foreign key on the fact referencing the dimension. The columns
- * on the fact must all be NOT NULL, and the dimension must have no other
- * join clauses, no local restriction quals, no join order restrictions from
- * special joins, no lateral references, etc. (see generate_starjoin_clusters
- * for the full list of preconditions).
+ * matches a non-temporal foreign key on the fact referencing the dimension.
+ * The columns on the fact must all be NOT NULL, and the dimension must have
+ * no other join clauses, no local restriction quals, no join order
+ * restrictions from special joins, no lateral references, etc. (see
+ * generate_starjoin_clusters for the full list of preconditions).
  *
  * When all of these conditions hold, every join ordering that has the fact
  * as the driver produces the same row counts.  The costs may still differ

@@ -350,6 +350,16 @@ key accounts for both equalities.  It never combines evidence from
 different foreign keys, as their keys need not reference the same
 dimension row.
 
+Temporal (PERIOD) foreign keys are skipped, using `conperiod` from the
+relcache and the planner foreign key metadata.  Such a foreign key
+guarantees only that the union of the matching referenced periods covers
+the referencing period, so the join on the overlap operator can return
+several rows per fact row, even when the constraint is validated and
+satisfied.  They are skipped only when looking for a starjoin foreign
+key, not when matching foreign keys for selectivity estimation, and an
+ordinary equality foreign key between the same relations remains
+eligible.
+
 ### Conditions inherited from foreign key matching
 
 The clusters are built from the foreign keys the planner matches to the
@@ -492,3 +502,6 @@ the plans, the planning cost, or the regression tests.
     together with a short one, whichever is examined first (varying both
     the creation and the name order), while a lone short key and two
     separate single-column foreign keys don't.
+  - starjoin_fk_period: a PERIOD foreign key, where each fact row joins
+    eight adjacent periods, does not qualify, while an ordinary equality
+    foreign key between the same tables does.

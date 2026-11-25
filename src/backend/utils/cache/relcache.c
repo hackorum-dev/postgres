@@ -4816,6 +4816,7 @@ RelationGetFKeyList(Relation relation)
 		info->conrelid = constraint->conrelid;
 		info->confrelid = constraint->confrelid;
 		info->conenforced = constraint->conenforced;
+		info->conperiod = constraint->conperiod;
 
 		DeconstructFkConstraintRow(htup, &info->nkeys,
 								   info->conkey,

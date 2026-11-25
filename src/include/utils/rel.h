@@ -295,6 +295,8 @@ typedef struct ForeignKeyCacheInfo
 
 	/* Is enforced ? */
 	bool		conenforced;
+	/* Does the FK have a PERIOD column? */
+	bool		conperiod;
 
 	/*
 	 * these arrays each have nkeys valid entries:
