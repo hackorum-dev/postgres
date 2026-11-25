@@ -143,6 +143,9 @@ typedef struct PlannedStmt
 	/* OIDs of relations the plan depends on */
 	List	   *relationOids;
 
+	/* OIDs of relations involved in FK-based inner join removal */
+	List	   *fkRemovedRelOids;
+
 	/* other dependencies, as PlanInvalItems */
 	List	   *invalItems;
 

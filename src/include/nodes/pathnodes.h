@@ -235,6 +235,8 @@ typedef struct PlannerGlobal
 	/* info about nodes elided from the plan during setrefs processing */
 	List	   *elidedNodes;
 
+	/* OIDs of relations involved in FK-based inner join removal */
+	List	   *fkRemovedRelOids;
 
 	/* highest PlaceHolderVar ID assigned */
 	Index		lastPHId;
