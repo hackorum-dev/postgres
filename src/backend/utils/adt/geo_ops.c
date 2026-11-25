@@ -341,6 +341,7 @@ static char *
 path_encode(enum path_delim path_delim, int npts, Point *pt)
 {
 	StringInfoData str;
+	char	   *result;
 	int			i;
 
 	initStringInfo(&str);
@@ -379,7 +380,9 @@ path_encode(enum path_delim path_delim, int npts, Point *pt)
 			break;
 	}
 
-	return str.data;
+	result = pnstrdup(str.data, str.len);
+	pfree(str.data);
+	return result;
 }								/* path_encode() */
 
 /*-------------------------------------------------------------
@@ -4784,6 +4787,7 @@ circle_out(PG_FUNCTION_ARGS)
 {
 	CIRCLE	   *circle = PG_GETARG_CIRCLE_P(0);
 	StringInfoData str;
+	char	   *result;
 
 	initStringInfo(&str);
 
@@ -4795,7 +4799,9 @@ circle_out(PG_FUNCTION_ARGS)
 	single_encode(circle->radius, &str);
 	appendStringInfoChar(&str, RDELIM_C);
 
-	PG_RETURN_CSTRING(str.data);
+	result = pnstrdup(str.data, str.len);
+	pfree(str.data);
+	PG_RETURN_CSTRING(result);
 }
 
 /*
