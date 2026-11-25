@@ -294,6 +294,16 @@ restart:
 		goto restart;
 
 	/*
+	 * Remove any useless inner joins based on foreign key constraints.  This
+	 * must be done after equivalence classes are finalized and foreign key
+	 * lists are initialized, as the optimization relies on these structures
+	 * to safely identify and eliminate redundant relations.  If we remove a
+	 * join, loop back to the top and redo what we did so far.
+	 */
+	if (remove_useless_inner_joins(root))
+		goto restart;
+
+	/*
 	 * No more join simplifications apply, so we're done looping.  Code below
 	 * this point does not need to be able to restart.
 	 */

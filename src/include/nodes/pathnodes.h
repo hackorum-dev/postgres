@@ -235,6 +235,7 @@ typedef struct PlannerGlobal
 	/* info about nodes elided from the plan during setrefs processing */
 	List	   *elidedNodes;
 
+
 	/* highest PlaceHolderVar ID assigned */
 	Index		lastPHId;
 
@@ -1476,6 +1477,10 @@ typedef struct ForeignKeyOptInfo
 	Index		ref_relid;
 	/* number of columns in the foreign key */
 	int			nkeys;
+	/* Is the constraint deferrable? */
+	bool		con_deferrable;
+	/* Is the constraint validated? */
+	bool		con_validated;
 	/* cols in referencing table */
 	AttrNumber	conkey[INDEX_MAX_KEYS] pg_node_attr(array_size(nkeys));
 	/* cols in referenced table */
