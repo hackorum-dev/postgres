@@ -295,14 +295,14 @@ static bool doPageWrites;
 /*----------
  * Shared-memory data structures for XLOG control
  *
- * LogwrtRqst indicates a byte position that we need to write and/or fsync
- * the log up to (all records before that point must be written or fsynced).
+ * LogwrtRqstWrite indicates a byte position that we need to write
+ * the log up to (all records before that point must be written).
  * The positions already written/fsynced are maintained in logWriteResult
  * and logFlushResult using atomic access.
  * In addition to the shared variable, each backend has a private copy of
  * both in LogwrtResult, which is updated when convenient.
  *
- * The request bookkeeping is simpler: there is a shared XLogCtl->LogwrtRqst
+ * The request bookkeeping is simpler: there is a shared XLogCtl->LogwrtRqstWrite
  * (protected by info_lck), but we don't need to cache any copies of it.
  *
  * info_lck is only held long enough to read/update the protected variables,
@@ -459,7 +459,7 @@ typedef struct XLogCtlData
 	XLogCtlInsert Insert;
 
 	/* Protected by info_lck: */
-	XLogwrtRqst LogwrtRqst;
+	XLogRecPtr	LogwrtRqstWrite;
 	XLogRecPtr	RedoRecPtr;		/* a recent copy of Insert->RedoRecPtr */
 	XLogRecPtr	asyncXactLSN;	/* LSN of newest async commit/abort */
 	XLogRecPtr	replicationSlotMinLSN;	/* oldest LSN needed by any slot */
@@ -1052,14 +1052,14 @@ XLogInsertRecord(XLogRecData *rdata,
 		MarkSubxactTopXidLogged();
 
 	/*
-	 * Update shared LogwrtRqst.Write, if we crossed page boundary.
+	 * Update shared LogwrtRqstWrite, if we crossed page boundary.
 	 */
 	if (StartPos / XLOG_BLCKSZ != EndPos / XLOG_BLCKSZ)
 	{
 		SpinLockAcquire(&XLogCtl->info_lck);
 		/* advance global request to include new block(s) */
-		if (XLogCtl->LogwrtRqst.Write < EndPos)
-			XLogCtl->LogwrtRqst.Write = EndPos;
+		if (XLogCtl->LogwrtRqstWrite < EndPos)
+			XLogCtl->LogwrtRqstWrite = EndPos;
 		SpinLockRelease(&XLogCtl->info_lck);
 		RefreshXLogWriteResult(LogwrtResult);
 	}
@@ -2123,8 +2123,8 @@ AdvanceXLInsertBuffer(XLogRecPtr upto, TimeLineID tli, bool opportunistic)
 
 			/* Advance shared memory write request position */
 			SpinLockAcquire(&XLogCtl->info_lck);
-			if (XLogCtl->LogwrtRqst.Write < OldPageRqstPtr)
-				XLogCtl->LogwrtRqst.Write = OldPageRqstPtr;
+			if (XLogCtl->LogwrtRqstWrite < OldPageRqstPtr)
+				XLogCtl->LogwrtRqstWrite = OldPageRqstPtr;
 			SpinLockRelease(&XLogCtl->info_lck);
 
 			/*
@@ -2645,15 +2645,13 @@ XLogWrite(XLogwrtRqst WriteRqst, TimeLineID tli, bool flexible)
 	/*
 	 * Update shared-memory status
 	 *
-	 * We make sure that the shared 'request' values do not fall behind the
-	 * 'result' values.  This is not absolutely essential, but it saves some
+	 * We make sure that the shared 'request' value does not fall behind the
+	 * 'result' value.  This is not absolutely essential, but it saves some
 	 * code in a couple of places.
 	 */
 	SpinLockAcquire(&XLogCtl->info_lck);
-	if (XLogCtl->LogwrtRqst.Write < LogwrtResult.Write)
-		XLogCtl->LogwrtRqst.Write = LogwrtResult.Write;
-	if (XLogCtl->LogwrtRqst.Flush < LogwrtResult.Flush)
-		XLogCtl->LogwrtRqst.Flush = LogwrtResult.Flush;
+	if (XLogCtl->LogwrtRqstWrite < LogwrtResult.Write)
+		XLogCtl->LogwrtRqstWrite = LogwrtResult.Write;
 	SpinLockRelease(&XLogCtl->info_lck);
 
 	/*
@@ -2926,8 +2924,8 @@ XLogFlush(XLogRecPtr record)
 		 * insertions to the pages we're about to write to finish.
 		 */
 		SpinLockAcquire(&XLogCtl->info_lck);
-		if (WriteRqstPtr < XLogCtl->LogwrtRqst.Write)
-			WriteRqstPtr = XLogCtl->LogwrtRqst.Write;
+		if (WriteRqstPtr < XLogCtl->LogwrtRqstWrite)
+			WriteRqstPtr = XLogCtl->LogwrtRqstWrite;
 		SpinLockRelease(&XLogCtl->info_lck);
 		insertpos = WaitXLogInsertionsToFinish(WriteRqstPtr);
 
@@ -3087,9 +3085,9 @@ XLogBackgroundFlush(void)
 	 */
 	insertTLI = XLogCtl->InsertTimeLineID;
 
-	/* read updated LogwrtRqst */
+	/* read updated LogwrtRqstWrite */
 	SpinLockAcquire(&XLogCtl->info_lck);
-	WriteRqst = XLogCtl->LogwrtRqst;
+	WriteRqst.Write = XLogCtl->LogwrtRqstWrite;
 	SpinLockRelease(&XLogCtl->info_lck);
 
 	/* back off to last completed page boundary */
@@ -6772,8 +6770,7 @@ StartupXLOG(void)
 	pg_atomic_write_u64(&XLogCtl->logInsertResult, EndOfLog);
 	pg_atomic_write_u64(&XLogCtl->logWriteResult, EndOfLog);
 	pg_atomic_write_u64(&XLogCtl->logFlushResult, EndOfLog);
-	XLogCtl->LogwrtRqst.Write = EndOfLog;
-	XLogCtl->LogwrtRqst.Flush = EndOfLog;
+	XLogCtl->LogwrtRqstWrite = EndOfLog;
 
 	/*
 	 * Preallocate additional log files, if wanted.
@@ -7277,7 +7274,7 @@ GetInsertRecPtr(void)
 	XLogRecPtr	recptr;
 
 	SpinLockAcquire(&XLogCtl->info_lck);
-	recptr = XLogCtl->LogwrtRqst.Write;
+	recptr = XLogCtl->LogwrtRqstWrite;
 	SpinLockRelease(&XLogCtl->info_lck);
 
 	return recptr;
