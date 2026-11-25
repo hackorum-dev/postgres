@@ -151,6 +151,7 @@ static void check_hashjoinable(RestrictInfo *restrictinfo);
 static void check_memoizable(RestrictInfo *restrictinfo);
 static bool has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
 									 ForeignKeyOptInfo *fkinfo);
+static bool starjoin_equality_implies(Oid coll1, Oid coll2);
 static bool starjoin_fk_collations_match(PlannerInfo *root,
 										 RelOptInfo *dim_rel,
 										 ForeignKeyOptInfo *fkinfo);
@@ -4201,9 +4202,24 @@ has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
 }
 
 /*
+ * Does equality under coll1 imply equality under coll2?  A deterministic
+ * collation treats only byte-wise equal strings as equal, and those are
+ * equal under any collation.
+ */
+static bool
+starjoin_equality_implies(Oid coll1, Oid coll2)
+{
+	if (collations_agree_on_equality(coll1, coll2))
+		return true;
+
+	return get_collation_isdeterministic(coll1);
+}
+
+/*
  * The FK guarantees a match under the referenced column's equality, while
- * uniqueness is enforced under the index key's equality.  A join using a
- * different collation must agree with both.
+ * uniqueness is enforced under the index key's equality.  So a row matching
+ * under the referenced column's equality must also match under the join's,
+ * and rows matching under the join's must be equal under the index key's.
  */
 static bool
 starjoin_fk_collations_match(PlannerInfo *root, RelOptInfo *dim_rel,
@@ -4240,14 +4256,12 @@ starjoin_fk_collations_match(PlannerInfo *root, RelOptInfo *dim_rel,
 
 			get_atttypetypmodcoll(dim_rte->relid, attno,
 								  &typid, &typmod, &attcoll);
-			if (!collations_agree_on_equality(attcoll, indcoll))
-				return false;
-
 			if (fkinfo->eclass[i] != NULL)
 			{
 				Oid			joincoll = fkinfo->eclass[i]->ec_collation;
 
-				if (!collations_agree_on_equality(attcoll, joincoll))
+				if (!starjoin_equality_implies(attcoll, joincoll) ||
+					!starjoin_equality_implies(joincoll, indcoll))
 					return false;
 			}
 			else
@@ -4257,7 +4271,8 @@ starjoin_fk_collations_match(PlannerInfo *root, RelOptInfo *dim_rel,
 					Oid			joincoll;
 
 					joincoll = exprInputCollation((Node *) rinfo->clause);
-					if (!collations_agree_on_equality(attcoll, joincoll))
+					if (!starjoin_equality_implies(attcoll, joincoll) ||
+						!starjoin_equality_implies(joincoll, indcoll))
 						return false;
 				}
 			}

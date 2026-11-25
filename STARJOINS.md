@@ -57,8 +57,8 @@ The optimization consists of these parts:
 - `has_starjoin_fk` looks for a foreign key of the fact that makes a
   relation its dimension, using `has_extra_starjoin_quals` to check that
   the foreign key accounts for all the join clauses between them.
-- `starjoin_fk_collations_match` checks the collations of the join
-  clauses.
+- `starjoin_fk_collations_match` and `starjoin_equality_implies` check
+  the collations of the join clauses.
 - `starjoin_order_invalid`, called by `make_join_rel`, rejects joins
   violating the canonical order, just like various other join
   restrictions.
@@ -375,10 +375,19 @@ the foreign key (`conindid`), and matches its keys to the referenced
 columns, not to the foreign key positions (REFERENCES can list the
 columns in a different order).  If the index is not available to the
 planner (not in the index list of the dimension), the foreign key is not
-used.  The collations of the referenced column, the index, and the join
-clauses (the matched equivalence class or loose comparisons) then have
-to agree on equality.  That still accepts two different deterministic
-collations, or the same nondeterministic one.
+used.
+
+Two directional implications are checked for each key column.  Values
+equal under the collation of the referenced column must be equal under
+the collation of the join, so that the join finds the referenced row.
+Values equal under the collation of the join must be equal under the
+collation of the index, so that the join finds no other row.  Requiring
+all three collations to agree on equality would reject joins that are
+still single-row lookups, such as a join under "C" to a "C" key with a
+case-insensitive unique index.  `starjoin_equality_implies` accepts
+collations that agree on equality, and a deterministic first collation,
+as equality under a deterministic collation is byte-wise equality, which
+implies equality under any collation.
 
 These checks change only which relations are treated as dimensions, not
 foreign key enforcement or selectivity estimation.
@@ -536,4 +545,7 @@ the plans, the planning cost, or the regression tests.
     both the column and the index qualifies, on a composite key with the
     index columns in a different order.  An index with a collation
     override shows that checking only the column or only the index is
-    not enough (one join matches two rows, the other none).
+    not enough (one join matches two rows, the other none).  Also a "C"
+    key with a case-insensitive unique index, where joins under either
+    collation qualify, while an accent-insensitive join can match two
+    rows and does not.

@@ -113,4 +113,33 @@ SELECT (:q_index) AS index_collation_matches,
 INSERT INTO labels VALUES ('a', 'x');
 SELECT (:q_label) AS column_collation_matches,
        pg_temp.dimensions_qualify(:'q_label') AS qualifies;
+
+-- A unique index can enforce a weaker equality than its column's, here
+-- case-insensitive uniqueness of case-sensitive glyphs.  The FK guarantees
+-- a match under the column's equality, and the index allows at most one
+-- under its own, so a join under either finds just the referenced row.
+-- An accent-insensitive join can also match the accented letter.
+CREATE COLLATION pg_temp.starjoin_ai
+  (provider = icu, locale = 'und-u-ks-level1', deterministic = false);
+CREATE TEMP TABLE glyphs (k text COLLATE "C");
+CREATE UNIQUE INDEX ON glyphs (k COLLATE pg_temp.starjoin_ci);
+INSERT INTO glyphs VALUES ('e'), ('é');
+CREATE TEMP TABLE marks (
+  a int NOT NULL REFERENCES d1, b int NOT NULL REFERENCES d2,
+  c int NOT NULL REFERENCES d3, d int NOT NULL REFERENCES d4,
+  k text COLLATE "C" NOT NULL REFERENCES glyphs (k)
+);
+INSERT INTO marks VALUES (1, 1, 1, 1, 'e');
+SELECT $$SELECT count(*) FROM marks f JOIN glyphs g ON f.k = g.k
+  JOIN d1 ON f.a = d1.id JOIN d2 ON f.b = d2.id
+  JOIN d3 ON f.c = d3.id JOIN d4 ON f.d = d4.id$$ AS q_glyph \gset
+SELECT replace(:'q_glyph', 'f.k = g.k', 'f.k COLLATE pg_temp.starjoin_ci = g.k')
+  AS q_glyph_ci \gset
+SELECT replace(:'q_glyph', 'f.k = g.k', 'f.k COLLATE pg_temp.starjoin_ai = g.k')
+  AS q_glyph_ai \gset
+SELECT (:q_glyph) AS c_matches, (:q_glyph_ci) AS ci_matches,
+       (:q_glyph_ai) AS ai_matches;
+SELECT pg_temp.dimensions_qualify(:'q_glyph') AS c_qualifies,
+       pg_temp.dimensions_qualify(:'q_glyph_ci') AS ci_qualifies,
+       NOT pg_temp.dimensions_qualify(:'q_glyph_ai') AS ai_does_not_qualify;
 ROLLBACK;
