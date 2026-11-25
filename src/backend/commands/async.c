@@ -131,16 +131,17 @@
  *	  signal is sent to it.
  *
  * 8. While writing notifications, PreCommit_Notify() records the queue head
- *	  position both before and after the write.  Because all writers serialize
- *	  on a cluster-wide heavyweight lock, no other backend can insert entries
- *	  between these two points.  SignalBackends() uses this fact to directly
- *	  advance the queue pointer for any backend that is still positioned at
- *	  the old head, or within the range written, but is not interested in any
- *	  of our notifications.  This avoids unnecessary wakeups for idle
- *	  listeners that have nothing to read.  Backends that are not interested
- *	  in our notifications, but cannot be directly advanced, are signaled only
- *	  if they are far behind the current queue head; that is to ensure that
- *	  we can advance the queue tail without undue delay.
+ *	  position both before and after the write.  Because the writer holds
+ *	  NotifyQueueLock in exclusive mode for its whole insertion, no other
+ *	  backend can insert entries between these two points.  SignalBackends()
+ *	  uses this fact to directly advance the queue pointer for any backend
+ *	  that is still positioned at the old head, or within the range written,
+ *	  but is not interested in any of our notifications.  This avoids
+ *	  unnecessary wakeups for idle listeners that have nothing to read.
+ *	  Backends that are not interested in our notifications, but cannot be
+ *	  directly advanced, are signaled only if they are far behind the current
+ *	  queue head; that is to ensure that we can advance the queue tail without
+ *	  undue delay.
  *
  * An application that listens on the same channel it notifies will get
  * NOTIFY messages for its own NOTIFYs.  These can be ignored, if not useful,
@@ -1213,7 +1214,6 @@ PreCommit_Notify(void)
 	if (pendingNotifies)
 	{
 		ListCell   *nextNotify;
-		bool		firstIteration = true;
 
 		/*
 		 * Build list of unique channel names being notified for use by
@@ -1296,53 +1296,36 @@ PreCommit_Notify(void)
 						 AccessExclusiveLock);
 
 		/*
+		 * Now push the notifications into the queue.
+		 *
 		 * For the direct advancement optimization in SignalBackends(), we
 		 * need to ensure that no other backend can insert queue entries
-		 * between queueHeadBeforeWrite and queueHeadAfterWrite.  The
-		 * heavyweight lock above provides this guarantee, since it serializes
-		 * all writers.
+		 * between queueHeadBeforeWrite and queueHeadAfterWrite.  We hold
+		 * NotifyQueueLock in EXCLUSIVE mode across all our insertions, even
+		 * if they span several pages, so that this doesn't depend on the
+		 * heavyweight lock above serializing all writers.
 		 *
-		 * Note: if the heavyweight lock were ever removed for scalability
-		 * reasons, we could achieve the same guarantee by holding
-		 * NotifyQueueLock in EXCLUSIVE mode across all our insertions, rather
-		 * than releasing and reacquiring it for each page as we do below.
+		 * A full queue is very uncommon and should really not happen, given
+		 * that we have so much space available in the SLRU pages.
+		 * Nevertheless we need to deal with this possibility. Note that when
+		 * we get here we are in the process of committing our transaction,
+		 * but we have not yet committed to clog, so at this point in time we
+		 * can still roll the transaction back.
 		 */
-
-		/* Initialize values to a safe default in case list is empty */
-		SET_QUEUE_POS(queueHeadBeforeWrite, 0, 0);
-		SET_QUEUE_POS(queueHeadAfterWrite, 0, 0);
-
-		/* Now push the notifications into the queue */
+		LWLockAcquire(NotifyQueueLock, LW_EXCLUSIVE);
+		queueHeadBeforeWrite = QUEUE_HEAD;
 		nextNotify = list_head(pendingNotifies->events);
 		while (nextNotify != NULL)
 		{
-			/*
-			 * Add the pending notifications to the queue.  We acquire and
-			 * release NotifyQueueLock once per page, which might be overkill
-			 * but it does allow readers to get in while we're doing this.
-			 *
-			 * A full queue is very uncommon and should really not happen,
-			 * given that we have so much space available in the SLRU pages.
-			 * Nevertheless we need to deal with this possibility. Note that
-			 * when we get here we are in the process of committing our
-			 * transaction, but we have not yet committed to clog, so at this
-			 * point in time we can still roll the transaction back.
-			 */
-			LWLockAcquire(NotifyQueueLock, LW_EXCLUSIVE);
-			if (firstIteration)
-			{
-				queueHeadBeforeWrite = QUEUE_HEAD;
-				firstIteration = false;
-			}
 			asyncQueueFillWarning();
 			if (asyncQueueIsFull())
 				ereport(ERROR,
 						(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
 						 errmsg("too many notifications in the NOTIFY queue")));
 			nextNotify = asyncQueueAddEntries(nextNotify);
-			queueHeadAfterWrite = QUEUE_HEAD;
-			LWLockRelease(NotifyQueueLock);
 		}
+		queueHeadAfterWrite = QUEUE_HEAD;
+		LWLockRelease(NotifyQueueLock);
 
 		/* Note that we don't clear pendingNotifies; AtCommit_Notify will. */
 	}
