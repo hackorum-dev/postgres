@@ -22,6 +22,7 @@
 #include "optimizer/paths.h"
 #include "optimizer/planner.h"
 #include "partitioning/partbounds.h"
+#include "port/pg_bitutils.h"
 #include "utils/memutils.h"
 
 
@@ -2328,7 +2329,8 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 		 * joins of join_search_one_level.  For each set of the other rels,
 		 * the search then builds at most d+1 joinrels without the fact (with
 		 * no dimension, or with one of the d dimensions), just like with the
-		 * fact.
+		 * fact, which is consistent with how the dimensions count toward
+		 * geqo_threshold (see starjoin_geqo_levels).
 		 *
 		 * Outside the last-ditch pass, join_search_one_level joins a
 		 * dimension to a rel without the fact only if that rel has no join
@@ -2398,4 +2400,37 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 	bms_free(join_relids);
 
 	return violates;
+}
+
+/*
+ * starjoin_geqo_levels
+ *		Return the number of initial rels of the current join search
+ *		subproblem to count toward geqo_threshold.
+ *
+ * The standard join search joins the dimensions of a starjoin cluster to the
+ * fact only in the canonical order (see starjoin_order_invalid), so it
+ * considers only d+1 of the 2^d subsets of the d dimensions.  So the
+ * dimensions count as only ceil(log2(d+1)) rels.  We can't ignore them
+ * entirely, as each cluster still multiplies the number of join rels by d+1.
+ * With multiple clusters, or with many other rels, the standard join search
+ * might get much more expensive than GEQO.
+ *
+ * The dimensions are those starjoin_setup_subproblem determined for the
+ * subproblem.  A cluster has none if its fact is not part of the subproblem,
+ * as the order is not enforced without the fact.
+ */
+int
+starjoin_geqo_levels(PlannerInfo *root, int levels_needed)
+{
+	ListCell   *lc;
+
+	foreach(lc, root->starjoin_clusters)
+	{
+		StarJoinClusterInfo *c = (StarJoinClusterInfo *) lfirst(lc);
+		int			ndims = bms_num_members(c->subproblem_dims);
+
+		levels_needed -= ndims - (int) pg_ceil_log2_32(ndims + 1);
+	}
+
+	return levels_needed;
 }

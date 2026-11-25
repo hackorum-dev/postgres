@@ -36,7 +36,8 @@ the search considers.  But the orders may still differ in cost (e.g. due
 to different widths of the dimensions), so the planner may occasionally
 miss a cheaper plan.  A relation treated as a dimension although its
 join does not preserve the fact rows can only make the planner miss a
-cheaper plan too, e.g. by postponing a selective join.
+cheaper plan too, e.g. by postponing a selective join.  It can also make
+the planner use the standard join search instead of GEQO.
 
 ### Parts
 
@@ -45,6 +46,7 @@ The optimization consists of these parts:
 - The `enable_starjoin_ordering` GUC (on by default), documented with
   the other planner method configuration parameters.  With the GUC
   disabled, no clusters are built, so the join search is not restricted.
+  The dimensions then count fully toward `geqo_threshold`.
 - `generate_starjoin_clusters` determines the starjoin clusters of the
   query.  `query_planner` calls it after matching the foreign keys to
   the join clauses, once the lateral, placeholder and special join
@@ -60,6 +62,8 @@ The optimization consists of these parts:
 - `starjoin_setup_subproblem`, called by `make_rel_from_joinlist` for
   each join search subproblem, determines the dimensions to check in the
   subproblem.
+- `starjoin_geqo_levels` counts the dimensions as fewer rels toward
+  `geqo_threshold`.
 
 The clusters are determined in `src/backend/optimizer/plan/initsplan.c`,
 and the join order is restricted in
@@ -229,6 +233,28 @@ can't be joined yet remains a separate clump.  GEQO tries to merge it
 again whenever the clump with the fact grows, and at the end it
 force-joins the remaining clumps, so it still finds a plan.
 
+The standard join search joins the dimensions of a cluster to the fact
+only in the canonical order, so it considers only d+1 of the 2^d subsets
+of the d dimensions.  Joinrels without the fact may contain at most one
+of the dimensions, so that's d+1 subsets too.  So `starjoin_geqo_levels`
+counts the dimensions as only ceil(log2(d+1)) rels toward
+`geqo_threshold`.  The dimensions are those `starjoin_setup_subproblem`
+determined for the subproblem, so a cluster has none if its fact is not
+part of the subproblem, as the order is not enforced without the fact.
+`join_search_hook` gets the number of initial rels without this
+discount.
+
+A FROM list of tables is never split into join search subproblems, so
+with the default settings a star with 11 or more dimensions would
+otherwise be planned by GEQO.  With the discount, it's planned by the
+standard join search, which is much cheaper.  A star with 11 dimensions
+takes 0.3ms to plan instead of 20ms, and a star with 100 dimensions 6ms,
+compared to 300ms with GEQO.  Not counting the dimensions at all would
+not be safe, because each cluster still multiplies the number of
+joinrels by d+1.  For example, for a query joining 4 facts with 10
+dimensions each, the standard join search would take 1.2s and 440MB,
+compared to 120ms with GEQO.
+
 ## Conditions for a dimension
 
 A relation is a dimension of a fact if it's referenced by a foreign key
@@ -371,26 +397,25 @@ the plans, the planning cost, or the regression tests.
   joininfo list of every rel, and every dimension appears to have join
   clauses to rels other than the fact.  So a single such qual disables
   all starjoin clusters in the query, even if it's in the ON clause of a
-  single dimension's join.  Ignoring pseudoconstant quals when building
-  the clusters would be enough to fix this.  The quals would still make
-  the dimensions joinable to each other without the fact, but such
-  joinrels are restricted (see `starjoin_order_invalid`).
+  single dimension's join.  The dimensions then count fully toward
+  `geqo_threshold`, so with the default settings a star with 11
+  dimensions gets planned by GEQO.  Ignoring pseudoconstant quals when
+  building the clusters would be enough to fix this.  The quals would
+  still make the dimensions joinable to each other without the fact, but
+  such joinrels are restricted (see `starjoin_order_invalid`).
 - A dimension gets joined to the fact at its position in the canonical
   order, so if a rel without join clauses is joined to a dimension
   that's not the last one, the joins of the following dimensions process
   the multiplied rows.  The clauseless_first_cost_higher check in
   starjoin_other shows this, for a star with two scans of a 2-row table
   without join clauses.
-- A FROM list of tables is never split into join search subproblems, so
-  with the default settings a star with 11 or more dimensions is planned
-  by GEQO, even though the canonical order makes the number of joinrels
-  in the standard join search linear in the number of dimensions.  For a
-  star with 11 dimensions, planning takes 20ms with the GUC enabled
-  (18ms with the GUC disabled), while the standard join search takes
-  0.3ms (the star_list_standard_search check in starjoin_geqo).
 - GEQO evaluates a fixed number of join orders, so enforcing the
   canonical order in GEQO only adds overhead, and the GUC changes the
   GEQO plans (the geqo_plan_unaffected check in starjoin_geqo).
+- `join_search_hook` gets the number of initial rels without the
+  discount, so an extension implementing its own join search has to call
+  `starjoin_geqo_levels` to make the same choice between the standard
+  join search and GEQO.
 
 ## Regression tests
 

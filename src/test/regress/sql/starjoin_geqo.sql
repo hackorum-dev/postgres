@@ -3,11 +3,12 @@
 --
 -- The standard join search joins the dimensions of a star to the fact only
 -- in the canonical order, so it considers only d+1 of the 2^d subsets of the
--- d dimensions.  But a star with more rels than geqo_threshold is planned by
--- GEQO, even though the standard join search would be much cheaper.  And the
--- pruning does not make GEQO any cheaper, because GEQO evaluates a fixed
--- number of join orders, each joining all the rels.  Checking the canonical
--- order only adds overhead.
+-- d dimensions.  So the dimensions count as only ceil(log2(d+1)) rels toward
+-- geqo_threshold, and a star gets planned by the standard join search even
+-- if it has more rels than geqo_threshold.  With enough other rels GEQO is
+-- still used, and the pruning does not make it any cheaper, because GEQO
+-- evaluates a fixed number of join orders, each joining all the rels.
+-- Checking the canonical order only adds overhead.
 --
 -- Each check is a single boolean, phrased as the desired behavior.  EXPLAIN
 -- does not show whether a query was planned by GEQO, so the checks detect
@@ -98,8 +99,9 @@ VACUUM ANALYZE starjoin_geqo_a, starjoin_geqo_c1, starjoin_geqo_d1,
 -- Star with explicit joins
 --
 -- With join_collapse_limit = 20 the star with 10 dimensions (11 rels) is a
--- single subproblem, above geqo_threshold = 8, so it's planned by GEQO,
--- which joins the dimensions in the canonical order too.
+-- single subproblem, above geqo_threshold = 8.  But the dimensions count as
+-- only 4 rels, so the star is planned by the standard join search, which
+-- joins the dimensions in the canonical order.
 --
 SELECT $$
 SELECT count(*) FROM starjoin_geqo_f AS f
@@ -121,8 +123,32 @@ SELECT starjoin_geqo_plan(:'q_star', true) AS plan_canonical \gset
 
 SET join_collapse_limit = 20;
 SET geqo_threshold = 8;
--- GEQO uses the canonical order
-SELECT starjoin_geqo_plan(:'q_star', true) = :'plan_canonical' AS geqo_plan_canonical;
+-- the star is planned by the standard join search, not by GEQO
+SELECT NOT starjoin_geqo_used(:'q_star', true) AS star_standard_search;
+-- the standard join search uses the canonical order
+SELECT starjoin_geqo_plan(:'q_star', true) = :'plan_canonical' AS star_plan_canonical;
+
+-- An additional join clause excludes d10 from the cluster.  The other nine
+-- dimensions count as four rels, so with f and d10 the count is six.
+SET geqo_threshold = 6;
+SELECT starjoin_geqo_used(:'q_star' || ' AND f.id > d10.v', true)
+       AS selective_dimension_geqo;
+
+-- Sampling d10 also excludes it from the cluster, giving the same count.
+SELECT starjoin_geqo_used(
+         replace(:'q_star', 'starjoin_geqo_d10 AS d10',
+                 'starjoin_geqo_d10 AS d10 TABLESAMPLE BERNOULLI (10)'), true)
+       AS bernoulli_dimension_geqo;
+SELECT starjoin_geqo_used(
+         replace(:'q_star', 'starjoin_geqo_d10 AS d10',
+                 'starjoin_geqo_d10 AS d10 TABLESAMPLE SYSTEM (10)'), true)
+       AS system_dimension_geqo;
+
+-- Sampling the fact does not disqualify its unsampled dimensions.
+SELECT NOT starjoin_geqo_used(
+         replace(:'q_star', 'starjoin_geqo_f AS f',
+                 'starjoin_geqo_f AS f TABLESAMPLE BERNOULLI (10)'), true)
+       AS sampled_fact_standard_search;
 RESET geqo_threshold;
 RESET join_collapse_limit;
 
@@ -131,8 +157,10 @@ RESET join_collapse_limit;
 --
 -- A FROM list of tables is never split into subproblems (join_collapse_limit
 -- applies to explicit joins, from_collapse_limit to subqueries), so with the
--- default settings a star with 11 dimensions (12 rels) is planned by GEQO,
--- and it's pruned too.
+-- default settings a star with 11 dimensions (12 rels) would be planned by
+-- GEQO.  But the dimensions count as only 4 rels, so the star is planned by
+-- the standard join search.  With enough other rels GEQO is still used, and
+-- it's pruned too.
 --
 SELECT $$
 SELECT count(*)
@@ -164,12 +192,13 @@ $$ AS q_star_list_c1 \gset
 
 -- with the GUC disabled, GEQO is used as usual
 SELECT starjoin_geqo_used(:'q_star_list', false) AS star_list_geqo_off;
--- XXX the dimensions count towards geqo_threshold
+-- the dimensions count as fewer rels toward geqo_threshold
 SELECT NOT starjoin_geqo_used(:'q_star_list', true) AS star_list_standard_search;
 
--- the star with c1 has two rels other than the dimensions, so with
--- geqo_threshold = 2 it's planned by GEQO
-SET geqo_threshold = 2;
+-- the 11 dimensions count as 4 rels, so with f and c1 the star counts as 6
+SET geqo_threshold = 7;
+SELECT NOT starjoin_geqo_used(:'q_star_list_c1', true) AS star_list_c1_standard_search;
+SET geqo_threshold = 6;
 SELECT starjoin_geqo_used(:'q_star_list_c1', true) AS star_list_c1_geqo;
 -- XXX GEQO is pruned too, so the GUC changes the plan
 SELECT starjoin_geqo_plan(:'q_star_list_c1', true)

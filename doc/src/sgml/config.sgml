@@ -6330,6 +6330,13 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
         same number of rows, and the planner considers only one of them.
         This can significantly reduce planning time for queries joining many
         dimension tables, but may occasionally miss a cheaper join order.
+        When comparing the number of <literal>FROM</literal> items to
+        <xref linkend="guc-geqo-threshold"/>, <replaceable>N</replaceable>
+        such dimension tables of a fact table, appearing as separate items in
+        the same <literal>FROM</literal> list as the fact table, count as
+        only the base-2 logarithm of <replaceable>N</replaceable>+1 (rounded
+        up) items, which is fewer than <replaceable>N</replaceable> only if
+        <replaceable>N</replaceable> is at least 3.
         Only inner joins of plain tables, with no other conditions or
         <literal>TABLESAMPLE</literal> clauses on the dimension tables, are
         optimized.  The default is <literal>on</literal>.
@@ -6731,7 +6738,9 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
         Use genetic query optimization to plan queries with at least
         this many <literal>FROM</literal> items involved. (Note that a
         <literal>FULL OUTER JOIN</literal> construct counts as only one <literal>FROM</literal>
-        item.) The default is 12. For simpler queries it is usually best
+        item, and dimension tables of star joins optimized by
+        <xref linkend="guc-enable-starjoin-ordering"/> count as fewer items.)
+        The default is 12. For simpler queries it is usually best
         to use the regular, exhaustive-search planner, but for queries with
         many tables the exhaustive search takes too long, often
         longer than the penalty of executing a suboptimal plan.  Thus,

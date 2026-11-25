@@ -3916,6 +3916,10 @@ make_rel_from_joinlist(PlannerInfo *root, List *joinlist)
 		 * We put the initial_rels list into a PlannerInfo field because
 		 * has_legal_joinclause() and join_is_legal() need to look at it (ugly
 		 * :-().
+		 *
+		 * Dimensions of star joins count as fewer rels toward geqo_threshold,
+		 * because the standard join search considers only the canonical order
+		 * of joining them to the fact (see starjoin_geqo_levels).
 		 */
 		root->initial_rels = initial_rels;
 
@@ -3927,7 +3931,8 @@ make_rel_from_joinlist(PlannerInfo *root, List *joinlist)
 
 		if (join_search_hook)
 			return (*join_search_hook) (root, levels_needed, initial_rels);
-		else if (enable_geqo && levels_needed >= geqo_threshold)
+		else if (enable_geqo &&
+				 starjoin_geqo_levels(root, levels_needed) >= geqo_threshold)
 			return geqo(root, levels_needed, initial_rels);
 		else
 			return standard_join_search(root, levels_needed, initial_rels);
