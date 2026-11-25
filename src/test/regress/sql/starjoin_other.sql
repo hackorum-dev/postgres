@@ -239,12 +239,10 @@ RESET work_mem;
 --
 -- Canonical pruning
 --
--- Joins where one side has no cluster dimensions are not checked, so the
--- join search still builds the 2-way joins of the fact with each dimension,
--- and (fact, d2) + d1 passes the check too.  For the star with 10 dimensions
--- the search builds 19 join rels instead of the 10 in the canonical order.
--- Compare to planning the canonical order directly, forced by
--- join_collapse_limit = 1 (the plans are the same).
+-- Joins of the fact are checked even if only one side has dimensions, so
+-- for the star with 10 dimensions the join search builds only the 10 join
+-- rels in the canonical order.  Compare to planning the canonical order
+-- directly, forced by join_collapse_limit = 1 (the plans are the same).
 --
 SELECT $$
 SELECT count(*) FROM starjoin_other_f AS f
@@ -267,7 +265,7 @@ SELECT starjoin_other_plan(:'q_star', true) AS plan_canonical,
 -- a single subproblem with 11 rels (below geqo_threshold)
 SET join_collapse_limit = 20;
 SELECT starjoin_other_plan(:'q_star', true) = :'plan_canonical' AS flat_plan_canonical;
--- XXX the search uses more memory than planning the canonical order
+-- the search uses about as much memory as planning the canonical order
 SELECT starjoin_other_memory(:'q_star', true) <= :memory_canonical * 1.1 AS flat_search_canonical;
 RESET join_collapse_limit;
 
@@ -349,7 +347,7 @@ RESET join_collapse_limit;
 --
 -- If the query has a cluster, the canonical order is checked for each join in
 -- all subproblems, including a large separate subproblem (8 rels joinable in
--- any order).  With only two dimensions there's nothing to prune in the star,
+-- any order).  With only two dimensions there's little to prune in the star,
 -- so the planning should not use more memory with the GUC enabled (e.g. if
 -- the check leaked memory).
 --

@@ -75,17 +75,18 @@ fact of another cluster.
 The canonical order of a cluster joins the dimensions in relid order,
 which is usually the order in which they appear in the query.
 
-`starjoin_order_invalid` restricts the joins where both inputs contain
-dimensions of a cluster, and the result contains the fact.  The
-dimensions in such a joinrel have to be a prefix of the canonical order,
-so there must be no dimension after the first missing one.  It's enough
-to check these joins, as otherwise all the dimensions come from one
-input, which was checked when it was built.  So joinrels with the fact
-and a single dimension are not restricted, and both "(f JOIN d1) JOIN
-d2" and "(f JOIN d2) JOIN d1" are considered.  For each set of the other
-rels, the search builds a joinrel with the fact and each of the d
-dimensions, and then the longer prefixes of the canonical order, so
-about 2d joinrels with the fact instead of 2^d.
+`starjoin_order_invalid` enforces the canonical decomposition of any
+joinrel containing the fact: the cluster dimensions in the joinrel must
+form a prefix of the canonical order.  This applies even if only one
+side of the join has dimensions, so that the fact gets joined to the
+dimensions in the canonical order, and not e.g. to the second dimension
+first.  A missing dimension is fine on its own, as the joinrel may not
+include all the dimensions yet.  It's a violation only if the joinrel
+includes a dimension after it, i.e. if the first missing dimension
+precedes the last dimension in the joinrel.  Other rels may be joined at
+any point.  For each set of the other rels, the search then builds only
+d+1 joinrels with the fact (with the first k dimensions, for k from 0 to
+d), instead of 2^d.
 
 ### Joinrels without the fact
 
@@ -136,11 +137,12 @@ therefore can't make the join search fail.
 ### GEQO
 
 GEQO is subject to the same restriction, as it builds the joinrels using
-`make_join_rel` too.  It joins a dimension only to the clump with the
-fact (the only desirable join), and a dimension that can't be joined yet
-remains a separate clump.  GEQO tries to merge it again whenever the
-clump with the fact grows, and at the end it force-joins the remaining
-clumps, so it still finds a plan.
+`make_join_rel` too.  So it joins the dimensions in the canonical order,
+whatever their order in the tour.  It joins a dimension only to the
+clump with the fact (the only desirable join), and a dimension that
+can't be joined yet remains a separate clump.  GEQO tries to merge it
+again whenever the clump with the fact grows, and at the end it
+force-joins the remaining clumps, so it still finds a plan.
 
 ## Conditions for a dimension
 
@@ -237,12 +239,6 @@ the plans, the planning cost, or the regression tests.
   (see starjoin_eager, and the eager_first_partial_agg_on check in
   starjoin_other).  A possible direction, not tried yet, is an explicit
   canonical order putting the dimensions with grouping columns last.
-- Joins where one side has no cluster dimensions are not checked, so the
-  join search still builds the joinrels of the fact with each single
-  dimension, and e.g. "(f JOIN d2) JOIN d1" passes the check too.  For a
-  star with 10 dimensions, the search builds 19 joinrels instead of the
-  10 in the canonical order, and uses more memory than planning the
-  canonical order (the flat_search_canonical check in starjoin_other).
 - A dimension in any relid set of a `SpecialJoinInfo` is rejected,
   including the syntactic ones (`syn_lefthand` and `syn_righthand`).  So
   a LEFT JOIN or a semijoin (EXISTS) placed after the star joins

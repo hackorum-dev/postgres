@@ -2178,9 +2178,9 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
  *		non-canonical ordering of a starjoin cluster.
  *
  * For every star cluster in root->starjoin_clusters, we enforce the canonical
- * decomposition of any joinrel containing the fact and at least one cluster
- * dimension - the dimensions must form a prefix of the order determined when
- * collecting the starjoin clusters.
+ * decomposition of any joinrel containing the fact - the cluster dimensions
+ * in the joinrel must form a prefix of the order determined when collecting
+ * the starjoin clusters.
  *
  * Clusters are computed for the whole query, but the join search may be split
  * into multiple subproblems (join_collapse_limit, from_collapse_limit, FULL
@@ -2192,15 +2192,20 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
  * like any other relation.  Otherwise there might be no valid join order at
  * all.  Clusters with the fact outside the current subproblem are ignored.
  *
- * This rule preserves exactly one decomposition per joinrel relid set, so
- * each canonical joinrel is still built; redundant orderings are pruned.
+ * So the fact gets joined to the dimensions in the canonical order, and the
+ * other orderings are pruned.  Other rels may be joined at any point, and
+ * joins without the fact are not restricted.  The dimensions are
+ * interchangeable (they have join clauses only to the fact, and no join order
+ * restrictions), so for each pruned joinrel the search builds the joinrel
+ * with the dimensions replaced by the first ones in the canonical order.  So
+ * the pruning can't make the join search fail.
  *
  * GEQO is subject to the same check.  It joins a dimension only to the clump
  * with the fact (the only desirable join), and a dimension that can't be
  * joined yet remains a separate clump.  But whenever the clump with the fact
- * grows, GEQO tries to merge it with the other clumps again, and at the end
- * it force-joins the remaining clumps (joins without the fact are not
- * restricted), so it still finds a plan.
+ * grows, GEQO tries to merge it with the other clumps again, so the
+ * dimensions get joined in the canonical order, whatever their order in the
+ * tour.
  *
  * We might forbid additional joins, for example we might forbid joinrels
  * containing a cluster dimension without the fact.
@@ -2262,26 +2267,13 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 		cluster_dims = bms_intersect(c->dim_relids, baserel_relids);
 
 		/*
-		 * If all dimensions are on one side of the join, we've already
-		 * checked the canonical order earlier, when building it. No need to
-		 * redo the check again.
-		 */
-		if (!bms_overlap(rel1->relids, cluster_dims) ||
-			!bms_overlap(rel2->relids, cluster_dims))
-		{
-			bms_free(cluster_dims);
-			continue;
-		}
-
-		/*
 		 * Joins without the fact are not restricted either, for the same
-		 * reason as above.  Such joins with dimensions on both sides are
-		 * rare, but possible.  The dimensions have join clauses only to the
-		 * fact (and no join order restrictions), so join_search_one_level
-		 * joins them to rels without the fact only by cartesian products,
-		 * e.g. in the last-ditch pass, when no other join is possible at that
-		 * level.  But the other rel may have join clauses usable only at a
-		 * later level, and so two such joinrels (each with a different
+		 * reason as above.  The dimensions have join clauses only to the fact
+		 * (and no join order restrictions), so join_search_one_level joins
+		 * them to rels without the fact only by cartesian products, e.g. in
+		 * the last-ditch pass, when no other join is possible at that level.
+		 * But the other rel may have join clauses usable only at a later
+		 * level, and so even two such joinrels (each with a different
 		 * dimension) may get joined.
 		 */
 		if (!bms_is_member(c->fact_relid, join_relids))
@@ -2293,7 +2285,9 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 		/*
 		 * The dimensions in the join have to be a prefix of the cluster
 		 * dimensions (in relid order), i.e. there must be no dimension after
-		 * the first gap.
+		 * the first gap.  This applies even if only one side of the join has
+		 * dimensions, so that the fact gets joined to the dimensions in this
+		 * order, and not e.g. to the second dimension first.
 		 *
 		 * XXX Using the relid order is fine for now, but if we choose to
 		 * allow snowflake joins, we'll need an explicit (ordered) list.
