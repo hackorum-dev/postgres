@@ -82,6 +82,12 @@ typedef struct ExprContext ExprContext;
 #define MaxArraySize ((Size) (MaxAllocSize / sizeof(Datum)))
 
 /*
+ * array_out and array_to_text use a temporary context for arrays of
+ * at least this many elements.
+ */
+#define MinArrayElemsForTempCxt 65536
+
+/*
  * Arrays are varlena objects, so must meet the varlena convention that
  * the first int32 of the object contains the total object size in bytes.
  * Be sure to use VARSIZE() and SET_VARSIZE() to access it, though!

@@ -35,6 +35,7 @@
 #include "parser/scansup.h"
 #include "port/pg_bswap.h"
 #include "regex/regex.h"
+#include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
@@ -3963,6 +3964,8 @@ array_to_text_internal(FunctionCallInfo fcinfo, ArrayType *v,
 	int			bitmask;
 	int			i;
 	ArrayMetaState *my_extra;
+	MemoryContext elemcxt = NULL;
+	MemoryContext oldcxt = CurrentMemoryContext;
 
 	ndims = ARR_NDIM(v);
 	dims = ARR_DIMS(v);
@@ -4011,6 +4014,14 @@ array_to_text_internal(FunctionCallInfo fcinfo, ArrayType *v,
 	bitmap = ARR_NULLBITMAP(v);
 	bitmask = 1;
 
+	if (nitems >= MinArrayElemsForTempCxt)
+	{
+		elemcxt = AllocSetContextCreate(CurrentMemoryContext,
+										"array_to_text temporary cxt",
+										ALLOCSET_DEFAULT_SIZES);
+		oldcxt = MemoryContextSwitchTo(elemcxt);
+	}
+
 	for (i = 0; i < nitems; i++)
 	{
 		Datum		itemvalue;
@@ -4041,6 +4052,9 @@ array_to_text_internal(FunctionCallInfo fcinfo, ArrayType *v,
 				appendStringInfoString(&buf, value);
 			printed = true;
 
+			if (elemcxt != NULL)
+				MemoryContextReset(elemcxt);
+
 			p = att_addlength_pointer(p, typlen, p);
 			p = (char *) att_nominal_alignby(p, typalignby);
 		}
@@ -4055,6 +4069,12 @@ array_to_text_internal(FunctionCallInfo fcinfo, ArrayType *v,
 				bitmask = 1;
 			}
 		}
+	}
+
+	if (elemcxt != NULL)
+	{
+		MemoryContextSwitchTo(oldcxt);
+		MemoryContextDelete(elemcxt);
 	}
 
 	result = cstring_to_text_with_len(buf.data, buf.len);

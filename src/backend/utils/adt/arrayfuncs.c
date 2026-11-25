@@ -1045,6 +1045,7 @@ array_out(PG_FUNCTION_ARGS)
 			   *lb;
 	array_iter	iter;
 	ArrayMetaState *my_extra;
+	MemoryContext elemcxt = NULL;
 
 	/*
 	 * We arrange to look up info about element type, including its output
@@ -1111,6 +1112,11 @@ array_out(PG_FUNCTION_ARGS)
 	needquotes = palloc_array(bool, nitems);
 	overall_length = 0;
 
+	if (nitems >= MinArrayElemsForTempCxt)
+		elemcxt = AllocSetContextCreate(CurrentMemoryContext,
+										"array_out temporary cxt",
+										ALLOCSET_DEFAULT_SIZES);
+
 	array_iter_setup(&iter, v, typlen, typbyval, typalign);
 
 	for (i = 0; i < nitems; i++)
@@ -1130,7 +1136,19 @@ array_out(PG_FUNCTION_ARGS)
 		}
 		else
 		{
-			values[i] = OutputFunctionCall(&my_extra->proc, itemvalue);
+			if (elemcxt != NULL)
+			{
+				char	   *elemstr;
+				MemoryContext oldcxt;
+
+				oldcxt = MemoryContextSwitchTo(elemcxt);
+				elemstr = OutputFunctionCall(&my_extra->proc, itemvalue);
+				MemoryContextSwitchTo(oldcxt);
+				values[i] = pstrdup(elemstr);
+				MemoryContextReset(elemcxt);
+			}
+			else
+				values[i] = OutputFunctionCall(&my_extra->proc, itemvalue);
 
 			/* count data plus backslashes; detect chars needing quotes */
 			if (values[i][0] == '\0')
@@ -1164,6 +1182,9 @@ array_out(PG_FUNCTION_ARGS)
 		/* and the comma (or other typdelim delimiter) */
 		overall_length += 1;
 	}
+
+	if (elemcxt != NULL)
+		MemoryContextDelete(elemcxt);
 
 	/*
 	 * The very last array element doesn't have a typdelim delimiter after it,
