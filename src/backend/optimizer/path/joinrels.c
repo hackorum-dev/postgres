@@ -32,6 +32,9 @@ static void make_rels_by_clause_joins(PlannerInfo *root,
 static void make_rels_by_clauseless_joins(PlannerInfo *root,
 										  RelOptInfo *old_rel,
 										  List *other_rels);
+static bool starjoin_order_invalid(PlannerInfo *root,
+								   RelOptInfo *rel1,
+								   RelOptInfo *rel2);
 static bool has_join_restriction(PlannerInfo *root, RelOptInfo *rel);
 static bool has_legal_joinclause(PlannerInfo *root, RelOptInfo *rel);
 static bool restriction_is_constant_false(List *restrictlist,
@@ -755,6 +758,15 @@ make_join_rel(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 
 	/* We should never try to join two overlapping sets of rels. */
 	Assert(!bms_overlap(rel1->relids, rel2->relids));
+
+	/*
+	 * If this join would be a redundant ordering of a previously detected
+	 * starjoin cluster, skip it. All cluster orderings produce the same
+	 * number of rows (the costs may differ, see generate_starjoin_clusters),
+	 * so we consider only the canonical one, chosen when building clusters.
+	 */
+	if (starjoin_order_invalid(root, rel1, rel2))
+		return NULL;
 
 	/* Construct Relids set that identifies the joinrel (without OJ as yet). */
 	joinrelids = bms_union(rel1->relids, rel2->relids);
@@ -2158,4 +2170,160 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
 		*parts1 = lappend(*parts1, child_rel1);
 		*parts2 = lappend(*parts2, child_rel2);
 	}
+}
+
+/*
+ * starjoin_order_invalid
+ *		Return true if the proposed join (rel1, rel2) would build a
+ *		non-canonical ordering of a starjoin cluster.
+ *
+ * For every star cluster in root->starjoin_clusters, we enforce the canonical
+ * decomposition of any joinrel containing the fact and at least one cluster
+ * dimension - the dimensions must form a prefix of the order determined when
+ * collecting the starjoin clusters.
+ *
+ * Clusters are computed for the whole query, but the join search may be split
+ * into multiple subproblems (join_collapse_limit, from_collapse_limit, FULL
+ * JOIN), and each subproblem is solved separately. Within a subproblem, only
+ * dimensions that are initial rels of that subproblem (i.e. base relations
+ * joined individually) can be added in the canonical order.  Dimensions
+ * already joined into a joinrel by an earlier subproblem (possibly together
+ * with the fact) can't, so we ignore them here and treat their joinrel just
+ * like any other relation.  Otherwise there might be no valid join order at
+ * all.  Clusters with the fact outside the current subproblem are ignored.
+ *
+ * This rule preserves exactly one decomposition per joinrel relid set, so
+ * each canonical joinrel is still built; redundant orderings are pruned.
+ *
+ * GEQO is subject to the same check.  It joins a dimension only to the clump
+ * with the fact (the only desirable join), and a dimension that can't be
+ * joined yet remains a separate clump.  But whenever the clump with the fact
+ * grows, GEQO tries to merge it with the other clumps again, and at the end
+ * it force-joins the remaining clumps (joins without the fact are not
+ * restricted), so it still finds a plan.
+ *
+ * We might forbid additional joins, for example we might forbid joinrels
+ * containing a cluster dimension without the fact.
+ */
+static bool
+starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
+{
+	ListCell   *lc;
+	Relids		join_relids;
+	Relids		all_relids = NULL;	/* all relids in this subproblem */
+	Relids		baserel_relids = NULL;	/* baserels in this subproblem */
+	bool		violates = false;
+
+	/* no starjoins found (maybe because the option is disabled) */
+	if (root->starjoin_clusters == NIL)
+		return false;
+
+	/* The initial rels of the current subproblem. */
+	foreach(lc, root->initial_rels)
+	{
+		RelOptInfo *rel = (RelOptInfo *) lfirst(lc);
+
+		all_relids = bms_add_members(all_relids, rel->relids);
+		if (rel->reloptkind == RELOPT_BASEREL)
+			baserel_relids = bms_add_members(baserel_relids, rel->relids);
+	}
+
+	/* relids of the result */
+	join_relids = bms_union(rel1->relids, rel2->relids);
+
+	/* does this contradict any of the clusters we know about */
+	foreach(lc, root->starjoin_clusters)
+	{
+		StarJoinClusterInfo *c = (StarJoinClusterInfo *) lfirst(lc);
+		Relids		cluster_dims;
+		bool		gap = false;
+		int			idx;
+
+		/*
+		 * The fact is not part of this subproblem, nothing to enforce.
+		 *
+		 * We must not enforce the canonical order without the fact.  The
+		 * order relies on joins of dimensions to the fact not changing the
+		 * cardinality of the fact.  Without the fact, the dimensions can only
+		 * be joined by cartesian products (they have join clauses only to the
+		 * fact), which do change the cardinality, so the order matters and
+		 * enforcing it might eliminate the cheapest plan.  The joinrel is
+		 * joined to the fact in an upper subproblem, where the dimensions are
+		 * not initial rels, and so are not checked.
+		 *
+		 * Snowflake joins are not an exception: a dimension with its own
+		 * dimensions is not a member of this cluster, but it may be the fact
+		 * of another cluster, enforced in subproblems including it.
+		 */
+		if (!bms_is_member(c->fact_relid, all_relids))
+			continue;
+
+		/* dimensions joined individually in this subproblem */
+		cluster_dims = bms_intersect(c->dim_relids, baserel_relids);
+
+		/*
+		 * If all dimensions are on one side of the join, we've already
+		 * checked the canonical order earlier, when building it. No need to
+		 * redo the check again.
+		 */
+		if (!bms_overlap(rel1->relids, cluster_dims) ||
+			!bms_overlap(rel2->relids, cluster_dims))
+		{
+			bms_free(cluster_dims);
+			continue;
+		}
+
+		/*
+		 * Joins without the fact are not restricted either, for the same
+		 * reason as above.  Such joins with dimensions on both sides are
+		 * rare, but possible.  The dimensions have join clauses only to the
+		 * fact (and no join order restrictions), so join_search_one_level
+		 * joins them to rels without the fact only by cartesian products,
+		 * e.g. in the last-ditch pass, when no other join is possible at that
+		 * level.  But the other rel may have join clauses usable only at a
+		 * later level, and so two such joinrels (each with a different
+		 * dimension) may get joined.
+		 */
+		if (!bms_is_member(c->fact_relid, join_relids))
+		{
+			bms_free(cluster_dims);
+			continue;
+		}
+
+		/*
+		 * The dimensions in the join have to be a prefix of the cluster
+		 * dimensions (in relid order), i.e. there must be no dimension after
+		 * the first gap.
+		 *
+		 * XXX Using the relid order is fine for now, but if we choose to
+		 * allow snowflake joins, we'll need an explicit (ordered) list.
+		 */
+		idx = -1;
+		while ((idx = bms_next_member(cluster_dims, idx)) >= 0)
+		{
+			/*
+			 * A missing dimension is fine on its own, as the join may not
+			 * include all the dimensions yet.  It's a violation only if the
+			 * join includes a dimension after it.
+			 */
+			if (!bms_is_member(idx, join_relids))
+				gap = true;
+			else if (gap)
+			{
+				violates = true;
+				break;
+			}
+		}
+
+		bms_free(cluster_dims);
+
+		if (violates)
+			break;
+	}
+
+	bms_free(join_relids);
+	bms_free(all_relids);
+	bms_free(baserel_relids);
+
+	return violates;
 }

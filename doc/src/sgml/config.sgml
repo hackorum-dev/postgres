@@ -6312,6 +6312,30 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-enable-starjoin-ordering" xreflabel="enable_starjoin_ordering">
+      <term><varname>enable_starjoin_ordering</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>enable_starjoin_ordering</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Enables or disables the query planner's optimization of star joins,
+        where a <quote>fact</quote> table is joined to multiple
+        <quote>dimension</quote> tables using foreign keys.  When a dimension
+        table is joined only to the fact table, using a join condition
+        matching a foreign key with <literal>NOT NULL</literal> referencing
+        columns, joining it does not change the number of rows.  All orders
+        of joining such dimension tables to the fact table thus produce the
+        same number of rows, and the planner considers only one of them.
+        This can significantly reduce planning time for queries joining many
+        dimension tables, but may occasionally miss a cheaper join order.
+        Only inner joins of plain tables, with no other conditions on the
+        dimension tables, are optimized.  The default is <literal>on</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-enable-tidscan" xreflabel="enable_tidscan">
       <term><varname>enable_tidscan</varname> (<type>boolean</type>)
       <indexterm>

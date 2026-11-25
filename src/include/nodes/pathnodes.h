@@ -515,6 +515,14 @@ struct PlannerInfo
 	/* list of ForeignKeyOptInfos */
 	List	   *fkey_list;
 
+	/*
+	 * List of StarJoinClusterInfo entries describing detected star-shaped
+	 * sub-joins (a fact table joined to multiple FK-unique dimensions). Used
+	 * by join_search to skip enumeration of equivalent join orderings.
+	 * Populated by generate_starjoin_clusters().
+	 */
+	List	   *starjoin_clusters;
+
 	/* desired pathkeys for query_planner() */
 	List	   *query_pathkeys;
 
@@ -1502,6 +1510,37 @@ typedef struct ForeignKeyOptInfo
 	/* List of non-EC RestrictInfos matching each column's condition */
 	List	   *rinfos[INDEX_MAX_KEYS];
 } ForeignKeyOptInfo;
+
+/*
+ * StarJoinClusterInfo
+ *		Description of a star-shaped sub-join detected by the planner.
+ *
+ * A "star cluster" consists of a single "fact" base relation joined to a
+ * set of "dimension" base relations.  For the cluster to be recognized,
+ * each dimension must be joined to the fact via an equality condition that
+ * matches a foreign key on the fact referencing the dimension. The columns
+ * on the fact must all be NOT NULL, and the dimension must have no other
+ * join clauses, no local restriction quals, no participation in special
+ * joins or lateral references, etc. (see generate_starjoin_clusters for
+ * the full list of preconditions).
+ *
+ * When all of these conditions hold, every join ordering that has the fact
+ * as the driver produces the same row counts.  The costs may still differ
+ * (e.g. due to the width of intermediate results), but join_search considers
+ * just one canonical ordering of the cluster, to reduce the number of join
+ * orders to consider.
+ *
+ * The bitmap of dimensions determines the canonical join order.
+ */
+typedef struct StarJoinClusterInfo
+{
+	pg_node_attr(no_copy_equal, no_read, no_query_jumble)
+
+	NodeTag		type;
+	Index		fact_relid;		/* index of the fact relation */
+	Relids		dim_relids;		/* indexes of the dimension relations */
+} StarJoinClusterInfo;
+
 
 /*
  * StatisticExtInfo

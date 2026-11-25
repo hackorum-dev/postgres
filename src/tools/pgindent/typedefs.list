@@ -2987,6 +2987,7 @@ SplitTextOutputData
 SplitVar
 StackElem
 StakindFlags
+StarJoinClusterInfo
 StartBufferIOResult
 StartDataPtrType
 StartLOPtrType
