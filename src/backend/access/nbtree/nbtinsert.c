@@ -61,7 +61,6 @@ static Buffer _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key,
 						IndexTuple nposting, uint16 postingoff);
 static void _bt_insert_parent(Relation rel, Relation heaprel, Buffer buf,
 							  Buffer rbuf, BTStack stack, bool isroot, bool isonly);
-static void _bt_freestack(BTStack stack);
 static Buffer _bt_newlevel(Relation rel, Relation heaprel, Buffer lbuf, Buffer rbuf);
 static inline bool _bt_pgaddtup(Page page, Size itemsize, const IndexTupleData *itup,
 								OffsetNumber itup_off, bool newfirstdataitem);
@@ -748,7 +747,7 @@ _bt_check_unique(Relation rel, BTInsertState insertstate, Relation heapRel,
 				nbuf = _bt_relandgetbuf(rel, nbuf, nblkno, BT_READ);
 				page = BufferGetPage(nbuf);
 				opaque = BTPageGetOpaque(page);
-				if (!P_IGNORE(opaque))
+				if (!P_IGNORE(opaque) && !P_ISMERGEDAWAY(opaque))
 					break;
 				if (P_RIGHTMOST(opaque))
 					elog(ERROR, "fell off the end of index \"%s\"",
@@ -1069,7 +1068,7 @@ _bt_stepright(Relation rel, Relation heaprel, BTInsertState insertstate,
 			continue;
 		}
 
-		if (!P_IGNORE(opaque))
+		if (!P_IGNORE(opaque) && !P_ISMERGEDAWAY(opaque))
 			break;
 		if (P_RIGHTMOST(opaque))
 			elog(ERROR, "fell off the end of index \"%s\"",
@@ -1373,6 +1372,7 @@ _bt_insertonpg(Relation rel,
 					xlmeta.fastlevel = metad->btm_fastlevel;
 					xlmeta.last_cleanup_num_delpages = metad->btm_last_cleanup_num_delpages;
 					xlmeta.allequalimage = metad->btm_allequalimage;
+					xlmeta.num_merged_away = metad->btm_num_merged_away;
 
 					XLogRegisterBuffer(2, metabuf,
 									   REGBUF_WILL_INIT | REGBUF_STANDARD);
@@ -1584,6 +1584,21 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 	/* handle btpo_cycleid after rightpage buffer acquired */
 
 	/*
+	 * If the original page was BTP_MERGED, the left-half temp page inherits
+	 * BTP_MERGED via the btpo_flags copy above.  However, the MA block number
+	 * stored in pd_prune_xid (see BTMergedPageSetMABlkno) lives in
+	 * PageHeaderData, not BTPageOpaqueData, so it is NOT carried over by the
+	 * btpo_flags assignment.  leftpage was freshly initialized by
+	 * _bt_pageinit above, leaving pd_prune_xid as InvalidTransactionId (0).
+	 * When leftpage is later copied back into origpage (memcpy at
+	 * START_CRIT_SECTION time), the original MA block number would be
+	 * silently lost, causing amcheck to report "merged page N has invalid MA
+	 * block number 0".  Propagate it now.
+	 */
+	if (P_ISMERGED(oopaque))
+		BTMergedPageSetMABlkno(leftpage, BTMergedPageGetMABlkno(origpage));
+
+	/*
 	 * Copy the original page's LSN into leftpage, which will become the
 	 * updated version of the page.  We need this because XLogInsert will
 	 * examine the LSN and possibly dump it in a page image.
@@ -1770,6 +1785,20 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 	ropaque->btpo_next = oopaque->btpo_next;
 	ropaque->btpo_level = oopaque->btpo_level;
 	ropaque->btpo_cycleid = lopaque->btpo_cycleid;
+
+	/*
+	 * If the original page was BTP_MERGED, the new right-half page inherits
+	 * BTP_MERGED via the btpo_flags copy above.  However, the MA_blkno we
+	 * stored in pd_prune_xid (see BTMergedPageSetMABlkno) lives in
+	 * PageHeaderData, not BTPageOpaqueData, so it is NOT copied by the
+	 * btpo_flags assignment.  The right page was freshly allocated by
+	 * _bt_allocbuf, which calls _bt_pageinit -> PageInit, leaving
+	 * pd_prune_xid as InvalidTransactionId (0).  Propagate the MA_blkno now
+	 * so that backward scans can verify the correct tombstone for both halves
+	 * of the split merge group.
+	 */
+	if (P_ISMERGED(oopaque))
+		BTMergedPageSetMABlkno(rightpage, BTMergedPageGetMABlkno(origpage));
 
 	/*
 	 * Add new high key to rightpage where necessary.
@@ -1994,8 +2023,10 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 	/* XLOG stuff */
 	if (RelationNeedsWAL(rel))
 	{
-		xl_btree_split xlrec;
+		xl_btree_split xlrec = {0};
 		uint8		xlinfo;
+
+		xlrec.merged_ma_blkno = P_ISMERGED(oopaque) ? BTMergedPageGetMABlkno(origpage) : InvalidBlockNumber;
 
 		xlrec.level = ropaque->btpo_level;
 		/* See comments below on newitem, orignewitem, and posting lists */
@@ -2455,7 +2486,7 @@ _bt_getstackbuf(Relation rel, Relation heaprel, BTStack stack, BlockNumber child
 /*
  * _bt_freestack() -- free a retracement stack made by _bt_search_insert.
  */
-static void
+void
 _bt_freestack(BTStack stack)
 {
 	BTStack		ostack;
@@ -2622,6 +2653,7 @@ _bt_newlevel(Relation rel, Relation heaprel, Buffer lbuf, Buffer rbuf)
 		md.fastlevel = metad->btm_level;
 		md.last_cleanup_num_delpages = metad->btm_last_cleanup_num_delpages;
 		md.allequalimage = metad->btm_allequalimage;
+		md.num_merged_away = metad->btm_num_merged_away;
 
 		XLogRegisterBufData(2, &md, sizeof(xl_btree_metadata));
 

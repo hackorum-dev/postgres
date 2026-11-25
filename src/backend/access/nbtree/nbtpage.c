@@ -81,6 +81,7 @@ _bt_initmetapage(Page page, BlockNumber rootbknum, uint32 level,
 	metad->btm_fastroot = rootbknum;
 	metad->btm_fastlevel = level;
 	metad->btm_last_cleanup_num_delpages = 0;
+	metad->btm_num_merged_away = 0;
 	metad->btm_last_cleanup_num_heap_tuples = -1.0;
 	metad->btm_allequalimage = allequalimage;
 
@@ -122,6 +123,7 @@ _bt_upgrademetapage(Page page)
 	metad->btm_version = BTREE_NOVAC_VERSION;
 	metad->btm_last_cleanup_num_delpages = 0;
 	metad->btm_last_cleanup_num_heap_tuples = -1.0;
+	metad->btm_num_merged_away = 0;
 	/* Only a REINDEX can set this field */
 	Assert(!metad->btm_allequalimage);
 	metad->btm_allequalimage = false;
@@ -184,6 +186,7 @@ _bt_vacuum_needs_cleanup(Relation rel)
 	BTMetaPageData *metad;
 	uint32		btm_version;
 	BlockNumber prev_num_delpages;
+	BlockNumber prev_num_mrgpages;
 
 	/*
 	 * Copy details from metapage to local variables quickly.
@@ -206,7 +209,11 @@ _bt_vacuum_needs_cleanup(Relation rel)
 	}
 
 	prev_num_delpages = metad->btm_last_cleanup_num_delpages;
+	prev_num_mrgpages = metad->btm_num_merged_away;
 	_bt_relbuf(rel, metabuf);
+
+	if (prev_num_mrgpages > 0)
+		return true;
 
 	/*
 	 * Trigger cleanup in rare cases where prev_num_delpages exceeds 5% of the
@@ -299,6 +306,90 @@ _bt_set_cleanup_info(Relation rel, BlockNumber num_delpages)
 		md.fastlevel = metad->btm_fastlevel;
 		md.last_cleanup_num_delpages = num_delpages;
 		md.allequalimage = metad->btm_allequalimage;
+		md.num_merged_away = metad->btm_num_merged_away;
+
+		XLogRegisterBufData(0, &md, sizeof(xl_btree_metadata));
+
+		recptr = XLogInsert(RM_BTREE_ID, XLOG_BTREE_META_CLEANUP);
+	}
+	else
+		recptr = XLogGetFakeLSN(rel);
+
+	PageSetLSN(metapg, recptr);
+
+	END_CRIT_SECTION();
+
+	_bt_relbuf(rel, metabuf);
+}
+
+/*
+ * _bt_add_cleanup_mrgpages() -- Adjust the metapage's count of merged-away
+ * pages.
+ *
+ * delta is positive when bt_merge() creates tombstones and negative when
+ * VACUUM stops treating a tombstone as one.  The count is only a hint for
+ * _bt_vacuum_needs_cleanup(), so it is clamped to the range of the field
+ * instead of raising an error.
+ */
+void
+_bt_add_cleanup_mrgpages(Relation rel, int32 delta)
+{
+	Buffer		metabuf;
+	Page		metapg;
+	BTMetaPageData *metad;
+	XLogRecPtr	recptr;
+	uint32		oldval;
+	int64		newval;
+
+	if (delta == 0)
+		return;
+
+	/*
+	 * Take the write lock at once.  Reading under a read lock and upgrading
+	 * it would leave a gap in which another backend could change the count.
+	 */
+	metabuf = _bt_getbuf(rel, BTREE_METAPAGE, BT_WRITE);
+	metapg = BufferGetPage(metabuf);
+	metad = BTPageGetMeta(metapg);
+	Assert(metad->btm_version >= BTREE_NOVAC_VERSION);
+
+	oldval = metad->btm_num_merged_away;
+	newval = (int64) oldval + delta;
+	newval = Max(newval, 0);
+	newval = Min(newval, (int64) PG_UINT32_MAX);
+
+	if (newval == oldval)
+	{
+		_bt_relbuf(rel, metabuf);
+		return;
+	}
+
+	START_CRIT_SECTION();
+
+	/* upgrade meta-page if needed */
+	if (metad->btm_version < BTREE_NOVAC_VERSION)
+		_bt_upgrademetapage(metapg);
+
+	metad->btm_num_merged_away = (uint32) newval;
+	MarkBufferDirty(metabuf);
+
+	/* write wal record if needed */
+	if (RelationNeedsWAL(rel))
+	{
+		xl_btree_metadata md;
+
+		XLogBeginInsert();
+		XLogRegisterBuffer(0, metabuf, REGBUF_WILL_INIT | REGBUF_STANDARD);
+
+		Assert(metad->btm_version >= BTREE_NOVAC_VERSION);
+		md.version = metad->btm_version;
+		md.root = metad->btm_root;
+		md.level = metad->btm_level;
+		md.fastroot = metad->btm_fastroot;
+		md.fastlevel = metad->btm_fastlevel;
+		md.last_cleanup_num_delpages = metad->btm_last_cleanup_num_delpages;
+		md.allequalimage = metad->btm_allequalimage;
+		md.num_merged_away = metad->btm_num_merged_away;
 
 		XLogRegisterBufData(0, &md, sizeof(xl_btree_metadata));
 
@@ -490,6 +581,7 @@ _bt_getroot(Relation rel, Relation heaprel, int access)
 			md.fastlevel = 0;
 			md.last_cleanup_num_delpages = 0;
 			md.allequalimage = metad->btm_allequalimage;
+			md.num_merged_away = metad->btm_num_merged_away;
 
 			XLogRegisterBufData(2, &md, sizeof(xl_btree_metadata));
 
@@ -1773,7 +1865,7 @@ _bt_rightsib_halfdeadflag(Relation rel, BlockNumber leafrightsib)
 	opaque = BTPageGetOpaque(page);
 
 	Assert(P_ISLEAF(opaque) && !P_ISDELETED(opaque));
-	result = P_ISHALFDEAD(opaque);
+	result = P_ISHALFDEAD(opaque) || P_ISMERGEDAWAY(opaque);
 	_bt_relbuf(rel, buf);
 
 	return result;
@@ -2114,6 +2206,7 @@ _bt_mark_page_halfdead(Relation rel, Relation heaprel, Buffer leafbuf,
 	IndexTuple	itup;
 	IndexTupleData trunctuple;
 	XLogRecPtr	recptr;
+	BlockNumber mablkno;
 
 	page = BufferGetPage(leafbuf);
 	opaque = BTPageGetOpaque(page);
@@ -2244,6 +2337,7 @@ _bt_mark_page_halfdead(Relation rel, Relation heaprel, Buffer leafbuf,
 	page = BufferGetPage(leafbuf);
 	opaque = BTPageGetOpaque(page);
 	opaque->btpo_flags |= BTP_HALF_DEAD;
+	mablkno = P_ISMERGED(opaque) ? BTMergedPageGetMABlkno(page) : InvalidBlockNumber;
 
 	Assert(PageGetMaxOffsetNumber(page) == P_HIKEY);
 	MemSet(&trunctuple, 0, sizeof(IndexTupleData));
@@ -2271,6 +2365,8 @@ _bt_mark_page_halfdead(Relation rel, Relation heaprel, Buffer leafbuf,
 			xlrec.topparent = topparent;
 		else
 			xlrec.topparent = InvalidBlockNumber;
+
+		xlrec.merged_ma_blkno = mablkno;
 
 		XLogBeginInsert();
 		XLogRegisterBuffer(0, leafbuf, REGBUF_WILL_INIT);
@@ -2350,9 +2446,12 @@ _bt_unlink_halfdead_page(Relation rel, Buffer leafbuf, BlockNumber scanblkno,
 	IndexTuple	leafhikey;
 	BlockNumber leaftopparent;
 	XLogRecPtr	recptr;
+	BlockNumber mablkno;
 
 	page = BufferGetPage(leafbuf);
 	opaque = BTPageGetOpaque(page);
+
+	mablkno = P_ISMERGED(opaque) ? BTMergedPageGetMABlkno(page) : InvalidBlockNumber;
 
 	Assert(P_ISLEAF(opaque) && !P_ISDELETED(opaque) && P_ISHALFDEAD(opaque));
 
@@ -2576,7 +2675,7 @@ _bt_unlink_halfdead_page(Relation rel, Buffer leafbuf, BlockNumber scanblkno,
 	}
 
 	rightsib_is_rightmost = P_RIGHTMOST(opaque);
-	*rightsib_empty = (P_FIRSTDATAKEY(opaque) > PageGetMaxOffsetNumber(page));
+	*rightsib_empty = !P_ISMERGEDAWAY(opaque) && (P_FIRSTDATAKEY(opaque) > PageGetMaxOffsetNumber(page));
 
 	/*
 	 * If we are deleting the next-to-last page on the target's level, then
@@ -2718,6 +2817,8 @@ _bt_unlink_halfdead_page(Relation rel, Buffer leafbuf, BlockNumber scanblkno,
 		xlrec.leafrightsib = leafrightsib;
 		xlrec.leaftopparent = leaftopparent;
 
+		xlrec.merged_ma_blkno = mablkno;
+
 		XLogRegisterData(&xlrec, SizeOfBtreeUnlinkPage);
 
 		if (BufferIsValid(metabuf))
@@ -2732,6 +2833,7 @@ _bt_unlink_halfdead_page(Relation rel, Buffer leafbuf, BlockNumber scanblkno,
 			xlmeta.fastlevel = metad->btm_fastlevel;
 			xlmeta.last_cleanup_num_delpages = metad->btm_last_cleanup_num_delpages;
 			xlmeta.allequalimage = metad->btm_allequalimage;
+			xlmeta.num_merged_away = metad->btm_num_merged_away;
 
 			XLogRegisterBufData(4, &xlmeta, sizeof(xl_btree_metadata));
 			xlinfo = XLOG_BTREE_UNLINK_PAGE_META;
@@ -3135,4 +3237,96 @@ _bt_pendingfsm_add(BTVacState *vstate,
 	vstate->pendingpages[vstate->npendingpages].target = target;
 	vstate->pendingpages[vstate->npendingpages].safexid = safexid;
 	vstate->npendingpages++;
+}
+
+/*
+ * Return true if leaf pages left_blkno and right_blkno have the same parent,
+ * with the left page's downlink right before the right page's.  scankey must
+ * find the left page.  If stack_out is not NULL, the descent stack is
+ * returned in it, for the caller to free.
+ */
+bool
+_bt_pages_share_parent(Relation rel, BlockNumber left_blkno,
+					   BlockNumber right_blkno, BTScanInsert scankey, BTStack *stack_out)
+{
+	BTStack		stack;
+	Buffer		found_buf = InvalidBuffer;
+	BlockNumber parent_blkno = InvalidBlockNumber;
+	Buffer		parentbuf;
+	Page		parentpage;
+	OffsetNumber maxoff,
+				left_off;
+	bool		found_left = false;
+	IndexTuple	itup;
+	BlockNumber child;
+
+
+	/* Descend the tree to find left's parent. Caller built scankey. */
+	stack = _bt_search(rel, NULL, scankey, &found_buf, BT_READ, true);
+
+	if (BufferIsValid(found_buf))
+		UnlockReleaseBuffer(found_buf);
+
+	if (stack == NULL)
+		return false;
+
+	parent_blkno = stack->bts_blkno;
+
+	if (parent_blkno == InvalidBlockNumber)
+	{
+		_bt_freestack(stack);
+		return false;
+	}
+
+	parentbuf = ReadBuffer(rel, parent_blkno);
+	LockBuffer(parentbuf, BUFFER_LOCK_SHARE);
+	parentpage = BufferGetPage(parentbuf);
+
+	left_off = stack->bts_offset;
+
+	maxoff = PageGetMaxOffsetNumber(parentpage);
+
+	/* The parent may have changed since the descent */
+	if (left_off < P_FIRSTDATAKEY(BTPageGetOpaque(parentpage)) || left_off > maxoff)
+	{
+		UnlockReleaseBuffer(parentbuf);
+		_bt_freestack(stack);
+		return false;
+	}
+
+	itup = (IndexTuple) PageGetItem(parentpage, PageGetItemId(parentpage, left_off));
+
+	child = ItemPointerGetBlockNumberNoCheck(&itup->t_tid);
+
+	if (child == left_blkno)
+	{
+		found_left = true;
+	}
+	/* Check that the next downlink in the parent points to the right sibling */
+	if (found_left)
+	{
+		OffsetNumber next_off = OffsetNumberNext(left_off);
+
+		if (next_off <= maxoff)
+		{
+			itup = (IndexTuple) PageGetItem(parentpage, PageGetItemId(parentpage, next_off));
+
+			child = ItemPointerGetBlockNumberNoCheck(&itup->t_tid);
+
+			if (child == right_blkno)
+			{
+				UnlockReleaseBuffer(parentbuf);
+				if (stack_out != NULL)
+					*stack_out = stack;
+				else
+					_bt_freestack(stack);
+				return true;
+			}
+		}
+	}
+
+	UnlockReleaseBuffer(parentbuf);
+	_bt_freestack(stack);
+	return false;
+
 }
