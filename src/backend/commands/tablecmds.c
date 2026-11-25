@@ -14823,6 +14823,7 @@ validateForeignKeyConstraint(char *conname,
 	Snapshot	snapshot;
 	MemoryContext oldcxt;
 	MemoryContext perTupCxt;
+	bool		first;
 
 	ereport(DEBUG1,
 			(errmsg_internal("validating foreign key constraint \"%s\"", conname)));
@@ -14842,15 +14843,6 @@ validateForeignKeyConstraint(char *conname,
 	/* we needn't fill in remaining fields */
 
 	/*
-	 * See if we can do it with a single LEFT JOIN query.  A false result
-	 * indicates we must proceed with the fire-the-trigger method. We can't do
-	 * a LEFT JOIN for temporal FKs yet, but we can once we support temporal
-	 * left joins.
-	 */
-	if (!hasperiod && RI_Initial_Check(&trig, rel, pkrel))
-		return;
-
-	/*
 	 * Scan through each tuple, calling RI_FKey_check_ins (insert trigger) as
 	 * if that tuple had just been inserted.  If any of those fail, it should
 	 * ereport(ERROR) and that's that.
@@ -14864,12 +14856,31 @@ validateForeignKeyConstraint(char *conname,
 									  ALLOCSET_SMALL_SIZES);
 	oldcxt = MemoryContextSwitchTo(perTupCxt);
 
+	first = true;
 	while (table_scan_getnextslot(scan, ForwardScanDirection, slot))
 	{
 		LOCAL_FCINFO(fcinfo, 0);
 		TriggerData trigdata = {0};
 
 		CHECK_FOR_INTERRUPTS();
+
+		/*
+		 * On the first iteration, see if we can do the whole check with a
+		 * single LEFT JOIN query.  A false result indicates we must proceed
+		 * with the fire-the-trigger method. We can't do a LEFT JOIN for
+		 * temporal FKs yet, but we can once we support temporal left joins.
+		 *
+		 * We try this only after opening the table and confirming that it has
+		 * at least one row, to avoid the overhead of firing up the
+		 * planner/executor for the common special case that the table is
+		 * completely empty.
+		 */
+		if (first)
+		{
+			if (!hasperiod && RI_Initial_Check(&trig, rel, pkrel))
+				break;
+			first = false;
+		}
 
 		/*
 		 * Make a call to the trigger function
