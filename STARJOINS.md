@@ -522,7 +522,8 @@ the plans, the planning cost, or the regression tests.
   all starjoin clusters in the query, even if it's in the ON clause of a
   single dimension's join.  The dimensions then count fully toward
   `geqo_threshold`, so with the default settings a star with 11
-  dimensions gets planned by GEQO.  Ignoring pseudoconstant quals when
+  dimensions gets planned by GEQO.  The three checks marked XXX in
+  starjoin_var_free show this.  Ignoring pseudoconstant quals when
   building the clusters would be enough to fix this.  The quals would
   still make the dimensions joinable to each other without the fact, but
   such joinrels are restricted (see `starjoin_order_invalid`).
@@ -648,3 +649,7 @@ the plans, the planning cost, or the regression tests.
     varchar-to-text conversion and a fact-only expression in the
     equivalence class still qualify.  So do domains over int[] on the
     referencing side and over int4range on the referenced side.
+- starjoin_var_free checks star queries with Var-free quals (in WHERE,
+  as an uncorrelated EXISTS, and in the ON clause of a single
+  dimension's join), and whether they're planned by the standard join
+  search.  The three checks marked XXX return false.

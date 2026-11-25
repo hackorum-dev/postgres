@@ -149,7 +149,7 @@ test: event_trigger_login
 test: fast_default
 
 # some tests for starjoin planning
-test: starjoin_planning starjoin_eager starjoin_plan starjoin_width starjoin_reproducers starjoin_other starjoin_sample starjoin_fk_overlap starjoin_fk_period starjoin_fk_collation starjoin_fk_opclass starjoin_fk_only starjoin_fk_partition starjoin_fk_timezone starjoin_fk_coercion starjoin_geqo
+test: starjoin_planning starjoin_eager starjoin_plan starjoin_width starjoin_reproducers starjoin_other starjoin_sample starjoin_fk_overlap starjoin_fk_period starjoin_fk_collation starjoin_fk_opclass starjoin_fk_only starjoin_fk_partition starjoin_fk_timezone starjoin_fk_coercion starjoin_geqo starjoin_var_free
 
 # more expensive tests for starjoin planning (larger variants of earlier tests)
 # test: starjoin_eager_large starjoin_plan_large starjoin_width_large
