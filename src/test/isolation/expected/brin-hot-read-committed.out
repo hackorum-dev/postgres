@@ -1,0 +1,76 @@
+Parsed test spec with 2 sessions
+
+starting permutation: plan_probe hold_probe probe change_key desummarize vacuum_range release_probe probe finish
+step plan_probe: 
+    PREPARE count_ones AS
+      WITH probe_key AS MATERIALIZED (
+        SELECT 1 AS k FROM pg_advisory_xact_lock('brin_hot_rc'::regclass::int8)
+      )
+      SELECT (SELECT count(*) FROM brin_hot_rc t WHERE t.k = p.k) AS brin_ones,
+             (SELECT count(*) FILTER (WHERE t.k = p.k)
+                FROM brin_hot_rc t) AS heap_ones
+        FROM probe_key p;
+    EXPLAIN (COSTS OFF) EXECUTE count_ones;
+
+QUERY PLAN                                              
+--------------------------------------------------------
+CTE Scan on probe_key p                                 
+  CTE probe_key                                         
+    ->  Function Scan on pg_advisory_xact_lock          
+  SubPlan expr_1                                        
+    ->  Aggregate                                       
+          ->  Bitmap Heap Scan on brin_hot_rc t         
+                Recheck Cond: (k = p.k)                 
+                ->  Bitmap Index Scan on brin_hot_rc_idx
+                      Index Cond: (k = p.k)             
+  SubPlan expr_2                                        
+    ->  Aggregate                                       
+          ->  Seq Scan on brin_hot_rc t_1               
+                Disabled: true                          
+(13 rows)
+
+step hold_probe: SELECT pg_advisory_lock('brin_hot_rc'::regclass::int8);
+pg_advisory_lock
+----------------
+                
+(1 row)
+
+step probe: EXECUTE count_ones; <waiting ...>
+step change_key: 
+    BEGIN;
+    UPDATE brin_hot_rc SET k = 2;
+    SELECT pg_stat_get_xact_tuples_hot_updated('brin_hot_rc'::regclass)
+      AS hot_updates;
+    COMMIT;
+
+hot_updates
+-----------
+          1
+(1 row)
+
+step desummarize: SELECT brin_desummarize_range('brin_hot_rc_idx', 0);
+brin_desummarize_range
+----------------------
+                      
+(1 row)
+
+step vacuum_range: VACUUM (INDEX_CLEANUP ON) brin_hot_rc;
+step release_probe: SELECT pg_advisory_unlock('brin_hot_rc'::regclass::int8);
+pg_advisory_unlock
+------------------
+t                 
+(1 row)
+
+step probe: <... completed>
+brin_ones|heap_ones
+---------+---------
+        1|        1
+(1 row)
+
+step probe: EXECUTE count_ones;
+brin_ones|heap_ones
+---------+---------
+        0|        0
+(1 row)
+
+step finish: COMMIT;

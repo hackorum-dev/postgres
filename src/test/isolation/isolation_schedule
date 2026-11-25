@@ -141,3 +141,4 @@ test: pub-concurrent-drop
 test: type-ddl-locking
 test: drop-owned-grant
 test: brin-hot-rebuild
+test: brin-hot-read-committed
