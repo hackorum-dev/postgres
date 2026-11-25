@@ -44,8 +44,8 @@ VACUUM ANALYZE starjoin_plan_p1, starjoin_plan_p2, starjoin_plan_p3, starjoin_pl
 SET max_parallel_workers_per_gather = 0;
 
 -- Q1: extra (non-FK) join qual between fact and the last dimension. It makes
--- the join to p3 selective, but p3 is still a dimension, so with the GUC on
--- p3 is joined last, while with the GUC off it's joined first.
+-- the join to p3 selective, so p3 must be excluded from the cluster and may
+-- be joined first with the GUC on as well as off.
 
 -- join the fact to p1, p2 and p3, with an extra join qual for p3, GUC on
 SET enable_starjoin_ordering = on;

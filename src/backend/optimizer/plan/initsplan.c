@@ -149,6 +149,8 @@ static Relids get_join_domain_min_rels(PlannerInfo *root, Relids domain_relids);
 static void check_mergejoinable(RestrictInfo *restrictinfo);
 static void check_hashjoinable(RestrictInfo *restrictinfo);
 static void check_memoizable(RestrictInfo *restrictinfo);
+static bool has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
+									 ForeignKeyOptInfo *fkinfo);
 
 
 /*****************************************************************************
@@ -4113,6 +4115,61 @@ check_memoizable(RestrictInfo *restrictinfo)
 }
 
 /*
+ * Does the dimension have join conditions not accounted for by this FK?
+ */
+static bool
+has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
+						 ForeignKeyOptInfo *fkinfo)
+{
+	ListCell   *lc;
+	int			i;
+
+	foreach(lc, dim_rel->joininfo)
+	{
+		RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
+		int			colno;
+
+		for (colno = 0; colno < fkinfo->nkeys; colno++)
+		{
+			if (list_member_ptr(fkinfo->rinfos[colno], rinfo))
+				break;
+		}
+		if (colno == fkinfo->nkeys)
+			return true;
+	}
+
+	/*
+	 * Inner-join equalities normally live in ECs, not joininfo.  Even an EC
+	 * matching the FK can contain additional, selective equalities, so accept
+	 * only ECs containing just the two FK column expressions.
+	 */
+	i = -1;
+	while ((i = bms_next_member(dim_rel->eclass_indexes, i)) >= 0)
+	{
+		EquivalenceClass *ec = list_nth_node(EquivalenceClass,
+											 root->eq_classes, i);
+		int			colno;
+
+		if (list_length(ec->ec_members) <= 1 ||
+			!bms_is_member(fkinfo->con_relid, ec->ec_relids))
+			continue;
+
+		if (list_length(ec->ec_members) != 2)
+			return true;
+
+		for (colno = 0; colno < fkinfo->nkeys; colno++)
+		{
+			if (fkinfo->eclass[colno] == ec)
+				break;
+		}
+		if (colno == fkinfo->nkeys)
+			return true;
+	}
+
+	return false;
+}
+
+/*
  * generate_starjoin_clusters
  *		Detect star-shaped sub-joins and determine canonical join order.
  *
@@ -4137,16 +4194,15 @@ check_memoizable(RestrictInfo *restrictinfo)
  *
  *	7. The dimension is not constrained by any PlaceHolderInfo.
  *
+ *	8. All join conditions between the fact and the dimension are accounted
+ *	   for by the matched FK, with no additional EC members.
+ *
  * Under these conditions, the join is strictly cardinality-preserving with
  * respect to the fact table, and all join orderings for a cluster produce
  * the same row counts.  The costs are not necessarily the same (e.g. the
  * width of intermediate results affects hash joins that need multiple
  * batches), so considering only a single canonical ordering may miss the
  * cheapest plan, in exchange for considering far fewer join orders.
- *
- * XXX We don't check that the foreign key is the only join condition between
- * the fact and the dimension.  Additional join clauses (e.g. a second foreign
- * key) may eliminate fact rows, in which case the order does matter.
  *
  * Dimensions that fail the preconditions are simply not added to any
  * cluster; the planner then handles them in the ordinary way.  A fact
@@ -4356,6 +4412,9 @@ generate_starjoin_clusters(PlannerInfo *root)
 				}
 			}
 			if (!ok)
+				continue;
+
+			if (has_extra_starjoin_quals(root, dim_rel, fkinfo))
 				continue;
 
 			/* Qualifies as a dimension. */

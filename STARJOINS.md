@@ -43,6 +43,8 @@ The optimization consists of these parts:
   `starjoin_clusters` list of `PlannerInfo`, as `StarJoinClusterInfo`
   nodes.  Like other planner-only nodes, `StarJoinClusterInfo` needs no
   copy, equal, read or query jumble support.
+- `has_extra_starjoin_quals` checks that the foreign key accounts for
+  all the join clauses between the fact and a dimension.
 - `starjoin_order_invalid`, called by `make_join_rel`, rejects joins
   violating the canonical order, just like various other join
   restrictions.
@@ -188,6 +190,19 @@ The fact has to be a base relation too.
 
    Conditions 5 to 7 rule out join order restrictions on the dimension.
 
+8. All join conditions between the fact and the dimension are accounted
+   for by the matched foreign key, with no additional equivalence class
+   members.
+
+   A fully matched NOT NULL foreign key does not make the join preserve
+   the fact rows if other conditions connect the same pair of relations,
+   as they make the join selective.  The canonical order could then
+   postpone a selective dimension until all the preceding dimensions are
+   joined.  This applies to loose join clauses and to equivalence
+   classes of the fact and the dimension, including the equivalence
+   class of the foreign key with additional members, as an additional
+   equality can be merged into it.
+
 ### Foreign key requirements
 
 If the fact has several foreign keys referencing the dimension, the
@@ -245,11 +260,6 @@ the plans, the planning cost, or the regression tests.
   (see starjoin_eager, and the eager_first_partial_agg_on check in
   starjoin_other).  A possible direction, not tried yet, is an explicit
   canonical order putting the dimensions with grouping columns last.
-- The conditions check the join clauses of a dimension to other rels,
-  but not additional join clauses to the fact (not matching the foreign
-  key).  Such a clause makes the join selective, so the dimension should
-  be joined first, but the canonical order may join it last (the
-  extra_clause_cost_higher check in starjoin_other, and starjoin_plan).
 - The search might forbid additional joins, e.g. joinrels containing a
   dimension of a cluster but not its fact.
 

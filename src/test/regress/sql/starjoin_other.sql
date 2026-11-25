@@ -173,12 +173,9 @@ VACUUM ANALYZE starjoin_other_p1, starjoin_other_p2, starjoin_other_p3,
 --
 -- Extra (non-FK) join clause between the fact and a dimension
 --
--- The canonical order relies on each join to a dimension preserving the
--- cardinality of the fact, so that all join orders of a cluster produce the
--- same row counts.  But an additional join clause between the fact and the
--- dimension (not matching the foreign key) makes the join selective, so the
--- dimension should be joined first.  The cluster conditions check join
--- clauses to other rels, but not additional join clauses to the fact.
+-- An additional join clause between the fact and a dimension can make the
+-- join selective.  Exclude that dimension from the cluster, including when
+-- the clause is represented by an EC rather than joininfo.
 --
 SELECT $$
 SELECT count(*) FROM starjoin_other_pf AS pf
@@ -187,10 +184,40 @@ SELECT count(*) FROM starjoin_other_pf AS pf
   JOIN starjoin_other_p3 AS p3 ON pf.d3 = p3.id AND pf.x = p3.w
 $$ AS q_extra_clause \gset
 
--- the canonical order joins p3 last, so the plan with the GUC enabled is
--- more expensive
 SELECT starjoin_other_cost(:'q_extra_clause', true)
-       > starjoin_other_cost(:'q_extra_clause', false) * 1.01 AS extra_clause_cost_higher;
+       <= starjoin_other_cost(:'q_extra_clause', false) * 1.01 AS extra_clause_cost_ok;
+
+-- A non-equality join qual stays in joininfo.
+SELECT $$
+SELECT count(*) FROM starjoin_other_pf AS pf
+  JOIN starjoin_other_p1 AS p1 ON pf.d1 = p1.id
+  JOIN starjoin_other_p2 AS p2 ON pf.d2 = p2.id
+  JOIN starjoin_other_p3 AS p3 ON pf.d3 = p3.id AND pf.x > p3.w + 1000
+$$ AS q_extra_inequality \gset
+
+SELECT starjoin_other_plan(:'q_extra_inequality', true)
+       = starjoin_other_plan(:'q_extra_inequality', false) AS extra_inequality_plan_ok;
+
+-- An extra equality can merge into the same EC that matches the FK.
+SELECT $$
+SELECT count(*) FROM starjoin_other_pf AS pf
+  JOIN starjoin_other_p1 AS p1 ON pf.d1 = p1.id
+  JOIN starjoin_other_p2 AS p2 ON pf.d2 = p2.id
+  JOIN starjoin_other_p3 AS p3 ON pf.d3 = p3.id AND pf.x + p3.w = p3.id
+$$ AS q_extra_ec_member \gset
+
+SELECT starjoin_other_plan(:'q_extra_ec_member', true)
+       = starjoin_other_plan(:'q_extra_ec_member', false) AS extra_ec_member_plan_ok;
+
+-- GEQO must also be free to join the selective dimension first.
+SET geqo_threshold = 2;
+SELECT starjoin_other_cost(:'q_extra_clause', true)
+       <= starjoin_other_cost(:'q_extra_clause', false) * 1.01 AS extra_clause_geqo_ok;
+SELECT starjoin_other_cost(:'q_extra_inequality', true)
+       <= starjoin_other_cost(:'q_extra_inequality', false) * 1.01 AS extra_inequality_geqo_ok;
+SELECT starjoin_other_cost(:'q_extra_ec_member', true)
+       <= starjoin_other_cost(:'q_extra_ec_member', false) * 1.01 AS extra_ec_member_geqo_ok;
+RESET geqo_threshold;
 
 --
 -- OR clause, from which extract_restriction_or_clauses() derives a
