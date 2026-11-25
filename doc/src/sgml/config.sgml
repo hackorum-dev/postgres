@@ -6330,7 +6330,8 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
         same number of rows, and the planner considers only one of them.
         This can significantly reduce planning time for queries joining many
         dimension tables, but may occasionally miss a cheaper join order.
-        When comparing the number of <literal>FROM</literal> items to
+        The genetic query optimizer does not use this optimization, but when
+        comparing the number of <literal>FROM</literal> items to
         <xref linkend="guc-geqo-threshold"/>, <replaceable>N</replaceable>
         such dimension tables of a fact table, appearing as separate items in
         the same <literal>FROM</literal> list as the fact table, count as

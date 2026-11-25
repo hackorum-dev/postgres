@@ -225,13 +225,15 @@ the join search fail.
 
 ### GEQO
 
-GEQO is subject to the same restriction, as it builds the joinrels using
-`make_join_rel` too.  So it joins the dimensions in the canonical order,
-whatever their order in the tour.  It joins a dimension only to the
-clump with the fact (the only desirable join), and a dimension that
-can't be joined yet remains a separate clump.  GEQO tries to merge it
-again whenever the clump with the fact grows, and at the end it
-force-joins the remaining clumps, so it still finds a plan.
+Only the standard join search is restricted, not GEQO.  GEQO evaluates a
+fixed number of join orders (tours), each joining all the initial rels,
+so the restriction would not make it any cheaper.  It would only add the
+overhead of the checks, and make tours with the dimensions in different
+orders build the same plan.  For a query joining 5 facts with 10
+dimensions each, GEQO planning took 210ms when enforcing the canonical
+order and the restrictions on joinrels without the fact, and 151ms
+without them.  `starjoin_order_invalid` recognizes the standard join
+search by the `join_rel_level` field of `PlannerInfo` being set.
 
 The standard join search joins the dimensions of a cluster to the fact
 only in the canonical order, so it considers only d+1 of the 2^d subsets
@@ -409,9 +411,6 @@ the plans, the planning cost, or the regression tests.
   the multiplied rows.  The clauseless_first_cost_higher check in
   starjoin_other shows this, for a star with two scans of a 2-row table
   without join clauses.
-- GEQO evaluates a fixed number of join orders, so enforcing the
-  canonical order in GEQO only adds overhead, and the GUC changes the
-  GEQO plans (the geqo_plan_unaffected check in starjoin_geqo).
 - `join_search_hook` gets the number of initial rels without the
   discount, so an extension implementing its own join search has to call
   `starjoin_geqo_levels` to make the same choice between the standard
@@ -449,8 +448,8 @@ the plans, the planning cost, or the regression tests.
   the GUC enabled and disabled.  The cases include extra join clauses
   between the fact and a dimension, OR clauses, dimensions of very
   different widths, outer joins and semijoins, stars split into
-  subproblems, GEQO, eager aggregation, and rels without join clauses.
-  Each check is a single boolean, so that the output does not depend on
+  subproblems, eager aggregation, and rels without join clauses.  Each
+  check is a single boolean, so that the output does not depend on
   platform-specific costs or memory usage, and some checks show the
   known limitations.
 - starjoin_sample checks that the GUC does not change the plans starting

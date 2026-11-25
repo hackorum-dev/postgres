@@ -6,9 +6,10 @@
 -- d dimensions.  So the dimensions count as only ceil(log2(d+1)) rels toward
 -- geqo_threshold, and a star gets planned by the standard join search even
 -- if it has more rels than geqo_threshold.  With enough other rels GEQO is
--- still used, and the pruning does not make it any cheaper, because GEQO
--- evaluates a fixed number of join orders, each joining all the rels.
--- Checking the canonical order only adds overhead.
+-- still used, but it's not pruned.  The pruning would not make it any
+-- cheaper, because GEQO evaluates a fixed number of join orders, each
+-- joining all the rels, so checking the canonical order would only add
+-- overhead.
 --
 -- Each check is a single boolean, phrased as the desired behavior.  EXPLAIN
 -- does not show whether a query was planned by GEQO, so the checks detect
@@ -172,8 +173,8 @@ RESET join_collapse_limit;
 -- applies to explicit joins, from_collapse_limit to subqueries), so with the
 -- default settings a star with 11 dimensions (12 rels) would be planned by
 -- GEQO.  But the dimensions count as only 4 rels, so the star is planned by
--- the standard join search.  With enough other rels GEQO is still used, and
--- it's pruned too.
+-- the standard join search.  With enough other rels GEQO is still used, but
+-- it's not pruned.
 --
 SELECT $$
 SELECT count(*)
@@ -230,12 +231,12 @@ SELECT starjoin_geqo_used(:'q_star_list_c1', true) AS star_list_c1_geqo;
  t
 (1 row)
 
--- XXX GEQO is pruned too, so the GUC changes the plan
+-- GEQO is not pruned, so the GUC does not change the plan
 SELECT starjoin_geqo_plan(:'q_star_list_c1', true)
        = starjoin_geqo_plan(:'q_star_list_c1', false) AS geqo_plan_unaffected;
  geqo_plan_unaffected 
 ----------------------
- f
+ t
 (1 row)
 
 RESET geqo_threshold;

@@ -2276,12 +2276,13 @@ starjoin_setup_subproblem(PlannerInfo *root)
  * it without the dimensions, which can then be joined to the joinrels with
  * the fact.  So the pruning can't make the join search fail.
  *
- * GEQO is subject to the same check.  It joins a dimension only to the clump
- * with the fact (the only desirable join), and a dimension that can't be
- * joined yet remains a separate clump.  But whenever the clump with the fact
- * grows, GEQO tries to merge it with the other clumps again, so the
- * dimensions get joined in the canonical order, whatever their order in the
- * tour.
+ * Only the standard join search is pruned, not GEQO.  GEQO evaluates a fixed
+ * number of join orders (tours), each joining all the initial rels, so the
+ * pruning would not make it any cheaper.  It would only add the overhead of
+ * the checks, and make tours with the dimensions in different orders build
+ * the same plan.  Instead, the dimensions count as fewer rels toward
+ * geqo_threshold (see starjoin_geqo_levels), so that stars get planned by
+ * the standard join search.
  */
 static bool
 starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
@@ -2292,6 +2293,10 @@ starjoin_order_invalid(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 
 	/* no starjoins found (maybe because the option is disabled) */
 	if (root->starjoin_clusters == NIL)
+		return false;
+
+	/* not in the standard join search (e.g. GEQO), see above */
+	if (root->join_rel_level == NULL)
 		return false;
 
 	/* relids of the result */

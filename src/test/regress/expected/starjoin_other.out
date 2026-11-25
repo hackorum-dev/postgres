@@ -259,30 +259,6 @@ SELECT starjoin_other_cost(:'q_broken_ec', true)
 RESET ROLE;
 DROP TABLE starjoin_other_bf, starjoin_other_bk, starjoin_other_bd;
 DROP ROLE regress_starjoin_other;
--- GEQO must also be free to join the selective dimension first.
-SET geqo_threshold = 2;
-SELECT starjoin_other_cost(:'q_extra_clause', true)
-       <= starjoin_other_cost(:'q_extra_clause', false) * 1.01 AS extra_clause_geqo_ok;
- extra_clause_geqo_ok 
-----------------------
- t
-(1 row)
-
-SELECT starjoin_other_cost(:'q_extra_inequality', true)
-       <= starjoin_other_cost(:'q_extra_inequality', false) * 1.01 AS extra_inequality_geqo_ok;
- extra_inequality_geqo_ok 
---------------------------
- t
-(1 row)
-
-SELECT starjoin_other_cost(:'q_extra_ec_member', true)
-       <= starjoin_other_cost(:'q_extra_ec_member', false) * 1.01 AS extra_ec_member_geqo_ok;
- extra_ec_member_geqo_ok 
--------------------------
- t
-(1 row)
-
-RESET geqo_threshold;
 --
 -- OR clause, from which extract_restriction_or_clauses() derives a
 -- restriction on the dimension, which excludes the dimension from the
