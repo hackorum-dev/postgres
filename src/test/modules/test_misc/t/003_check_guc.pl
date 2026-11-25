@@ -132,4 +132,40 @@ foreach my $param (@lines_with_tabs)
 	print("found tab in line $param in postgresql.conf.sample\n");
 }
 
+# Auto-tuned PGC_POSTMASTER parameters explicitly set to their auto-tuning
+# value in the configuration file must not be reported as changed when the
+# file is re-read without changes.  Querying pg_file_settings re-reads the
+# file in the current session, so check both views in the same session.
+my $autotuned_params =
+	"'commit_timestamp_buffers', 'io_max_concurrency', "
+  . "'subtransaction_buffers', 'transaction_buffers', 'wal_buffers'";
+$node->append_conf(
+	'postgresql.conf', qq(
+commit_timestamp_buffers = 0
+io_max_concurrency = -1
+subtransaction_buffers = 0
+transaction_buffers = 0
+wal_buffers = -1
+));
+$node->restart;
+
+my $not_applied = $node->safe_psql(
+	'postgres',
+	"SELECT coalesce(string_agg(name, ', ' ORDER BY name), 'none')
+     FROM pg_file_settings
+   WHERE name IN ($autotuned_params) AND NOT applied");
+my $pending_restart = $node->safe_psql(
+	'postgres',
+	"SELECT count(*) FROM pg_file_settings;
+     SELECT coalesce(string_agg(name, ', ' ORDER BY name), 'none')
+     FROM pg_settings
+   WHERE name IN ($autotuned_params) AND pending_restart");
+# Only keep the output of the last query.
+$pending_restart = (split("\n", $pending_restart))[-1];
+
+is($not_applied, 'none',
+	'auto-tuned parameters set to auto-tune are applied in pg_file_settings');
+is($pending_restart, 'none',
+	'auto-tuned parameters set to auto-tune are not pending restart');
+
 done_testing();

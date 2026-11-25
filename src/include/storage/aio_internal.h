@@ -346,6 +346,9 @@ extern const char *pgaio_io_get_state_name(PgAioHandle *ioh);
 const char *pgaio_result_status_string(PgAioResultStatus rs);
 extern void pgaio_shutdown(int code, Datum arg);
 
+/* aio_init.c */
+extern int	AioChooseMaxConcurrency(void);
+
 /* aio_callback.c */
 extern void pgaio_io_call_stage(PgAioHandle *ioh);
 extern void pgaio_io_call_complete_shared(PgAioHandle *ioh);

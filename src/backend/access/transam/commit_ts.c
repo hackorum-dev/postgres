@@ -586,6 +586,15 @@ CommitTsShmemInit(void *arg)
 bool
 check_commit_ts_buffers(int *newval, void **extra, GucSource source)
 {
+	/*
+	 * 0 requests auto-tuning.  If that has already been done at startup,
+	 * substitute the auto-tuned value, as in CommitTsShmemBuffers(), so that
+	 * an unchanged setting re-read from the configuration file is not
+	 * reported as requiring a restart.
+	 */
+	if (*newval == 0 && commit_timestamp_buffers != 0)
+		*newval = SimpleLruAutotuneBuffers(512, 1024);
+
 	return check_slru_buffers("commit_timestamp_buffers", newval);
 }
 

@@ -1344,8 +1344,13 @@ check_io_max_concurrency(int *newval, void **extra, GucSource source)
 	{
 		/*
 		 * Auto-tuning will be applied later during startup, as auto-tuning
-		 * depends on the value of various GUCs.
+		 * depends on the value of various GUCs.  If that has already
+		 * happened, substitute the auto-tuned value, so that an unchanged
+		 * setting re-read from the configuration file is not reported as
+		 * requiring a restart.
 		 */
+		if (io_max_concurrency != -1)
+			*newval = AioChooseMaxConcurrency();
 		return true;
 	}
 	else if (*newval == 0)

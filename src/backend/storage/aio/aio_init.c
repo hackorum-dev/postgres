@@ -101,7 +101,7 @@ AioHandleDataShmemSize(void)
  * On the upper end, apply a cap too - just because shared_buffers is large,
  * it doesn't make sense have millions of buffers undergo IO concurrently.
  */
-static int
+int
 AioChooseMaxConcurrency(void)
 {
 	uint32		max_backends;
