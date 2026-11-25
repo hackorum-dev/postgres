@@ -282,11 +282,18 @@ The fact has to be a base relation too.
    foreign key matching).  Direct joins to leaf partitions are subject
    to the foreign key requirements below.
 
-2. All join columns on the fact are NOT NULL.
+2. All join columns on the fact are NOT NULL, and their foreign key
+   equality operators are immutable.
 
    A NULL never matches, so the join would remove a fact row with a NULL
    reference.  The check uses the NOT NULL constraints of the columns
-   (`notnullattnums`).
+   (`notnullattnums`).  A satisfied foreign key need not have a match
+   under a comparison that is not immutable.  For example, a timestamptz
+   column referencing a timestamp key is compared by interpreting the
+   timestamp in the session's TimeZone, so a fact row inserted at noon
+   UTC can lose its match when queried in New York.  Neither type is
+   collatable, so the collation checks don't help.  Immutable cross-type
+   comparisons are fine.
 
 3. The dimension has neither local restriction quals
    (`baserestrictinfo`) nor a TABLESAMPLE clause.
@@ -596,3 +603,9 @@ the plans, the planning cost, or the regression tests.
     on the foreign key of the parent alone, but does on a genuine
     foreign key to it, both before and after attaching the fact table as
     a referencing partition.
+  - starjoin_fk_timezone: a composite foreign key whose second
+    comparison is time-zone-dependent, so the join returns all 100 rows
+    in UTC and none in New York, and must not qualify in either zone.
+    An otherwise identical foreign key using timestamptz on both sides
+    still qualifies, including with an immutable int/smallint comparison
+    on its first column.

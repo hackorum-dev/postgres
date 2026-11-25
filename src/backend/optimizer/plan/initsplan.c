@@ -19,6 +19,7 @@
 #include "access/sysattr.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_opfamily.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
@@ -4278,7 +4279,7 @@ starjoin_fk_collations_match(PlannerInfo *root, RelOptInfo *dim_rel,
 			int32		typmod;
 			int			i;
 
-			/* No collation check or catalog lookup for a noncollatable key. */
+			/* No collation to check for a noncollatable key. */
 			if (!OidIsValid(indcoll))
 				continue;
 
@@ -4376,6 +4377,14 @@ has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel, RelOptInfo *dim_rel)
 		{
 			if (!bms_is_member(fkinfo->conkey[i], fact_rel->notnullattnums))
 				break;
+
+			/*
+			 * A mutable comparison need not still find the row that matched
+			 * when the FK was checked (e.g. timestamp = timestamptz depends
+			 * on TimeZone).
+			 */
+			if (op_volatile(fkinfo->conpfeqop[i]) != PROVOLATILE_IMMUTABLE)
+				break;
 		}
 		if (i == fkinfo->nkeys &&
 			!has_extra_starjoin_quals(root, dim_rel, fkinfo) &&
@@ -4397,7 +4406,8 @@ has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel, RelOptInfo *dim_rel)
  *	1. The dimension is a plain base relation (RELOPT_BASEREL), not an ONLY
  *	   scan of a partitioned table.
  *
- *	2. All join columns on the fact are NOT NULL.
+ *	2. All join columns on the fact are NOT NULL and their FK equality
+ *	   operators are immutable.
  *
  *	3. The dimension has neither local restriction quals (baserestrictinfo)
  *	   nor a TABLESAMPLE clause.

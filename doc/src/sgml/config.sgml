@@ -6325,9 +6325,10 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
         <quote>dimension</quote> tables using foreign keys.  When a dimension
         table is joined only to the fact table through an enforced
         non-temporal foreign key with <literal>NOT NULL</literal> referencing
-        columns, the join preserves the number of fact rows if it uses the
-        same equality semantics as the key.  The planner assumes this even
-        for foreign keys marked <literal>NOT VALID</literal>.
+        columns, the join preserves the number of fact rows if the key's
+        equality operators are immutable and the join uses the same equality
+        semantics as the key.  The planner assumes this even for foreign keys
+        marked <literal>NOT VALID</literal>.
         All orders of joining such dimension tables to the fact table thus
         produce the same number of rows, and the planner considers only one
         of them.
