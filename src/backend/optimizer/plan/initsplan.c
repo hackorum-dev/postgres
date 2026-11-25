@@ -4273,11 +4273,14 @@ starjoin_fk_operand_matches(Node *arg, Oid inputtype)
 	/*
 	 * Normally the operand exposes the operator's declared input type.  A
 	 * polymorphic operator sees the actual type instead; in that case don't
-	 * let a relabel substitute a different actual type.
+	 * let a relabel substitute a different actual type.  The exception is a
+	 * domain over an array, range or multirange, which the parser relabels to
+	 * its base type, in RI's queries too.
 	 */
 	if (argtype != inputtype &&
 		((!IsPolymorphicType(inputtype) && inputtype != RECORDOID) ||
-		 argtype != var->vartype))
+		 (argtype != var->vartype &&
+		  argtype != getBaseType(var->vartype))))
 		return false;
 	return IsBinaryCoercible(var->vartype, inputtype);
 }

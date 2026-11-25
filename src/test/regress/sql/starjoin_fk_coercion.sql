@@ -32,18 +32,27 @@ CREATE OPERATOR CLASS pg_temp.loose_ops FOR TYPE text USING btree AS
 CREATE TEMP TABLE words (k text COLLATE "C" NOT NULL);
 CREATE UNIQUE INDEX ON words (k pg_temp.loose_ops);
 INSERT INTO words VALUES ('abc');
+
+CREATE DOMAIN pg_temp.int_array AS int[];
+CREATE DOMAIN pg_temp.int_range AS int4range;
+CREATE TEMP TABLE arrays (k int[] PRIMARY KEY);
+INSERT INTO arrays VALUES ('{1}');
+CREATE TEMP TABLE ranges (k pg_temp.int_range PRIMARY KEY);
+INSERT INTO ranges VALUES ('[1,2)');
 CREATE TEMP TABLE fact (
   v varchar COLLATE "C" NOT NULL REFERENCES names,
   t text COLLATE "C" NOT NULL REFERENCES names,
   folded pg_temp.folded COLLATE "C" NOT NULL REFERENCES words(k),
   plain varchar COLLATE "C" NOT NULL REFERENCES words(k),
   x text COLLATE "C" NOT NULL,
+  arr pg_temp.int_array NOT NULL REFERENCES arrays,
+  rng int4range NOT NULL REFERENCES ranges,
   a int NOT NULL REFERENCES d, b int NOT NULL REFERENCES d,
   c int NOT NULL REFERENCES d, d int NOT NULL REFERENCES d
 );
-INSERT INTO fact SELECT :'prefix' || 'b', :'prefix', 'ABC', 'abc', 'ABC', 1, 1, 1, 1
+INSERT INTO fact SELECT :'prefix' || 'b', :'prefix', 'ABC', 'abc', 'ABC', '{1}', '[1,2)', 1, 1, 1, 1
   FROM generate_series(1, 100);
-ANALYZE fact, names, words, d;
+ANALYZE fact, names, words, arrays, ranges, d;
 
 -- As in starjoin_fk_collation, compare planning memory for flat and forced
 -- join order. The four other dimensions always qualify.
@@ -92,4 +101,10 @@ SELECT pg_temp.qualifies(:'bypass') AS ec_bypass, pg_temp.qualifies(:'binary') A
 \set filter 'words w ON w.k OPERATOR(pg_temp.===) f.plain AND f.plain OPERATOR(pg_temp.===) lower(f.x)'
 \set relay 'words w ON w.k OPERATOR(pg_temp.===) f.x AND f.x OPERATOR(pg_temp.===) f.folded::varchar::text'
 SELECT pg_temp.qualifies(:'filter') AS ec_fact_filter, pg_temp.qualifies(:'relay') AS ec_relay_bypass;
+
+-- For polymorphic operators, the parser relabels a domain over an array or
+-- range to its base type, in RI's queries too. Such keys qualify on either
+-- side.
+SELECT pg_temp.qualifies('arrays ar ON ar.k = f.arr') AS domain_fk_qualifies,
+       pg_temp.qualifies('ranges r ON f.rng = r.k') AS domain_key_qualifies;
 ROLLBACK;

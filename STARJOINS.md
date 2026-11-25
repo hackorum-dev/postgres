@@ -445,9 +445,14 @@ checks pass each column to that operator using only binary-coercible
 casts too.  The operator OID alone is not enough, as a binary cast
 through a third type can bypass the implicit cast used by the
 referential integrity checks.  For polymorphic inputs, the relabel must
-not change the actual type seen by the operator either.  The equivalence
-class source clauses not involving the dimension only filter fact rows.
-But such a clause can bring the foreign key column into the equivalence
+not change the actual type seen by the operator either.  The parser
+passes a domain over an array, range or multirange type to a polymorphic
+operator such as "anyarray = anyarray" by relabeling it to its base
+type, so the base type of such a domain is accepted too.  The
+referential integrity checks apply the same relabel, so the operator
+gets the same values with the same actual types.  The equivalence class
+source clauses not involving the dimension only filter fact rows.  But
+such a clause can bring the foreign key column into the equivalence
 class, while the clauses involving the dimension name another fact
 column, so the members that are the foreign key column are checked the
 same way as the operands.  Genuine cross-type operators and
@@ -641,4 +646,5 @@ the plans, the planning cost, or the regression tests.
     loose qual and as an equivalence class (including through another
     fact column).  A commuted name/text comparison, a binary
     varchar-to-text conversion and a fact-only expression in the
-    equivalence class still qualify.
+    equivalence class still qualify.  So do domains over int[] on the
+    referencing side and over int4range on the referenced side.
