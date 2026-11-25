@@ -151,6 +151,8 @@ static void check_hashjoinable(RestrictInfo *restrictinfo);
 static void check_memoizable(RestrictInfo *restrictinfo);
 static bool has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
 									 ForeignKeyOptInfo *fkinfo);
+static bool has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel,
+							RelOptInfo *dim_rel);
 
 
 /*****************************************************************************
@@ -4196,6 +4198,37 @@ has_extra_starjoin_quals(PlannerInfo *root, RelOptInfo *dim_rel,
 }
 
 /*
+ * Several FKs may match the same pair of rels.  A single FK must account
+ * for the whole join, but it need not be the first one in fkey_list.
+ */
+static bool
+has_starjoin_fk(PlannerInfo *root, RelOptInfo *fact_rel, RelOptInfo *dim_rel)
+{
+	ListCell   *lc;
+
+	foreach(lc, root->fkey_list)
+	{
+		ForeignKeyOptInfo *fkinfo = lfirst_node(ForeignKeyOptInfo, lc);
+		int			i;
+
+		if (fkinfo->con_relid != fact_rel->relid ||
+			fkinfo->ref_relid != dim_rel->relid)
+			continue;
+
+		for (i = 0; i < fkinfo->nkeys; i++)
+		{
+			if (!bms_is_member(fkinfo->conkey[i], fact_rel->notnullattnums))
+				break;
+		}
+		if (i == fkinfo->nkeys &&
+			!has_extra_starjoin_quals(root, dim_rel, fkinfo))
+			return true;
+	}
+
+	return false;
+}
+
+/*
  * generate_starjoin_clusters
  *		Detect star-shaped sub-joins and determine canonical join order.
  *
@@ -4325,10 +4358,8 @@ generate_starjoin_clusters(PlannerInfo *root)
 		{
 			Index		d = (Index) lfirst_int(lc2);
 			RelOptInfo *dim_rel = root->simple_rel_array[d];
-			ForeignKeyOptInfo *fkinfo = NULL;
 			ListCell   *lc3;
 			bool		ok = true;
-			int			colno;
 			int			r;
 
 			/* has to be a baserel (it's referenced by a FK, so?) */
@@ -4347,37 +4378,6 @@ generate_starjoin_clusters(PlannerInfo *root)
 			if (!bms_is_empty(dim_rel->lateral_relids))
 				continue;
 			if (!bms_is_empty(dim_rel->lateral_referencers))
-				continue;
-
-			/* Find the matching FK so we can check NOT NULL on conkey cols */
-			foreach(lc3, root->fkey_list)
-			{
-				ForeignKeyOptInfo *fki = (ForeignKeyOptInfo *) lfirst(lc3);
-
-				if ((fki->con_relid == f) && (fki->ref_relid == d))
-				{
-					fkinfo = fki;
-					break;
-				}
-			}
-
-			/* we should have found a FK, that's how we got the array */
-			Assert(fkinfo != NULL);
-
-			/*
-			 * Make sure all columns on the fact side are NOT NULL. We know
-			 * the FK is fully matched by the join, so use that.
-			 */
-			for (colno = 0; colno < fkinfo->nkeys; colno++)
-			{
-				if (!bms_is_member(fkinfo->conkey[colno],
-								   fact_rel->notnullattnums))
-				{
-					ok = false;
-					break;
-				}
-			}
-			if (!ok)
 				continue;
 
 			/*
@@ -4446,7 +4446,7 @@ generate_starjoin_clusters(PlannerInfo *root)
 			if (!ok)
 				continue;
 
-			if (has_extra_starjoin_quals(root, dim_rel, fkinfo))
+			if (!has_starjoin_fk(root, fact_rel, dim_rel))
 				continue;
 
 			/* Qualifies as a dimension. */

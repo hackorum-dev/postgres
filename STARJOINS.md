@@ -54,8 +54,9 @@ The optimization consists of these parts:
   `starjoin_clusters` list of `PlannerInfo`, as `StarJoinClusterInfo`
   nodes.  Like other planner-only nodes, `StarJoinClusterInfo` needs no
   copy, equal, read or query jumble support.
-- `has_extra_starjoin_quals` checks that the foreign key accounts for
-  all the join clauses between the fact and a dimension.
+- `has_starjoin_fk` looks for a foreign key of the fact that makes a
+  relation its dimension, using `has_extra_starjoin_quals` to check that
+  the foreign key accounts for all the join clauses between them.
 - `starjoin_order_invalid`, called by `make_join_rel`, rejects joins
   violating the canonical order, just like various other join
   restrictions.
@@ -339,8 +340,15 @@ The fact has to be a base relation too.
 
 ### Foreign key requirements
 
-If the fact has several foreign keys referencing the dimension, the
-conditions are checked for the first one in `fkey_list`.
+A fact can reference a dimension through several foreign keys, e.g.
+through both a short key and a composite key.  `has_starjoin_fk` checks
+the conditions on the relations once, and then tries each matching
+foreign key, until one has NOT NULL referencing columns and accounts for
+all the join clauses.  So the join on the other column of the composite
+key is not mistaken for an extra restriction, when the composite foreign
+key accounts for both equalities.  It never combines evidence from
+different foreign keys, as their keys need not reference the same
+dimension row.
 
 ### Conditions inherited from foreign key matching
 
@@ -415,6 +423,11 @@ the plans, the planning cost, or the regression tests.
   discount, so an extension implementing its own join search has to call
   `starjoin_geqo_levels` to make the same choice between the standard
   join search and GEQO.
+- The foreign key suites infer whether a relation qualifies as a
+  dimension from the planning memory, accepting up to 10% more than when
+  planning the canonical order (see the regression tests).  That's an
+  indirect check, and changes of the planning memory use could flip its
+  results.
 
 ## Regression tests
 
@@ -466,3 +479,16 @@ the plans, the planning cost, or the regression tests.
   join search is used.  It compares the plan costs, and reports the
   planning times through the starjoin_geqo_timings psql variable.  It's
   commented out in parallel_schedule, like the other _large suites.
+- The foreign key suites check which relations qualify as dimensions.
+  If all the dimensions of a star qualify, the join search builds only
+  the joinrels of the canonical order, and needs about as much planning
+  memory as with `join_collapse_limit` set to 1, which forces that
+  order.  A relation that does not qualify can be joined at any other
+  point, so the search takes noticeably more memory.  So the suites
+  compare the planning memory of the search and of the forced order,
+  accepting up to 10% more, with four other dimensions that always
+  qualify to widen the difference.
+  - starjoin_fk_overlap: a composite foreign key qualifies alone and
+    together with a short one, whichever is examined first (varying both
+    the creation and the name order), while a lone short key and two
+    separate single-column foreign keys don't.
