@@ -34,11 +34,12 @@
  * is set, we know the condition is true, but if a bit is not set, it might or
  * might not be true.
  *
- * Changes to the visibility map bits are not separately WAL-logged. Callers
- * must make sure that whenever a visibility map bit is cleared, the bit is
- * cleared on WAL replay of the updating operation. And whenever a visibility
- * map bit is set, the bit is set on WAL replay of the operation that rendered
- * the page all-visible/all-frozen.
+ * Changes to the visibility map bits are WAL-logged as part of the operation
+ * setting or clearing the bit. Callers of visibility map functions must make
+ * sure that the VM block changes are recorded in the WAL record and the
+ * affected VM block(s) is registered in the same WAL record. Replay of the
+ * operation that rendered the bit set or cleared must then also read the VM
+ * page and make the appropriate changes.
  *
  * The visibility map bits operate as a hint in one direction: if they are
  * clear, it may still be the case that every tuple on the page is visible to
@@ -66,32 +67,35 @@
  *
  * LOCKING
  *
- * In heapam.c, whenever a page is modified so that not all tuples on the
- * page are visible to everyone anymore, the corresponding bit in the
- * visibility map is cleared. In order to be crash-safe, we need to do this
- * while still holding a lock on the heap page and in the same critical
- * section that logs the page modification. However, we don't want to hold
- * the buffer lock over any I/O that may be required to read in the visibility
- * map page.  To avoid this, we examine the heap page before locking it;
- * if the page-level PD_ALL_VISIBLE bit is set, we pin the visibility map
- * bit.  Then, we lock the buffer.  But this creates a race condition: there
- * is a possibility that in the time it takes to lock the buffer, the
- * PD_ALL_VISIBLE bit gets set.  If that happens, we have to unlock the
- * buffer, pin the visibility map page, and relock the buffer.  This shouldn't
- * happen often, because only VACUUM currently sets visibility map bits,
- * and the race will only occur if VACUUM processes a given page at almost
- * exactly the same time that someone tries to further modify it.
+ * In heapam.c, whenever a page is modified so that not all tuples on the page
+ * are visible to everyone anymore, the corresponding bit in the visibility
+ * map is cleared. In order to be crash-safe, we need to do this while still
+ * holding a lock on the heap page and in the same critical section that logs
+ * the page modification. However, we don't want to hold the heap buffer lock
+ * over any I/O that may be required to read in the visibility map page. To
+ * avoid this, we examine the heap page before locking it; if the page-level
+ * PD_ALL_VISIBLE bit is set, we pin the visibility map page. Then, we lock
+ * the heap buffer. But this creates a race condition: there is a possibility
+ * that in the time it takes to lock the heap buffer, the PD_ALL_VISIBLE bit
+ * gets set. If that happens, we have to unlock the heap buffer, pin the
+ * visibility map page, and relock the heap buffer. This shouldn't happen
+ * often, because only VACUUM currently sets visibility map bits, and the race
+ * will only occur if VACUUM processes a given page at almost exactly the same
+ * time that someone tries to further modify it.
  *
- * To set a bit, you need to hold a lock on the heap page. That prevents
- * the race condition where VACUUM sees that all tuples on the page are
- * visible to everyone, but another backend modifies the page before VACUUM
- * sets the bit in the visibility map.
+ * Setting or clearing VM bits requires locks on both the heap and VM buffers.
+ * The heap buffer lock keeps the heap page and its VM bits consistent, while
+ * the exclusive VM buffer lock protects the VM page. Callers acquire the VM
+ * lock after the heap buffer lock and before entering the critical section.
+ * Both locks are held throughout the critical section, including WAL insertion
+ * and updating the page LSNs. The VM buffer must remain locked while the WAL
+ * record is constructed, since the record may include a full-page image of it.
  *
- * When a bit is set, the LSN of the visibility map page is updated to make
- * sure that the visibility map update doesn't get written to disk before the
- * WAL record of the changes that made it possible to set the bit is flushed.
- * But when a bit is cleared, we don't have to do that because it's always
- * safe to clear a bit in the map from correctness point of view.
+ * When a bit is set or cleared, the LSN of the visibility map page is updated
+ * if the change is WAL-logged. This ensures that the WAL record is flushed
+ * before the visibility map page is written to disk and that FPIs are
+ * correctly generated. When setting a bit, this ensures that the WAL record
+ * of the changes that made it possible to set the bit is flushed first.
  *
  *-------------------------------------------------------------------------
  */
