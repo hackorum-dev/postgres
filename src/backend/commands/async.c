@@ -138,10 +138,15 @@
  *	  that is still positioned at the old head, or within the range written,
  *	  but is not interested in any of our notifications.  This avoids
  *	  unnecessary wakeups for idle listeners that have nothing to read.
- *	  Backends that are not interested in our notifications, but cannot be
- *	  directly advanced, are signaled only if they are far behind the current
- *	  queue head; that is to ensure that we can advance the queue tail without
- *	  undue delay.
+ *	  The exception is a backend whose last read stopped at our entries
+ *	  because we had not committed yet, as recorded by its
+ *	  stoppedAtUncommitted flag.  It may have been woken for entries written
+ *	  after ours that it has not read yet, so if anything was written after
+ *	  us, we wake it instead of moving it past our entries.  Backends that
+ *	  are not interested in our notifications, but cannot be directly
+ *	  advanced, are signaled only if they are far behind the current queue
+ *	  head; that is to ensure that we can advance the queue tail without undue
+ *	  delay.
  *
  * An application that listens on the same channel it notifies will get
  * NOTIFY messages for its own NOTIFYs.  These can be ignored, if not useful,
@@ -294,6 +299,8 @@ typedef struct QueueBackendStatus
 	QueuePosition pos;			/* backend has read queue up to here */
 	bool		wakeupPending;	/* signal sent to backend, not yet processed */
 	bool		isAdvancing;	/* backend is advancing its position */
+	bool		stoppedAtUncommitted;	/* backend's last read stopped at an
+										 * entry of a running transaction */
 } QueueBackendStatus;
 
 /*
@@ -367,6 +374,8 @@ const ShmemCallbacks AsyncShmemCallbacks = {
 #define QUEUE_BACKEND_POS(i)		(asyncQueueControl->backend[i].pos)
 #define QUEUE_BACKEND_WAKEUP_PENDING(i)	(asyncQueueControl->backend[i].wakeupPending)
 #define QUEUE_BACKEND_IS_ADVANCING(i)	(asyncQueueControl->backend[i].isAdvancing)
+#define QUEUE_BACKEND_STOPPED_AT_UNCOMMITTED(i) \
+	(asyncQueueControl->backend[i].stoppedAtUncommitted)
 
 /*
  * The SLRU buffer area through which we access the notification queue
@@ -616,7 +625,8 @@ static void SignalBackends(void);
 static void asyncQueueReadAllNotifications(void);
 static bool asyncQueueProcessPageEntries(QueuePosition *current,
 										 QueuePosition stop,
-										 Snapshot snapshot);
+										 Snapshot snapshot,
+										 bool *stoppedAtUncommitted);
 static void asyncQueueAdvanceTail(void);
 static void ProcessIncomingNotify(bool flush);
 static bool AsyncExistsPendingNotify(Notification *n);
@@ -845,6 +855,7 @@ AsyncShmemInit(void *arg)
 		SET_QUEUE_POS(QUEUE_BACKEND_POS(i), 0, 0);
 		QUEUE_BACKEND_WAKEUP_PENDING(i) = false;
 		QUEUE_BACKEND_IS_ADVANCING(i) = false;
+		QUEUE_BACKEND_STOPPED_AT_UNCOMMITTED(i) = false;
 	}
 
 	/*
@@ -1459,6 +1470,7 @@ BecomeRegisteredListener(void)
 	QUEUE_BACKEND_DBOID(MyProcNumber) = MyDatabaseId;
 	QUEUE_BACKEND_WAKEUP_PENDING(MyProcNumber) = false;
 	QUEUE_BACKEND_IS_ADVANCING(MyProcNumber) = false;
+	QUEUE_BACKEND_STOPPED_AT_UNCOMMITTED(MyProcNumber) = false;
 	/* Insert backend into list of listeners at correct position */
 	if (prevListener != INVALID_PROC_NUMBER)
 	{
@@ -1895,6 +1907,7 @@ asyncQueueUnregister(void)
 	QUEUE_BACKEND_DBOID(MyProcNumber) = InvalidOid;
 	QUEUE_BACKEND_WAKEUP_PENDING(MyProcNumber) = false;
 	QUEUE_BACKEND_IS_ADVANCING(MyProcNumber) = false;
+	QUEUE_BACKEND_STOPPED_AT_UNCOMMITTED(MyProcNumber) = false;
 	/* and remove it from the list */
 	if (QUEUE_FIRST_LISTENER == MyProcNumber)
 		QUEUE_FIRST_LISTENER = QUEUE_NEXT_LISTENER(MyProcNumber);
@@ -2332,8 +2345,30 @@ SignalBackends(void)
 		if (!QUEUE_POS_PRECEDES(pos, queueHeadBeforeWrite) &&
 			QUEUE_POS_PRECEDES(pos, queueHeadAfterWrite))
 		{
-			/* We can directly advance its pointer past what we wrote */
-			QUEUE_BACKEND_POS(i) = queueHeadAfterWrite;
+			/*
+			 * If the backend last stopped reading at our entries, because we
+			 * had not committed yet, it may have been woken for entries that
+			 * were written after ours, and not have read those yet.  If we
+			 * moved it past our entries, nobody would wake it again for them,
+			 * so wake it instead.  That can only matter if something was
+			 * written after us.
+			 */
+			if (QUEUE_BACKEND_STOPPED_AT_UNCOMMITTED(i) &&
+				QUEUE_POS_PRECEDES(queueHeadAfterWrite, QUEUE_HEAD))
+			{
+				Assert(pid != InvalidPid);
+
+				QUEUE_BACKEND_WAKEUP_PENDING(i) = true;
+				signalPids[count] = pid;
+				signalProcnos[count] = i;
+				count++;
+			}
+			else
+			{
+				/* We can directly advance its pointer past what we wrote */
+				QUEUE_BACKEND_POS(i) = queueHeadAfterWrite;
+				QUEUE_BACKEND_STOPPED_AT_UNCOMMITTED(i) = false;
+			}
 		}
 		else if (asyncQueuePageDiff(QUEUE_POS_PAGE(QUEUE_HEAD),
 									QUEUE_POS_PAGE(pos)) >= QUEUE_CLEANUP_DELAY)
@@ -2668,6 +2703,7 @@ asyncQueueReadAllNotifications(void)
 	{
 		bool		save_ExitOnAnyError = ExitOnAnyError;
 		bool		reachedStop;
+		bool		stoppedAtUncommitted = false;
 
 		ExitOnAnyError = true;
 
@@ -2688,12 +2724,19 @@ asyncQueueReadAllNotifications(void)
 			 * rewrite pages under us. Especially we don't want to hold a lock
 			 * while sending the notifications to the frontend.
 			 */
-			reachedStop = asyncQueueProcessPageEntries(&pos, head, snapshot);
+			reachedStop = asyncQueueProcessPageEntries(&pos, head, snapshot,
+													   &stoppedAtUncommitted);
 		} while (!reachedStop);
 
-		/* Update shared state */
+		/*
+		 * Update shared state.  Also record whether we stopped at an entry of
+		 * a transaction that is still running, so that SignalBackends() knows
+		 * not to move us past that transaction's entries without waking us;
+		 * see item 8 at the top of this file.
+		 */
 		LWLockAcquire(NotifyQueueLock, LW_SHARED);
 		QUEUE_BACKEND_POS(MyProcNumber) = pos;
+		QUEUE_BACKEND_STOPPED_AT_UNCOMMITTED(MyProcNumber) = stoppedAtUncommitted;
 		QUEUE_BACKEND_IS_ADVANCING(MyProcNumber) = false;
 		LWLockRelease(NotifyQueueLock);
 
@@ -2712,11 +2755,14 @@ asyncQueueReadAllNotifications(void)
  * uncommitted notification, and false if we have finished with the page.
  * In other words: once it returns true there is no need to look further.
  * The QueuePosition *current is advanced past all processed messages.
+ * If we stopped at an uncommitted notification, *stoppedAtUncommitted is
+ * set to true; otherwise it is not changed.
  */
 static bool
 asyncQueueProcessPageEntries(QueuePosition *current,
 							 QueuePosition stop,
-							 Snapshot snapshot)
+							 Snapshot snapshot,
+							 bool *stoppedAtUncommitted)
 {
 	int64		curpage = QUEUE_POS_PAGE(*current);
 	int			slotno;
@@ -2778,6 +2824,7 @@ asyncQueueProcessPageEntries(QueuePosition *current,
 				 */
 				*current = thisentry;
 				reachedStop = true;
+				*stoppedAtUncommitted = true;
 				break;
 			}
 
