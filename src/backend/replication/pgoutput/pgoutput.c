@@ -1087,6 +1087,7 @@ check_and_init_gencol(PGOutputData *data, List *publications,
 	if (!gencolpresent)
 	{
 		entry->include_gencols_type = PUBLISH_GENCOLS_NONE;
+		RelationClose(relation);
 		return;
 	}
 
@@ -1116,6 +1117,8 @@ check_and_init_gencol(PGOutputData *data, List *publications,
 						   get_namespace_name(RelationGetNamespace(relation)),
 						   RelationGetRelationName(relation)));
 	}
+
+	RelationClose(relation);
 }
 
 /*
