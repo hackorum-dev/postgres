@@ -92,6 +92,9 @@
 #client_connection_check_interval = 0   # time between checks for client
                                         # disconnection while running queries;
                                         # 0 for never
+#client_connection_linger_timeout = 0   # time to keep reading from the client
+                                        # after closing the connection;
+                                        # 0 to not linger
 
 # - Authentication -
 

@@ -62,6 +62,7 @@ extern const PGDLLIMPORT PQcommMethods *PqCommMethods;
  * prototypes for functions in pqcomm.c
  */
 extern PGDLLIMPORT WaitEventSet *FeBeWaitSet;
+extern PGDLLIMPORT int client_connection_linger_timeout;
 
 #define FeBeWaitSetSocketPos 0
 #define FeBeWaitSetLatchPos 1

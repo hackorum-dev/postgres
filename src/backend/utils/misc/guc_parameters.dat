@@ -449,6 +449,16 @@
   check_hook => 'check_client_connection_check_interval',
 },
 
+{ name => 'client_connection_linger_timeout', type => 'int', context => 'PGC_SIGHUP', group => 'CONN_AUTH_TCP',
+  short_desc => 'Sets how long to keep reading from the client after closing the connection.',
+  long_desc => 'This avoids the client losing the final error message, if it sends data while the connection is being closed. 0 disables lingering.',
+  flags => 'GUC_UNIT_MS',
+  variable => 'client_connection_linger_timeout',
+  boot_val => '0',
+  min => '0',
+  max => 'INT_MAX',
+},
+
 { name => 'client_encoding', type => 'string', context => 'PGC_USERSET', group => 'CLIENT_CONN_LOCALE',
   short_desc => 'Sets the client\'s character set encoding.',
   flags => 'GUC_IS_NAME | GUC_REPORT',

@@ -78,6 +78,7 @@
 #include "storage/latch.h"
 #include "utils/guc_hooks.h"
 #include "utils/memutils.h"
+#include "utils/timestamp.h"
 
 /*
  * Cope with the various platform-specific ways to spell TCP keepalive socket
@@ -103,6 +104,7 @@
  */
 int			Unix_socket_permissions;
 char	   *Unix_socket_group;
+int			client_connection_linger_timeout = 0;
 
 /* Where the Unix socket files are (list of palloc'd strings) */
 static List *sock_paths = NIL;
@@ -136,6 +138,7 @@ static bool PqCommReadingMsg;	/* in the middle of reading a message */
 /* Internal functions */
 static void socket_comm_reset(void);
 static void socket_close(int code, Datum arg);
+static void socket_linger(pgsocket sock);
 static void socket_set_nonblocking(bool nonblocking);
 static int	socket_flush(void);
 static int	socket_flush_if_writable(void);
@@ -394,25 +397,95 @@ socket_close(int code, Datum arg)
 		 * OpenSSL, closesocket() alone was observed to still lose messages
 		 * occasionally; why exactly was never determined.
 		 *
-		 * Even with a graceful shutdown, if the client sends anything after
-		 * we're gone, such as its next query, our side answers with an RST,
-		 * and the client can still lose the data we sent.  The client can
-		 * reduce that risk by reading any pending input before sending, but
-		 * it can't rule it out: our data might not have arrived yet when it
-		 * sends.
+		 * Even with a graceful shutdown, and on any platform, if the client
+		 * sends anything after we're gone, our side answers with an RST, and
+		 * a client on Windows can still lose the data we sent.  Lingering
+		 * (see socket_linger) avoids that for data the client sends shortly
+		 * after we close, such as during connection setup.  For later sends,
+		 * like an idle client's next query, only the client can reduce the
+		 * risk, by reading any pending input before sending.
 		 *
 		 * This code runs late enough during process shutdown that we should
 		 * have finished all externally-visible shutdown activities, so that
 		 * in principle it's good enough to act as a synchronous close on
 		 * Windows too.  But it's a lot more fragile than the other way.
 		 */
+		if (client_connection_linger_timeout > 0)
+			socket_linger(MyProcPort->sock);
+
 #ifdef WIN32
-		shutdown(MyProcPort->sock, SD_SEND);
+		/* If lingering is enabled, socket_linger() already called shutdown() */
+		if (client_connection_linger_timeout == 0)
+			shutdown(MyProcPort->sock, SD_SEND);
 		closesocket(MyProcPort->sock);
 #endif
 
 		/* In any case, set sock to PGINVALID_SOCKET to prevent further I/O */
 		MyProcPort->sock = PGINVALID_SOCKET;
+	}
+}
+
+/*
+ * Send a FIN, then read and discard client data until the client closes its
+ * side too or client_connection_linger_timeout expires.
+ *
+ * Data arriving after we've closed the socket makes our OS answer with an
+ * RST, and some client OSes (notably Windows) then discard data the client
+ * hasn't read yet, such as our final error message.  This happens on any
+ * server OS, which is why this isn't Windows-specific.
+ *
+ * This runs very late during process exit, so use plain select() and recv().
+ */
+static void
+socket_linger(pgsocket sock)
+{
+	TimestampTz deadline;
+	char		buf[1024];
+
+#ifdef WIN32
+	shutdown(sock, SD_SEND);
+#else
+	shutdown(sock, SHUT_WR);
+#endif
+
+	deadline = TimestampTzPlusMilliseconds(GetCurrentTimestamp(),
+										   client_connection_linger_timeout);
+	for (;;)
+	{
+		long		timeout_ms;
+		fd_set		rfds;
+		struct timeval tv;
+		int			rc;
+		ssize_t		nread;
+
+		timeout_ms = TimestampDifferenceMilliseconds(GetCurrentTimestamp(),
+													 deadline);
+		if (timeout_ms <= 0)
+			break;
+
+		FD_ZERO(&rfds);
+		FD_SET(sock, &rfds);
+		tv.tv_sec = timeout_ms / 1000;
+		tv.tv_usec = (timeout_ms % 1000) * 1000;
+		rc = select((int) sock + 1, &rfds, NULL, NULL, &tv);
+		if (rc < 0)
+		{
+			if (errno == EINTR)
+				continue;
+			break;
+		}
+		if (rc == 0)
+			break;
+
+		nread = recv(sock, buf, sizeof(buf), 0);
+		if (nread == 0)
+			break;				/* client closed its side as well */
+		if (nread < 0)
+		{
+			if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+				continue;
+			break;
+		}
 	}
 }
 
