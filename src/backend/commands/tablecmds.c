@@ -14802,15 +14802,6 @@ validateForeignKeyConstraint(char *conname,
 	/* we needn't fill in remaining fields */
 
 	/*
-	 * See if we can do it with a single LEFT JOIN query.  A false result
-	 * indicates we must proceed with the fire-the-trigger method. We can't do
-	 * a LEFT JOIN for temporal FKs yet, but we can once we support temporal
-	 * left joins.
-	 */
-	if (!hasperiod && RI_Initial_Check(&trig, rel, pkrel))
-		return;
-
-	/*
 	 * Scan through each tuple, calling RI_FKey_check_ins (insert trigger) as
 	 * if that tuple had just been inserted.  If any of those fail, it should
 	 * ereport(ERROR) and that's that.
@@ -14823,6 +14814,31 @@ validateForeignKeyConstraint(char *conname,
 									  "validateForeignKeyConstraint",
 									  ALLOCSET_SMALL_SIZES);
 	oldcxt = MemoryContextSwitchTo(perTupCxt);
+
+	if (!hasperiod)
+	{
+		/*
+		 * For non-temporal FKs, we use a LEFT JOIN SPI query to check for
+		 * foreign key violations, checking if the referencing table contains
+		 * rows not in the referenced table.  Because restoring --schema-only
+		 * pg_dumps creates foreign keys on empty tables, it's worth checking
+		 * to see if the referencing table has any rows before we go to the
+		 * trouble of running the SPI query.  If the referenced table is
+		 * partitioned, then the SPI query can be expensive to plan and go
+		 * through executor startup/shutdown, so checking for 0 rows can be a
+		 * significant shortcut.
+		 *
+		 * A false result from RI_Initial_Check() indicates we must proceed
+		 * with the fire-the-trigger method.  We can't do a LEFT JOIN for
+		 * temporal FKs yet, but we can once we support temporal left joins.
+		 */
+		if (!table_scan_getnextslot(scan, ForwardScanDirection, slot) ||
+			RI_Initial_Check(&trig, rel, pkrel))
+			goto cleanup;
+
+		/* rescan, so we don't miss the first row in the loop below */
+		table_rescan(scan, NULL);
+	}
 
 	while (table_scan_getnextslot(scan, ForwardScanDirection, slot))
 	{
@@ -14855,6 +14871,7 @@ validateForeignKeyConstraint(char *conname,
 		MemoryContextReset(perTupCxt);
 	}
 
+cleanup:
 	MemoryContextSwitchTo(oldcxt);
 	MemoryContextDelete(perTupCxt);
 	table_endscan(scan);
