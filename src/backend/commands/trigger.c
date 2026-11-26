@@ -1151,7 +1151,7 @@ CreateTriggerFiringOn(const CreateTrigStmt *stmt, const char *queryString,
 	if (whenRtable != NIL)
 	{
 		if (!isInternal)
-			CheckUsageOnTypesInExpr(whenClause, whenRtable, GetUserId());
+			CheckUsageOnTypesInExpr(whenClause, GetUserId());
 
 		recordDependencyOnExpr(&myself, whenClause, whenRtable,
 							   DEPENDENCY_NORMAL);

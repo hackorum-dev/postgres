@@ -638,7 +638,7 @@ CreateStatistics(List *relids, CreateStatsStmt *stmt, bool check_rights)
 	if (stxexprs)
 	{
 		if (check_rights)
-			CheckUsageOnTypesInSingleRelExpr((Node *) stxexprs, relid, GetUserId());
+			CheckUsageOnTypesInSingleRelExpr((Node *) stxexprs, GetUserId());
 
 		recordDependencyOnSingleRelExpr(&myself,
 										(Node *) stxexprs,

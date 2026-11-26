@@ -1500,9 +1500,7 @@ expandTableLikeClause(RangeVar *heapRel, TableLikeClause *table_like_clause)
 			 * AddRelationNewConstraints(), so we must check for USAGE on
 			 * types here.
 			 */
-			CheckUsageOnTypesInSingleRelExpr(stringToNode(ccbin),
-											 RelationGetRelid(relation),
-											 GetUserId());
+			CheckUsageOnTypesInSingleRelExpr(stringToNode(ccbin), GetUserId());
 
 			n = makeNode(Constraint);
 			n->contype = CONSTR_CHECK;

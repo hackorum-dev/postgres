@@ -7201,12 +7201,12 @@ check_composite_type_dependency(ObjectAddress *depobj, Oid typeOid,
 
 			/* Is it used in the argument DEFAULTs? */
 			expr = get_node_tree_attr(PROCOID, catalog_tup, Anum_pg_proc_proargdefaults);
-			if (expr && CheckTypeDependencyInExpr(expr, NIL, typeOid))
+			if (expr && CheckTypeDependencyInExpr(expr, typeOid))
 				report_type_used_in_expr(depobj, origRelation, origTypeName);
 
 			/* Is it used in the SQL body? */
 			expr = get_node_tree_attr(PROCOID, catalog_tup, Anum_pg_proc_prosqlbody);
-			if (expr && CheckTypeDependencyInExpr(expr, NIL, typeOid))
+			if (expr && CheckTypeDependencyInExpr(expr, typeOid))
 				report_type_used_in_expr(depobj, origRelation, origTypeName);
 
 			/*
@@ -7241,7 +7241,7 @@ check_composite_type_dependency(ObjectAddress *depobj, Oid typeOid,
 				LockDatabaseObject(ConstraintRelationId, objid, 0, AccessShareLock);
 				expr = get_node_tree_attr(CONSTROID, catalog_tup,
 										  Anum_pg_constraint_conbin);
-				if (expr && CheckTypeDependencyInExpr(expr, NIL, typeOid))
+				if (expr && CheckTypeDependencyInExpr(expr, typeOid))
 					report_type_used_in_expr(depobj, origRelation, origTypeName);
 			}
 			else
@@ -7277,7 +7277,7 @@ check_composite_type_dependency(ObjectAddress *depobj, Oid typeOid,
 				elog(ERROR, "cache lookup failed for type %u", objid);
 
 			expr = get_node_tree_attr(TYPEOID, catalog_tup, Anum_pg_type_typdefaultbin);
-			if (expr && CheckTypeDependencyInExpr(expr, NIL, typeOid))
+			if (expr && CheckTypeDependencyInExpr(expr, typeOid))
 				report_type_used_in_expr(depobj, origRelation, origTypeName);
 
 			ReleaseSysCache(catalog_tup);
@@ -7406,7 +7406,7 @@ check_composite_type_dependency(ObjectAddress *depobj, Oid typeOid,
 							 RelationGetRelid(rel));
 					expr = get_node_tree_attr(PARTRELID, catalog_tup,
 											  Anum_pg_partitioned_table_partexprs);
-					if (expr && CheckTypeDependencyInSingleRelExpr(expr, RelationGetRelid(rel), typeOid))
+					if (expr && CheckTypeDependencyInSingleRelExpr(expr, typeOid))
 						report_type_used_in_expr(depobj, origRelation, origTypeName);
 					ReleaseSysCache(catalog_tup);
 				}
@@ -7421,16 +7421,14 @@ check_composite_type_dependency(ObjectAddress *depobj, Oid typeOid,
 				 */
 				if (rel->rd_indextuple)
 				{
-					Oid			indrelid = rel->rd_index->indrelid;
-
 					expr = get_node_tree_attr(INDEXRELID, rel->rd_indextuple,
 											  Anum_pg_index_indexprs);
-					if (expr && CheckTypeDependencyInSingleRelExpr(expr, indrelid, typeOid))
+					if (expr && CheckTypeDependencyInSingleRelExpr(expr, typeOid))
 						report_type_used_in_expr(depobj, origRelation, origTypeName);
 
 					expr = get_node_tree_attr(INDEXRELID, rel->rd_indextuple,
 											  Anum_pg_index_indpred);
-					if (expr && CheckTypeDependencyInSingleRelExpr(expr, indrelid, typeOid))
+					if (expr && CheckTypeDependencyInSingleRelExpr(expr, typeOid))
 						report_type_used_in_expr(depobj, origRelation, origTypeName);
 				}
 
@@ -8844,7 +8842,7 @@ ATExecCookedColumnDefault(Relation rel, AttrNumber attnum,
 	 * privilege checks to its caller, so we must check for USAGE on the types
 	 * here.
 	 */
-	CheckUsageOnTypesInSingleRelExpr(newDefault, RelationGetRelid(rel), GetUserId());
+	CheckUsageOnTypesInSingleRelExpr(newDefault, GetUserId());
 
 	/*
 	 * Remove any old default for the column.  We use RESTRICT here for

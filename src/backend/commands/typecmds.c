@@ -1062,7 +1062,7 @@ DefineDomain(ParseState *pstate, CreateDomainStmt *stmt)
 	 * adds the dependencies on types.  We are responsible for checking USAGE.
 	 */
 	if (defaultValueBin)
-		CheckUsageOnTypesInExpr(stringToNode(defaultValueBin), NIL, GetUserId());
+		CheckUsageOnTypesInExpr(stringToNode(defaultValueBin), GetUserId());
 
 	/* Allocate OID for array type */
 	domainArrayOid = AssignTypeArrayOid();
@@ -2748,7 +2748,7 @@ AlterDomainDefault(List *names, Node *defaultRaw)
 			 * The below call to GenerateTypeDependencies() creates the
 			 * dependencies on types.  We are responsible for checking USAGE.
 			 */
-			CheckUsageOnTypesInExpr(defaultExpr, NIL, GetUserId());
+			CheckUsageOnTypesInExpr(defaultExpr, GetUserId());
 
 			/*
 			 * Expression must be stored as a nodeToString result, but we also
@@ -3656,7 +3656,7 @@ domainAddCheckConstraint(Oid domainOid, Oid domainNamespace, Oid baseTypeOid,
 	 * types.  We are responsible for checking USAGE.
 	 */
 	if (!is_readd)
-		CheckUsageOnTypesInExpr(expr, NIL, GetUserId());
+		CheckUsageOnTypesInExpr(expr, GetUserId());
 
 	/*
 	 * Domains don't allow variables (this is probably dead code now that
