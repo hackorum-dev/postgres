@@ -731,7 +731,8 @@ add_child_eq_member(PlannerInfo *root, EquivalenceClass *ec, int ec_index,
  * Note: opfamilies must be chosen consistently with the way
  * process_equivalence() would do; that is, generated from a mergejoinable
  * equality operator.  Else we might fail to detect valid equivalences,
- * generating poor (but not incorrect) plans.
+ * generating poor (but not incorrect) plans.  make_pathkey_from_sortinfo
+ * makes one exception.
  */
 EquivalenceClass *
 get_eclass_for_sort_expr(PlannerInfo *root,

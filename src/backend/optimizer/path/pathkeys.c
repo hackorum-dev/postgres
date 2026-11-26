@@ -27,6 +27,7 @@
 #include "partitioning/partbounds.h"
 #include "rewrite/rewriteManip.h"
 #include "utils/lsyscache.h"
+#include "utils/typcache.h"
 
 /* Consider reordering of GROUP BY keys? */
 bool		enable_group_by_reordering = true;
@@ -230,6 +231,18 @@ make_pathkey_from_sortinfo(PlannerInfo *root,
 	if (!opfamilies)			/* certainly should find some */
 		elog(ERROR, "could not find opfamilies for equality operator %u",
 			 equality_op);
+
+	/*
+	 * Under a nondeterministic collation, an opfamily other than the default
+	 * one may sort apart values that its equality operator calls equal, as
+	 * text_pattern_ops does.  Give such a sort key an EC of its own, so that
+	 * it is not merged with equality clauses or other sort keys.
+	 */
+	if (OidIsValid(collation) &&
+		opfamily != lookup_type_cache(opcintype,
+									  TYPECACHE_BTREE_OPFAMILY)->btree_opf &&
+		!get_collation_isdeterministic(collation))
+		opfamilies = list_make1_oid(opfamily);
 
 	/* Now find or (optionally) create a matching EquivalenceClass */
 	eclass = get_eclass_for_sort_expr(root, expr,

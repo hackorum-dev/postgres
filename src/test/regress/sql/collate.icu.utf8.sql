@@ -1571,6 +1571,28 @@ SELECT count(*) FROM (SELECT NULLIF(a, NULL::text COLLATE case_insensitive) FROM
 
 DROP TABLE simplify_collation_t;
 
+-- Under a nondeterministic collation, a sort key using ~<~ must not be
+-- merged with other sort keys or clauses that use "="
+CREATE TABLE sortkey_ci_t (x text COLLATE case_insensitive);
+INSERT INTO sortkey_ci_t VALUES ('b'), ('a'), ('B'), ('A'), ('a'), ('A');
+
+EXPLAIN (COSTS OFF)
+SELECT x FROM sortkey_ci_t ORDER BY x USING <, x USING ~<~;
+SELECT x FROM sortkey_ci_t ORDER BY x USING <, x USING ~<~;
+SELECT DISTINCT ON (x) x FROM sortkey_ci_t ORDER BY x USING <, x USING ~<~;
+SELECT string_agg(x, ',' ORDER BY x USING <, x USING ~<~) FROM sortkey_ci_t;
+-- an equality with a constant must not remove the sort
+SELECT x FROM sortkey_ci_t WHERE x = 'a' ORDER BY x USING ~<~;
+-- a merge join must not use the ~<~ ordering
+SET enable_hashjoin = off;
+SET enable_nestloop = off;
+SELECT count(*) FROM (SELECT t1.x FROM sortkey_ci_t t1
+  JOIN sortkey_ci_t t2 ON t1.x = t2.x ORDER BY t1.x USING ~<~) s;
+RESET enable_hashjoin;
+RESET enable_nestloop;
+
+DROP TABLE sortkey_ci_t;
+
 -- virtual generated columns
 CREATE TABLE t5 (
     a int,
