@@ -33,7 +33,7 @@ static bool useHistory;
 
 static char *psql_history;
 
-static int	history_lines_added;
+static int	history_lines_added pg_attribute_unused();
 
 
 /*

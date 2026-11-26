@@ -222,7 +222,7 @@ static int	completion_max_records;
  * macros) and then used by the completion callback functions.  Ugly but there
  * is no better way.
  */
-static char completion_last_char;	/* last char of input word */
+static char completion_last_char pg_attribute_unused();      /* last char of input word */
 static const char *completion_charp;	/* to pass a string */
 static const char *const *completion_charpp;	/* to pass a list of strings */
 static const VersionedQuery *completion_vquery; /* to pass a VersionedQuery */
