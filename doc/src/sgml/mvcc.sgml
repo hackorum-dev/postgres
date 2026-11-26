@@ -1005,6 +1005,9 @@ ERROR:  could not serialize access due to read/write dependencies among transact
          <command>ANALYZE</command>, <command>CREATE INDEX CONCURRENTLY</command>,
          <command>CREATE STATISTICS</command>, <command>COMMENT ON</command>,
          <command>REINDEX CONCURRENTLY</command>,
+         <command>REPACK</command> with the <option>CONCURRENTLY</option> option
+         (except for the final phase, when the table files are swapped and
+         <literal>ACCESS EXCLUSIVE</literal> is taken),
          and certain <link linkend="sql-alterindex"><command>ALTER INDEX</command></link>
          and <link linkend="sql-altertable"><command>ALTER TABLE</command></link> variants
          (for full details see the documentation of these commands).
