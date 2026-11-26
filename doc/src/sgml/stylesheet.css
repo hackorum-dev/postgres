@@ -155,6 +155,19 @@ ul.itemizedlist {
 	margin-left: 2.5rem;
 }
 
+[id*="RELEASE"] ul.itemizedlist li.listitem {
+	margin-bottom: 1.5em;
+}
+
+[id*="RELEASE"] ul.itemizedlist li p {
+	margin-top: 0.1em;
+	margin-bottom: 0.4em;
+}
+
+[id*="RELEASE"] ul.itemizedlist li p:last-child {
+	margin-bottom: 0;
+}
+
 .comment	{ color: red; }
 
 var		{ font-family: monospace; font-style: italic; }
