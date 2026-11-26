@@ -141,6 +141,7 @@ typedef struct
 {
 	ObjectAddresses *addrs;		/* addresses being accumulated */
 	List	   *rtables;		/* list of rangetables to resolve Vars */
+	bool		skipvar;		/* skip Var references during type checks */
 } find_expr_references_context;
 
 
@@ -1603,8 +1604,9 @@ recordDependencyOnExpr(const ObjectAddress *depender,
  * immediately record the dependencies, allowing the caller to add to,
  * filter, or modify the collected dependencies before recording them.
  *
- * rtable is the rangetable to be used to interpret Vars with varlevelsup=0.
- * It can be NIL if no such variables are expected.
+ * rtable is the rangetable for Vars that refer to the query level enclosing
+ * expr.  If rtable is NIL, encountering such a Var is an error.  Queries
+ * within expr supply their own rangetables.
  *
  * Note: the returned list may well contain duplicates.  The caller should
  * de-duplicate before recording the dependencies.  Within this file, callers
@@ -1617,7 +1619,7 @@ void
 collectDependenciesOfExpr(ObjectAddresses *addrs,
 						  Node *expr, List *rtable)
 {
-	find_expr_references_context context;
+	find_expr_references_context context = {0};
 
 	context.addrs = addrs;
 
@@ -1652,7 +1654,7 @@ recordDependencyOnSingleRelExpr(const ObjectAddress *depender,
 								DependencyType self_behavior,
 								bool reverse_self)
 {
-	find_expr_references_context context;
+	find_expr_references_context context = {0};
 	RangeTblEntry rte = {0};
 
 	if (expr == NULL)
@@ -1786,61 +1788,37 @@ check_usage_on_types(ObjectAddresses *addrs, Oid roleid)
 /*
  * CheckUsageOnTypesInExpr - require USAGE on all types named by an expression
  *
- * rtable is the rangetable for interpreting Vars (or NIL if none are
- * expected).  roleid is the role whose USAGE is required.
+ * If checkResultType is true, expr must be an expression or a list of
+ * expressions.  We also check USAGE on each expression's result type,
+ * matching recordDependencyOnSingleRelExpr().
  */
 void
-CheckUsageOnTypesInExpr(Node *expr, List *rtable, Oid roleid)
+CheckUsageOnTypesInExpr(Node *expr, Oid roleid, bool checkResultType)
 {
-	ObjectAddresses *addrs = new_object_addresses();
-
-	collectDependenciesOfExpr(addrs, expr, rtable);
-	eliminate_duplicate_dependencies(addrs);
-	check_usage_on_types(addrs, roleid);
-	free_object_addresses(addrs);
-}
-
-/*
- * CheckUsageOnTypesInSingleRelExpr - as above, for a single-rel expression
- *
- * Like recordDependencyOnSingleRelExpr(), this handles expressions whose Vars
- * all refer to one relation.  roleid is the role whose USAGE is required.
- */
-void
-CheckUsageOnTypesInSingleRelExpr(Node *expr, Oid relId, Oid roleid)
-{
-	find_expr_references_context context;
-	RangeTblEntry rte = {0};
+	find_expr_references_context context = {.skipvar = true};
 
 	if (expr == NULL)
 		return;
 
 	context.addrs = new_object_addresses();
-
-	/* We gin up a rather bogus rangetable list to handle Vars */
-	rte.type = T_RangeTblEntry;
-	rte.rtekind = RTE_RELATION;
-	rte.relid = relId;
-	rte.relkind = RELKIND_RELATION;
-	rte.rellockmode = AccessShareLock;
-	context.rtables = list_make1(list_make1(&rte));
-
 	find_expr_references_walker(expr, &context);
 
-	/* Also check USAGE on the result type */
-	if (IsA(expr, List))
+	if (checkResultType)
 	{
-		ListCell   *l;
-
-		foreach(l, (List *) expr)
+		if (IsA(expr, List))
 		{
-			add_object_address(TypeRelationId, exprType(lfirst(l)), 0,
-							   context.addrs);
+			ListCell   *l;
+
+			foreach(l, (List *) expr)
+			{
+				add_object_address(TypeRelationId, exprType(lfirst(l)), 0,
+								   context.addrs);
+			}
 		}
+		else
+			add_object_address(TypeRelationId, exprType(expr), 0,
+							   context.addrs);
 	}
-	else
-		add_object_address(TypeRelationId, exprType(expr), 0,
-						   context.addrs);
 
 	eliminate_duplicate_dependencies(context.addrs);
 	check_usage_on_types(context.addrs, roleid);
@@ -1849,60 +1827,45 @@ CheckUsageOnTypesInSingleRelExpr(Node *expr, Oid relId, Oid roleid)
 
 /*
  * CheckTypeDependencyInExpr - does 'expr' depend on the given type?
+ *
+ * If checkResultType is true, expr must be an expression or a list of
+ * expressions.  We also check each expression's result type,
+ * matching recordDependencyOnSingleRelExpr().
  */
 bool
-CheckTypeDependencyInExpr(Node *expr, List *rtable, Oid typeId)
+CheckTypeDependencyInExpr(Node *expr, Oid typeId, bool checkResultType)
 {
-	ObjectAddresses *addrs = new_object_addresses();
+	find_expr_references_context context = {.skipvar = true};
 	ObjectAddress typeAddr;
 	bool		result;
-
-	collectDependenciesOfExpr(addrs, expr, rtable);
-
-	ObjectAddressSet(typeAddr, TypeRelationId, typeId);
-	result = object_address_present(&typeAddr, addrs);
-	free_object_addresses(addrs);
-
-	return result;
-}
-
-/*
- * CheckTypeDependencyInSingleRelExpr - as above, for a single-rel expression
- *
- * One difference is that this also checks the return type of the expression.
- * That's consistent with recordDependencyOnSingleRelExpr(), which adds a
- * dependency on the return type.
- */
-bool
-CheckTypeDependencyInSingleRelExpr(Node *expr, Oid relId, Oid typeId)
-{
-	RangeTblEntry rte = {0};
 
 	if (expr == NULL)
 		return false;
 
-	/* Also check the result type, matching recordDependencyOnSingleRelExpr */
-	if (IsA(expr, List))
+	if (checkResultType)
 	{
-		ListCell   *l;
-
-		foreach(l, (List *) expr)
+		if (IsA(expr, List))
 		{
-			if (exprType(lfirst(l)) == typeId)
-				return true;
+			ListCell   *l;
+
+			foreach(l, (List *) expr)
+			{
+				if (exprType(lfirst(l)) == typeId)
+					return true;
+			}
 		}
+		else if (exprType(expr) == typeId)
+			return true;
 	}
-	else if (exprType(expr) == typeId)
-		return true;
 
-	/* We gin up a rather bogus rangetable list to handle Vars */
-	rte.type = T_RangeTblEntry;
-	rte.rtekind = RTE_RELATION;
-	rte.relid = relId;
-	rte.relkind = RELKIND_RELATION;
-	rte.rellockmode = AccessShareLock;
+	context.addrs = new_object_addresses();
+	find_expr_references_walker(expr, &context);
 
-	return CheckTypeDependencyInExpr(expr, list_make1(&rte), typeId);
+	ObjectAddressSet(typeAddr, TypeRelationId, typeId);
+	result = object_address_present(&typeAddr, context.addrs);
+	free_object_addresses(context.addrs);
+
+	return result;
 }
 
 /*
@@ -1946,6 +1909,14 @@ find_expr_references_walker(Node *node,
 		Var		   *var = (Var *) node;
 		List	   *rtable;
 		RangeTblEntry *rte;
+
+		/*
+		 * Resolving a Var can only add a column dependency, even for a column
+		 * of a composite type returned by a function.  Type checks can
+		 * therefore skip Vars.
+		 */
+		if (context->skipvar)
+			return false;
 
 		/* Find matching rtable entry, or complain if not found */
 		if (var->varlevelsup >= list_length(context->rtables))

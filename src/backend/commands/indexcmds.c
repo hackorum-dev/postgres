@@ -982,13 +982,11 @@ DefineIndex(ParseState *pstate,
 	if (check_rights)
 	{
 		if (indexInfo->ii_Expressions)
-			CheckUsageOnTypesInSingleRelExpr((Node *) indexInfo->ii_Expressions,
-											 tableId,
-											 root_save_userid);
+			CheckUsageOnTypesInExpr((Node *) indexInfo->ii_Expressions,
+									root_save_userid, true);
 		if (indexInfo->ii_Predicate)
-			CheckUsageOnTypesInSingleRelExpr((Node *) indexInfo->ii_Predicate,
-											 tableId,
-											 root_save_userid);
+			CheckUsageOnTypesInExpr((Node *) indexInfo->ii_Predicate,
+									root_save_userid, true);
 	}
 
 	/*

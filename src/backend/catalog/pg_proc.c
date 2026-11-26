@@ -676,14 +676,14 @@ ProcedureCreate(const char *procedureName,
 	/* dependencies appearing in new-style SQL routine body */
 	if (languageObjectId == SQLlanguageId && prosqlbody)
 	{
-		CheckUsageOnTypesInExpr(prosqlbody, NIL, GetUserId());
+		CheckUsageOnTypesInExpr(prosqlbody, GetUserId(), false);
 		collectDependenciesOfExpr(addrs, prosqlbody, NIL);
 	}
 
 	/* dependency on parameter default expressions */
 	if (parameterDefaults)
 	{
-		CheckUsageOnTypesInExpr((Node *) parameterDefaults, NIL, GetUserId());
+		CheckUsageOnTypesInExpr((Node *) parameterDefaults, GetUserId(), false);
 		collectDependenciesOfExpr(addrs, (Node *) parameterDefaults, NIL);
 	}
 

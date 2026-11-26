@@ -2763,7 +2763,7 @@ AddRelationNewConstraints(Relation rel,
 		 * types.  We are responsible for checking USAGE.
 		 */
 		if (!is_internal)
-			CheckUsageOnTypesInSingleRelExpr(expr, RelationGetRelid(rel), GetUserId());
+			CheckUsageOnTypesInExpr(expr, GetUserId(), true);
 
 		defOid = StoreAttrDefault(rel, colDef->attnum, expr, is_internal);
 
@@ -2812,7 +2812,7 @@ AddRelationNewConstraints(Relation rel,
 				 * types.  We are responsible for checking USAGE.
 				 */
 				if (!is_internal)
-					CheckUsageOnTypesInSingleRelExpr(expr, RelationGetRelid(rel), GetUserId());
+					CheckUsageOnTypesInExpr(expr, GetUserId(), true);
 			}
 			else
 			{
@@ -4330,8 +4330,7 @@ StorePartitionKey(Relation rel,
 	 */
 	if (partexprs)
 	{
-		CheckUsageOnTypesInSingleRelExpr((Node *) partexprs, RelationGetRelid(rel),
-										 GetUserId());
+		CheckUsageOnTypesInExpr((Node *) partexprs, GetUserId(), true);
 		recordDependencyOnSingleRelExpr(&myself,
 										(Node *) partexprs,
 										RelationGetRelid(rel),

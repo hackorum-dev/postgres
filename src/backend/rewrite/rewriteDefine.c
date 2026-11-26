@@ -161,7 +161,7 @@ InsertRule(const char *rulname,
 	/*
 	 * Also install dependencies on objects referenced in action and qual.
 	 */
-	CheckUsageOnTypesInExpr((Node *) action, NIL, GetUserId());
+	CheckUsageOnTypesInExpr((Node *) action, GetUserId(), false);
 	recordDependencyOnExpr(&myself, (Node *) action, NIL,
 						   DEPENDENCY_NORMAL);
 
@@ -171,7 +171,7 @@ InsertRule(const char *rulname,
 		Query	   *qry = linitial_node(Query, action);
 
 		qry = getInsertSelectQuery(qry, NULL);
-		CheckUsageOnTypesInExpr(event_qual, qry->rtable, GetUserId());
+		CheckUsageOnTypesInExpr(event_qual, GetUserId(), false);
 		recordDependencyOnExpr(&myself, event_qual, qry->rtable,
 							   DEPENDENCY_NORMAL);
 	}

@@ -752,12 +752,11 @@ CreatePolicy(CreatePolicyStmt *stmt)
 
 	recordDependencyOn(&myself, &target, DEPENDENCY_AUTO);
 
-	CheckUsageOnTypesInExpr(qual, qual_pstate->p_rtable, GetUserId());
+	CheckUsageOnTypesInExpr(qual, GetUserId(), false);
 	recordDependencyOnExpr(&myself, qual, qual_pstate->p_rtable,
 						   DEPENDENCY_NORMAL);
 
-	CheckUsageOnTypesInExpr(with_check_qual, with_check_pstate->p_rtable,
-							GetUserId());
+	CheckUsageOnTypesInExpr(with_check_qual, GetUserId(), false);
 	recordDependencyOnExpr(&myself, with_check_qual,
 						   with_check_pstate->p_rtable, DEPENDENCY_NORMAL);
 
@@ -1087,12 +1086,11 @@ AlterPolicy(AlterPolicyStmt *stmt)
 	recordDependencyOn(&myself, &target, DEPENDENCY_AUTO);
 
 	if (stmt->qual)
-		CheckUsageOnTypesInExpr(qual, qual_parse_rtable, GetUserId());
+		CheckUsageOnTypesInExpr(qual, GetUserId(), false);
 	recordDependencyOnExpr(&myself, qual, qual_parse_rtable, DEPENDENCY_NORMAL);
 
 	if (stmt->with_check)
-		CheckUsageOnTypesInExpr(with_check_qual, with_check_parse_rtable,
-								GetUserId());
+		CheckUsageOnTypesInExpr(with_check_qual, GetUserId(), false);
 	recordDependencyOnExpr(&myself, with_check_qual, with_check_parse_rtable,
 						   DEPENDENCY_NORMAL);
 
