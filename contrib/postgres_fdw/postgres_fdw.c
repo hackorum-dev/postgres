@@ -3939,6 +3939,9 @@ get_remote_estimate(const char *sql, PGconn *conn,
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 		pgfdw_report_error(res, conn, sql);
 
+	if (PQntuples(res) < 1 || PQnfields(res) < 1)
+		elog(ERROR, "unexpected result from remote EXPLAIN command");
+
 	/*
 	 * Extract cost numbers for topmost plan node.  Note we search for a left
 	 * paren from the end of the line to avoid being confused by other uses of
@@ -6694,6 +6697,10 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	res = pgfdw_exec_query(conn, buf.data, NULL);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 		pgfdw_report_error(res, conn, buf.data);
+
+	/* The query always returns eight columns, using NULLs as needed. */
+	if (PQnfields(res) != 8)
+		elog(ERROR, "unexpected result from remote schema import query");
 
 	/* Process results */
 	numrows = PQntuples(res);
