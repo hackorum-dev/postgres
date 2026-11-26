@@ -2862,6 +2862,17 @@ ExecInitSubPlanExpr(SubPlan *subplan,
 
 	sstate = ExecInitSubPlan(subplan, state->parent);
 
+	/*
+	 * The subplan's test expression uses the caller's expression context,
+	 * so record which OLD/NEW slots it needs in the caller's ExprState.
+	 */
+	if (sstate->projLeft != NULL)
+		state->flags |= sstate->projLeft->pi_state.flags &
+			(EEO_FLAG_HAS_OLD | EEO_FLAG_HAS_NEW);
+	else if (sstate->testexpr != NULL)
+		state->flags |= sstate->testexpr->flags &
+			(EEO_FLAG_HAS_OLD | EEO_FLAG_HAS_NEW);
+
 	/* add SubPlanState nodes to state->parent->subPlan */
 	state->parent->subPlan = lappend(state->parent->subPlan,
 									 sstate);
