@@ -90,9 +90,11 @@
   </para>
 
   <para>
-   Before you continue, check on the TODO list and in the FAQ to see if your bug is
-   already known. If you cannot decode the information on the TODO list, report your
-   problem. The least we can do is make the TODO list clearer.
+   Before you continue, check on the
+   <ulink url="https://wiki.postgresql.org/wiki/Todo">TODO list</ulink> and in
+   the <ulink url="https://wiki.postgresql.org/wiki/FAQ">FAQ</ulink> to see if
+   your bug is already known. If you cannot decode the information on the TODO
+   list, report your problem. The least we can do is make the TODO list clearer.
   </para>
  </sect2>
 
