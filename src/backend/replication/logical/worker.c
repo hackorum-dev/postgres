@@ -2816,14 +2816,20 @@ check_relation_updatable(LogicalRepRelMapEntry *rel)
 	if (rel->updatable)
 		return;
 
-	/* Use the entry, so this matches what updatable was decided from. */
+	/*
+	 * Report the local relation, since that is what updatable was decided
+	 * from.  For a leaf partition reached through tuple routing, remoterel
+	 * holds the name of the partitioned table the change was published for,
+	 * which is not the relation that failed the check.
+	 */
 	if (rel->idxisreplident)
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("publisher did not send replica identity column "
 						"expected by the logical replication target relation \"%s.%s\"",
-						rel->remoterel.nspname, rel->remoterel.relname)));
+						get_namespace_name(RelationGetNamespace(rel->localrel)),
+						RelationGetRelationName(rel->localrel))));
 	}
 
 	ereport(ERROR,
@@ -2832,7 +2838,8 @@ check_relation_updatable(LogicalRepRelMapEntry *rel)
 					"neither REPLICA IDENTITY index nor PRIMARY "
 					"KEY and published relation does not have "
 					"REPLICA IDENTITY FULL",
-					rel->remoterel.nspname, rel->remoterel.relname)));
+					get_namespace_name(RelationGetNamespace(rel->localrel)),
+					RelationGetRelationName(rel->localrel))));
 }
 
 /*

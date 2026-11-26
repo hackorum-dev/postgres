@@ -897,6 +897,40 @@ $result = $node_subscriber2->safe_psql('postgres',
 	"SELECT a, b, c FROM tab5_1 ORDER BY 1");
 is($result, qq(4||1), 'updates of tab5 replicated correctly');
 
+# Test that when the leaf partition is not updatable, the error names the
+# leaf partition, even though the partitioned target table has a REPLICA
+# IDENTITY index.  REPLICA IDENTITY is not inherited by partitions.
+$node_subscriber2->safe_psql(
+	'postgres', q{
+	ALTER TABLE tab5 REPLICA IDENTITY USING INDEX tab5_a_idx;
+	ALTER TABLE tab5_1 REPLICA IDENTITY DEFAULT;});
+
+$log_location = -s $node_subscriber2->logfile;
+
+$node_publisher->safe_psql('postgres', "UPDATE tab5 SET a = 5 WHERE a = 4");
+
+$node_subscriber2->wait_for_log(
+	qr/ERROR: ( [A-Z0-9]+:)? logical replication target relation "[^"]+" has neither REPLICA IDENTITY index nor PRIMARY KEY/,
+	$log_location);
+
+$logfile = slurp_file($node_subscriber2->logfile(), $log_location);
+like(
+	$logfile,
+	qr/logical replication target relation "public.tab5_1" has neither REPLICA IDENTITY index nor PRIMARY KEY/,
+	'error names the leaf partition that has no replica identity');
+
+# Fixing the leaf partition lets replication continue.
+$node_subscriber2->safe_psql('postgres',
+	"ALTER TABLE tab5_1 REPLICA IDENTITY USING INDEX tab5_1_a_idx");
+
+$node_publisher->wait_for_catchup('sub2');
+
+$result = $node_subscriber2->safe_psql('postgres',
+	"SELECT a, b, c FROM tab5_1 ORDER BY 1");
+is($result, qq(5||1),
+	'update of tab5 replicated after setting replica identity on the leaf partition'
+);
+
 # Validate we didn't neglect to cleanup any resources on either subscriber.
 foreach my $node ($node_subscriber1, $node_subscriber2)
 {
