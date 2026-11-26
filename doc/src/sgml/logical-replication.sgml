@@ -2053,10 +2053,10 @@ Included in publications:
       <listitem>
        <para>
         Inserting a row that violates a <literal>NOT DEFERRABLE</literal>
-        unique constraint. Note that to log the origin and commit
-        timestamp details of the conflicting key,
+        unique constraint. To log the origin and commit
+        timestamp details of the conflicting key, ensure that
         <link linkend="guc-track-commit-timestamp"><varname>track_commit_timestamp</varname></link>
-        should be enabled on the subscriber. In this case, an error will be
+        is enabled on the subscriber. In this case, an error will be
         raised until the conflict is resolved manually.
        </para>
       </listitem>
@@ -2066,7 +2066,7 @@ Included in publications:
       <listitem>
        <para>
         Updating a row that was previously modified by another origin.
-        Note that this conflict can only be detected when
+        This conflict can only be detected when
         <link linkend="guc-track-commit-timestamp"><varname>track_commit_timestamp</varname></link>
         is enabled on the subscriber. Currently, the update is always applied
         regardless of the origin of the local row.
@@ -2078,11 +2078,11 @@ Included in publications:
       <listitem>
        <para>
         The updated value of a row violates a <literal>NOT DEFERRABLE</literal>
-        unique constraint. Note that to log the origin and commit
-        timestamp details of the conflicting key,
+        unique constraint. To log the origin and commit
+        timestamp details of the conflicting key, ensure that
         <link linkend="guc-track-commit-timestamp"><varname>track_commit_timestamp</varname></link>
-        should be enabled on the subscriber. In this case, an error will be
-        raised until the conflict is resolved manually. Note that when updating a
+        is enabled on the subscriber. In this case, an error will be
+        raised until the conflict is resolved manually. When updating a
         partitioned table, if the updated row value satisfies another partition
         constraint resulting in the row being inserted into a new partition, the
         <literal>insert_exists</literal> conflict may arise if the new row
@@ -2095,14 +2095,13 @@ Included in publications:
       <listitem>
        <para>
         The tuple to be updated was concurrently deleted by another origin. The
-        update will simply be skipped in this scenario. Note that this conflict
+        update will simply be skipped in this scenario. This conflict
         can only be detected when
         <link linkend="guc-track-commit-timestamp"><varname>track_commit_timestamp</varname></link>
         and <link linkend="sql-createsubscription-params-with-retain-dead-tuples"><literal>retain_dead_tuples</literal></link>
-        are enabled. Note that if a tuple cannot be found due to the table being
-        truncated, only an <literal>update_missing</literal> conflict will
-        arise. Additionally, if the tuple was deleted by the same origin, an
-        <literal>update_missing</literal> conflict will arise.
+        are enabled. If the tuple cannot be found because the table was
+        truncated, or if the tuple was deleted by the same origin, an
+        <literal>update_missing</literal> conflict arises instead.
        </para>
       </listitem>
      </varlistentry>
@@ -2119,8 +2118,8 @@ Included in publications:
       <term><literal>delete_origin_differs</literal></term>
       <listitem>
        <para>
-        Deleting a row that was previously modified by another origin. Note that
-        this conflict can only be detected when
+        Deleting a row that was previously modified by another origin.
+        This conflict can only be detected when
         <link linkend="guc-track-commit-timestamp"><varname>track_commit_timestamp</varname></link>
         is enabled on the subscriber. Currently, the delete is always applied
         regardless of the origin of the local row.
@@ -2141,7 +2140,7 @@ Included in publications:
       <listitem>
        <para>
         Inserting or updating a row violates multiple
-        <literal>NOT DEFERRABLE</literal> unique constraints. Note that to log
+        <literal>NOT DEFERRABLE</literal> unique constraints. To log
         the origin and commit timestamp details of conflicting keys, ensure
         that <link linkend="guc-track-commit-timestamp"><varname>track_commit_timestamp</varname></link>
         is enabled on the subscriber. In this case, an error will be raised until
@@ -2589,12 +2588,11 @@ CONTEXT:  processing remote data for replication origin "pg_16395" during "INSER
     and the next LSN of the finish LSN (i.e., 0/014C0379).  The current position of
     origins can be seen in the <link linkend="view-pg-replication-origin-status">
     <structname>pg_replication_origin_status</structname></link> system view.
-    Please note that skipping the whole transaction includes skipping changes that
-    might not violate any constraint.  This can easily make the subscriber
-    inconsistent.
+    Skipping the whole transaction also skips changes that might not violate
+    any constraint, which can easily make the subscriber inconsistent.
     The additional details regarding conflicting rows, such as their origin and
     commit timestamp can be seen in the <literal>DETAIL</literal> line of the
-    log. But note that this information is only available when
+    log. However, this information is only available when
     <link linkend="guc-track-commit-timestamp"><varname>track_commit_timestamp</varname></link>
     is enabled on the subscriber. Users can use this information to decide
     whether to retain the local change or adopt the remote alteration. For
