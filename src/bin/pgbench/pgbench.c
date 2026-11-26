@@ -7121,10 +7121,11 @@ main(int argc, char **argv)
 				break;
 			case 14:			/* max-tries */
 				{
-					int32		max_tries_arg = atoi(optarg);
+					int32		max_tries_arg;
 
-					if (max_tries_arg < 0)
-						pg_fatal("invalid number of maximum tries: \"%s\"", optarg);
+					if (!option_parse_int(optarg, "--max-tries", 0, INT_MAX,
+										  &max_tries_arg))
+						exit(1);
 
 					benchmarking_option_set = true;
 					max_tries = (uint32) max_tries_arg;

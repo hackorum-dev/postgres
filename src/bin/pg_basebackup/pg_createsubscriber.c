@@ -13,6 +13,7 @@
 
 #include "postgres_fe.h"
 
+#include <limits.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/wait.h>
@@ -26,6 +27,7 @@
 #include "common/pg_prng.h"
 #include "common/restricted_token.h"
 #include "datatype/timestamp.h"
+#include "fe_utils/option_utils.h"
 #include "fe_utils/recovery_gen.h"
 #include "fe_utils/simple_list.h"
 #include "fe_utils/string_utils.h"
@@ -2366,7 +2368,9 @@ main(int argc, char **argv)
 				canonicalize_path(opt.socket_dir);
 				break;
 			case 't':
-				opt.recovery_timeout = atoi(optarg);
+				if (!option_parse_int(optarg, "-t/--recovery-timeout", 0, INT_MAX,
+									  &opt.recovery_timeout))
+					exit(1);
 				break;
 			case 'T':
 				opt.two_phase = true;

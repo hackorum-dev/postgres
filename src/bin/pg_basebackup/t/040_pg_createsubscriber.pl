@@ -43,6 +43,17 @@ sub generate_db
 }
 
 #
+# Test invalid option values
+command_fails_like(
+	[ 'pg_createsubscriber', '--recovery-timeout' => 'abc' ],
+	qr/invalid value "abc" for option -t\/--recovery-timeout/,
+	'non-numeric recovery timeout');
+command_fails_like(
+	[ 'pg_createsubscriber', '--recovery-timeout' => '-1' ],
+	qr/-t\/--recovery-timeout must be in range 0\.\.2147483647/,
+	'negative recovery timeout');
+
+#
 # Test mandatory options
 command_fails(['pg_createsubscriber'],
 	'no subscriber data directory specified');

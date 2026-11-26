@@ -190,7 +190,12 @@ my @options = (
 	[
 		'bad maximum number of tries',
 		'--max-tries -10',
-		[qr{invalid number of maximum tries: "-10"}]
+		[qr{--max-tries must be in range 0\.\.2147483647}]
+	],
+	[
+		'non-numeric maximum number of tries',
+		'--max-tries abc',
+		[qr{invalid value "abc" for option --max-tries}]
 	],
 	[
 		'an infinite number of tries',
