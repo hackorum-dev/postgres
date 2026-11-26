@@ -55,6 +55,14 @@ $node->command_fails_like(
 	],
 	qr/\Qunrecognized compression algorithm: "none+"/,
 	'failure on incorrect separator to define compression level');
+$node->command_fails_like(
+	[
+		'pg_basebackup',
+		'--pgdata' => "$tempdir/backup",
+		'--max-rate' => 'nan'
+	],
+	qr/\Qtransfer rate "nan" is not a valid value/,
+	'failure on NaN transfer rate');
 
 # Some Windows ANSI code pages may reject this filename, in which case we
 # quietly proceed without this bit of test coverage.

@@ -6966,9 +6966,10 @@ main(int argc, char **argv)
 				break;
 			case 'L':
 				{
-					double		limit_ms = atof(optarg);
+					double		limit_ms;
 
-					if (limit_ms <= 0.0)
+					if (!strtodouble(optarg, true, &limit_ms) ||
+						!(limit_ms > 0.0) || isinf(limit_ms))
 						pg_fatal("invalid latency limit: \"%s\"", optarg);
 					benchmarking_option_set = true;
 					latency_limit = (int64) (limit_ms * 1000);
@@ -7009,12 +7010,12 @@ main(int argc, char **argv)
 				break;
 			case 'R':
 				{
-					/* get a double from the beginning of option value */
-					double		throttle_value = atof(optarg);
+					double		throttle_value;
 
 					benchmarking_option_set = true;
 
-					if (throttle_value <= 0.0)
+					if (!strtodouble(optarg, true, &throttle_value) ||
+						!(throttle_value > 0.0) || isinf(throttle_value))
 						pg_fatal("invalid rate limit: \"%s\"", optarg);
 					/* Invert rate limit into per-transaction delay in usec */
 					throttle_delay = 1000000.0 / throttle_value;
@@ -7064,8 +7065,8 @@ main(int argc, char **argv)
 				break;
 			case 4:				/* sampling-rate */
 				benchmarking_option_set = true;
-				sample_rate = atof(optarg);
-				if (sample_rate <= 0.0 || sample_rate > 1.0)
+				if (!strtodouble(optarg, true, &sample_rate) ||
+					!(sample_rate > 0.0 && sample_rate <= 1.0))
 					pg_fatal("invalid sampling rate: \"%s\"", optarg);
 				break;
 			case 5:				/* aggregate-interval */

@@ -29,6 +29,10 @@ command_fails_like(
 	[ 'pg_test_timing', '--cutoff' => '101' ],
 	qr/\Qpg_test_timing: --cutoff must be in range 0..100\E/,
 	'pg_test_timing: --cutoff must be in range');
+command_fails_like(
+	[ 'pg_test_timing', '--cutoff' => 'nan' ],
+	qr/\Qpg_test_timing: --cutoff must be in range 0..100\E/,
+	'pg_test_timing: --cutoff rejects NaN');
 
 #########################################
 # We obviously can't check for specific output, but we can

@@ -103,7 +103,7 @@ handle_args(int argc, char *argv[])
 					exit(1);
 				}
 
-				if (max_rprct < 0 || max_rprct > 100)
+				if (!(max_rprct >= 0 && max_rprct <= 100))
 				{
 					fprintf(stderr, _("%s: %s must be in range %u..%u\n"),
 							progname, "--cutoff", 0, 100);

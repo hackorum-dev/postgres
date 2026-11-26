@@ -426,6 +426,16 @@ psql_fails_like(
 	'\watch, out-of-range interval');
 psql_fails_like(
 	$node,
+	'SELECT 1 \watch i=nan c=1',
+	qr/incorrect interval value "nan"/,
+	'\watch, NaN interval');
+psql_fails_like(
+	$node,
+	'SELECT 1 \watch i=inf c=1',
+	qr/incorrect interval value "inf"/,
+	'\watch, infinite interval');
+psql_fails_like(
+	$node,
 	'SELECT 1 \watch 1 1',
 	qr/interval value is specified more than once/,
 	'\watch, interval value is specified more than once');

@@ -128,9 +128,21 @@ my @options = (
 		[qr{-P/--progress must be in range}]
 	],
 	[ 'invalid rate', '--rate=0.0', [qr{invalid rate limit}] ],
+	[ 'invalid rate NaN', '--rate=nan', [qr{invalid rate limit}] ],
+	[ 'invalid rate infinite', '--rate=inf', [qr{invalid rate limit}] ],
+	[ 'invalid rate trailing garbage', '--rate=10abc', [qr{invalid rate limit}] ],
 	[ 'invalid latency', '--latency-limit=0.0', [qr{invalid latency limit}] ],
+	[ 'invalid latency NaN', '--latency-limit=nan', [qr{invalid latency limit}] ],
+	[
+		'invalid latency trailing garbage', '--latency-limit=5abc',
+		[qr{invalid latency limit}]
+	],
 	[
 		'invalid sampling rate', '--sampling-rate=0',
+		[qr{invalid sampling rate}]
+	],
+	[
+		'invalid sampling rate NaN', '--sampling-rate=nan',
 		[qr{invalid sampling rate}]
 	],
 	[

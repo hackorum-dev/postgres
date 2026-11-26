@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <limits.h>
+#include <math.h>
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -904,7 +905,7 @@ parse_max_rate(char *src)
 
 	errno = 0;
 	result = strtod(src, &after_num);
-	if (src == after_num)
+	if (src == after_num || isnan(result))
 		pg_fatal("transfer rate \"%s\" is not a valid value", src);
 	if (errno != 0)
 		pg_fatal("invalid transfer rate \"%s\": %m", src);
