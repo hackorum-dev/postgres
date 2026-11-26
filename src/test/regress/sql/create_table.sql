@@ -729,6 +729,37 @@ insert into defcheck_def values (0, 0);
 create table defcheck_0 partition of defcheck for values in (0);
 drop table defcheck;
 
+-- test that subpartitioned default partitions map column numbers before
+-- checking whether a child's constraints imply the updated default constraint
+create table defcheck_sub (a int, b int) partition by range (a);
+create table defcheck_sub_def partition of defcheck_sub default
+  partition by range (b);
+create table defcheck_sub_leaf1 (b int check (b >= 100 and b < 200), a int);
+alter table defcheck_sub_def attach partition defcheck_sub_leaf1
+  for values from (100) to (200);
+create table defcheck_sub_leaf2 (c int, a int check (a >= 100), b int);
+alter table defcheck_sub_leaf2 drop column c;
+alter table defcheck_sub_def attach partition defcheck_sub_leaf2
+  for values from (200) to (300);
+insert into defcheck_sub values (5, 150);
+create table defcheck_sub_p1 partition of defcheck_sub
+  for values from (0) to (10);
+select tableoid::regclass, a, b from defcheck_sub where a = 5;
+drop table defcheck_sub;
+
+-- same for NOT NULL on a reordered column of a default subpartition
+create table defcheck_sub_nn (a int, b int) partition by list (a);
+create table defcheck_sub_nn_def partition of defcheck_sub_nn default
+  partition by list (b);
+create table defcheck_sub_nn_leaf (b int not null, a int);
+alter table defcheck_sub_nn_def attach partition defcheck_sub_nn_leaf
+  for values in (1);
+insert into defcheck_sub_nn values (null, 1);
+create table defcheck_sub_nn_null partition of defcheck_sub_nn
+  for values in (null);
+select tableoid::regclass, a, b from defcheck_sub_nn where a is null;
+drop table defcheck_sub_nn;
+
 -- tests of column drop with partition tables and indexes using
 -- predicates and expressions.
 create table part_column_drop (

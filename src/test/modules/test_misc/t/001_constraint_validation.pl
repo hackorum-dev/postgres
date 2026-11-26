@@ -333,6 +333,33 @@ like(
 	'updated partition constraint for default partition quuux_default1');
 run_sql_command('DROP TABLE quuux;');
 
+# Check default subpartitions whose attribute numbers differ from the default
+# partition: a constraint on an unrelated column sharing an attnum must not
+# skip scanning, while a constraint on the actual partition key column should.
+run_sql_command(
+	'CREATE TABLE quuux_reord (a int, b int) PARTITION BY RANGE (a);
+	CREATE TABLE quuux_reord_def PARTITION OF quuux_reord DEFAULT PARTITION BY RANGE (b);
+	CREATE TABLE quuux_reord_leaf1 (b int CHECK (b >= 100 AND b < 200), a int);
+	ALTER TABLE quuux_reord_def ATTACH PARTITION quuux_reord_leaf1
+		FOR VALUES FROM (100) TO (200);
+	CREATE TABLE quuux_reord_leaf2 (c int, a int CHECK (a >= 100), b int);
+	ALTER TABLE quuux_reord_leaf2 DROP COLUMN c;
+	ALTER TABLE quuux_reord_def ATTACH PARTITION quuux_reord_leaf2
+		FOR VALUES FROM (200) TO (300);');
+
+$output = run_sql_command(
+	'CREATE TABLE quuux_reord_p1 PARTITION OF quuux_reord FOR VALUES FROM (0) TO (10);'
+);
+unlike(
+	$output,
+	qr/updated partition constraint for default partition "quuux_reord_leaf1" is implied by existing constraints/,
+	'quuux_reord_leaf1 not falsely implied by unrelated column');
+like(
+	$output,
+	qr/updated partition constraint for default partition "quuux_reord_leaf2" is implied by existing constraints/,
+	'quuux_reord_leaf2 implied by existing constraint after attno mapping');
+run_sql_command('DROP TABLE quuux_reord;');
+
 $node->stop('fast');
 
 done_testing();

@@ -3285,6 +3285,7 @@ check_default_partition_contents(Relation parent, Relation default_rel,
 	{
 		Oid			part_relid = lfirst_oid(lc);
 		Relation	part_rel;
+		List	   *part_constraints;
 		Expr	   *partition_constraint;
 		EState	   *estate;
 		ExprState  *partqualstate = NULL;
@@ -3300,13 +3301,11 @@ check_default_partition_contents(Relation parent, Relation default_rel,
 			part_rel = table_open(part_relid, NoLock);
 
 			/*
-			 * Map the Vars in the constraint expression from default_rel's
+			 * Map the Vars in the constraint expression from default_rel's to
 			 * the sub-partition's.
 			 */
-			partition_constraint = make_ands_explicit(def_part_constraints);
-			partition_constraint = (Expr *)
-				map_partition_varattnos((List *) partition_constraint, 1,
-										part_rel, default_rel);
+			part_constraints = map_partition_varattnos(def_part_constraints, 1,
+													   part_rel, default_rel);
 
 			/*
 			 * If the partition constraints on default partition child imply
@@ -3314,7 +3313,7 @@ check_default_partition_contents(Relation parent, Relation default_rel,
 			 * partition, we can avoid scanning the child table.
 			 */
 			if (PartConstraintImpliedByRelConstraint(part_rel,
-													 def_part_constraints))
+													 part_constraints))
 			{
 				ereport(DEBUG1,
 						(errmsg_internal("updated partition constraint for default partition \"%s\" is implied by existing constraints",
@@ -3327,7 +3326,7 @@ check_default_partition_contents(Relation parent, Relation default_rel,
 		else
 		{
 			part_rel = default_rel;
-			partition_constraint = make_ands_explicit(def_part_constraints);
+			part_constraints = def_part_constraints;
 		}
 
 		/*
@@ -3349,6 +3348,7 @@ check_default_partition_contents(Relation parent, Relation default_rel,
 			continue;
 		}
 
+		partition_constraint = make_ands_explicit(part_constraints);
 		estate = CreateExecutorState();
 
 		/* Build expression execution states for partition check quals */
