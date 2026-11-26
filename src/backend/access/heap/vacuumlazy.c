@@ -1603,6 +1603,21 @@ lazy_scan_heap(LVRelState *vacrel)
 							   vacrel->live_tuples);
 
 	/*
+	 * A pinned cleanup horizon can make successive VACUUMs revisit pages
+	 * containing mostly recently dead tuples while skipping all-visible
+	 * pages.  Feeding each lower estimate back into the next scan would
+	 * repeatedly discount the same live tuples on the skipped pages.
+	 * If the table hasn't changed size and we removed no tuples, don't
+	 * lower a known estimate on the strength of such a partial scan.
+	 */
+	if (vacrel->scanned_pages < rel_pages &&
+		rel_pages == vacrel->rel->rd_rel->relpages &&
+		vacrel->tuples_deleted == 0 &&
+		vacrel->recently_dead_tuples > vacrel->live_tuples)
+		vacrel->new_live_tuples = Max(vacrel->new_live_tuples,
+									  vacrel->rel->rd_rel->reltuples);
+
+	/*
 	 * Also compute the total number of surviving heap entries.  In the
 	 * (unlikely) scenario that new_live_tuples is -1, take it as zero.
 	 */
