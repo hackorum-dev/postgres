@@ -2963,6 +2963,58 @@ RETURNING c.oid;
  2608
 (1 row)
 
+-- Check OLD and NEW virtual columns in MERGE RETURNING.
+CREATE TEMP TABLE merge_virtual (id int PRIMARY KEY, a int,
+    g int GENERATED ALWAYS AS (coalesce(a, 999)) VIRTUAL,
+    c int GENERATED ALWAYS AS (42) VIRTUAL);
+INSERT INTO merge_virtual (id, a) VALUES (1, 10), (2, 20);
+-- RIGHT JOIN.
+WITH m AS (
+    MERGE INTO merge_virtual t
+    USING (VALUES (1, 100), (2, 200), (3, 300)) AS s(id, a)
+    ON t.id = s.id
+    WHEN MATCHED AND s.id = 1 THEN UPDATE SET a = s.a
+    WHEN MATCHED THEN DELETE
+    WHEN NOT MATCHED BY TARGET THEN INSERT (id, a) VALUES (s.id, s.a)
+    RETURNING WITH (OLD AS o, NEW AS n)
+        coalesce(n.id, o.id) AS id, merge_action() AS action,
+        o.g AS old_g, n.g AS new_g, o.c AS old_c, n.c AS new_c,
+        s.id AS src_id
+)
+SELECT * FROM m ORDER BY id;
+ id | action | old_g | new_g | old_c | new_c | src_id 
+----+--------+-------+-------+-------+-------+--------
+  1 | UPDATE |    10 |   100 |    42 |    42 |      1
+  2 | DELETE |    20 |       |    42 |       |      2
+  3 | INSERT |       |   300 |       |    42 |      3
+(3 rows)
+
+TRUNCATE merge_virtual;
+INSERT INTO merge_virtual (id, a) VALUES (1, 10), (2, 20), (4, 40);
+-- FULL JOIN, including an unmatched target row.
+WITH m AS (
+    MERGE INTO merge_virtual t
+    USING (VALUES (1, 100), (2, 200), (3, 300)) AS s(id, a)
+    ON t.id = s.id
+    WHEN MATCHED AND s.id = 1 THEN UPDATE SET a = s.a
+    WHEN MATCHED THEN DELETE
+    WHEN NOT MATCHED BY TARGET THEN INSERT (id, a) VALUES (s.id, s.a)
+    WHEN NOT MATCHED BY SOURCE THEN DELETE
+    RETURNING WITH (OLD AS o, NEW AS n)
+        coalesce(n.id, o.id) AS id, merge_action() AS action,
+        o.g AS old_g, n.g AS new_g, o.c AS old_c, n.c AS new_c,
+        s.id AS src_id
+)
+SELECT * FROM m ORDER BY id;
+ id | action | old_g | new_g | old_c | new_c | src_id 
+----+--------+-------+-------+-------+-------+--------
+  1 | UPDATE |    10 |   100 |    42 |    42 |      1
+  2 | DELETE |    20 |       |    42 |       |      2
+  3 | INSERT |       |   300 |       |    42 |      3
+  4 | DELETE |    40 |       |    42 |       |       
+(4 rows)
+
+DROP TABLE merge_virtual;
 DROP TABLE target, target2;
 DROP TABLE source, source2;
 DROP FUNCTION merge_trigfunc();

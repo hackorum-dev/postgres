@@ -348,9 +348,9 @@ transform_MERGE_to_join(Query *parse)
 
 	/*
 	 * Mark Vars used above the join as nullable by the join.  This includes
-	 * Vars in the query targetlist, action expressions, and RETURNING list.
-	 * Vars from the latter expressions will be added to the targetlist by
-	 * preprocess_targetlist(), so they must be marked correctly here.
+	 * Vars in the query targetlist and action expressions. Vars from action
+	 * expressions will be added to the targetlist by preprocess_targetlist(),
+	 * so they must be marked correctly here.
 	 *
 	 * Normally the query targetlist is empty for MERGE, but for a
 	 * trigger-updatable view it contains a whole-row Var referring to the
@@ -372,10 +372,6 @@ transform_MERGE_to_join(Query *parse)
 				add_nulling_relids((Node *) action->targetList,
 								   nullable_relids, nullingrel);
 		}
-
-		parse->returningList = (List *)
-			add_nulling_relids((Node *) parse->returningList,
-							   nullable_relids, nullingrel);
 	}
 
 	/*
@@ -421,6 +417,15 @@ transform_MERGE_to_join(Query *parse)
 		parse->mergeJoinCondition =
 			add_nulling_relids(parse->mergeJoinCondition,
 							   nullable_relids, nullingrel);
+
+		/*
+		 * RETURNING gets source values from the join output and target
+		 * values from the row versions supplied by ModifyTable.
+		 */
+		parse->returningList = (List *)
+			add_nulling_relids((Node *) parse->returningList,
+							   get_relids_in_jointree(source, true, true),
+							   nullingrel);
 	}
 	else
 		parse->mergeJoinCondition = NULL;	/* join condition not needed */
