@@ -14801,20 +14801,6 @@ validateForeignKeyConstraint(char *conname,
 	trig.tginitdeferred = false;
 	/* we needn't fill in remaining fields */
 
-	/*
-	 * See if we can do it with a single LEFT JOIN query.  A false result
-	 * indicates we must proceed with the fire-the-trigger method. We can't do
-	 * a LEFT JOIN for temporal FKs yet, but we can once we support temporal
-	 * left joins.
-	 */
-	if (!hasperiod && RI_Initial_Check(&trig, rel, pkrel))
-		return;
-
-	/*
-	 * Scan through each tuple, calling RI_FKey_check_ins (insert trigger) as
-	 * if that tuple had just been inserted.  If any of those fail, it should
-	 * ereport(ERROR) and that's that.
-	 */
 	snapshot = RegisterSnapshot(GetLatestSnapshot());
 	slot = table_slot_create(rel, NULL);
 	scan = table_beginscan(rel, snapshot, 0, NULL,
@@ -14824,7 +14810,33 @@ validateForeignKeyConstraint(char *conname,
 									  ALLOCSET_SMALL_SIZES);
 	oldcxt = MemoryContextSwitchTo(perTupCxt);
 
-	while (table_scan_getnextslot(scan, ForwardScanDirection, slot))
+	/*
+	 * For non-temporal FKs, we use a LEFT JOIN SPI query to check for foreign
+	 * key violations, checking if the referencing table contains rows not in
+	 * the referenced table.  Because creating foreign keys on empty tables is
+	 * common, it's worth checking to see if the referencing table has any
+	 * rows before we go to the trouble of running the SPI query.  If the
+	 * referenced table is partitioned, then the SPI query can be expensive to
+	 * plan and go through executor startup/shutdown, so checking for 0 rows
+	 * can be a significant shortcut.
+	 */
+	if (!table_scan_getnextslot(scan, ForwardScanDirection, slot))
+		goto cleanup;
+
+	/*
+	 * A false result from RI_Initial_Check() indicates we must proceed with
+	 * the fire-the-trigger method.  We can't do a LEFT JOIN for temporal FKs
+	 * yet, but we can once we support temporal left joins.
+	 */
+	if (!hasperiod && RI_Initial_Check(&trig, rel, pkrel))
+		goto cleanup;
+
+	/*
+	 * Scan through each tuple, calling RI_FKey_check_ins (insert trigger) as
+	 * if that tuple had just been inserted.  If any of those fail, it should
+	 * ereport(ERROR) and that's that.
+	 */
+	do
 	{
 		LOCAL_FCINFO(fcinfo, 0);
 		TriggerData trigdata = {0};
@@ -14853,8 +14865,9 @@ validateForeignKeyConstraint(char *conname,
 		RI_FKey_check_ins(fcinfo);
 
 		MemoryContextReset(perTupCxt);
-	}
+	} while (table_scan_getnextslot(scan, ForwardScanDirection, slot));
 
+cleanup:
 	MemoryContextSwitchTo(oldcxt);
 	MemoryContextDelete(perTupCxt);
 	table_endscan(scan);
