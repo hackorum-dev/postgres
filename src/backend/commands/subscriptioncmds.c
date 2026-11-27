@@ -923,12 +923,30 @@ CreateSubscription(ParseState *pstate, CreateSubscriptionStmt *stmt,
 		CStringGetTextDatum(ConflictLogDestNames[opts.conflictlogdest]);
 
 	/*
-	 * We create the conflict log table here, if required, so that its
-	 * relation OID can be stored when inserting the pg_subscription tuple
-	 * below.
+	 * Create the conflict log table here, if required, so that its relation
+	 * OID can be stored when inserting the pg_subscription tuple below. In
+	 * binary-upgrade mode, the table was already restored earlier in the dump
+	 * with its original OID and filenode, so look it up and reuse it.
 	 */
 	if (CONFLICTS_LOGGED_TO_TABLE(opts.conflictlogdest))
-		logrelid = create_conflict_log_table(subid, stmt->subname, owner);
+	{
+		if (IsBinaryUpgrade)
+		{
+			char		relname[NAMEDATALEN];
+
+			snprintf(relname, NAMEDATALEN, CONFLICT_LOG_RELATION_NAME_FMT,
+					 subid);
+			logrelid = get_relname_relid(relname, PG_CONFLICT_NAMESPACE);
+			if (!OidIsValid(logrelid))
+				ereport(ERROR,
+						(errcode(ERRCODE_UNDEFINED_TABLE),
+						 errmsg("could not find conflict log table \"%s\" when in binary upgrade mode",
+								get_qualified_objname(PG_CONFLICT_NAMESPACE,
+													  relname))));
+		}
+		else
+			logrelid = create_conflict_log_table(subid, stmt->subname, owner);
+	}
 
 	/* Store table OID in the catalog. */
 	values[Anum_pg_subscription_subconflictlogrelid - 1] =

@@ -1667,10 +1667,16 @@ expand_schema_name_patterns(Archive *fout,
 		PQExpBufferData dbbuf;
 		int			dotcnt;
 
+		/*
+		 * The pg_conflict schema, which holds the conflict log tables, is not
+		 * selectable.  The tables are dumped only by pg_upgrade, along with
+		 * the subscriptions.
+		 */
 		appendPQExpBufferStr(query,
-							 "SELECT oid FROM pg_catalog.pg_namespace n\n");
+							 "SELECT oid FROM pg_catalog.pg_namespace n\n"
+							 "WHERE n.nspname OPERATOR(pg_catalog.<>) 'pg_conflict'\n");
 		initPQExpBuffer(&dbbuf);
-		processSQLNamePattern(GetConnection(fout), query, cell->val, false,
+		processSQLNamePattern(GetConnection(fout), query, cell->val, true,
 							  false, NULL, "n.nspname", NULL, NULL, &dbbuf,
 							  &dotcnt);
 		if (dotcnt > 1)
@@ -1835,6 +1841,10 @@ expand_table_name_patterns(Archive *fout,
 		 * would be unnecessary given a pg_table_is_visible() variant taking a
 		 * search_path argument.
 		 *
+		 * Conflict log tables, which are in the pg_conflict schema, are not
+		 * selectable, as they are dumped only by pg_upgrade, along with the
+		 * subscriptions.
+		 *
 		 * For with_child_tables, we start with the basic query's results and
 		 * recursively search the inheritance tree to add child tables.
 		 */
@@ -1849,7 +1859,8 @@ expand_table_name_patterns(Archive *fout,
 						  "\n     LEFT JOIN pg_catalog.pg_namespace n"
 						  "\n     ON n.oid OPERATOR(pg_catalog.=) c.relnamespace"
 						  "\nWHERE c.relkind OPERATOR(pg_catalog.=) ANY"
-						  "\n    (array['%c', '%c', '%c', '%c', '%c', '%c'])\n",
+						  "\n    (array['%c', '%c', '%c', '%c', '%c', '%c'])"
+						  "\n    AND n.nspname OPERATOR(pg_catalog.<>) 'pg_conflict'\n",
 						  RELKIND_RELATION, RELKIND_SEQUENCE, RELKIND_VIEW,
 						  RELKIND_MATVIEW, RELKIND_FOREIGN_TABLE,
 						  RELKIND_PARTITIONED_TABLE);
@@ -1999,6 +2010,34 @@ selectDumpableNamespace(NamespaceInfo *nsinfo, Archive *fout)
 		 */
 		nsinfo->dobj.dump_contains = nsinfo->dobj.dump = DUMP_COMPONENT_ACL;
 	}
+	else if (strcmp(nsinfo->dobj.name, "pg_conflict") == 0)
+	{
+		/*
+		 * The pg_conflict schema is created by initdb and holds the
+		 * subscriptions' conflict log tables.  Dump the ACLs of the schema,
+		 * as for pg_catalog.
+		 */
+		nsinfo->dobj.dump = DUMP_COMPONENT_ACL;
+
+		/*
+		 * Conflict log tables are dumped only in binary-upgrade mode, which
+		 * only pg_upgrade uses.  There, the tables are restored so that
+		 * CREATE SUBSCRIPTION can reuse them.  In other modes, CREATE
+		 * SUBSCRIPTION creates them again, so nothing about them is dumped,
+		 * not even their ACLs, as the restored subscription's table has a
+		 * different name.
+		 *
+		 * In binary-upgrade mode, dump everything about the tables,
+		 * including their privileges, comments, and security labels.  For
+		 * example, privileges may allow non-superusers to delete conflicts.
+		 * The rows are not dumped, as pg_upgrade runs pg_dump with --no-data
+		 * and carries them over with the table files.
+		 */
+		if (fout->dopt->binary_upgrade)
+			nsinfo->dobj.dump_contains = DUMP_COMPONENT_ALL;
+		else
+			nsinfo->dobj.dump_contains = DUMP_COMPONENT_NONE;
+	}
 	else if (strncmp(nsinfo->dobj.name, "pg_", 3) == 0 ||
 			 strcmp(nsinfo->dobj.name, "information_schema") == 0)
 	{
@@ -2047,6 +2086,17 @@ selectDumpableNamespace(NamespaceInfo *nsinfo, Archive *fout)
 	 * suppressed by it, otherwise not.)
 	 */
 	(void) checkExtensionMembership(&nsinfo->dobj, fout);
+}
+
+/*
+ * is_conflict_log_table: is this a subscription's conflict log table?
+ *
+ * Conflict log tables are the tables of the pg_conflict schema.
+ */
+static bool
+is_conflict_log_table(const TableInfo *tbinfo)
+{
+	return strcmp(tbinfo->dobj.namespace->dobj.name, "pg_conflict") == 0;
 }
 
 /*
@@ -5142,6 +5192,7 @@ getSubscriptions(Archive *fout)
 	int			i_subfailover;
 	int			i_subretaindeadtuples;
 	int			i_submaxretention;
+	int			i_subconflictlogdest;
 	int			i,
 				ntups;
 
@@ -5240,9 +5291,16 @@ getSubscriptions(Archive *fout)
 							 " '-1' AS subwalrcvtimeout,\n");
 
 	if (fout->remoteVersion >= 190000)
-		appendPQExpBufferStr(query, " fs.srvname AS subservername\n");
+		appendPQExpBufferStr(query, " fs.srvname AS subservername,\n");
 	else
-		appendPQExpBufferStr(query, " NULL AS subservername\n");
+		appendPQExpBufferStr(query, " NULL AS subservername,\n");
+
+	if (fout->remoteVersion >= 200000)
+		appendPQExpBufferStr(query,
+							 " s.subconflictlogdest\n");
+	else
+		appendPQExpBufferStr(query,
+							 " 'log' AS subconflictlogdest\n");
 
 	appendPQExpBufferStr(query,
 						 "FROM pg_subscription s\n");
@@ -5291,6 +5349,7 @@ getSubscriptions(Archive *fout)
 	i_subpublications = PQfnumber(res, "subpublications");
 	i_suborigin = PQfnumber(res, "suborigin");
 	i_suboriginremotelsn = PQfnumber(res, "suboriginremotelsn");
+	i_subconflictlogdest = PQfnumber(res, "subconflictlogdest");
 
 	subinfo = pg_malloc_array(SubscriptionInfo, ntups);
 
@@ -5348,6 +5407,9 @@ getSubscriptions(Archive *fout)
 		else
 			subinfo[i].suboriginremotelsn =
 				pg_strdup(PQgetvalue(res, i, i_suboriginremotelsn));
+
+		subinfo[i].subconflictlogdest =
+			pg_strdup(PQgetvalue(res, i, i_subconflictlogdest));
 
 		/* Decide whether we want to dump it */
 		selectDumpableObject(&(subinfo[i].dobj), fout);
@@ -5619,6 +5681,10 @@ dumpSubscription(Archive *fout, const SubscriptionInfo *subinfo)
 
 	if (pg_strcasecmp(subinfo->suborigin, LOGICALREP_ORIGIN_ANY) != 0)
 		appendPQExpBuffer(query, ", origin = %s", subinfo->suborigin);
+
+	if (pg_strcasecmp(subinfo->subconflictlogdest, "log") != 0)
+		appendPQExpBuffer(query, ", conflict_log_destination = %s",
+						  subinfo->subconflictlogdest);
 
 	appendPQExpBufferStr(query, ");\n");
 
@@ -17155,6 +17221,14 @@ dumpTableSchema(Archive *fout, const TableInfo *tbinfo)
 	int			j,
 				k;
 
+	/*
+	 * Do not emit "ALTER TABLE ... OWNER TO ..." for a conflict log table:
+	 * changing its owner is not allowed.  Its owner follows the owner of the
+	 * subscription, and is set when the ALTER SUBSCRIPTION ... OWNER TO of
+	 * the dump is restored.
+	 */
+	bool		conflict_log_table = is_conflict_log_table(tbinfo);
+
 	/* We had better have loaded per-column details about this table */
 	Assert(tbinfo->interesting);
 
@@ -17290,6 +17364,11 @@ dumpTableSchema(Archive *fout, const TableInfo *tbinfo)
 
 		appendPQExpBuffer(delq, "DROP %s %s;\n", reltypename, qualrelname);
 
+		/*
+		 * This also keeps the OIDs and filenodes of a conflict log table, so
+		 * that pg_upgrade finds its files and pg_subscription's
+		 * subconflictlogrelid stays the same.
+		 */
 		if (dopt->binary_upgrade)
 			binary_upgrade_set_pg_class_oids(fout, q,
 											 tbinfo->dobj.catId.oid);
@@ -18061,7 +18140,7 @@ dumpTableSchema(Archive *fout, const TableInfo *tbinfo)
 								  .tablespace = tablespace,
 								  .tableam = tableam,
 								  .relkind = tbinfo->relkind,
-								  .owner = tbinfo->rolname,
+								  .owner = conflict_log_table ? NULL : tbinfo->rolname,
 								  .description = reltypename,
 								  .section = tbinfo->postponed_def ?
 								  SECTION_POST_DATA : SECTION_PRE_DATA,
@@ -20409,12 +20488,16 @@ getDependencies(Archive *fout)
 		 * Ordinarily, table rowtypes have implicit dependencies on their
 		 * tables.  However, for a composite type the implicit dependency goes
 		 * the other way in pg_depend; which is the right thing for DROP but
-		 * it doesn't produce the dependency ordering we need. So in that one
-		 * case, we reverse the direction of the dependency.
+		 * it doesn't produce the dependency ordering we need.  The same is
+		 * true for a subscription's conflict log table, which has an internal
+		 * dependency on its subscription for DROP, but must be dumped before
+		 * the subscription in binary-upgrade mode.  So in those cases, we
+		 * reverse the direction of the dependency.
 		 */
 		if (deptype == 'i' &&
 			dobj->objType == DO_TABLE &&
-			refdobj->objType == DO_TYPE)
+			(refdobj->objType == DO_TYPE ||
+			 refdobj->objType == DO_SUBSCRIPTION))
 			addObjectDependency(refdobj, dobj->dumpId);
 		else
 			/* normal case */
