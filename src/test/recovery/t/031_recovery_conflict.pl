@@ -9,7 +9,6 @@ use warnings FATAL => 'all';
 use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
-use Time::HiRes qw(usleep);
 
 
 # Set up nodes
@@ -279,8 +278,13 @@ check_conflict_stat("deadlock");
 
 # clean up for next tests
 $node_primary->safe_psql($test_db, qq[ROLLBACK PREPARED 'lock';]);
+# Exercise the expired-limit path on the first buffer pin conflict signal.
 $node_standby->adjust_conf('postgresql.conf', 'max_standby_streaming_delay',
-	'50ms');
+	'0');
+# The startup progress timeout would also wake up recovery and resend the
+# signal, so disable it.
+$node_standby->append_conf('postgresql.conf',
+	'log_startup_progress_interval = 0');
 $node_standby->restart();
 $psql_standby->reconnect_and_clear();
 
@@ -298,107 +302,80 @@ cmp_ok(
 	qq[at least $expected_conflicts recovery conflicts shown in pg_stat_database]
 );
 
-# Disable this for now. Not re-indented to avoid noise when putting it back.
 SKIP:
 {
-	skip "this test fails for several different reasons";
+	skip 'Injection points not available', 3
+	  unless $ENV{enable_injection_points} eq 'yes'
+	  && $node_primary->check_extension('injection_points');
 
-## RECOVERY CONFLICT 6: Buffer pin conflict after standby limit expired
-$sect = "buffer pin conflict after standby limit expired";
+	## RECOVERY CONFLICT 6: Buffer pin conflict after standby limit expired
+	$sect = "buffer pin conflict after standby limit expired";
 
-# Set up a single-page table with 50 live tuples and 50 dead tuples.
-my $table_pin = "bufferpin_test";
-$node_primary->safe_psql(
-	$test_db,
-	qq[
-	CREATE TABLE $table_pin (id int PRIMARY KEY, pad text)
+	my $table_pin = "bufferpin_test";
+	$node_primary->safe_psql(
+		$test_db,
+		qq[
+	CREATE EXTENSION injection_points;
+	CREATE TABLE $table_pin (id int)
 		WITH (autovacuum_enabled = false);
-	INSERT INTO $table_pin
-		SELECT g, repeat('x', 20) FROM generate_series(1, 100) g;
-	DELETE FROM $table_pin WHERE id % 2 = 0;
+	INSERT INTO $table_pin VALUES (1), (2), (3);
+	DELETE FROM $table_pin WHERE id = 3;
 	]);
-$node_primary->wait_for_replay_catchup($node_standby);
+	$node_primary->wait_for_replay_catchup($node_standby);
 
-is( $node_standby->safe_psql($test_db, qq[SELECT count(*) FROM $table_pin;]),
-	50,
-	"$sect: standby sees 50 live tuples");
-
-# Start a reader on $psql_standby that holds a pin on $table_pin and gets
-# stuck in ClientWrite because we stop pumping its stdout pipe.
-my $clientwrite_pid = $psql_standby->query_safe('SELECT pg_backend_pid();');
-$psql_standby->{stdin} .= qq[
-	COPY (
-		SELECT t.id, g, repeat('x', 4000)
-		FROM $table_pin t
-		CROSS JOIN LATERAL generate_series(1, 10000 + t.id * 0) g
-	) TO STDOUT;
-];
-$psql_standby->{run}->pump() while $psql_standby->{stdin} ne '';
-
-ok( $node_standby->poll_query_until(
-		$test_db,
-		qq[SELECT wait_event = 'ClientWrite' FROM pg_stat_activity
-		   WHERE pid = $clientwrite_pid;],
-		't'),
-	"$sect: COPY session is blocked in ClientWrite");
-
-$log_location = -s $node_standby->logfile;
-
-# VACUUM on primary generates a Heap2 prune WAL record requiring a buffer
-# cleanup lock on the standby.
-$node_primary->safe_psql($test_db, qq[VACUUM $table_pin;]);
-
-# Wait for the startup process to block on the buffer cleanup lock and wait
-# past max_standby_streaming_delay (50ms) so that the startup process has
-# already attempted to cancel the ClientWrite session and gone back to waiting
-# on the buffer pin.
-$log_location = $node_standby->wait_for_log(
-	qr/recovery still waiting after .* recovery conflict on buffer pin/,
-	$log_location);
-usleep(50_000);
-
-ok( $node_standby->poll_query_until(
-		$test_db,
-		qq[SELECT wait_event = 'BufferCleanup' FROM pg_stat_activity
-		   WHERE backend_type = 'startup';],
-		't'),
-	"$sect: startup process is waiting on BufferCleanup");
-
-# Open a second session on standby to acquire another conflicting pin on the
-# same page and stay idle in transaction (it was never signaled yet).
-my $psql_standby2 =
-  $node_standby->background_psql($test_db, on_error_stop => 0);
-my $standby2_pid = $psql_standby2->query_safe('SELECT pg_backend_pid();');
-$res = $psql_standby2->query_safe(
-	qq[
+	# Pause only the first reader after it sees the conflict, before releasing
+	# its pin.  Keeping this injection point local prevents a later reader from
+	# getting stuck at the same point if recovery retries the signal quickly.
+	$psql_standby->query_safe(
+		q[
+	SELECT injection_points_set_local();
+	SELECT injection_points_attach('recovery-buffer-pin-before-cancel', 'wait');
+	]);
+	my $first_pid = $psql_standby->query_safe('SELECT pg_backend_pid()');
+	$res = $psql_standby->query_safe(
+		qq[
 	BEGIN;
-	DECLARE c CURSOR FOR SELECT * FROM $table_pin;
-	FETCH 5 FROM c;
+	DECLARE first_pin CURSOR FOR SELECT * FROM $table_pin;
+	FETCH 1 FROM first_pin;
 	]);
-like($res, qr/^1\|x{20}$/m,
-	"$sect: second session with conflicting pin established");
+	like($res, qr/^1$/m, "$sect: first cursor holds pin");
 
-# Kill the ClientWrite client so its backend drops its buffer pin, leaving
-# only the second session's pin behind.
-$psql_standby->{run}->kill_kill;
-ok( $node_standby->poll_query_until(
-		$test_db,
-		qq[SELECT count(*) = 0 FROM pg_stat_activity
-		   WHERE pid = $clientwrite_pid;],
-		't'),
-	"$sect: ClientWrite session terminated");
+	# VACUUM on primary generates a Heap2 prune WAL record requiring a buffer
+	# cleanup lock on the standby.
+	$node_primary->safe_psql($test_db, qq[VACUUM $table_pin;]);
+	ok( $node_standby->poll_query_until(
+			$test_db, qq[
+	SELECT wait_event = 'recovery-buffer-pin-before-cancel'
+	FROM pg_stat_activity WHERE pid = $first_pid], 't'),
+		"$sect: initial signal reached first pinner");
 
-# Replay should cancel the second session and catch up.
-$node_primary->wait_for_replay_catchup($node_standby);
+	# Only the new reader can report a buffer pin conflict while the first
+	# is paused.  The resend can arrive during FETCH or while it is idle.
+	$log_location = -s $node_standby->logfile;
+	my $psql_standby2 =
+	  $node_standby->background_psql($test_db, on_error_stop => 0);
+	$psql_standby2->query_until(
+		qr/^starting cursor$/m,
+		qq[
+	BEGIN;
+	\\echo starting cursor
+	DECLARE c CURSOR FOR SELECT * FROM $table_pin;
+	FETCH 1 FROM c;
+	]);
+	ok( $node_standby->wait_for_log(
+			qr/User was holding shared buffer pin for too long/,
+			$log_location),
+		"$sect: second reader canceled");
 
-check_conflict_log(
-	"\\[$standby2_pid\\].*User was holding shared buffer pin for too long");
+	$node_standby->safe_psql(
+		$test_db, q[
+	SELECT injection_points_wakeup('recovery-buffer-pin-before-cancel');
+	]);
+	$psql_standby2->quit;
+	$node_primary->wait_for_replay_catchup($node_standby);
+	$psql_standby->reconnect_and_clear();
 
-# Reset for next test
-$psql_standby2->quit;
-$psql_standby->reconnect_and_clear();
-
-}	# end SKIP
+}    # end SKIP
 
 ## RECOVERY CONFLICT 7: Database conflict
 $sect = "database conflict";

@@ -3274,6 +3274,12 @@ ProcessRecoveryConflictInterrupt(RecoveryConflictReason reason)
 			if (!HoldingBufferPinThatDelaysRecovery())
 				return;
 
+#ifdef USE_INJECTION_POINTS
+			/* A repeated signal must not re-enter a waiting callback. */
+			HOLD_INTERRUPTS();
+			INJECTION_POINT("recovery-buffer-pin-before-cancel", NULL);
+			RESUME_INTERRUPTS();
+#endif
 			report_recovery_conflict(reason);
 			return;
 
