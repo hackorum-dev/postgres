@@ -3274,6 +3274,11 @@ ProcessRecoveryConflictInterrupt(RecoveryConflictReason reason)
 			if (!HoldingBufferPinThatDelaysRecovery())
 				return;
 
+#ifdef USE_INJECTION_POINTS
+			HOLD_INTERRUPTS();
+			INJECTION_POINT("recovery-buffer-pin-before-cancel", NULL);
+			RESUME_INTERRUPTS();
+#endif
 			report_recovery_conflict(reason);
 			return;
 
