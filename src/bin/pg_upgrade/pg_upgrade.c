@@ -37,8 +37,8 @@
  *	names to match between the old and new cluster.
  *
  *	We control assignment of pg_subscription.oid because we want the oid to
- *	match between the old and new cluster, as the names of the subscription's
- *	replication origin and slots contain it.
+ *	match between the old and new cluster to make use of subscription's
+ *	conflict log table which is named using the subscription oid.
  */
 
 
