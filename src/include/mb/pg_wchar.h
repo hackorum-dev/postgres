@@ -673,6 +673,8 @@ extern int	UtfToLocal(const unsigned char *utf, int len,
 					   const pg_utf_to_local_combined *cmap, int cmapsize,
 					   utf_local_conversion_func conv_func,
 					   int encoding, bool noError);
+extern int	pg_local_to_utf8(const unsigned char *src, int len,
+							 unsigned char *dest, int encoding, bool noError);
 extern int	LocalToUtf(const unsigned char *iso, int len,
 					   unsigned char *utf,
 					   const pg_mb_radix_tree *map,

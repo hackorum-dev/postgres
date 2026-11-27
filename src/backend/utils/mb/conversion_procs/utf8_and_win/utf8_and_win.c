@@ -25,17 +25,6 @@
 #include "../../Unicode/utf8_to_win1258.map"
 #include "../../Unicode/utf8_to_win866.map"
 #include "../../Unicode/utf8_to_win874.map"
-#include "../../Unicode/win1250_to_utf8.map"
-#include "../../Unicode/win1251_to_utf8.map"
-#include "../../Unicode/win1252_to_utf8.map"
-#include "../../Unicode/win1253_to_utf8.map"
-#include "../../Unicode/win1254_to_utf8.map"
-#include "../../Unicode/win1255_to_utf8.map"
-#include "../../Unicode/win1256_to_utf8.map"
-#include "../../Unicode/win1257_to_utf8.map"
-#include "../../Unicode/win866_to_utf8.map"
-#include "../../Unicode/win874_to_utf8.map"
-#include "../../Unicode/win1258_to_utf8.map"
 
 PG_MODULE_MAGIC_EXT(
 					.name = "utf8_and_win",
@@ -62,22 +51,21 @@ PG_FUNCTION_INFO_V1(utf8_to_win);
 typedef struct
 {
 	pg_enc		encoding;
-	const pg_mb_radix_tree *map1;	/* to UTF8 map name */
 	const pg_mb_radix_tree *map2;	/* from UTF8 map name */
 } pg_conv_map;
 
 static const pg_conv_map maps[] = {
-	{PG_WIN866, &win866_to_unicode_tree, &win866_from_unicode_tree},
-	{PG_WIN874, &win874_to_unicode_tree, &win874_from_unicode_tree},
-	{PG_WIN1250, &win1250_to_unicode_tree, &win1250_from_unicode_tree},
-	{PG_WIN1251, &win1251_to_unicode_tree, &win1251_from_unicode_tree},
-	{PG_WIN1252, &win1252_to_unicode_tree, &win1252_from_unicode_tree},
-	{PG_WIN1253, &win1253_to_unicode_tree, &win1253_from_unicode_tree},
-	{PG_WIN1254, &win1254_to_unicode_tree, &win1254_from_unicode_tree},
-	{PG_WIN1255, &win1255_to_unicode_tree, &win1255_from_unicode_tree},
-	{PG_WIN1256, &win1256_to_unicode_tree, &win1256_from_unicode_tree},
-	{PG_WIN1257, &win1257_to_unicode_tree, &win1257_from_unicode_tree},
-	{PG_WIN1258, &win1258_to_unicode_tree, &win1258_from_unicode_tree},
+	{PG_WIN866, &win866_from_unicode_tree},
+	{PG_WIN874, &win874_from_unicode_tree},
+	{PG_WIN1250, &win1250_from_unicode_tree},
+	{PG_WIN1251, &win1251_from_unicode_tree},
+	{PG_WIN1252, &win1252_from_unicode_tree},
+	{PG_WIN1253, &win1253_from_unicode_tree},
+	{PG_WIN1254, &win1254_from_unicode_tree},
+	{PG_WIN1255, &win1255_from_unicode_tree},
+	{PG_WIN1256, &win1256_from_unicode_tree},
+	{PG_WIN1257, &win1257_from_unicode_tree},
+	{PG_WIN1258, &win1258_from_unicode_tree},
 };
 
 Datum
@@ -97,12 +85,7 @@ win_to_utf8(PG_FUNCTION_ARGS)
 		{
 			int			converted;
 
-			converted = LocalToUtf(src, len, dest,
-								   maps[i].map1,
-								   NULL, 0,
-								   NULL,
-								   encoding,
-								   noError);
+			converted = pg_local_to_utf8(src, len, dest, encoding, noError);
 			PG_RETURN_INT32(converted);
 		}
 	}

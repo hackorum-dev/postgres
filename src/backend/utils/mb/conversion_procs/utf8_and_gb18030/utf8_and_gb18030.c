@@ -14,7 +14,7 @@
 #include "postgres.h"
 #include "fmgr.h"
 #include "mb/pg_wchar.h"
-#include "../../Unicode/gb18030_to_utf8.map"
+#include "../../gb18030.h"
 #include "../../Unicode/utf8_to_gb18030.map"
 
 PG_MODULE_MAGIC_EXT(
@@ -24,24 +24,6 @@ PG_MODULE_MAGIC_EXT(
 
 PG_FUNCTION_INFO_V1(gb18030_to_utf8);
 PG_FUNCTION_INFO_V1(utf8_to_gb18030);
-
-/*
- * Convert 4-byte GB18030 characters to and from a linear code space
- *
- * The first and third bytes can range from 0x81 to 0xfe (126 values),
- * while the second and fourth bytes can range from 0x30 to 0x39 (10 values).
- */
-static inline uint32
-gb_linear(uint32 gb)
-{
-	uint32		b0 = (gb & 0xff000000) >> 24;
-	uint32		b1 = (gb & 0x00ff0000) >> 16;
-	uint32		b2 = (gb & 0x0000ff00) >> 8;
-	uint32		b3 = (gb & 0x000000ff);
-
-	return b0 * 12600 + b1 * 1260 + b2 * 10 + b3 -
-		(0x81 * 12600 + 0x30 * 1260 + 0x81 * 10 + 0x30);
-}
 
 static inline uint32
 gb_unlinear(uint32 lin)
@@ -55,41 +37,10 @@ gb_unlinear(uint32 lin)
 }
 
 /*
- * Convert word-formatted UTF8 to and from Unicode code points
+ * Convert word-formatted UTF8 to Unicode code points
  *
  * Probably this should be somewhere else ...
  */
-static inline uint32
-unicode_to_utf8word(uint32 c)
-{
-	uint32		word;
-
-	if (c <= 0x7F)
-	{
-		word = c;
-	}
-	else if (c <= 0x7FF)
-	{
-		word = (0xC0 | ((c >> 6) & 0x1F)) << 8;
-		word |= 0x80 | (c & 0x3F);
-	}
-	else if (c <= 0xFFFF)
-	{
-		word = (0xE0 | ((c >> 12) & 0x0F)) << 16;
-		word |= (0x80 | ((c >> 6) & 0x3F)) << 8;
-		word |= 0x80 | (c & 0x3F);
-	}
-	else
-	{
-		word = (0xF0 | ((c >> 18) & 0x07)) << 24;
-		word |= (0x80 | ((c >> 12) & 0x3F)) << 16;
-		word |= (0x80 | ((c >> 6) & 0x3F)) << 8;
-		word |= 0x80 | (c & 0x3F);
-	}
-
-	return word;
-}
-
 static inline uint32
 utf8word_to_unicode(uint32 c)
 {
@@ -119,41 +70,6 @@ utf8word_to_unicode(uint32 c)
 	}
 
 	return ucs;
-}
-
-/*
- * Perform mapping of GB18030 ranges to UTF8
- *
- * General description, and the range we need to convert for U+10000 and up:
- * https://htmlpreview.github.io/?https://github.com/unicode-org/icu-data/blob/main/charset/source/gb18030/gb18030.html
- *
- * Ranges up to U+FFFF:
- * https://github.com/unicode-org/icu-data/blob/main/charset/source/gb18030/ranges.txt
- *
- * All are ranges of 4-byte GB18030 codes.
- */
-static uint32
-conv_18030_to_utf8(uint32 code)
-{
-#define conv18030(minunicode, mincode, maxcode) \
-	if (code >= mincode && code <= maxcode) \
-		return unicode_to_utf8word(gb_linear(code) - gb_linear(mincode) + minunicode)
-
-	conv18030(0x0452, 0x8130D330, 0x8136A531);
-	conv18030(0x2643, 0x8137A839, 0x8138FD38);
-	conv18030(0x361B, 0x8230A633, 0x8230F237);
-	conv18030(0x3CE1, 0x8231D438, 0x8232AF32);
-	conv18030(0x4160, 0x8232C937, 0x8232F837);
-	conv18030(0x44D7, 0x8233A339, 0x8233C931);
-	conv18030(0x478E, 0x8233E838, 0x82349638);
-	conv18030(0x49B8, 0x8234A131, 0x8234E733);
-	conv18030(0x9FA6, 0x82358F33, 0x8336C738);
-	conv18030(0xE865, 0x8336D030, 0x84308534);
-	conv18030(0xFA2A, 0x84309C38, 0x84318537);
-	conv18030(0xFFE6, 0x8431A234, 0x8431A439);
-	conv18030(0x10000, 0x90308130, 0xE3329A35);
-	/* No mapping exists */
-	return 0;
 }
 
 /*
@@ -209,12 +125,7 @@ gb18030_to_utf8(PG_FUNCTION_ARGS)
 
 	CHECK_ENCODING_CONVERSION_ARGS(PG_GB18030, PG_UTF8);
 
-	converted = LocalToUtf(src, len, dest,
-						   &gb18030_to_unicode_tree,
-						   NULL, 0,
-						   conv_18030_to_utf8,
-						   PG_GB18030,
-						   noError);
+	converted = pg_local_to_utf8(src, len, dest, PG_GB18030, noError);
 
 	PG_RETURN_INT32(converted);
 }

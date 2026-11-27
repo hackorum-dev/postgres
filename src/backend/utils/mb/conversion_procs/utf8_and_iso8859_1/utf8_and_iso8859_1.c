@@ -44,33 +44,10 @@ iso8859_1_to_utf8(PG_FUNCTION_ARGS)
 	unsigned char *dest = (unsigned char *) PG_GETARG_CSTRING(3);
 	int			len = PG_GETARG_INT32(4);
 	bool		noError = PG_GETARG_BOOL(5);
-	unsigned char *start = src;
-	unsigned short c;
 
 	CHECK_ENCODING_CONVERSION_ARGS(PG_LATIN1, PG_UTF8);
 
-	while (len > 0)
-	{
-		c = *src;
-		if (c == 0)
-		{
-			if (noError)
-				break;
-			report_invalid_encoding(PG_LATIN1, (const char *) src, len);
-		}
-		if (!IS_HIGHBIT_SET(c))
-			*dest++ = c;
-		else
-		{
-			*dest++ = (c >> 6) | 0xc0;
-			*dest++ = (c & 0x003f) | HIGHBIT;
-		}
-		src++;
-		len--;
-	}
-	*dest = '\0';
-
-	PG_RETURN_INT32(src - start);
+	PG_RETURN_INT32(pg_local_to_utf8(src, len, dest, PG_LATIN1, noError));
 }
 
 Datum

@@ -14,6 +14,7 @@ include $(top_builddir)/src/Makefile.global
 
 OBJS = \
 	conv.o \
+	local_utf8.o \
 	mbutils.o \
 	stringinfo_mb.o \
 	wstrcmp.o \

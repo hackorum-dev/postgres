@@ -14,7 +14,6 @@
 #include "postgres.h"
 #include "fmgr.h"
 #include "mb/pg_wchar.h"
-#include "../../Unicode/johab_to_utf8.map"
 #include "../../Unicode/utf8_to_johab.map"
 
 PG_MODULE_MAGIC_EXT(
@@ -49,12 +48,7 @@ johab_to_utf8(PG_FUNCTION_ARGS)
 
 	CHECK_ENCODING_CONVERSION_ARGS(PG_JOHAB, PG_UTF8);
 
-	converted = LocalToUtf(src, len, dest,
-						   &johab_to_unicode_tree,
-						   NULL, 0,
-						   NULL,
-						   PG_JOHAB,
-						   noError);
+	converted = pg_local_to_utf8(src, len, dest, PG_JOHAB, noError);
 
 	PG_RETURN_INT32(converted);
 }

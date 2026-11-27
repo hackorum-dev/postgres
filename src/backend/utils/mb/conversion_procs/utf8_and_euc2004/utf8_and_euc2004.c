@@ -14,7 +14,6 @@
 #include "postgres.h"
 #include "fmgr.h"
 #include "mb/pg_wchar.h"
-#include "../../Unicode/euc_jis_2004_to_utf8.map"
 #include "../../Unicode/utf8_to_euc_jis_2004.map"
 
 PG_MODULE_MAGIC_EXT(
@@ -49,12 +48,7 @@ euc_jis_2004_to_utf8(PG_FUNCTION_ARGS)
 
 	CHECK_ENCODING_CONVERSION_ARGS(PG_EUC_JIS_2004, PG_UTF8);
 
-	converted = LocalToUtf(src, len, dest,
-						   &euc_jis_2004_to_unicode_tree,
-						   LUmapEUC_JIS_2004_combined, lengthof(LUmapEUC_JIS_2004_combined),
-						   NULL,
-						   PG_EUC_JIS_2004,
-						   noError);
+	converted = pg_local_to_utf8(src, len, dest, PG_EUC_JIS_2004, noError);
 
 	PG_RETURN_INT32(converted);
 }
