@@ -143,6 +143,18 @@ varstr_levenshtein(const char *source, int slen,
 	stop_column = m + 1;
 
 	/*
+	 * All of the bounding logic below assumes that edit costs are
+	 * non-negative, so that the partial distances along any path through the
+	 * matrix never decrease.  That's what justifies the "minimum residual
+	 * distance" calculations and the use of max_d + 1 as a placeholder for
+	 * cells we don't need to compute.  With a negative cost, neither holds,
+	 * and we could return a value <= max_d even though the true distance
+	 * exceeds max_d.  In that case, just compute the exact distance.
+	 */
+	if (ins_c < 0 || del_c < 0 || sub_c < 0)
+		max_d = -1;
+
+	/*
 	 * If max_d >= 0, determine whether the bound is impossibly tight.  If so,
 	 * return max_d + 1 immediately.  Otherwise, determine whether it's tight
 	 * enough to limit the computation we must perform.  If so, figure out

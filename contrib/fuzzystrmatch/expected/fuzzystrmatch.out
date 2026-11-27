@@ -67,6 +67,12 @@ SELECT levenshtein_less_equal('aaa', 'aaaaa', 1073741824, 0, 1073741824, 10);
                      11
 (1 row)
 
+SELECT levenshtein_less_equal('a', 'b', -1, 2, 2, 0);
+ levenshtein_less_equal 
+------------------------
+                      1
+(1 row)
+
 SELECT metaphone('GUMBO', 4);
  metaphone 
 -----------

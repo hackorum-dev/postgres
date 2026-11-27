@@ -16,6 +16,7 @@ SELECT levenshtein('GUMBO', 'GAMBOL', 2000000000, 2000000000, 2000000000);
 SELECT levenshtein_less_equal('extensive', 'exhaustive', 2);
 SELECT levenshtein_less_equal('extensive', 'exhaustive', 4);
 SELECT levenshtein_less_equal('aaa', 'aaaaa', 1073741824, 0, 1073741824, 10);
+SELECT levenshtein_less_equal('a', 'b', -1, 2, 2, 0);
 
 
 SELECT metaphone('GUMBO', 4);
