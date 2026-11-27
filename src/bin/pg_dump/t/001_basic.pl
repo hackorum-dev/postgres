@@ -193,6 +193,16 @@ command_fails_like(
 	'pg_dump: --extra-float-digits must be in range');
 
 command_fails_like(
+	[ 'pg_dump', '--extra-float-digits=' ],
+	qr/\Qpg_dump: error: invalid value "" for option --extra-float-digits\E/,
+	'pg_dump: reject empty --extra-float-digits');
+
+command_fails_like(
+	[ 'pg_dump', '--extra-float-digits= ' ],
+	qr/\Qpg_dump: error: invalid value " " for option --extra-float-digits\E/,
+	'pg_dump: reject whitespace-only --extra-float-digits');
+
+command_fails_like(
 	[ 'pg_dump', '--rows-per-insert', '0' ],
 	qr/\Qpg_dump: error: --rows-per-insert must be in range\E/,
 	'pg_dump: --rows-per-insert must be in range');

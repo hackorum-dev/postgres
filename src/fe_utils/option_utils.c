@@ -57,6 +57,13 @@ option_parse_int(const char *optarg, const char *optname,
 	errno = 0;
 	val = strtoint(optarg, &endptr, 10);
 
+	if (endptr == optarg)
+	{
+		pg_log_error("invalid value \"%s\" for option %s",
+					 optarg, optname);
+		return false;
+	}
+
 	/*
 	 * Skip any trailing whitespace; if anything but whitespace remains before
 	 * the terminating character, fail.
