@@ -491,7 +491,7 @@ get_rel_infos_query(void)
 	initPQExpBuffer(&query);
 
 	/*
-	 * Create a CTE that collects OIDs of regular user tables and matviews,
+	 * Create a CTE that collects details of regular user tables and matviews,
 	 * but excluding toast tables and indexes.  We assume that relations with
 	 * OIDs >= FirstNormalObjectId belong to the user.  (That's probably
 	 * redundant with the namespace-name exclusions, but let's be safe.)
@@ -504,73 +504,56 @@ get_rel_infos_query(void)
 	 * by pg_largeobject_metadata.lomacl) changed its storage format in v16.
 	 */
 	appendPQExpBuffer(&query,
-					  "WITH regular_heap (reloid, indtable, toastheap) AS ( "
-					  "  SELECT c.oid, 0::oid, 0::oid "
-					  "  FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-					  "         ON c.relnamespace = n.oid "
-					  "  WHERE relkind IN (" CppAsString2(RELKIND_RELATION) ", "
-					  CppAsString2(RELKIND_MATVIEW) "%s) AND "
+					  "WITH rt (reloid, toastheap, relname, reltablespace, relfilenode, nspname) AS ("
+					  "  SELECT c.oid, c.reltoastrelid, c.relname, c.reltablespace, c.relfilenode, n.nspname"
+					  "  FROM pg_catalog.pg_class c"
+					  "  INNER JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid"
+					  "  WHERE ("
+					  "    c.oid >= %u::pg_catalog.oid"
+					  "    AND relkind IN("  CppAsString2(RELKIND_RELATION) ", " CppAsString2(RELKIND_MATVIEW) "%s)"
 	/* exclude possible orphaned temp tables */
-					  "    ((n.nspname !~ '^pg_temp_' AND "
-					  "      n.nspname !~ '^pg_toast_temp_' AND "
-					  "      n.nspname NOT IN ('pg_catalog', 'information_schema', "
-					  "                        'binary_upgrade', 'pg_toast') AND "
-					  "      c.oid >= %u::pg_catalog.oid) OR "
-					  "     (n.nspname = 'pg_catalog' AND "
-					  "      relname IN ('pg_largeobject'%s) ))), ",
+					  "    AND n.nspname !~'^pg_temp_' AND n.nspname !~'^pg_toast_temp_'"
+					  "    AND n.nspname NOT IN('pg_catalog', 'information_schema', 'binary_upgrade', 'pg_toast')"
+					  "  ) OR c.oid IN('pg_catalog.pg_largeobject'::regclass%s)"
+					  ") ", FirstNormalObjectId,
 					  (user_opts.transfer_mode == TRANSFER_MODE_SWAP) ?
 					  ", " CppAsString2(RELKIND_SEQUENCE) : "",
-					  FirstNormalObjectId,
 					  (GET_MAJOR_VERSION(old_cluster.major_version) >= 1600) ?
-					  ", 'pg_largeobject_metadata'" : "");
-
-	/*
-	 * Add a CTE that collects OIDs of toast tables belonging to the tables
-	 * selected by the regular_heap CTE.  (We have to do this separately
-	 * because the namespace-name rules above don't work for toast tables.)
-	 */
-	appendPQExpBufferStr(&query,
-						 "  toast_heap (reloid, indtable, toastheap) AS ( "
-						 "  SELECT c.reltoastrelid, 0::oid, c.oid "
-						 "  FROM regular_heap JOIN pg_catalog.pg_class c "
-						 "      ON regular_heap.reloid = c.oid "
-						 "  WHERE c.reltoastrelid != 0), ");
-
-	/*
-	 * Add a CTE that collects OIDs of all valid indexes on the previously
-	 * selected tables.  We can ignore invalid indexes since pg_dump does.
-	 * Testing indisready is necessary in 9.2, and harmless in earlier/later
-	 * versions.
-	 */
-	appendPQExpBufferStr(&query,
-						 "  all_index (reloid, indtable, toastheap) AS ( "
-						 "  SELECT indexrelid, indrelid, 0::oid "
-						 "  FROM pg_catalog.pg_index "
-						 "  WHERE indisvalid AND indisready "
-						 "    AND indrelid IN "
-						 "        (SELECT reloid FROM regular_heap "
-						 "         UNION ALL "
-						 "         SELECT reloid FROM toast_heap)) ");
+					  ", 'pg_catalog.pg_largeobject_metadata'::regclass" : "");
 
 	/*
 	 * And now we can write the query that retrieves the data we want for each
-	 * heap and index relation.  Make sure result is sorted by OID.
+	 * heap table and its toast table (if any) and all indexes for each
+	 * of those.  Make sure result is sorted by OID.  We can ignore invalid
+	 * indexes since pg_dump does.  Testing indisready is necessary in 9.2,
+	 * and harmless in earlier/later versions.
 	 */
 	appendPQExpBufferStr(&query,
-						 "SELECT all_rels.*, n.nspname, c.relname, "
-						 "  c.relfilenode, c.reltablespace, "
-						 "  pg_catalog.pg_tablespace_location(t.oid) AS spclocation "
-						 "FROM (SELECT * FROM regular_heap "
-						 "      UNION ALL "
-						 "      SELECT * FROM toast_heap "
-						 "      UNION ALL "
-						 "      SELECT * FROM all_index) all_rels "
-						 "  JOIN pg_catalog.pg_class c "
-						 "      ON all_rels.reloid = c.oid "
-						 "  JOIN pg_catalog.pg_namespace n "
-						 "     ON c.relnamespace = n.oid "
-						 "  LEFT OUTER JOIN pg_catalog.pg_tablespace t "
-						 "     ON c.reltablespace = t.oid "
+						 "SELECT"
+						 "    rt.reloid, 0::oid AS indtable, 0::oid AS toastheap, rt.nspname, rt.relname, rt.relfilenode, rt.reltablespace, "
+						 "    CASE rt.reltablespace WHEN 0 THEN NULL ELSE pg_catalog.pg_tablespace_location(rt.reltablespace) END AS spclocation "
+						 "FROM rt "
+						 "UNION ALL "
+	/* get details for all the toast tables for each of the above tables */
+						 "SELECT"
+						 "    rt.toastheap, 0::oid, rt.reloid, n.nspname, c.relname, c.relfilenode, c.reltablespace, "
+						 "    CASE c.reltablespace WHEN 0 THEN NULL ELSE pg_catalog.pg_tablespace_location(c.reltablespace) END "
+						 "FROM rt "
+						 "INNER JOIN pg_catalog.pg_class c ON rt.toastheap = c.oid "
+						 "INNER JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid "
+						 "WHERE rt.toastheap <> 0 "
+						 "UNION ALL "
+	/* and index details for the above regular and toast tables */
+						 "SELECT"
+						 "    i.indexrelid, i.indrelid, 0::oid, n.nspname, c.relname, c.relfilenode, c.reltablespace, "
+						 "    CASE c.reltablespace WHEN 0 THEN NULL ELSE pg_catalog.pg_tablespace_location(c.reltablespace) END "
+						 "FROM pg_catalog.pg_index i "
+						 "INNER JOIN ("
+						 "    SELECT reloid FROM rt UNION ALL SELECT toastheap FROM rt WHERE toastheap <> 0"
+						 ") rtt ON i.indrelid = rtt.reloid "
+						 "INNER JOIN pg_catalog.pg_class c ON i.indexrelid = c.oid "
+						 "INNER JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid "
+						 "WHERE i.indisvalid AND i.indisready "
 						 "ORDER BY 1");
 
 	return query.data;
