@@ -497,6 +497,7 @@ typedef enum
 extern PGDLLIMPORT int Log_error_verbosity;
 extern PGDLLIMPORT char *Log_line_prefix;
 extern PGDLLIMPORT int Log_destination;
+extern PGDLLIMPORT int Log_encoding;
 extern PGDLLIMPORT char *Log_destination_string;
 extern PGDLLIMPORT bool syslog_sequence_numbers;
 extern PGDLLIMPORT bool syslog_split_messages;
@@ -522,7 +523,16 @@ extern char *get_formatted_log_time(void);
 extern const char *get_backend_type_for_log(void);
 extern bool check_log_of_query(ErrorData *edata);
 extern const char *error_severity(int elevel);
-extern void write_pipe_chunks(char *data, int len, int dest);
+typedef struct LogEncodingBuffer
+{
+	char	   *allocated;
+	char		data[1024];
+} LogEncodingBuffer;
+
+extern const char *log_convert_text(const char *text, int len, int encoding,
+									LogEncodingBuffer *buffer);
+extern int	log_source_encoding(void);
+extern void write_pipe_chunks(const char *data, int len, int dest);
 
 /* Destination-specific functions */
 extern void write_csvlog(ErrorData *edata);

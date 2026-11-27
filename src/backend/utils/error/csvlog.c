@@ -18,6 +18,7 @@
 #include "access/xact.h"
 #include "lib/stringinfo.h"
 #include "libpq/libpq-be.h"
+#include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "postmaster/syslogger.h"
 #include "storage/lock.h"
@@ -34,15 +35,20 @@
  * If it's NULL, append nothing.
  */
 static inline void
-appendCSVLiteral(StringInfo buf, const char *data)
+appendCSVLiteralEncoding(StringInfo buf, const char *data, int encoding)
 {
-	const char *p = data;
+	LogEncodingBuffer buffer;
+	const char *p;
 	char		c;
 
 	/* avoid confusing an empty string with NULL */
-	if (p == NULL)
+	if (data == NULL)
 		return;
 
+	buffer.allocated = NULL;
+	p = data;
+	if (Log_encoding == PG_UTF8)
+		p = log_convert_text(data, -1, encoding, &buffer);
 	appendStringInfoCharMacro(buf, '"');
 	while ((c = *p++) != '\0')
 	{
@@ -51,6 +57,30 @@ appendCSVLiteral(StringInfo buf, const char *data)
 		appendStringInfoCharMacro(buf, c);
 	}
 	appendStringInfoCharMacro(buf, '"');
+	if (buffer.allocated)
+		pfree(buffer.allocated);
+}
+
+static inline void
+appendCSVLiteral(StringInfo buf, const char *data)
+{
+	appendCSVLiteralEncoding(buf, data, log_source_encoding());
+}
+
+static void
+appendCSVUnquoted(StringInfo buf, const char *data, int encoding)
+{
+	LogEncodingBuffer buffer;
+
+	if (Log_encoding != PG_UTF8)
+	{
+		appendStringInfoString(buf, data);
+		return;
+	}
+
+	appendStringInfoString(buf, log_convert_text(data, -1, encoding, &buffer));
+	if (buffer.allocated)
+		pfree(buffer.allocated);
 }
 
 /*
@@ -87,17 +117,19 @@ write_csvlog(ErrorData *edata)
 	initStringInfo(&buf);
 
 	/* timestamp with milliseconds */
-	appendStringInfoString(&buf, get_formatted_log_time());
+	appendCSVUnquoted(&buf, get_formatted_log_time(), log_source_encoding());
 	appendStringInfoChar(&buf, ',');
 
 	/* username */
 	if (MyProcPort)
-		appendCSVLiteral(&buf, MyProcPort->user_name);
+		appendCSVLiteralEncoding(&buf, MyProcPort->user_name,
+								 GetDatabaseEncoding());
 	appendStringInfoChar(&buf, ',');
 
 	/* database name */
 	if (MyProcPort)
-		appendCSVLiteral(&buf, MyProcPort->database_name);
+		appendCSVLiteralEncoding(&buf, MyProcPort->database_name,
+								 GetDatabaseEncoding());
 	appendStringInfoChar(&buf, ',');
 
 	/* Process id  */
@@ -109,7 +141,7 @@ write_csvlog(ErrorData *edata)
 	if (MyProcPort && MyProcPort->remote_host)
 	{
 		appendStringInfoChar(&buf, '"');
-		appendStringInfoString(&buf, MyProcPort->remote_host);
+		appendCSVUnquoted(&buf, MyProcPort->remote_host, log_source_encoding());
 		if (MyProcPort->remote_port && MyProcPort->remote_port[0] != '\0')
 		{
 			appendStringInfoChar(&buf, ':');
@@ -145,7 +177,7 @@ write_csvlog(ErrorData *edata)
 	appendStringInfoChar(&buf, ',');
 
 	/* session start timestamp */
-	appendStringInfoString(&buf, get_formatted_start_time());
+	appendCSVUnquoted(&buf, get_formatted_start_time(), log_source_encoding());
 	appendStringInfoChar(&buf, ',');
 
 	/* Virtual transaction id */
@@ -159,7 +191,7 @@ write_csvlog(ErrorData *edata)
 	appendStringInfoChar(&buf, ',');
 
 	/* Error severity */
-	appendStringInfoString(&buf, _(error_severity(edata->elevel)));
+	appendCSVUnquoted(&buf, _(error_severity(edata->elevel)), GetMessageEncoding());
 	appendStringInfoChar(&buf, ',');
 
 	/* SQL state code */

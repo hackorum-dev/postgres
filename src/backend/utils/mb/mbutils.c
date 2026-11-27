@@ -81,6 +81,7 @@ static FmgrInfo *Utf8ToServerConvProc = NULL;
  */
 static const pg_enc2name *ClientEncoding = &pg_enc2name_tbl[PG_SQL_ASCII];
 static const pg_enc2name *DatabaseEncoding = &pg_enc2name_tbl[PG_SQL_ASCII];
+static bool DatabaseEncodingSet;
 static const pg_enc2name *MessageEncoding = &pg_enc2name_tbl[PG_SQL_ASCII];
 
 /*
@@ -1293,6 +1294,7 @@ SetDatabaseEncoding(int encoding)
 		elog(ERROR, "invalid database encoding: %d", encoding);
 
 	DatabaseEncoding = &pg_enc2name_tbl[encoding];
+	DatabaseEncodingSet = true;
 	Assert(DatabaseEncoding->encoding == encoding);
 }
 
@@ -1389,6 +1391,17 @@ int
 GetDatabaseEncoding(void)
 {
 	return DatabaseEncoding->encoding;
+}
+
+/*
+ * Before CheckMyDatabase sets the database encoding, translated diagnostics
+ * use the process locale.  MyDatabaseId can already be valid at this point.
+ * Once attached, SQL_ASCII means that the bytes have no declared encoding.
+ */
+int
+log_source_encoding(void)
+{
+	return DatabaseEncodingSet ? DatabaseEncoding->encoding : MessageEncoding->encoding;
 }
 
 const char *
@@ -1904,16 +1917,20 @@ report_untranslatable_char(int src_encoding, int dest_encoding,
 
 
 #ifdef WIN32
-/*
- * Convert from MessageEncoding to a palloc'ed, null-terminated utf16
- * string. The character length is also passed to utf16len if not
- * null. Returns NULL iff failed. Before MessageEncoding initialization, "str"
- * should be ASCII-only; this will function as though MessageEncoding is UTF8.
- */
 WCHAR *
 pgwin32_message_to_UTF16(const char *str, int len, int *utf16len)
 {
-	int			msgenc = GetMessageEncoding();
+	return pgwin32_to_UTF16(str, len, utf16len, GetMessageEncoding());
+}
+
+/*
+ * Convert from the given encoding to a palloc'ed, null-terminated utf16
+ * string. The character length is also passed to utf16len if not
+ * null. Returns NULL on failure or if the input encoding is SQL_ASCII.
+ */
+WCHAR *
+pgwin32_to_UTF16(const char *str, int len, int *utf16len, int msgenc)
+{
 	WCHAR	   *utf16;
 	int			dstlen;
 	UINT		codepage;
@@ -1931,7 +1948,11 @@ pgwin32_message_to_UTF16(const char *str, int len, int *utf16len)
 	 */
 	if (codepage != 0)
 	{
-		utf16 = palloc_array(WCHAR, len + 1);
+		if ((Size) len >= MaxAllocSize / sizeof(WCHAR))
+			return NULL;
+		utf16 = palloc_array_extended(WCHAR, len + 1, MCXT_ALLOC_NO_OOM);
+		if (utf16 == NULL)
+			return NULL;
 		dstlen = MultiByteToWideChar(codepage, 0, str, len, utf16, len);
 		utf16[dstlen] = (WCHAR) 0;
 	}

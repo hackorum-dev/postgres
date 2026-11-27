@@ -1651,6 +1651,7 @@ LockTupleMode
 LockViewRecurse_context
 LockWaitPolicy
 LockingClause
+LogEncodingBuffer
 LogOpts
 LogStmtLevel
 LogicalDecodeBeginCB

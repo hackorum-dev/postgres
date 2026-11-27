@@ -25,6 +25,7 @@ tests += {
       't/014_log_statement_max_length.pl',
       't/015_temp_schema_exit_deferrable.pl',
       't/016_heap_scan_stream.pl',
+      't/017_log_encoding.pl',
     ],
     # The injection points are cluster-wide, so disable installcheck
     'runningcheck': false,

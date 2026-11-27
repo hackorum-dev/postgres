@@ -72,6 +72,7 @@
 
 #include "access/xact.h"
 #include "common/ip.h"
+#include "common/string.h"
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
 #include "mb/pg_wchar.h"
@@ -114,6 +115,7 @@ emit_log_hook_type emit_log_hook = NULL;
 int			Log_error_verbosity = PGERROR_DEFAULT;
 char	   *Log_line_prefix = NULL; /* format for extra log line info */
 int			Log_destination = LOG_DESTINATION_STDERR;
+int			Log_encoding = PG_SQL_ASCII;
 char	   *Log_destination_string = NULL;
 bool		syslog_sequence_numbers = true;
 bool		syslog_split_messages = true;
@@ -197,9 +199,10 @@ static void backtrace_cleanup(int code, Datum arg);
 static void set_errdata_field(MemoryContextData *cxt, char **ptr, const char *str);
 static void FreeErrorDataContents(ErrorData *edata);
 static int	log_min_messages_cmp(const ListCell *a, const ListCell *b);
-static void write_console(const char *line, int len);
+static void write_console(const char *line, int len, int encoding);
 static const char *process_log_prefix_padding(const char *p, int *ppadding);
-static void log_line_prefix(StringInfo buf, ErrorData *edata);
+static void format_log_status(StringInfo buf, const char *format,
+							  ErrorData *edata, StringInfo utf8);
 static void send_message_to_server_log(ErrorData *edata);
 static void send_message_to_frontend(ErrorData *edata);
 static void append_with_tabs(StringInfo buf, const char *str);
@@ -2823,6 +2826,13 @@ assign_syslog_facility(int newval, void *extra)
 
 #ifdef HAVE_SYSLOG
 
+/* In a UTF-8 message a high-bit byte may be part of a character. */
+static inline bool
+is_log_space(unsigned char c)
+{
+	return (Log_encoding != PG_UTF8 || !IS_HIGHBIT_SET(c)) && isspace(c);
+}
+
 /*
  * Write a message line to syslog
  */
@@ -2889,18 +2899,21 @@ write_syslog(int level, const char *line)
 			buf[buflen] = '\0';
 
 			/* trim to multibyte letter boundary */
-			buflen = pg_mbcliplen(buf, buflen, buflen);
+			if (Log_encoding == PG_UTF8)
+				buflen = pg_encoding_mbcliplen(PG_UTF8, buf, buflen, buflen);
+			else
+				buflen = pg_mbcliplen(buf, buflen, buflen);
 			if (buflen <= 0)
 				return;
 			buf[buflen] = '\0';
 
 			/* already word boundary? */
 			if (line[buflen] != '\0' &&
-				!isspace((unsigned char) line[buflen]))
+				!is_log_space(line[buflen]))
 			{
 				/* try to divide at word boundary */
 				i = buflen - 1;
-				while (i > 0 && !isspace((unsigned char) buf[i]))
+				while (i > 0 && !is_log_space(buf[i]))
 					i--;
 
 				if (i > 0)		/* else couldn't divide word boundary */
@@ -3047,11 +3060,12 @@ write_eventlog(int level, const char *line, int len)
 #endif							/* WIN32 */
 
 static void
-write_console(const char *line, int len)
+write_console(const char *line, int len, int encoding)
 {
 	ssize_t		rc;
 
 #ifdef WIN32
+	HANDLE		stdHandle = GetStdHandle(STD_ERROR_HANDLE);
 
 	/*
 	 * Try to convert the message to UTF16 and write it with WriteConsoleW().
@@ -3063,8 +3077,7 @@ write_console(const char *line, int len)
 	 * stderr into binary mode in SubPostmasterMain(), write() skips the
 	 * necessary translation anyway.
 	 *
-	 * WriteConsoleW() will fail if stderr is redirected, so just fall through
-	 * to writing unconverted to the logfile in this case.
+	 * A file or pipe cannot be a console.  Skip conversion in that case.
 	 *
 	 * Since we palloc the structure required for conversion, also fall
 	 * through to writing unconverted if we have not yet set up
@@ -3072,18 +3085,17 @@ write_console(const char *line, int len)
 	 */
 	if (!in_error_recursion_trouble() &&
 		!redirection_done &&
-		CurrentMemoryContext != NULL)
+		CurrentMemoryContext != NULL &&
+		GetFileType(stdHandle) == FILE_TYPE_CHAR)
 	{
 		WCHAR	   *utf16;
 		int			utf16len;
 
-		utf16 = pgwin32_message_to_UTF16(line, len, &utf16len);
+		utf16 = pgwin32_to_UTF16(line, len, &utf16len, encoding);
 		if (utf16 != NULL)
 		{
-			HANDLE		stdHandle;
 			DWORD		written;
 
-			stdHandle = GetStdHandle(STD_ERROR_HANDLE);
 			if (WriteConsoleW(stdHandle, utf16, utf16len, &written, NULL))
 			{
 				pfree(utf16);
@@ -3097,15 +3109,6 @@ write_console(const char *line, int len)
 			pfree(utf16);
 		}
 	}
-#else
-
-	/*
-	 * Conversion on non-win32 platforms is not implemented yet. It requires
-	 * non-throw version of pg_do_encoding_conversion(), that converts
-	 * unconvertible characters to '?' without errors.
-	 *
-	 * XXX: We have a no-throw version now. It doesn't convert to '?' though.
-	 */
 #endif
 
 	/*
@@ -3277,12 +3280,79 @@ process_log_prefix_padding(const char *p, int *ppadding)
 }
 
 /*
- * Format log status information using Log_line_prefix.
+ * Convert a complete segment before adding bytes from another source.  The
+ * two buffers are normally the same.  When also writing to the Windows
+ * event log, retain the original bytes in buf.
  */
 static void
-log_line_prefix(StringInfo buf, ErrorData *edata)
+convert_log_segment(StringInfo utf8, StringInfo buf, int start, int encoding)
 {
-	log_status_format(buf, Log_line_prefix, edata);
+	LogEncodingBuffer buffer;
+	const char *text = buf->data + start;
+	int			len = buf->len - start;
+	const char *converted = log_convert_text(text, len, encoding, &buffer);
+
+	if (converted != text)
+	{
+		if (utf8 == buf)
+			buf->len = start;
+		appendStringInfoString(utf8, converted);
+	}
+	else if (utf8 != buf)
+		appendBinaryStringInfo(utf8, text, len);
+
+	if (buffer.allocated)
+		pfree(buffer.allocated);
+}
+
+/*
+ * Finish the preceding message text, then format the next line's prefix.
+ * The configuration file and the database can use different encodings.
+ */
+static void
+log_line_prefix(StringInfo buf, ErrorData *edata, StringInfo utf8,
+				int *body_start)
+{
+	if (utf8 && buf->len > *body_start)
+		convert_log_segment(utf8, buf, *body_start,
+							log_source_encoding());
+
+	format_log_status(buf, Log_line_prefix, edata, utf8);
+	*body_start = buf->len;
+}
+
+/*
+ * Startup packet names and names in SQL_ASCII databases have no declared
+ * encoding.  Keep their bytes printable in the formatted log prefix.
+ */
+static void
+append_log_name(StringInfo buf, const char *name, int padding)
+{
+	char	   *escaped = NULL;
+
+	if (name == NULL || *name == '\0')
+		name = _("[unknown]");
+	else if (Log_encoding == PG_UTF8 && GetDatabaseEncoding() == PG_SQL_ASCII)
+	{
+		const unsigned char *p = (const unsigned char *) name;
+
+		for (; *p != '\0'; p++)
+		{
+			if (*p < 32 || *p > 126)
+			{
+				escaped = pg_clean_ascii(name, MCXT_ALLOC_NO_OOM);
+				name = escaped ? escaped : "[unknown]";
+				break;
+			}
+		}
+	}
+
+	if (padding != 0)
+		appendStringInfo(buf, "%*s", padding, name);
+	else
+		appendStringInfoString(buf, name);
+	if (escaped)
+		pfree(escaped);
 }
 
 /*
@@ -3290,6 +3360,13 @@ log_line_prefix(StringInfo buf, ErrorData *edata)
  */
 void
 log_status_format(StringInfo buf, const char *format, ErrorData *edata)
+{
+	format_log_status(buf, format, edata, NULL);
+}
+
+static void
+format_log_status(StringInfo buf, const char *format, ErrorData *edata,
+				  StringInfo utf8)
 {
 	/* static counter for line numbers */
 	static long log_line_number = 0;
@@ -3318,10 +3395,18 @@ log_status_format(StringInfo buf, const char *format, ErrorData *edata)
 
 	for (p = format; *p != '\0'; p++)
 	{
+		int			start = buf->len;
+		int			encoding = utf8 ? log_source_encoding() : PG_SQL_ASCII;
+
 		if (*p != '%')
 		{
-			/* literal char, just copy */
-			appendStringInfoChar(buf, *p);
+			int			len = strcspn(p, "%");
+
+			appendBinaryStringInfo(buf, p, len);
+			/* The literal bytes come from configuration, not the database. */
+			if (utf8)
+				convert_log_segment(utf8, buf, start, PG_SQL_ASCII);
+			p += len - 1;
 			continue;
 		}
 
@@ -3333,6 +3418,8 @@ log_status_format(StringInfo buf, const char *format, ErrorData *edata)
 		{
 			/* string contains %% */
 			appendStringInfoChar(buf, '%');
+			if (utf8 && utf8 != buf)
+				appendStringInfoChar(utf8, '%');
 			continue;
 		}
 
@@ -3365,7 +3452,10 @@ log_status_format(StringInfo buf, const char *format, ErrorData *edata)
 					const char *appname = application_name;
 
 					if (appname == NULL || *appname == '\0')
+					{
 						appname = _("[unknown]");
+						encoding = GetMessageEncoding();
+					}
 					if (padding != 0)
 						appendStringInfo(buf, "%*s", padding, appname);
 					else
@@ -3388,32 +3478,14 @@ log_status_format(StringInfo buf, const char *format, ErrorData *edata)
 				}
 			case 'u':
 				if (MyProcPort)
-				{
-					const char *username = MyProcPort->user_name;
-
-					if (username == NULL || *username == '\0')
-						username = _("[unknown]");
-					if (padding != 0)
-						appendStringInfo(buf, "%*s", padding, username);
-					else
-						appendStringInfoString(buf, username);
-				}
+					append_log_name(buf, MyProcPort->user_name, padding);
 				else if (padding != 0)
 					appendStringInfoSpaces(buf,
 										   padding > 0 ? padding : -padding);
 				break;
 			case 'd':
 				if (MyProcPort)
-				{
-					const char *dbname = MyProcPort->database_name;
-
-					if (dbname == NULL || *dbname == '\0')
-						dbname = _("[unknown]");
-					if (padding != 0)
-						appendStringInfo(buf, "%*s", padding, dbname);
-					else
-						appendStringInfoString(buf, dbname);
-				}
+					append_log_name(buf, MyProcPort->database_name, padding);
 				else if (padding != 0)
 					appendStringInfoSpaces(buf,
 										   padding > 0 ? padding : -padding);
@@ -3466,6 +3538,7 @@ log_status_format(StringInfo buf, const char *format, ErrorData *edata)
 					appendStringInfo(buf, "%ld", log_line_number);
 				break;
 			case 'm':
+				encoding = PG_SQL_ASCII;
 				/* force a log timestamp reset */
 				formatted_log_time[0] = '\0';
 				(void) get_formatted_log_time();
@@ -3476,6 +3549,7 @@ log_status_format(StringInfo buf, const char *format, ErrorData *edata)
 					appendStringInfoString(buf, formatted_log_time);
 				break;
 			case 't':
+				encoding = PG_SQL_ASCII;
 				{
 					pg_time_t	stamp_time = (pg_time_t) time(NULL);
 					char		strfbuf[128];
@@ -3510,6 +3584,7 @@ log_status_format(StringInfo buf, const char *format, ErrorData *edata)
 				}
 				break;
 			case 's':
+				encoding = PG_SQL_ASCII;
 				{
 					char	   *start_time = get_formatted_start_time();
 
@@ -3568,6 +3643,7 @@ log_status_format(StringInfo buf, const char *format, ErrorData *edata)
 				}
 				break;
 			case 'r':
+				encoding = PG_SQL_ASCII;
 				if (MyProcPort && MyProcPort->remote_host)
 				{
 					if (padding != 0)
@@ -3606,6 +3682,7 @@ log_status_format(StringInfo buf, const char *format, ErrorData *edata)
 										   padding > 0 ? padding : -padding);
 				break;
 			case 'h':
+				encoding = PG_SQL_ASCII;
 				if (MyProcPort && MyProcPort->remote_host)
 				{
 					if (padding != 0)
@@ -3666,6 +3743,8 @@ log_status_format(StringInfo buf, const char *format, ErrorData *edata)
 				/* format error - ignore it */
 				break;
 		}
+		if (utf8 && buf->len > start)
+			convert_log_segment(utf8, buf, start, encoding);
 	}
 }
 
@@ -3697,11 +3776,34 @@ static void
 send_message_to_server_log(ErrorData *edata)
 {
 	StringInfoData buf;
+#ifdef WIN32
+	StringInfoData utf8;
+#endif
+	StringInfo	converted = NULL;
+	int			body_start = 0;
+	const char *log_text;
+	int			log_len;
 	bool		fallback_to_stderr = false;
 
 	initStringInfo(&buf);
+	if (Log_encoding == PG_UTF8 &&
+		((Log_destination & (LOG_DESTINATION_STDERR | LOG_DESTINATION_SYSLOG)) ||
+		 whereToSendOutput == DestDebug || syslogger_setup_done ||
+		 (!redirection_done &&
+		  (Log_destination & (LOG_DESTINATION_CSVLOG | LOG_DESTINATION_JSONLOG)))))
+	{
+		converted = &buf;
+#ifdef WIN32
+		if ((Log_destination & LOG_DESTINATION_EVENTLOG) ||
+			(!redirection_done && pgwin32_is_service()))
+		{
+			initStringInfo(&utf8);
+			converted = &utf8;
+		}
+#endif
+	}
 
-	log_line_prefix(&buf, edata);
+	log_line_prefix(&buf, edata, converted, &body_start);
 	appendStringInfo(&buf, "%s:  ", _(error_severity(edata->elevel)));
 
 	if (Log_error_verbosity >= PGERROR_VERBOSE)
@@ -3725,35 +3827,35 @@ send_message_to_server_log(ErrorData *edata)
 	{
 		if (edata->detail_log)
 		{
-			log_line_prefix(&buf, edata);
+			log_line_prefix(&buf, edata, converted, &body_start);
 			appendStringInfoString(&buf, _("DETAIL:  "));
 			append_with_tabs(&buf, edata->detail_log);
 			appendStringInfoChar(&buf, '\n');
 		}
 		else if (edata->detail)
 		{
-			log_line_prefix(&buf, edata);
+			log_line_prefix(&buf, edata, converted, &body_start);
 			appendStringInfoString(&buf, _("DETAIL:  "));
 			append_with_tabs(&buf, edata->detail);
 			appendStringInfoChar(&buf, '\n');
 		}
 		if (edata->hint)
 		{
-			log_line_prefix(&buf, edata);
+			log_line_prefix(&buf, edata, converted, &body_start);
 			appendStringInfoString(&buf, _("HINT:  "));
 			append_with_tabs(&buf, edata->hint);
 			appendStringInfoChar(&buf, '\n');
 		}
 		if (edata->internalquery)
 		{
-			log_line_prefix(&buf, edata);
+			log_line_prefix(&buf, edata, converted, &body_start);
 			appendStringInfoString(&buf, _("QUERY:  "));
 			append_with_tabs(&buf, edata->internalquery);
 			appendStringInfoChar(&buf, '\n');
 		}
 		if (edata->context && !edata->hide_ctx)
 		{
-			log_line_prefix(&buf, edata);
+			log_line_prefix(&buf, edata, converted, &body_start);
 			appendStringInfoString(&buf, _("CONTEXT:  "));
 			append_with_tabs(&buf, edata->context);
 			appendStringInfoChar(&buf, '\n');
@@ -3763,21 +3865,21 @@ send_message_to_server_log(ErrorData *edata)
 			/* assume no newlines in funcname or filename... */
 			if (edata->funcname && edata->filename)
 			{
-				log_line_prefix(&buf, edata);
+				log_line_prefix(&buf, edata, converted, &body_start);
 				appendStringInfo(&buf, _("LOCATION:  %s, %s:%d\n"),
 								 edata->funcname, edata->filename,
 								 edata->lineno);
 			}
 			else if (edata->filename)
 			{
-				log_line_prefix(&buf, edata);
+				log_line_prefix(&buf, edata, converted, &body_start);
 				appendStringInfo(&buf, _("LOCATION:  %s:%d\n"),
 								 edata->filename, edata->lineno);
 			}
 		}
 		if (edata->backtrace)
 		{
-			log_line_prefix(&buf, edata);
+			log_line_prefix(&buf, edata, converted, &body_start);
 			appendStringInfoString(&buf, _("BACKTRACE:  "));
 			append_with_tabs(&buf, edata->backtrace);
 			appendStringInfoChar(&buf, '\n');
@@ -3789,11 +3891,18 @@ send_message_to_server_log(ErrorData *edata)
 	 */
 	if (check_log_of_query(edata))
 	{
-		log_line_prefix(&buf, edata);
+		log_line_prefix(&buf, edata, converted, &body_start);
 		appendStringInfoString(&buf, _("STATEMENT:  "));
 		append_with_tabs(&buf, debug_query_string);
 		appendStringInfoChar(&buf, '\n');
 	}
+
+	if (converted && buf.len > body_start)
+		convert_log_segment(converted, &buf, body_start,
+							log_source_encoding());
+
+	log_text = converted ? converted->data : buf.data;
+	log_len = converted ? converted->len : buf.len;
 
 #ifdef HAVE_SYSLOG
 	/* Write to syslog, if enabled */
@@ -3833,7 +3942,7 @@ send_message_to_server_log(ErrorData *edata)
 				break;
 		}
 
-		write_syslog(syslog_level, buf.data);
+		write_syslog(syslog_level, log_text);
 	}
 #endif							/* HAVE_SYSLOG */
 
@@ -3889,7 +3998,7 @@ send_message_to_server_log(ErrorData *edata)
 		 * Otherwise, just do a vanilla write to stderr.
 		 */
 		if (redirection_done && MyBackendType != B_LOGGER)
-			write_pipe_chunks(buf.data, buf.len, LOG_DESTINATION_STDERR);
+			write_pipe_chunks(log_text, log_len, LOG_DESTINATION_STDERR);
 #ifdef WIN32
 
 		/*
@@ -3903,14 +4012,17 @@ send_message_to_server_log(ErrorData *edata)
 			write_eventlog(edata->elevel, buf.data, buf.len);
 #endif
 		else
-			write_console(buf.data, buf.len);
+			write_console(log_text, log_len,
+						  Log_encoding == PG_UTF8 ? PG_UTF8 : GetMessageEncoding());
 	}
 
 	/* If in the syslogger process, try to write messages direct to file */
 	if (syslogger_setup_done)
-		write_syslogger_file(buf.data, buf.len, LOG_DESTINATION_STDERR);
+		write_syslogger_file(log_text, log_len, LOG_DESTINATION_STDERR);
 
 	/* No more need of the message formatted for stderr */
+	if (converted && converted != &buf)
+		pfree(converted->data);
 	pfree(buf.data);
 }
 
@@ -3935,7 +4047,7 @@ send_message_to_server_log(ErrorData *edata)
  * rc to void to shut up the compiler.
  */
 void
-write_pipe_chunks(char *data, int len, int dest)
+write_pipe_chunks(const char *data, int len, int dest)
 {
 	PipeProtoChunk p;
 	int			fd = fileno(stderr);
@@ -4288,7 +4400,7 @@ vwrite_stderr(const char *fmt, va_list ap)
 	else
 	{
 		/* Not running as service, write to stderr */
-		write_console(errbuf, strlen(errbuf));
+		write_console(errbuf, strlen(errbuf), GetMessageEncoding());
 		fflush(stderr);
 	}
 #endif

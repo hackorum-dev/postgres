@@ -507,6 +507,7 @@
 
 # - Where to Log -
 
+#log_encoding = off                     # off or utf8 (change requires restart)
 #log_destination = 'stderr'             # Valid values are combinations of
                                         # stderr, csvlog, jsonlog, syslog, and
                                         # eventlog, depending on platform.

@@ -7177,6 +7177,40 @@ local0.*    /var/log/postgresql
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-log-encoding" xreflabel="log_encoding">
+      <term><varname>log_encoding</varname> (<type>enum</type>)
+      <indexterm>
+       <primary><varname>log_encoding</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        When set to <literal>utf8</literal>, the server logging system writes
+        messages to <literal>stderr</literal>, <literal>csvlog</literal>,
+        <literal>jsonlog</literal>, and <literal>syslog</literal> in UTF-8.
+        For input of unknown encoding, including data from
+        <literal>SQL_ASCII</literal> databases, valid UTF-8 sequences are
+        preserved.  Bytes that cannot be converted are written as hexadecimal
+        escapes.  User and database names of unknown encoding in
+        <varname>log_line_prefix</varname> use hexadecimal escapes for all
+        bytes outside printable ASCII.  Literal text in
+        <varname>log_line_prefix</varname> should be configured in UTF-8.
+        If memory for conversion is unavailable, the converted message may
+        be truncated.  The default is <literal>off</literal>, which retains
+        the source encoding of each message.  This parameter can only be set
+        at server start.
+       </para>
+       <para>
+        This setting applies after server configuration has been processed.
+        It does not change client messages or the Windows event log.  Raw
+        output captured by the logging collector, for example from external
+        programs, can still contain bytes in other encodings.  When changing
+        encoding, use a new log file to avoid appending UTF-8 messages to
+        older files containing other encodings.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-logging-collector" xreflabel="logging_collector">
       <term><varname>logging_collector</varname> (<type>boolean</type>)
       <indexterm>

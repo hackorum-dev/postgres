@@ -3,6 +3,7 @@
 backend_sources += files(
   'conv.c',
   'local_utf8.c',
+  'log_encoding.c',
   'mbutils.c',
   'stringinfo_mb.c',
   'wstrcmp.c',

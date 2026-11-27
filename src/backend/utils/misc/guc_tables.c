@@ -195,6 +195,13 @@ static const struct config_enum_entry icu_validation_level_options[] = {
 StaticAssertDecl(lengthof(intervalstyle_options) == (INTSTYLE_ISO_8601 + 2),
 				 "array length mismatch");
 
+static const struct config_enum_entry log_encoding_options[] = {
+	{"off", PG_SQL_ASCII, false},
+	{"utf8", PG_UTF8, false},
+	{"utf-8", PG_UTF8, true},
+	{NULL, 0, false}
+};
+
 static const struct config_enum_entry log_error_verbosity_options[] = {
 	{"terse", PGERROR_TERSE, false},
 	{"default", PGERROR_DEFAULT, false},

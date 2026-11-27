@@ -704,6 +704,7 @@ extern int	local2local(const unsigned char *l, unsigned char *p, int len,
 
 #ifdef WIN32
 extern WCHAR *pgwin32_message_to_UTF16(const char *str, int len, int *utf16len);
+extern WCHAR *pgwin32_to_UTF16(const char *str, int len, int *utf16len, int encoding);
 #endif
 
 #endif							/* PG_WCHAR_H */

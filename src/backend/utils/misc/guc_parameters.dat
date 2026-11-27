@@ -1707,6 +1707,13 @@
   boot_val => 'false',
 },
 
+{ name => 'log_encoding', type => 'enum', context => 'PGC_POSTMASTER', group => 'LOGGING_WHERE',
+  short_desc => 'Sets the encoding of server log messages.',
+  variable => 'Log_encoding',
+  boot_val => 'PG_SQL_ASCII',
+  options => 'log_encoding_options',
+},
+
 { name => 'log_error_verbosity', type => 'enum', context => 'PGC_SUSET', group => 'LOGGING_WHAT',
   short_desc => 'Sets the verbosity of logged messages.',
   variable => 'Log_error_verbosity',

@@ -17,6 +17,7 @@
 
 #include "access/xact.h"
 #include "libpq/libpq-be.h"
+#include "mb/pg_wchar.h"
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
 #include "postmaster/syslogger.h"
@@ -32,6 +33,26 @@ static void appendJSONKeyValueFmt(StringInfo buf, const char *key,
 								  bool escape_key,
 								  const char *fmt, ...) pg_attribute_printf(4, 5);
 
+static void
+appendConvertedJSONString(StringInfo buf, const char *value, int encoding)
+{
+	LogEncodingBuffer buffer;
+
+	/* Conversion must precede JSON escaping. */
+	escape_json(buf, log_convert_text(value, -1, encoding, &buffer));
+	if (buffer.allocated)
+		pfree(buffer.allocated);
+}
+
+static inline void
+appendJSONString(StringInfo buf, const char *value, int encoding)
+{
+	if (Log_encoding == PG_UTF8)
+		appendConvertedJSONString(buf, value, encoding);
+	else
+		escape_json(buf, value);
+}
+
 /*
  * appendJSONKeyValue
  *
@@ -40,8 +61,8 @@ static void appendJSONKeyValueFmt(StringInfo buf, const char *key,
  * is dependent on the data type of the key.
  */
 static void
-appendJSONKeyValue(StringInfo buf, const char *key, const char *value,
-				   bool escape_value)
+appendJSONKeyValueEncoding(StringInfo buf, const char *key, const char *value,
+						   bool escape_value, int encoding)
 {
 	Assert(key != NULL);
 
@@ -53,11 +74,19 @@ appendJSONKeyValue(StringInfo buf, const char *key, const char *value,
 	appendStringInfoChar(buf, ':');
 
 	if (escape_value)
-		escape_json(buf, value);
+		appendJSONString(buf, value, encoding);
 	else
 		appendStringInfoString(buf, value);
 }
 
+
+static inline void
+appendJSONKeyValue(StringInfo buf, const char *key, const char *value,
+				   bool escape_value)
+{
+	appendJSONKeyValueEncoding(buf, key, value, escape_value,
+							   escape_value ? log_source_encoding() : PG_SQL_ASCII);
+}
 
 /*
  * appendJSONKeyValueFmt
@@ -145,15 +174,17 @@ write_jsonlog(ErrorData *edata)
 	 */
 	escape_json(&buf, "timestamp");
 	appendStringInfoChar(&buf, ':');
-	escape_json(&buf, log_time);
+	appendJSONString(&buf, log_time, log_source_encoding());
 
 	/* username */
 	if (MyProcPort)
-		appendJSONKeyValue(&buf, "user", MyProcPort->user_name, true);
+		appendJSONKeyValueEncoding(&buf, "user", MyProcPort->user_name, true,
+								   GetDatabaseEncoding());
 
 	/* database name */
 	if (MyProcPort)
-		appendJSONKeyValue(&buf, "dbname", MyProcPort->database_name, true);
+		appendJSONKeyValueEncoding(&buf, "dbname", MyProcPort->database_name, true,
+								   GetDatabaseEncoding());
 
 	/* Process ID */
 	if (MyProcPid != 0)
