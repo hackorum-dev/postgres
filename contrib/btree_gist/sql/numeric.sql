@@ -81,3 +81,16 @@ SET enable_bitmapscan=off;
 EXPLAIN (COSTS OFF)
 SELECT * FROM numerictmp WHERE a BETWEEN 1 AND 300 ORDER BY a;
 SELECT * FROM numerictmp WHERE a BETWEEN 1 AND 300 ORDER BY a;
+
+-- A width that overflows the numeric format, or is infinite because a bound
+-- is, must not fail an insert once the index has internal pages.
+CREATE TABLE numericwide (a numeric);
+INSERT INTO numericwide SELECT g FROM generate_series(1, 1000) g;
+CREATE INDEX numericwideidx ON numericwide USING gist (a);
+INSERT INTO numericwide VALUES (('9' || repeat('9', 131071))::numeric),
+                               (('-9' || repeat('9', 131071))::numeric),
+                               ('infinity'), ('-infinity');
+SET enable_seqscan = off;
+SELECT count(*) FROM numericwide WHERE a > 0;
+RESET enable_seqscan;
+DROP TABLE numericwide;

@@ -10,6 +10,8 @@
 #include "btree_gist.h"
 #include "btree_utils_var.h"
 #include "utils/builtins.h"
+#include "utils/float.h"
+#include "nodes/miscnodes.h"
 #include "utils/numeric.h"
 #include "utils/rel.h"
 #include "utils/sortsupport.h"
@@ -166,6 +168,7 @@ gbt_numeric_penalty(PG_FUNCTION_ARGS)
 	GBT_VARKEY_R rk,
 				ok,
 				uk;
+	ErrorSaveContext escontext = {T_ErrorSaveContext};
 
 	rk = gbt_var_key_readable(org);
 	uni = PointerGetDatum(gbt_var_key_copy(&rk));
@@ -173,28 +176,53 @@ gbt_numeric_penalty(PG_FUNCTION_ARGS)
 	ok = gbt_var_key_readable(org);
 	uk = gbt_var_key_readable((GBT_VARKEY *) DatumGetPointer(uni));
 
-	us = DatumGetNumeric(DirectFunctionCall2(numeric_sub,
-											 PointerGetDatum(uk.upper),
-											 PointerGetDatum(uk.lower)));
+	/*
+	 * Compute the key widths with the soft-error subtraction.  Extreme but
+	 * valid bounds (e.g. repeat('9', 131072) and its negation) can make a
+	 * width overflow the numeric format; treat such a width as infinite, as
+	 * the other btree_gist penalty and distance functions do for an
+	 * overflowed difference.  A width can also be NaN or infinite because a
+	 * bound is (both are valid stored values), so handle all three cases
+	 * before the ratio below.
+	 */
+	us = numeric_sub_safe(DatumGetNumeric(PointerGetDatum(uk.upper)),
+						  DatumGetNumeric(PointerGetDatum(uk.lower)),
+						  (Node *) &escontext);
+	if (escontext.error_occurred)
+	{
+		us = DatumGetNumeric(DirectFunctionCall1(float8_numeric,
+												 Float8GetDatum(get_float8_infinity())));
+		escontext.error_occurred = false;
+	}
 
-	os = DatumGetNumeric(DirectFunctionCall2(numeric_sub,
-											 PointerGetDatum(ok.upper),
-											 PointerGetDatum(ok.lower)));
-
-	ds = DatumGetNumeric(DirectFunctionCall2(numeric_sub,
-											 NumericGetDatum(us),
-											 NumericGetDatum(os)));
+	os = numeric_sub_safe(DatumGetNumeric(PointerGetDatum(ok.upper)),
+						  DatumGetNumeric(PointerGetDatum(ok.lower)),
+						  (Node *) &escontext);
+	if (escontext.error_occurred)
+		os = DatumGetNumeric(DirectFunctionCall1(float8_numeric,
+												 Float8GetDatum(get_float8_infinity())));
 
 	if (numeric_is_nan(us))
 	{
-		if (numeric_is_nan(os))
-			*result = 0.0;
-		else
-			*result = 1.0;
+		*result = numeric_is_nan(os) ? 0.0 : 1.0;
+	}
+	else if (numeric_is_inf(us))
+	{
+		/*
+		 * The union is too wide to measure.  If the original key is just as
+		 * wide it is a cheap home for the new entry; otherwise charge the
+		 * maximum.  The union contains the original key, so os is finite
+		 * whenever us is, and the subtraction below never sees an infinity.
+		 */
+		*result = numeric_is_inf(os) ? 0.0 : 1.0;
 	}
 	else
 	{
 		Numeric		nul = int64_to_numeric(0);
+
+		ds = DatumGetNumeric(DirectFunctionCall2(numeric_sub,
+												 NumericGetDatum(us),
+												 NumericGetDatum(os)));
 
 		*result = 0.0;
 
