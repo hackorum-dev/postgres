@@ -82,3 +82,29 @@ SET LOCAL pg_plan_advice.advice = 'NESTED_LOOP_PLAIN(f d)';
 EXPLAIN (COSTS OFF, PLAN_ADVICE)
 	SELECT * FROM join_fact f JOIN join_dim d ON f.dim_id = d.id;
 COMMIT;
+
+-- NESTED_LOOP_MEMOIZE needs a parameterized scan of the inner table. Here,
+-- the planner would normally discard that scan, because it expects an
+-- unparameterized scan of join_key, or of a partition of join_key_part, to
+-- cost no more and return no more rows. The advice should work anyway.
+CREATE TABLE join_key (a int, b int, PRIMARY KEY (a, b))
+	WITH (autovacuum_enabled = false);
+INSERT INTO join_key SELECT g, g FROM generate_series(1,1000) g;
+VACUUM ANALYZE join_key;
+CREATE TABLE join_key_part (a int, b int, PRIMARY KEY (a, b))
+	PARTITION BY RANGE (b);
+CREATE TABLE join_key_part_1 PARTITION OF join_key_part
+	FOR VALUES FROM (1) TO (501) WITH (autovacuum_enabled = false);
+CREATE TABLE join_key_part_2 PARTITION OF join_key_part
+	FOR VALUES FROM (501) TO (1001) WITH (autovacuum_enabled = false);
+INSERT INTO join_key_part SELECT g, g FROM generate_series(1,1000) g;
+VACUUM ANALYZE join_key_part;
+BEGIN;
+SET LOCAL pg_plan_advice.advice = 'NESTED_LOOP_MEMOIZE(k)';
+EXPLAIN (COSTS OFF)
+	SELECT * FROM join_fact f JOIN join_key k ON k.b = f.dim_id AND k.a = 1
+	WHERE f.id = 5;
+EXPLAIN (COSTS OFF)
+	SELECT * FROM join_fact f JOIN join_key_part k ON k.b = f.dim_id
+	AND k.a = 1 WHERE f.id = 5;
+COMMIT;

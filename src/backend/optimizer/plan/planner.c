@@ -502,7 +502,7 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	 * index scan paths.
 	 */
 	glob->default_pgs_mask = PGS_APPEND | PGS_MERGE_APPEND | PGS_FOREIGNJOIN |
-		PGS_GATHER | PGS_CONSIDER_NONPARTIAL;
+		PGS_GATHER | PGS_CONSIDER_NONPARTIAL | PGS_CONSIDER_UNPARAMETERIZED;
 	if (enable_tidscan)
 		glob->default_pgs_mask |= PGS_TIDSCAN;
 	if (enable_seqscan)
@@ -7168,7 +7168,8 @@ plan_cluster_use_sort(Oid tableOid, Oid indexOid)
 	 * Initialize the strategies needed for the two non-partial scan paths we
 	 * compare below.  Index scans are enabled, as checked above.
 	 */
-	glob->default_pgs_mask = PGS_CONSIDER_NONPARTIAL | PGS_INDEXSCAN;
+	glob->default_pgs_mask = PGS_CONSIDER_NONPARTIAL |
+		PGS_CONSIDER_UNPARAMETERIZED | PGS_INDEXSCAN;
 	if (enable_seqscan)
 		glob->default_pgs_mask |= PGS_SEQSCAN;
 

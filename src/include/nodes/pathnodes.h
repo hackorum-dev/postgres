@@ -62,6 +62,13 @@
  * plugin can nudge the planner toward a particular strategy by disabling
  * all of the others, but that doesn't work here: unsetting PGS_SEQSCAN,
  * for instance, would disable both partial and non-partial sequential scans.
+ *
+ * Likewise, unsetting PGS_CONSIDER_UNPARAMETERIZED disables all of a rel's
+ * unparameterized scan paths, since no other bit distinguishes those from
+ * parameterized ones. This is the only way to be sure of having a
+ * parameterized path to use on the inner side of a nested loop: add_path()
+ * discards a parameterized path if some unparameterized path that isn't
+ * disabled is estimated to cost no more and return no more rows.
  */
 #define PGS_SEQSCAN					0x00000001
 #define PGS_INDEXSCAN				0x00000002
@@ -82,6 +89,7 @@
 #define PGS_CONSIDER_INDEXONLY		0x00010000
 #define PGS_CONSIDER_PARTITIONWISE	0x00020000
 #define PGS_CONSIDER_NONPARTIAL		0x00040000
+#define PGS_CONSIDER_UNPARAMETERIZED	0x00080000
 
 /*
  * Convenience macros for useful combination of the bits defined above.

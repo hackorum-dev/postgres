@@ -150,6 +150,8 @@ static void pgpa_planner_apply_scan_advice(RelOptInfo *rel,
 										   pgpa_trove_entry *rel_entries,
 										   Bitmapset *rel_indexes);
 static uint64 pgpa_join_strategy_mask_from_advice_tag(pgpa_advice_tag_type tag);
+static bool pgpa_join_advice_requires_parameterization(pgpa_trove *trove,
+													   pgpa_identifier *rid);
 static pgpa_jo_outcome pgpa_join_order_permits_join(int outer_count,
 													int inner_count,
 													pgpa_identifier *rids,
@@ -440,6 +442,7 @@ pgpa_build_simple_rel(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 		pgpa_identifier *rid;
 		pgpa_trove_result tresult_scan;
 		pgpa_trove_result tresult_rel;
+		bool		parameterize;
 
 		/* Search for scan advice and general rel advice. */
 		rid = &proot->rid_array[rel->relid - 1];
@@ -448,8 +451,26 @@ pgpa_build_simple_rel(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 		pgpa_trove_lookup(pps->trove, PGPA_TROVE_LOOKUP_REL, 1, rid,
 						  &tresult_rel);
 
+		/*
+		 * Join method advice can require that this rel be scanned using a
+		 * parameterized path. If this is a child rel, the advice might
+		 * instead name its topmost parent.
+		 */
+		parameterize =
+			pgpa_join_advice_requires_parameterization(pps->trove, rid);
+		if (!parameterize && rel->top_parent != NULL)
+		{
+			pgpa_identifier *parent_rid;
+
+			parent_rid = &proot->rid_array[rel->top_parent->relid - 1];
+			parameterize =
+				pgpa_join_advice_requires_parameterization(pps->trove,
+														   parent_rid);
+		}
+
 		/* If relevant entries were found, apply them. */
-		if (tresult_scan.indexes != NULL || tresult_rel.indexes != NULL)
+		if (tresult_scan.indexes != NULL || tresult_rel.indexes != NULL ||
+			parameterize)
 		{
 			uint64		original_mask = rel->pgs_mask;
 
@@ -459,6 +480,14 @@ pgpa_build_simple_rel(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 										   tresult_scan.indexes,
 										   tresult_rel.entries,
 										   tresult_rel.indexes);
+
+			/*
+			 * We have to disable the unparameterized paths now. Otherwise,
+			 * add_path() might discard the parameterized ones before the join
+			 * is planned.
+			 */
+			if (parameterize)
+				rel->pgs_mask &= ~PGS_CONSIDER_UNPARAMETERIZED;
 
 			/* Emit debugging message, if enabled. */
 			if (pg_plan_advice_trace_mask && original_mask != rel->pgs_mask)
@@ -1240,6 +1269,44 @@ pgpa_join_strategy_mask_from_advice_tag(pgpa_advice_tag_type tag)
 		default:
 			return 0;
 	}
+}
+
+/*
+ * Does join method advice require a parameterized scan of the relation
+ * with the given identifier?
+ *
+ * That's the case if the relation is, by itself, supposed to be the inner
+ * side of a nested loop with memoization, since Memoize is only ever used
+ * above a parameterized path. As in pgpa_planner_apply_join_path_advice,
+ * the answer is no if the join method advice for the relation conflicts.
+ */
+static bool
+pgpa_join_advice_requires_parameterization(pgpa_trove *trove,
+										   pgpa_identifier *rid)
+{
+	pgpa_trove_result tresult;
+	uint64		join_mask = 0;
+	int			i = -1;
+
+	pgpa_trove_lookup(trove, PGPA_TROVE_LOOKUP_JOIN, 1, rid, &tresult);
+	while ((i = bms_next_member(tresult.indexes, i)) >= 0)
+	{
+		pgpa_trove_entry *entry = &tresult.entries[i];
+		uint64		my_join_mask;
+
+		/* Consider only join method advice for this relation by itself. */
+		my_join_mask = pgpa_join_strategy_mask_from_advice_tag(entry->tag);
+		if (my_join_mask == 0 ||
+			pgpa_identifiers_match_target(1, rid,
+										  entry->target) != PGPA_ITM_EQUAL)
+			continue;
+
+		if (join_mask != 0 && join_mask != my_join_mask)
+			return false;
+		join_mask = my_join_mask;
+	}
+
+	return join_mask == PGS_NESTLOOP_MEMOIZE;
 }
 
 /*

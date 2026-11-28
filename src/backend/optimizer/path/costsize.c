@@ -334,6 +334,9 @@ cost_seqscan(Path *path, PlannerInfo *root,
 	else
 		enable_mask |= PGS_CONSIDER_NONPARTIAL;
 
+	if (param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
+
 	path->disabled_nodes =
 		(baserel->pgs_mask & enable_mask) == enable_mask ? 0 : 1;
 	path->startup_cost = startup_cost;
@@ -411,6 +414,9 @@ cost_samplescan(Path *path, PlannerInfo *root,
 
 	if (path->parallel_workers == 0)
 		enable_mask |= PGS_CONSIDER_NONPARTIAL;
+
+	if (param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
 
 	path->disabled_nodes =
 		(baserel->pgs_mask & enable_mask) == enable_mask ? 0 : 1;
@@ -605,6 +611,8 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 	/* is this scan type disabled? */
 	enable_mask = (indexonly ? PGS_INDEXONLYSCAN : PGS_INDEXSCAN)
 		| (partial_path ? 0 : PGS_CONSIDER_NONPARTIAL);
+	if (path->path.param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
 	path->path.disabled_nodes =
 		(baserel->pgs_mask & enable_mask) == enable_mask ? 0 : 1;
 
@@ -1103,6 +1111,9 @@ cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 	startup_cost += path->pathtarget->cost.startup;
 	run_cost += path->pathtarget->cost.per_tuple * path->rows;
 
+	if (param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
+
 	path->disabled_nodes =
 		(baserel->pgs_mask & enable_mask) == enable_mask ? 0 : 1;
 	path->startup_cost = startup_cost;
@@ -1344,6 +1355,8 @@ cost_tidscan(Path *path, PlannerInfo *root,
 	 */
 	if (path->parallel_workers == 0)
 		enable_mask |= PGS_CONSIDER_NONPARTIAL;
+	if (param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
 	path->disabled_nodes =
 		(baserel->pgs_mask & enable_mask) != enable_mask ? 1 : 0;
 	path->startup_cost = startup_cost;
@@ -1462,6 +1475,8 @@ cost_tidrangescan(Path *path, PlannerInfo *root,
 	Assert((baserel->pgs_mask & PGS_TIDSCAN) != 0);
 	if (path->parallel_workers == 0)
 		enable_mask |= PGS_CONSIDER_NONPARTIAL;
+	if (param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
 	path->disabled_nodes =
 		(baserel->pgs_mask & enable_mask) != enable_mask ? 1 : 0;
 	path->startup_cost = startup_cost;
@@ -1519,6 +1534,8 @@ cost_subqueryscan(SubqueryScanPath *path, PlannerInfo *root,
 	 */
 	if (path->path.parallel_workers == 0)
 		enable_mask |= PGS_CONSIDER_NONPARTIAL;
+	if (param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
 	path->path.disabled_nodes = path->subpath->disabled_nodes
 		+ (((baserel->pgs_mask & enable_mask) != enable_mask) ? 1 : 0);
 	path->path.startup_cost = path->subpath->startup_cost;
@@ -1614,6 +1631,8 @@ cost_functionscan(Path *path, PlannerInfo *root,
 
 	if (path->parallel_workers == 0)
 		enable_mask |= PGS_CONSIDER_NONPARTIAL;
+	if (param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
 	path->disabled_nodes =
 		(baserel->pgs_mask & enable_mask) != enable_mask ? 1 : 0;
 	path->startup_cost = startup_cost;
@@ -1675,6 +1694,8 @@ cost_tablefuncscan(Path *path, PlannerInfo *root,
 
 	if (path->parallel_workers == 0)
 		enable_mask |= PGS_CONSIDER_NONPARTIAL;
+	if (param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
 	path->disabled_nodes =
 		(baserel->pgs_mask & enable_mask) != enable_mask ? 1 : 0;
 	path->startup_cost = startup_cost;
@@ -1727,6 +1748,8 @@ cost_valuesscan(Path *path, PlannerInfo *root,
 
 	if (path->parallel_workers == 0)
 		enable_mask |= PGS_CONSIDER_NONPARTIAL;
+	if (param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
 	path->disabled_nodes =
 		(baserel->pgs_mask & enable_mask) != enable_mask ? 1 : 0;
 	path->startup_cost = startup_cost;
@@ -1779,6 +1802,8 @@ cost_ctescan(Path *path, PlannerInfo *root,
 
 	if (path->parallel_workers == 0)
 		enable_mask |= PGS_CONSIDER_NONPARTIAL;
+	if (param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
 	path->disabled_nodes =
 		(baserel->pgs_mask & enable_mask) != enable_mask ? 1 : 0;
 	path->startup_cost = startup_cost;
@@ -1821,6 +1846,8 @@ cost_namedtuplestorescan(Path *path, PlannerInfo *root,
 
 	if (path->parallel_workers == 0)
 		enable_mask |= PGS_CONSIDER_NONPARTIAL;
+	if (param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
 	path->disabled_nodes =
 		(baserel->pgs_mask & enable_mask) != enable_mask ? 1 : 0;
 	path->startup_cost = startup_cost;
@@ -1860,6 +1887,8 @@ cost_resultscan(Path *path, PlannerInfo *root,
 
 	if (path->parallel_workers == 0)
 		enable_mask |= PGS_CONSIDER_NONPARTIAL;
+	if (param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
 	path->disabled_nodes =
 		(baserel->pgs_mask & enable_mask) != enable_mask ? 1 : 0;
 	path->startup_cost = startup_cost;
@@ -2327,6 +2356,9 @@ cost_append(AppendPath *apath, PlannerInfo *root)
 	if (apath->path.parallel_workers == 0)
 		enable_mask |= PGS_CONSIDER_NONPARTIAL;
 
+	if (apath->path.param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
+
 	apath->path.disabled_nodes =
 		(rel->pgs_mask & enable_mask) == enable_mask ? 0 : 1;
 	apath->path.startup_cost = 0;
@@ -2549,6 +2581,8 @@ cost_merge_append(Path *path, PlannerInfo *root,
 
 	if (path->parallel_workers == 0)
 		enable_mask |= PGS_CONSIDER_NONPARTIAL;
+	if (path->param_info == NULL)
+		enable_mask |= PGS_CONSIDER_UNPARAMETERIZED;
 
 	/*
 	 * Avoid log(0)...
