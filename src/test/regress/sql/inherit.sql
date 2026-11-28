@@ -1281,6 +1281,8 @@ alter table inh_nn1 alter constraint foo inherit;
 -- Can't modify inheritability of inherited constraints
 create table inh_nn2 () inherits (inh_nn1);
 alter table inh_nn2 alter constraint inh_nn1_f2_not_null no inherit;
+-- Can't make the not-null constraint of a primary key column NO INHERIT
+alter table inh_nn1 alter constraint inh_nn1_f1_not_null no inherit;
 
 drop table inh_nn1, inh_nn2;
 

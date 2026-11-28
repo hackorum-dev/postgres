@@ -13711,12 +13711,29 @@ ATExecAlterConstrInheritability(List **wqueue, ATAlterConstraint *cmdcon,
 	if (cmdcon->noinherit == currcon->connoinherit)
 		return false;
 
-	AlterConstrUpdateConstraintEntry(cmdcon, conrel, contuple);
-	CommandCounterIncrement();
-
 	/* Fetch the column number and name */
 	colNum = extractNotNullColumn(contuple);
 	colName = get_attname(currcon->conrelid, colNum, false);
+
+	/*
+	 * A primary key requires the not-null constraints on its columns to be
+	 * inheritable (see verifyNotNullPKCompatible), so don't allow one to be
+	 * made NO INHERIT underneath a primary key.  Otherwise the table could
+	 * not be dumped and restored.
+	 */
+	if (cmdcon->noinherit)
+	{
+		Bitmapset  *pkattrs;
+
+		pkattrs = RelationGetIndexAttrBitmap(rel, INDEX_ATTR_BITMAP_PRIMARY_KEY);
+		if (bms_is_member(colNum - FirstLowInvalidHeapAttributeNumber, pkattrs))
+			ereport(ERROR,
+					errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					errmsg("column \"%s\" is in a primary key", colName));
+	}
+
+	AlterConstrUpdateConstraintEntry(cmdcon, conrel, contuple);
+	CommandCounterIncrement();
 
 	/*
 	 * Propagate the change to children.  For this subcommand type we don't
